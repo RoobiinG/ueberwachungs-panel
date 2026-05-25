@@ -6,9 +6,16 @@ const requireRole = require('../middleware/roles');
 
 const host = (cmd) => execAsync(`nsenter --target 1 --mount --uts --ipc --net --pid -- ${cmd}`);
 
-const validPort = (p) => { if (!/^\d{1,5}$/.test(p) || +p > 65535) throw new Error('Ungültiger Port'); return p; };
+const validPort = (p) => { if (!/^\d{1,5}$/.test(p) || +p < 1 || +p > 65535) throw new Error('Ungültiger Port'); return p; };
 const validProto = (p) => { if (p && !['tcp', 'udp'].includes(p)) throw new Error('Ungültiges Protokoll'); return p; };
-const validFrom = (f) => { if (f && !/^[\d.:a-fA-F/]+$/.test(f)) throw new Error('Ungültige IP/CIDR'); return f; };
+// Erlaubt: IPv4 (1.2.3.4), IPv4-CIDR (1.2.3.4/24), IPv6, IPv6-CIDR — kein Shell-Sonderzeichen
+const IPV4_RE   = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
+const IPV6_RE   = /^[0-9a-fA-F:]+(%[a-z0-9]+)?(\/\d{1,3})?$/;
+const validFrom = (f) => {
+  if (!f) return f;
+  if (!IPV4_RE.test(f) && !IPV6_RE.test(f)) throw new Error('Ungültige IP/CIDR');
+  return f;
+};
 
 router.get('/status', async (req, res) => {
   try {

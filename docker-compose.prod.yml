@@ -12,12 +12,17 @@ services:
     environment:
       PORT: "3001"
       DB_PATH: "/app/data/data.db"
+      # PFLICHT: Zufälligen 32+-Zeichen-String setzen, sonst startet die App nicht!
+      # Generieren mit: openssl rand -hex 32
       JWT_SECRET: "HIER_SICHEREN_KEY_EINTRAGEN_MINDESTENS_32_ZEICHEN"
       JWT_EXPIRES_IN: "24h"
-      HETZNER_API_TOKEN: ""
-      MCHOST_API_TOKEN: ""
-    # Für systemctl/UFW auf dem Host auskommentieren:
+      # Optional: Admin-Passwort beim Erststart setzen (sonst zufällig generiert + in Logs ausgegeben)
+      # ADMIN_PASSWORD: "mein-sicheres-passwort"
+      # Optional: CORS auf Frontend-Origin einschränken (z. B. https://panel.example.com)
+      # ALLOWED_ORIGIN: "https://panel.example.com"
+    # Für systemctl/UFW auf dem Host erforderlich:
     # privileged: true
+    # pid: "host"
 
 volumes:
   panel-data:
