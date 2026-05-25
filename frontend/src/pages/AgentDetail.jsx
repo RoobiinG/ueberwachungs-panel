@@ -5,7 +5,7 @@ import {
   Cpu, HardDrive, Server, MemoryStick, ArrowLeft, RefreshCw,
   Play, Square, RotateCcw, Layers, Network, Database, Zap,
   Package, CircleAlert, ChevronDown, ChevronUp,
-  Container, Activity, Pause, CheckCircle2
+  Container, Activity, Pause, CheckCircle2, ArrowUpCircle
 } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -101,8 +101,11 @@ export default function AgentDetail() {
   const [error,     setError]             = useState('');
   const [serviceFilter, setServiceFilter] = useState('');
   const [actionLoading, setActionLoading] = useState({});
-  const [activeTab, setActiveTab]         = useState('docker'); // 'docker' | 'system' | 'services'
+  const [activeTab, setActiveTab]         = useState('docker');
   const [expandedContainers, setExpandedContainers] = useState({});
+  const [agentVersion, setAgentVersion]   = useState(null);
+  const [latestVersion, setLatestVersion] = useState(null);
+  const [updating, setUpdating]           = useState(false);
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -135,6 +138,12 @@ export default function AgentDetail() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Version + Latest beim ersten Laden
+  useEffect(() => {
+    axios.get(`/api/agents/${id}/version`).then(r => setAgentVersion(r.data.version)).catch(() => {});
+    axios.get('/api/agents/latest-version').then(r => setLatestVersion(r.data.version)).catch(() => {});
+  }, [id]);
+
   // Auto-refresh alle 15s
   useEffect(() => {
     const t = setInterval(() => load(true), 15000);
@@ -165,6 +174,21 @@ export default function AgentDetail() {
   };
 
   const toggleExpand = (cid) => setExpandedContainers(e => ({ ...e, [cid]: !e[cid] }));
+
+  const doUpdate = async () => {
+    if (!confirm('Agent jetzt aktualisieren?')) return;
+    setUpdating(true);
+    try {
+      const { data } = await axios.post(`/api/agents/${id}/update`);
+      alert(`✓ Update erfolgreich!\n${data.oldVersion} → ${data.newVersion}\nAgent wird neu gestartet…`);
+      setTimeout(() => {
+        axios.get(`/api/agents/${id}/version`).then(r => setAgentVersion(r.data.version)).catch(() => {});
+      }, 4000);
+    } catch (err) {
+      alert(err.response?.data?.error || 'Update fehlgeschlagen');
+    }
+    setUpdating(false);
+  };
 
   const filteredServices = services.filter(s =>
     !serviceFilter || s.name.toLowerCase().includes(serviceFilter.toLowerCase())
@@ -219,9 +243,22 @@ export default function AgentDetail() {
             )}
           </div>
         </div>
-        <Button size="sm" variant="ghost" onClick={() => load(true)} disabled={refreshing}>
-          <RefreshCw size={13} className={`mr-1 ${refreshing ? 'animate-spin' : ''}`} />Aktualisieren
-        </Button>
+        <div className="flex items-center gap-2">
+          {agentVersion && (
+            <span className="text-xs text-panel-muted font-mono hidden sm:block">v{agentVersion}</span>
+          )}
+          {canWrite && agentVersion && (
+            <Button size="sm" variant="ghost" onClick={doUpdate} disabled={updating}
+              title={latestVersion && agentVersion !== latestVersion ? `Update auf v${latestVersion} verfügbar` : 'Agent aktualisieren'}
+              className={latestVersion && agentVersion !== latestVersion ? 'text-panel-orange' : ''}>
+              <ArrowUpCircle size={13} className={`mr-1 ${updating ? 'animate-spin' : ''}`} />
+              {latestVersion && agentVersion !== latestVersion ? `v${latestVersion}` : 'Update'}
+            </Button>
+          )}
+          <Button size="sm" variant="ghost" onClick={() => load(true)} disabled={refreshing}>
+            <RefreshCw size={13} className={`mr-1 ${refreshing ? 'animate-spin' : ''}`} />Aktualisieren
+          </Button>
+        </div>
       </div>
 
       {/* ── Schnell-Übersicht ───────────────────────────────────────────── */}
