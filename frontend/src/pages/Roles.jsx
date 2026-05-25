@@ -279,7 +279,7 @@ export default function Roles() {
                 </div>
                 {selected.is_admin && (
                   <p className="text-xs text-panel-muted mt-0.5">
-                    Die Admin-Rolle hat alle Berechtigungen und kann nur per Code-Update geändert werden.
+                    Root-Administratorrolle — hat alle Berechtigungen. Kann weder bearbeitet, umbenannt noch gelöscht werden. Änderungen nur über ein direktes Code-Update möglich.
                   </p>
                 )}
               </div>
