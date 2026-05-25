@@ -76,4 +76,4 @@ router.post('/mchost/refresh', requireRole('admin'), async (req, res) => {
   }
 });
 
-module.exports = router;
+module.exports = (req, res, next) => router(req, res, next);
