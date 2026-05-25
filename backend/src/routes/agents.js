@@ -1,9 +1,10 @@
-const router = require('express').Router();
-const axios  = require('axios');
-const https  = require('https');
-const tls    = require('tls');
-const db     = require('../db');
+const router      = require('express').Router();
+const axios       = require('axios');
+const https       = require('https');
+const tls         = require('tls');
+const db          = require('../db');
 const requireRole = require('../middleware/roles');
+const { validatePublicUrl } = require('../utils/validateUrl');
 
 const getAll = () => db.prepare(
   'SELECT id, name, url, fingerprint, created_at FROM remote_agents ORDER BY name'
@@ -57,7 +58,7 @@ router.get('/', (req, res) => {
 router.post('/', requireRole('admin'), async (req, res) => {
   const { name, url, token = '', fingerprint: fpProvided = '' } = req.body;
   if (!name || !url) return res.status(400).json({ error: 'Name und URL erforderlich' });
-  try { new URL(url); } catch { return res.status(400).json({ error: 'Ungültige URL' }); }
+  try { validatePublicUrl(url); } catch (e) { return res.status(400).json({ error: e.message }); }
 
   const cleanUrl = url.trim().replace(/\/$/, '');
 

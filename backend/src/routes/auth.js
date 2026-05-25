@@ -1,9 +1,19 @@
-const router = require('express').Router();
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const db = require('../db');
+const router    = require('express').Router();
+const bcrypt    = require('bcryptjs');
+const jwt       = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
+const db        = require('../db');
 
-router.post('/login', (req, res) => {
+// Maximal 10 Login-Versuche pro 15 Minuten pro IP
+const loginLimiter = rateLimit({
+  windowMs:         15 * 60 * 1000,
+  max:              10,
+  standardHeaders:  true,
+  legacyHeaders:    false,
+  message:          { error: 'Zu viele Login-Versuche — bitte 15 Minuten warten.' },
+});
+
+router.post('/login', loginLimiter, (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
@@ -26,7 +36,7 @@ router.get('/me', require('../middleware/auth'), (req, res) => {
 router.put('/password', require('../middleware/auth'), (req, res) => {
   const { currentPassword, newPassword } = req.body;
   if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Aktuelles und neues Passwort erforderlich' });
-  if (newPassword.length < 6) return res.status(400).json({ error: 'Passwort muss mindestens 6 Zeichen lang sein' });
+  if (newPassword.length < 12) return res.status(400).json({ error: 'Passwort muss mindestens 12 Zeichen lang sein' });
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
   if (!bcrypt.compareSync(currentPassword, user.password)) return res.status(401).json({ error: 'Aktuelles Passwort falsch' });
   db.prepare('UPDATE users SET password = ? WHERE id = ?').run(bcrypt.hashSync(newPassword, 10), req.user.id);

@@ -1,7 +1,9 @@
-const router = require('express').Router();
-const axios  = require('axios');
-const { io } = require('socket.io-client');
-const db     = require('../db');
+const router      = require('express').Router();
+const axios       = require('axios');
+const { io }      = require('socket.io-client');
+const db          = require('../db');
+const requireRole = require('../middleware/roles');
+const { validatePublicUrl } = require('../utils/validateUrl');
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -118,10 +120,13 @@ router.get('/config', (req, res) => {
   });
 });
 
-// POST /api/uptime-kuma/config
-router.post('/config', (req, res) => {
+// POST /api/uptime-kuma/config  (nur Admins dürfen die Verbindung ändern)
+router.post('/config', requireRole('admin'), (req, res) => {
   const { url, apiKey, slug } = req.body;
-  if (url    !== undefined) setSetting('uptimeKumaUrl',    url.trim());
+  if (url !== undefined) {
+    try { validatePublicUrl(url); } catch (e) { return res.status(400).json({ error: e.message }); }
+    setSetting('uptimeKumaUrl', url.trim());
+  }
   if (apiKey !== undefined) setSetting('uptimeKumaApiKey', apiKey.trim());
   if (slug   !== undefined) setSetting('uptimeKumaSlug',   slug?.trim() || 'default');
   CACHE.clear();
