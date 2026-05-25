@@ -11,16 +11,20 @@ export default function Firewall() {
   const [status, setStatus] = useState('');
   const [rules, setRules] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ port: '', proto: 'tcp', from: '', action: 'allow' });
 
   const load = async () => {
     setLoading(true);
+    setError('');
     try {
       const [s, r] = await Promise.all([axios.get('/api/firewall/status'), axios.get('/api/firewall/rules')]);
       setStatus(s.data.status);
       setRules(r.data);
-    } catch {}
+    } catch (err) {
+      setError(err.response?.data?.error || 'UFW nicht erreichbar');
+    }
     setLoading(false);
   };
 
@@ -49,9 +53,17 @@ export default function Firewall() {
         <Button size="sm" onClick={() => setShowAdd(true)}><Plus size={14} className="mr-1" />Regel hinzufügen</Button>
       </div>
 
+      {error && (
+        <div className="bg-panel-orange/10 border border-panel-orange/30 text-panel-orange text-sm rounded-md px-3 py-2">
+          {error.includes('nsenter') || error.includes('Operation not permitted')
+            ? <>nsenter fehlgeschlagen — <code className="bg-panel-surface px-1 rounded font-mono text-xs">privileged: true</code> und <code className="bg-panel-surface px-1 rounded font-mono text-xs">pid: "host"</code> in der Compose-Datei ergänzen.</>
+            : error}
+        </div>
+      )}
+
       <Card title="UFW Status">
         <pre className="text-xs font-mono text-panel-muted whitespace-pre-wrap bg-panel-surface rounded-md p-3 max-h-40 overflow-y-auto">
-          {status || (loading ? 'Lade...' : 'UFW nicht verfügbar (Linux only)')}
+          {status || (loading ? 'Lade...' : error ? 'UFW nicht erreichbar' : 'UFW nicht installiert')}
         </pre>
       </Card>
 

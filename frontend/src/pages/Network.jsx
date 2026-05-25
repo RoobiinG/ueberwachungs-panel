@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { Card } from '../components/ui/Card';
 import { StatCard } from '../components/ui/StatCard';
-import { Activity } from 'lucide-react';
+import { Activity, Globe } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 const fmtSpeed = (bps) => {
@@ -14,10 +14,12 @@ const fmtSpeed = (bps) => {
 
 export default function Network({ liveStats }) {
   const [interfaces, setInterfaces] = useState([]);
+  const [publicIp, setPublicIp] = useState('');
   const [history, setHistory] = useState([]);
 
   useEffect(() => {
     axios.get('/api/network/interfaces').then(r => setInterfaces(r.data)).catch(() => {});
+    axios.get('/api/network/public-ip').then(r => setPublicIp(r.data.ip || '')).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -34,9 +36,10 @@ export default function Network({ liveStats }) {
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         <StatCard title="Download" value={n0 ? fmtSpeed(n0.rxSec) : '—'} unit="" icon={Activity} color="green" />
         <StatCard title="Upload" value={n0 ? fmtSpeed(n0.txSec) : '—'} unit="" icon={Activity} color="blue" />
+        <StatCard title="Öffentliche IP" value={publicIp || '—'} unit="" icon={Globe} color="purple" />
       </div>
 
       {history.length > 1 && (

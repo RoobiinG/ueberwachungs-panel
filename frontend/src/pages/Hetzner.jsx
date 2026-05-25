@@ -58,7 +58,7 @@ export default function Hetzner() {
 
       {error && (
         <div className="bg-panel-orange/10 border border-panel-orange/30 text-panel-orange text-sm rounded-md px-3 py-2">
-          {error} — Bitte <code className="bg-panel-surface px-1 rounded font-mono">HETZNER_API_TOKEN</code> in der <code className="bg-panel-surface px-1 rounded font-mono">.env</code> setzen.
+          {error} — Bitte den API-Token unter <a href="/settings" className="underline font-medium">Einstellungen → Hetzner Cloud API</a> hinterlegen.
         </div>
       )}
 

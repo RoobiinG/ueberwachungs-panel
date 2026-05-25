@@ -71,7 +71,7 @@ export default function MCHost() {
 
       {error && (
         <div className="bg-panel-orange/10 border border-panel-orange/30 text-panel-orange text-sm rounded-md px-3 py-2">
-          {error} — Bitte <code className="bg-panel-surface px-1 rounded font-mono">MCHOST_API_TOKEN</code> in der <code className="bg-panel-surface px-1 rounded font-mono">.env</code> setzen.
+          {error} — Bitte unter <a href="/settings" className="underline font-medium">Einstellungen → MC-Host24</a> einloggen.
         </div>
       )}
 
