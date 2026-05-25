@@ -1,9 +1,23 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Cpu, HardDrive, Server, MemoryStick } from 'lucide-react';
 import axios from 'axios';
 import { StatCard } from '../components/ui/StatCard';
 import { Card } from '../components/ui/Card';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+
+const RANGES = [
+  { key: '1h',  label: '1 Std' },
+  { key: '24h', label: '24 Std' },
+  { key: '7d',  label: '7 Tage' },
+  { key: '30d', label: '30 Tage' },
+];
+
+const fmtTs = (ts, range) => {
+  const d = new Date(ts * 1000);
+  if (range === '1h' || range === '24h')
+    return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+};
 
 const fmtBytes = (b, d = 1) => {
   if (!b) return '0 B';
@@ -15,13 +29,27 @@ const fmtBytes = (b, d = 1) => {
 const fmtUptime = (s) => `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
 
 export default function Dashboard({ liveStats }) {
-  const [info, setInfo] = useState(null);
-  const [history, setHistory] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [info, setInfo]         = useState(null);
+  const [history, setHistory]   = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [ltRange, setLtRange]   = useState('24h');
+  const [ltData, setLtData]     = useState([]);
+  const [ltLoading, setLtLoading] = useState(false);
 
   useEffect(() => {
     axios.get('/api/system/stats').then(r => { setInfo(r.data); setLoading(false); }).catch(() => setLoading(false));
   }, []);
+
+  const loadLongterm = useCallback(async (range) => {
+    setLtLoading(true);
+    try {
+      const { data } = await axios.get(`/api/metrics?range=${range}`);
+      setLtData(data.rows || []);
+    } catch {}
+    setLtLoading(false);
+  }, []);
+
+  useEffect(() => { loadLongterm(ltRange); }, [ltRange, loadLongterm]);
 
   useEffect(() => {
     if (!liveStats) return;
@@ -104,6 +132,65 @@ export default function Dashboard({ liveStats }) {
           </div>
         </Card>
       )}
+
+      {/* Langzeit-Monitoring */}
+      <Card title={
+        <div className="flex items-center justify-between w-full">
+          <span>Langzeit-Monitoring</span>
+          <div className="flex gap-1">
+            {RANGES.map(r => (
+              <button key={r.key} onClick={() => setLtRange(r.key)}
+                className={`px-2 py-0.5 rounded text-xs transition-colors ${
+                  ltRange === r.key
+                    ? 'bg-panel-accent text-white'
+                    : 'text-panel-muted hover:text-panel-text'
+                }`}>
+                {r.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      }>
+        {ltLoading ? (
+          <div className="text-panel-muted text-xs text-center py-6">Lade...</div>
+        ) : ltData.length < 2 ? (
+          <div className="text-panel-muted text-xs text-center py-6">
+            Noch zu wenig Daten — Aufzeichnung läuft alle 5 Minuten
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={ltData} margin={{ top: 4, right: 4, bottom: 0, left: -10 }}>
+              <defs>
+                <linearGradient id="ltcpu" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%"  stopColor="#388bfd" stopOpacity={0.25} />
+                  <stop offset="95%" stopColor="#388bfd" stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="ltmem" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%"  stopColor="#3fb950" stopOpacity={0.25} />
+                  <stop offset="95%" stopColor="#3fb950" stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="ltdisk" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%"  stopColor="#e3b341" stopOpacity={0.2} />
+                  <stop offset="95%" stopColor="#e3b341" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#30363d" />
+              <XAxis dataKey="t" tickFormatter={t => fmtTs(t, ltRange)}
+                tick={{ fill: '#8b949e', fontSize: 10 }} interval="preserveStartEnd" />
+              <YAxis domain={[0, 100]} tick={{ fill: '#8b949e', fontSize: 10 }} unit="%" />
+              <Tooltip
+                contentStyle={{ background: '#21262d', border: '1px solid #30363d', borderRadius: '6px', fontSize: '12px' }}
+                labelFormatter={t => fmtTs(t, ltRange)}
+                formatter={(v, name) => [`${v}%`, name]}
+              />
+              <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
+              <Area type="monotone" dataKey="cpu"  name="CPU"  stroke="#388bfd" fill="url(#ltcpu)"  strokeWidth={1.5} dot={false} />
+              <Area type="monotone" dataKey="mem"  name="RAM"  stroke="#3fb950" fill="url(#ltmem)"  strokeWidth={1.5} dot={false} />
+              <Area type="monotone" dataKey="disk" name="Disk" stroke="#e3b341" fill="url(#ltdisk)" strokeWidth={1.5} dot={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
+      </Card>
 
       {info?.os && (
         <Card title="System-Info">

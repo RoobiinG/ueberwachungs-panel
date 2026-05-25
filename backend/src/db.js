@@ -38,9 +38,19 @@ db.exec(`
     fingerprint TEXT NOT NULL DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS metrics (
+    ts        INTEGER PRIMARY KEY,
+    cpu       REAL,
+    mem_used  INTEGER,
+    mem_total INTEGER,
+    disk_used INTEGER,
+    disk_total INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS idx_metrics_ts ON metrics(ts);
 `);
 
-// Migration: fingerprint-Spalte für bestehende Installationen hinzufügen
+// Migrationen für bestehende Datenbanken
 try { db.exec('ALTER TABLE remote_agents ADD COLUMN fingerprint TEXT NOT NULL DEFAULT ""'); } catch {}
 
 const adminExists = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
