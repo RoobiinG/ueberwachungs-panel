@@ -1,0 +1,27 @@
+services:
+  panel:
+    build: .
+    container_name: ueberwachungs-panel
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    volumes:
+      # SQLite-Datenbank persistent speichern
+      - panel-data:/app/data
+      # Docker-Socket einbinden für Container-Verwaltung
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      PORT: "3001"
+      DB_PATH: "/app/data/data.db"
+      JWT_SECRET: "${JWT_SECRET}"
+      JWT_EXPIRES_IN: "${JWT_EXPIRES_IN:-24h}"
+      HETZNER_API_TOKEN: "${HETZNER_API_TOKEN:-}"
+      MCHOST_API_TOKEN: "${MCHOST_API_TOKEN:-}"
+    # Für systemctl/UFW-Zugriff auf den Host wird privileged benötigt.
+    # Nur aktivieren wenn Services/Firewall-Seite genutzt wird:
+    # privileged: true
+    # network_mode: host   # alternativ zu ports, wenn privileged aktiv ist
+
+volumes:
+  panel-data:
+    name: ueberwachungs-panel-data

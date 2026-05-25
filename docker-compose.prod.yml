@@ -1,0 +1,23 @@
+services:
+  panel:
+    image: ghcr.io/roobiing/ueberwachungs-panel:latest
+    container_name: ueberwachungs-panel
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    volumes:
+      - panel-data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      PORT: "3001"
+      DB_PATH: "/app/data/data.db"
+      JWT_SECRET: "HIER_SICHEREN_KEY_EINTRAGEN_MINDESTENS_32_ZEICHEN"
+      JWT_EXPIRES_IN: "24h"
+      HETZNER_API_TOKEN: ""
+      MCHOST_API_TOKEN: ""
+    # Für systemctl/UFW auf dem Host auskommentieren:
+    # privileged: true
+
+volumes:
+  panel-data:
+    name: ueberwachungs-panel-data
