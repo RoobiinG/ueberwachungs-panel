@@ -49,10 +49,83 @@ db.exec(`
     disk_total INTEGER
   );
   CREATE INDEX IF NOT EXISTS idx_metrics_ts ON metrics(ts);
+
+  CREATE TABLE IF NOT EXISTS alert_rules (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    name             TEXT NOT NULL,
+    metric           TEXT NOT NULL CHECK(metric IN ('cpu','memory','disk')),
+    condition        TEXT NOT NULL CHECK(condition IN ('gt','lt')),
+    threshold        REAL NOT NULL,
+    duration_seconds INTEGER NOT NULL DEFAULT 0,
+    cooldown_minutes INTEGER NOT NULL DEFAULT 30,
+    webhook_id       INTEGER NOT NULL REFERENCES webhooks(id) ON DELETE CASCADE,
+    enabled          INTEGER NOT NULL DEFAULT 1,
+    created_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS alert_history (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    rule_id      INTEGER NOT NULL REFERENCES alert_rules(id) ON DELETE CASCADE,
+    triggered_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    value        REAL NOT NULL,
+    message      TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_alert_history_rule ON alert_history(rule_id, triggered_at);
+
+  CREATE TABLE IF NOT EXISTS container_metrics (
+    ts             INTEGER NOT NULL,
+    container_id   TEXT NOT NULL,
+    container_name TEXT NOT NULL,
+    cpu_percent    REAL,
+    mem_used       INTEGER,
+    mem_limit      INTEGER,
+    net_rx_sec     INTEGER,
+    net_tx_sec     INTEGER,
+    PRIMARY KEY (ts, container_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_cmets ON container_metrics(container_id, ts);
+
+  CREATE TABLE IF NOT EXISTS passkeys (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    credential_id TEXT UNIQUE NOT NULL,
+    public_key    TEXT NOT NULL,
+    counter       INTEGER NOT NULL DEFAULT 0,
+    device_type   TEXT,
+    transports    TEXT,
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_passkeys_user ON passkeys(user_id);
+
+  CREATE TABLE IF NOT EXISTS ssh_keys (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    label       TEXT NOT NULL,
+    public_key  TEXT NOT NULL,
+    private_key TEXT NOT NULL,
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_ssh_keys_user ON ssh_keys(user_id);
+
+  CREATE TABLE IF NOT EXISTS ssh_hosts (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    label      TEXT NOT NULL,
+    hostname   TEXT NOT NULL,
+    port       INTEGER NOT NULL DEFAULT 22,
+    username   TEXT NOT NULL,
+    auth_type  TEXT NOT NULL DEFAULT 'key' CHECK(auth_type IN ('key','password')),
+    ssh_key_id INTEGER REFERENCES ssh_keys(id) ON DELETE SET NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_ssh_hosts_user ON ssh_hosts(user_id);
 `);
 
 // Migrationen für bestehende Datenbanken
 try { db.exec('ALTER TABLE remote_agents ADD COLUMN fingerprint TEXT NOT NULL DEFAULT ""'); } catch {}
+try { db.exec('ALTER TABLE users ADD COLUMN email TEXT'); } catch {}
+try { db.exec('ALTER TABLE users ADD COLUMN reset_token TEXT'); } catch {}
+try { db.exec('ALTER TABLE users ADD COLUMN reset_expires INTEGER'); } catch {}
 
 const adminExists = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
 if (!adminExists) {

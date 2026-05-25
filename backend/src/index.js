@@ -28,6 +28,10 @@ app.use(cors(
 app.use(express.json());
 
 app.use('/api/auth', require('./routes/auth'));
+try {
+  const { router: passkeyRouter } = require('./routes/passkeys');
+  app.use('/api/passkeys', auth, passkeyRouter);
+} catch (e) { console.warn('Passkey-Route übersprungen:', e.message); }
 app.use('/api/system', auth, require('./routes/system'));
 app.use('/api/docker', auth, require('./routes/docker'));
 app.use('/api/services', auth, require('./routes/services'));
@@ -41,6 +45,8 @@ app.use('/api/settings', auth, require('./routes/settings'));
 app.use('/api/agents',  auth, require('./routes/agents'));
 app.use('/api/metrics',      auth, require('./routes/metrics'));
 app.use('/api/uptime-kuma', auth, require('./routes/uptimeKuma'));
+app.use('/api/alerts',      auth, require('./routes/alerts'));
+app.use('/api/docker/metrics', auth, require('./routes/containerMetrics'));
 
 // Serve React frontend in production
 const frontendDist = path.join(__dirname, '../../frontend/dist');
@@ -51,6 +57,8 @@ app.get(/^(?!\/api).*/, (req, res) => {
 
 setupWS(server);
 require('./metricsRecorder').start();
+require('./alertEvaluator').start();
+try { require('./dockerMetricsRecorder').start(); } catch (e) { console.warn('Docker-Metriken deaktiviert:', e.message); }
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => console.log(`Überwachungs-Panel running on port ${PORT}`));

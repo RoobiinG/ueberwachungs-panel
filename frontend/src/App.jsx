@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { WSProvider } from './context/WSContext';
 import { useWebSocket } from './hooks/useWebSocket';
 import { Layout } from './components/Layout/Layout';
 import Login from './pages/Login';
@@ -17,6 +18,9 @@ import Agents from './pages/Agents';
 import AgentDetail from './pages/AgentDetail';
 import UptimeKuma from './pages/UptimeKuma';
 import Settings from './pages/Settings';
+import Alerts from './pages/Alerts';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 
 const ProtectedRoute = ({ children, adminOnly }) => {
   const { user } = useAuth();
@@ -26,14 +30,16 @@ const ProtectedRoute = ({ children, adminOnly }) => {
 };
 
 const AppRoutes = () => {
-  const { user, token } = useAuth();
-  const { data: liveStats, connected } = useWebSocket(user ? token : null);
+  const { user } = useAuth();
+  const { data: liveStats, connected } = useWebSocket();
 
   if (!user) {
     return (
       <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        <Route path="/login"           element={<Login />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password"  element={<ResetPassword />} />
+        <Route path="*"                element={<Navigate to="/login" replace />} />
       </Routes>
     );
   }
@@ -42,7 +48,7 @@ const AppRoutes = () => {
     <Layout connected={connected}>
       <Routes>
         <Route path="/" element={<Dashboard liveStats={liveStats} />} />
-        <Route path="/docker" element={<Docker />} />
+        <Route path="/docker" element={<Docker liveStats={liveStats} />} />
         <Route path="/services" element={<Services />} />
         <Route path="/firewall" element={<Firewall />} />
         <Route path="/network" element={<Network liveStats={liveStats} />} />
@@ -50,22 +56,31 @@ const AppRoutes = () => {
         <Route path="/agents" element={<Agents />} />
         <Route path="/agents/:id" element={<AgentDetail />} />
         <Route path="/uptime-kuma" element={<UptimeKuma />} />
+        <Route path="/alerts" element={<Alerts />} />
         <Route path="/webhooks" element={<Webhooks />} />
         <Route path="/hetzner" element={<Hetzner />} />
         <Route path="/mchost" element={<MCHost />} />
-        <Route path="/users" element={<ProtectedRoute adminOnly><Users /></ProtectedRoute>} />
-        <Route path="/settings" element={<ProtectedRoute adminOnly><Settings /></ProtectedRoute>} />
+        <Route path="/users"     element={<ProtectedRoute adminOnly><Users /></ProtectedRoute>} />
+        <Route path="/settings"  element={<ProtectedRoute adminOnly><Settings /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>
   );
 };
 
+/** Zugriff auf token erst NACH AuthProvider möglich → eigener Wrapper */
+function WSWrapper({ children }) {
+  const { user, token } = useAuth();
+  return <WSProvider token={user ? token : null}>{children}</WSProvider>;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppRoutes />
+        <WSWrapper>
+          <AppRoutes />
+        </WSWrapper>
       </AuthProvider>
     </BrowserRouter>
   );

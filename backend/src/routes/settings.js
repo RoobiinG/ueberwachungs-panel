@@ -3,7 +3,7 @@ const axios = require('axios');
 const db = require('../db');
 const requireRole = require('../middleware/roles');
 
-const SENSITIVE = ['hetzner_api_token', 'mchost_password', 'mchost_api_token'];
+const SENSITIVE = ['hetzner_api_token', 'mchost_password', 'mchost_api_token', 'smtp_pass'];
 
 const get = (key) => db.prepare('SELECT value FROM settings WHERE key = ?').get(key)?.value || '';
 const set = (key, value) => db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)').run(key, value);
@@ -16,6 +16,12 @@ router.get('/', requireRole('admin'), (req, res) => {
     mchost_username:   get('mchost_username'),
     mchost_password:   get('mchost_password') ? '***gesetzt***' : '',
     mchost_token_set:  !!get('mchost_api_token'),
+    smtp_host:         get('smtp_host'),
+    smtp_port:         get('smtp_port') || '587',
+    smtp_user:         get('smtp_user'),
+    smtp_pass:         get('smtp_pass') ? '***gesetzt***' : '',
+    smtp_from:         get('smtp_from'),
+    smtp_secure:       get('smtp_secure') || 'false',
   });
 });
 
@@ -73,6 +79,47 @@ router.post('/mchost/refresh', requireRole('admin'), async (req, res) => {
     res.json({ success: true, message: 'Token erneuert' });
   } catch (err) {
     res.status(401).json({ error: err.response?.data?.message || 'Token-Erneuerung fehlgeschlagen' });
+  }
+});
+
+// ─── SMTP-Konfiguration ───────────────────────────────────────────────────────
+
+router.put('/smtp', requireRole('admin'), (req, res) => {
+  const { host, port, user, pass, from, secure } = req.body;
+  if (host !== undefined) set('smtp_host', host.trim());
+  if (port !== undefined) set('smtp_port', String(port));
+  if (user !== undefined) set('smtp_user', user.trim());
+  if (pass !== undefined && pass !== '***gesetzt***') set('smtp_pass', pass);
+  if (from !== undefined) set('smtp_from', from.trim());
+  if (secure !== undefined) set('smtp_secure', String(secure));
+  res.json({ success: true });
+});
+
+router.post('/smtp/test', requireRole('admin'), async (req, res) => {
+  const adminUser = db.prepare('SELECT email FROM users WHERE id = ?').get(req.user.id);
+  const toEmail   = req.body.email || adminUser?.email;
+  if (!toEmail) return res.status(400).json({ error: 'Keine Test-E-Mail-Adresse angegeben — E-Mail in Profil hinterlegen oder im Body mitschicken' });
+
+  const nodemailer = require('nodemailer');
+  const smtpHost = get('smtp_host');
+  if (!smtpHost) return res.status(400).json({ error: 'SMTP nicht konfiguriert' });
+
+  try {
+    const transporter = nodemailer.createTransport({
+      host:   smtpHost,
+      port:   parseInt(get('smtp_port')) || 587,
+      secure: get('smtp_secure') === 'true',
+      auth:   get('smtp_user') ? { user: get('smtp_user'), pass: get('smtp_pass') } : undefined,
+    });
+    await transporter.sendMail({
+      from:    get('smtp_from') || get('smtp_user'),
+      to:      toEmail,
+      subject: 'Test-E-Mail — Überwachungs-Panel',
+      text:    'SMTP-Konfiguration erfolgreich!',
+    });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

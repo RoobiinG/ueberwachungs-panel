@@ -1,15 +1,17 @@
 import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Server, Eye, EyeOff, KeyRound } from 'lucide-react';
+import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
-import { useNavigate } from 'react-router-dom';
-import { Server, Eye, EyeOff } from 'lucide-react';
 
 export default function Login() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [showPw, setShowPw] = useState(false);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const [showPw, setShowPw]     = useState(false);
+  const [error, setError]       = useState('');
+  const [loading, setLoading]   = useState(false);
+  const [pkLoading, setPkLoading] = useState(false);
+  const { login, saveSession }  = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -23,6 +25,24 @@ export default function Login() {
       setError(err.response?.data?.error || 'Anmeldung fehlgeschlagen');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePasskeyLogin = async () => {
+    setError('');
+    setPkLoading(true);
+    try {
+      // WebAuthn-Browser-Paket dynamisch importieren
+      const { startAuthentication } = await import('@simplewebauthn/browser');
+      const optRes  = await axios.post('/api/auth/passkey/login/start');
+      const assertion = await startAuthentication(optRes.data);
+      const finRes  = await axios.post('/api/auth/passkey/login/finish', assertion);
+      saveSession(finRes.data.user, finRes.data.token);
+      navigate('/');
+    } catch (err) {
+      setError(err.response?.data?.error || err.message || 'Passkey-Anmeldung fehlgeschlagen');
+    } finally {
+      setPkLoading(false);
     }
   };
 
@@ -43,6 +63,7 @@ export default function Login() {
               {error}
             </div>
           )}
+
           <div>
             <label className="block text-xs font-medium text-panel-muted mb-1">Benutzername</label>
             <input
@@ -54,6 +75,7 @@ export default function Login() {
               autoFocus
             />
           </div>
+
           <div>
             <label className="block text-xs font-medium text-panel-muted mb-1">Passwort</label>
             <div className="relative">
@@ -64,15 +86,13 @@ export default function Login() {
                 className="w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 pr-9 text-sm text-panel-text focus:outline-none focus:border-panel-accent transition-colors"
                 placeholder="••••••••"
               />
-              <button
-                type="button"
-                onClick={() => setShowPw(v => !v)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text"
-              >
+              <button type="button" onClick={() => setShowPw(v => !v)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
                 {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
               </button>
             </div>
           </div>
+
           <button
             type="submit"
             disabled={loading || !username || !password}
@@ -80,6 +100,30 @@ export default function Login() {
           >
             {loading ? 'Anmelden...' : 'Anmelden'}
           </button>
+
+          {/* Trennlinie */}
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-px bg-panel-border" />
+            <span className="text-xs text-panel-muted">oder</span>
+            <div className="flex-1 h-px bg-panel-border" />
+          </div>
+
+          {/* Passkey-Login */}
+          <button
+            type="button"
+            onClick={handlePasskeyLogin}
+            disabled={pkLoading}
+            className="w-full flex items-center justify-center gap-2 border border-panel-border hover:border-panel-accent bg-panel-surface hover:bg-panel-card text-panel-text text-sm font-medium py-2 rounded-md transition-colors disabled:opacity-50"
+          >
+            <KeyRound size={15} className="text-panel-accent" />
+            {pkLoading ? 'Warte auf Passkey...' : 'Mit Passkey anmelden'}
+          </button>
+
+          <div className="text-center">
+            <Link to="/forgot-password" className="text-xs text-panel-muted hover:text-panel-accent transition-colors">
+              Passwort vergessen?
+            </Link>
+          </div>
         </form>
       </div>
     </div>

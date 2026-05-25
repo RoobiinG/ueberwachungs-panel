@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Container, Wrench, Shield, Activity,
   Terminal, Webhook, Users, Cloud, Gamepad2, ChevronLeft, ChevronRight,
-  Server, Settings, ServerCog, MonitorCheck,
+  Server, Settings, ServerCog, MonitorCheck, Bell,
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
@@ -16,6 +16,7 @@ const navItems = [
   { to: '/ssh', icon: Terminal, label: 'SSH / SFTP' },
   { to: '/agents',      icon: ServerCog,    label: 'Server' },
   { to: '/uptime-kuma', icon: MonitorCheck, label: 'Uptime Kuma' },
+  { to: '/alerts', icon: Bell, label: 'Benachrichtigungen' },
   { divider: true },
   { to: '/webhooks', icon: Webhook, label: 'Webhooks' },
   { to: '/hetzner', icon: Cloud, label: 'Hetzner' },
