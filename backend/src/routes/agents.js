@@ -20,10 +20,14 @@ async function fetchLatestVersion() {
   } catch { return _latestCache.version; }
 }
 
-const getAll = () => db.prepare(
-  'SELECT id, name, url, fingerprint, created_at FROM remote_agents ORDER BY name'
-).all();
 const getOne = (id) => db.prepare('SELECT * FROM remote_agents WHERE id = ?').get(id);
+
+// Prüft ob ein Nutzer Zugriff auf einen bestimmten Agent hat
+const canAccessAgent = (agentId, roleName) => {
+  const role = db.prepare('SELECT id, is_admin, restrict_agents FROM roles WHERE name = ?').get(roleName);
+  if (!role || role.is_admin || !role.restrict_agents) return true;
+  return !!db.prepare('SELECT 1 FROM agent_grants WHERE role_id = ? AND agent_id = ?').get(role.id, agentId);
+};
 
 // TLS-Fingerprint eines HTTPS-Endpunkts abrufen (ohne Zertifikats-Validierung)
 const fetchFingerprint = (urlStr) => new Promise((resolve, reject) => {
@@ -72,7 +76,23 @@ router.get('/latest-version', async (req, res) => {
 });
 
 router.get('/', (req, res) => {
-  res.json(getAll());
+  const roleName = req.user?.role;
+  const role = db.prepare('SELECT id, is_admin, restrict_agents FROM roles WHERE name = ?').get(roleName);
+
+  if (!role || role.is_admin || !role.restrict_agents) {
+    return res.json(db.prepare(
+      'SELECT id, name, url, fingerprint, created_at FROM remote_agents ORDER BY name'
+    ).all());
+  }
+
+  // Eingeschränkte Rolle: nur gewährte Server
+  return res.json(db.prepare(`
+    SELECT ra.id, ra.name, ra.url, ra.fingerprint, ra.created_at
+    FROM remote_agents ra
+    INNER JOIN agent_grants ag ON ag.agent_id = ra.id
+    WHERE ag.role_id = ?
+    ORDER BY ra.name
+  `).all(role.id));
 });
 
 router.post('/', requireRole('admin'), async (req, res) => {
@@ -148,6 +168,7 @@ router.post('/:id/repin', requireRole('admin'), async (req, res) => {
 router.get('/:id/ping', async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   try {
     const { data } = await agentApi(agent).get('/ping');
     res.json({ online: true, hostname: data.hostname, tls: data.tls });
@@ -160,6 +181,7 @@ router.get('/:id/ping', async (req, res) => {
 router.get('/:id/stats', async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   try {
     const { data } = await agentApi(agent).get('/stats');
     res.json(data);
@@ -171,6 +193,7 @@ router.get('/:id/stats', async (req, res) => {
 router.get('/:id/services', async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   try {
     const { data } = await agentApi(agent).get('/services');
     res.json(data);
@@ -182,6 +205,7 @@ router.get('/:id/services', async (req, res) => {
 router.post('/:id/services/:name/:action', requireRole('admin', 'operator'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   const { name, action } = req.params;
   const valid = ['start', 'stop', 'restart', 'reload', 'enable', 'disable'];
   if (!valid.includes(action)) return res.status(400).json({ error: 'Ungültige Aktion' });
@@ -224,6 +248,7 @@ router.post('/:id/update', requireRole('admin'), async (req, res) => {
 router.get('/:id/docker', async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   try {
     const { data } = await agentApi(agent).get('/docker');
     res.json(data);
@@ -236,6 +261,7 @@ router.get('/:id/docker', async (req, res) => {
 router.get('/:id/docker/containers', async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   try {
     const { data } = await agentApi(agent).get('/docker/containers');
     res.json(data);

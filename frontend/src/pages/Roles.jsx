@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import {
   Lock, Plus, Trash2, Pencil, Check, X, ShieldCheck,
-  ChevronDown, ChevronRight, Users, Save
+  ChevronDown, ChevronRight, Users, Save, Server, Globe,
 } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -96,11 +96,19 @@ function CategoryBlock({ category, perms, selected, onChange, locked }) {
 export default function Roles() {
   const [roles,       setRoles]       = useState([]);
   const [permDefs,    setPermDefs]    = useState([]);
-  const [selected,    setSelected]    = useState(null); // ausgewählte Rolle
+  const [allAgents,   setAllAgents]   = useState([]);
+  const [selected,    setSelected]    = useState(null);
   const [selPerms,    setSelPerms]    = useState(new Set());
   const [dirty,       setDirty]       = useState(false);
   const [saving,      setSaving]      = useState(false);
   const [saveMsg,     setSaveMsg]     = useState('');
+
+  // Server-Zugriff
+  const [agentRestrict,  setAgentRestrict]  = useState(false);
+  const [grantedAgents,  setGrantedAgents]  = useState(new Set());
+  const [agentsDirty,    setAgentsDirty]    = useState(false);
+  const [agentsSaving,   setAgentsSaving]   = useState(false);
+  const [agentsSaveMsg,  setAgentsSaveMsg]  = useState('');
 
   // Rename-Modal
   const [renaming,    setRenaming]    = useState(false);
@@ -115,28 +123,38 @@ export default function Roles() {
 
   // ── Laden ──────────────────────────────────────────────────────────────────
   const loadRoles = useCallback(async () => {
-    const [rolesRes, permRes] = await Promise.all([
+    const [rolesRes, permRes, agentsRes] = await Promise.all([
       axios.get('/api/roles'),
       axios.get('/api/roles/permissions'),
+      axios.get('/api/agents'),
     ]);
     setRoles(rolesRes.data);
     setPermDefs(permRes.data);
+    setAllAgents(agentsRes.data);
   }, []);
 
   useEffect(() => { loadRoles(); }, [loadRoles]);
 
-  // Wenn Rolle ausgewählt wird → Permissions laden
+  // Wenn Rolle ausgewählt wird → Permissions + Agent-Zugriff laden
   const selectRole = async (role) => {
     setSelected(role);
     setDirty(false);
     setSaveMsg('');
+    setAgentsDirty(false);
+    setAgentsSaveMsg('');
     if (role.is_admin) {
-      // Admin hat alle Permissions
       setSelPerms(new Set(permDefs.map(p => p.key)));
+      setAgentRestrict(false);
+      setGrantedAgents(new Set());
       return;
     }
-    const { data } = await axios.get(`/api/roles/${role.id}/permissions`);
-    setSelPerms(new Set(data));
+    const [permRes, agentRes] = await Promise.all([
+      axios.get(`/api/roles/${role.id}/permissions`),
+      axios.get(`/api/roles/${role.id}/agents`),
+    ]);
+    setSelPerms(new Set(permRes.data));
+    setAgentRestrict(agentRes.data.restrictAgents);
+    setGrantedAgents(new Set(agentRes.data.agentIds));
   };
 
   const handlePermChange = (next) => {
@@ -145,7 +163,7 @@ export default function Roles() {
     setSaveMsg('');
   };
 
-  // ── Speichern ──────────────────────────────────────────────────────────────
+  // ── Berechtigungen speichern ───────────────────────────────────────────────
   const savePerms = async () => {
     if (!selected || selected.is_admin) return;
     setSaving(true); setSaveMsg('');
@@ -159,6 +177,23 @@ export default function Roles() {
       setSaveMsg(err.response?.data?.error || 'Fehler');
     }
     setSaving(false);
+  };
+
+  // ── Server-Zugriff speichern ───────────────────────────────────────────────
+  const saveAgentAccess = async () => {
+    if (!selected || selected.is_admin) return;
+    setAgentsSaving(true); setAgentsSaveMsg('');
+    try {
+      await axios.put(`/api/roles/${selected.id}/agents`, {
+        restrictAgents: agentRestrict,
+        agentIds: [...grantedAgents],
+      });
+      setAgentsSaveMsg('✓ Gespeichert');
+      setAgentsDirty(false);
+    } catch (err) {
+      setAgentsSaveMsg(err.response?.data?.error || 'Fehler');
+    }
+    setAgentsSaving(false);
   };
 
   // ── Umbenennen ────────────────────────────────────────────────────────────
@@ -319,7 +354,7 @@ export default function Roles() {
               </div>
             )}
 
-            {/* Berechtigungen */}
+            {/* Berechtigungen + Server-Zugriff */}
             <div className="flex-1 overflow-y-auto space-y-2 pr-1">
               {Object.entries(categories).map(([cat, perms]) => (
                 <CategoryBlock
@@ -331,6 +366,89 @@ export default function Roles() {
                   locked={!!selected.is_admin}
                 />
               ))}
+
+              {/* ── Server-Zugriff ─────────────────────────────────────────── */}
+              {!selected.is_admin && (
+                <div className="border border-panel-border rounded-lg overflow-hidden">
+                  {/* Header */}
+                  <div className="flex items-center gap-3 px-3 py-2.5 bg-panel-surface select-none">
+                    <Server size={13} className="text-panel-muted flex-shrink-0" />
+                    <span className="text-xs font-semibold text-panel-text flex-1">Server-Zugriff</span>
+                    <span className="text-xs text-panel-muted">
+                      {agentRestrict ? `${grantedAgents.size} / ${allAgents.length}` : 'Alle'}
+                    </span>
+                    <button
+                      onClick={() => { setAgentRestrict(r => !r); setAgentsDirty(true); setAgentsSaveMsg(''); }}
+                      className={`text-xs px-2 py-0.5 rounded transition-colors ml-2 ${
+                        agentRestrict
+                          ? 'bg-panel-orange/20 text-panel-orange hover:bg-panel-orange/30'
+                          : 'bg-panel-surface text-panel-muted hover:bg-panel-card border border-panel-border'
+                      }`}>
+                      {agentRestrict ? 'Einschränkung: AN' : 'Alle Server'}
+                    </button>
+                  </div>
+
+                  {/* Agent-Liste (nur bei eingeschränktem Modus) */}
+                  {agentRestrict && allAgents.length === 0 && (
+                    <p className="px-3 py-3 text-xs text-panel-muted">
+                      Noch keine Server konfiguriert.
+                    </p>
+                  )}
+                  {agentRestrict && allAgents.length > 0 && (
+                    <div className="divide-y divide-panel-border/50">
+                      {allAgents.map(agent => {
+                        const checked = grantedAgents.has(agent.id);
+                        return (
+                          <label key={agent.id}
+                            className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-panel-surface/50 transition-colors">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {
+                                const next = new Set(grantedAgents);
+                                if (checked) next.delete(agent.id); else next.add(agent.id);
+                                setGrantedAgents(next);
+                                setAgentsDirty(true);
+                                setAgentsSaveMsg('');
+                              }}
+                              className="accent-panel-accent w-3.5 h-3.5 flex-shrink-0"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-medium text-panel-text">{agent.name}</p>
+                              <p className="text-xs text-panel-muted truncate">{agent.url}</p>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Info-Text wenn alle Server erlaubt */}
+                  {!agentRestrict && (
+                    <div className="flex items-center gap-2 px-3 py-2.5 text-xs text-panel-muted">
+                      <Globe size={12} />
+                      Diese Rolle hat Zugriff auf alle Server.
+                    </div>
+                  )}
+
+                  {/* Speichern-Leiste */}
+                  {(agentsDirty || agentsSaveMsg) && (
+                    <div className="px-3 py-2 border-t border-panel-border flex items-center gap-2">
+                      {agentsSaveMsg && (
+                        <span className={`text-xs ${agentsSaveMsg.startsWith('✓') ? 'text-panel-green' : 'text-panel-red'}`}>
+                          {agentsSaveMsg}
+                        </span>
+                      )}
+                      {agentsDirty && (
+                        <Button size="sm" className="ml-auto" onClick={saveAgentAccess} disabled={agentsSaving}>
+                          <Save size={12} className="mr-1" />
+                          {agentsSaving ? 'Speichere…' : 'Server-Zugriff speichern'}
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </>
         )}

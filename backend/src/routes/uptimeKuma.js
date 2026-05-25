@@ -29,10 +29,9 @@ function fetchViaSocket(url, apiKey) {
 
   return new Promise((resolve, reject) => {
     const socket = io(url.replace(/\/+$/, ''), {
-      transports:   ['websocket'],
+      transports:   ['polling', 'websocket'], // polling zuerst (Nginx-kompatibel), dann WebSocket
       reconnection: false,
       timeout:      8000,
-      // API-Key-Authentifizierung beim Verbindungsaufbau
       auth: { 'x-api-key': apiKey },
     });
 

@@ -4,7 +4,7 @@ const requireRole = require('../middleware/roles');
 const { PERMISSIONS, ALL_KEYS } = require('../permissions');
 
 const getRole  = (id) => db.prepare('SELECT * FROM roles WHERE id = ?').get(id);
-const allRoles = ()   => db.prepare('SELECT id, name, label, is_system, is_admin, created_at FROM roles ORDER BY is_admin DESC, is_system DESC, label').all();
+const allRoles = ()   => db.prepare('SELECT id, name, label, is_system, is_admin, restrict_agents, created_at FROM roles ORDER BY is_admin DESC, is_system DESC, label').all();
 
 // ─── Alle Rollen listen (für Dropdown in Benutzerverwaltung) ──────────────────
 router.get('/', (req, res) => {
@@ -45,6 +45,35 @@ router.put('/:id/permissions', requireRole('admin'), (req, res) => {
   })();
 
   res.json({ success: true, count: valid.length });
+});
+
+// ─── Server-Zuweisungen einer Rolle abrufen ───────────────────────────────────
+router.get('/:id/agents', requireRole('admin'), (req, res) => {
+  const role = getRole(req.params.id);
+  if (!role) return res.status(404).json({ error: 'Rolle nicht gefunden' });
+  const agentIds = db.prepare('SELECT agent_id FROM agent_grants WHERE role_id = ?')
+    .all(role.id).map(r => r.agent_id);
+  res.json({ restrictAgents: !!role.restrict_agents, agentIds });
+});
+
+// ─── Server-Zuweisungen einer Rolle setzen ────────────────────────────────────
+router.put('/:id/agents', requireRole('admin'), (req, res) => {
+  const role = getRole(req.params.id);
+  if (!role) return res.status(404).json({ error: 'Rolle nicht gefunden' });
+  if (role.is_admin) return res.status(403).json({ error: 'Admin-Rolle kann nicht eingeschränkt werden' });
+
+  const { restrictAgents, agentIds = [] } = req.body;
+
+  db.transaction(() => {
+    if (restrictAgents !== undefined) {
+      db.prepare('UPDATE roles SET restrict_agents = ? WHERE id = ?').run(restrictAgents ? 1 : 0, role.id);
+    }
+    db.prepare('DELETE FROM agent_grants WHERE role_id = ?').run(role.id);
+    const ins = db.prepare('INSERT OR IGNORE INTO agent_grants (role_id, agent_id) VALUES (?, ?)');
+    for (const agentId of agentIds) ins.run(role.id, parseInt(agentId));
+  })();
+
+  res.json({ success: true });
 });
 
 // ─── Neue Rolle erstellen ─────────────────────────────────────────────────────

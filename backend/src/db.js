@@ -146,6 +146,17 @@ try { db.exec('ALTER TABLE users ADD COLUMN reset_expires INTEGER'); } catch {}
 try { db.exec("UPDATE users SET role = 'guest' WHERE role = 'viewer'"); } catch {}
 // Username 'admin' → 'Admin' (Großschreibung)
 try { db.exec("UPDATE users SET username = 'Admin' WHERE username = 'admin' AND role = 'admin'"); } catch {}
+// Server-Zugriffskontrolle: Einschränkungsmodus pro Rolle
+try { db.exec('ALTER TABLE roles ADD COLUMN restrict_agents INTEGER NOT NULL DEFAULT 0'); } catch {}
+
+// Tabelle für Server-Zuweisungen pro Rolle
+db.exec(`
+  CREATE TABLE IF NOT EXISTS agent_grants (
+    role_id  INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    agent_id INTEGER NOT NULL REFERENCES remote_agents(id) ON DELETE CASCADE,
+    PRIMARY KEY (role_id, agent_id)
+  );
+`);
 
 // ─── Standard-Rollen seeden ───────────────────────────────────────────────────
 const seedRole = db.transaction((name, label, isSystem, isAdmin, permissions) => {
