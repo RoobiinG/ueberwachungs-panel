@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { Cloud, Server, Eye, EyeOff, CheckCircle, XCircle, RefreshCw, Trash2 } from 'lucide-react';
+import { Cloud, Server, Eye, EyeOff, CheckCircle, XCircle, RefreshCw, Trash2, Lock } from 'lucide-react';
 
 const inputCls = 'w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:border-panel-accent transition-colors';
 
@@ -12,6 +12,10 @@ const StatusBadge = ({ set }) => set
 
 export default function Settings() {
   const [status, setStatus] = useState({});
+  const [pwCurrent, setPwCurrent] = useState('');
+  const [pwNew, setPwNew] = useState('');
+  const [pwConfirm, setPwConfirm] = useState('');
+  const [showPw, setShowPw] = useState(false);
   const [hetznerToken, setHetznerToken] = useState('');
   const [showHetzner, setShowHetzner] = useState(false);
   const [mcUsername, setMcUsername] = useState('');
@@ -36,6 +40,20 @@ export default function Settings() {
   };
 
   const busy = (key, val) => setLoading(l => ({ ...l, [key]: val }));
+
+  const changePassword = async () => {
+    if (pwNew !== pwConfirm) return feedback('pw', 'err', 'Passwörter stimmen nicht überein');
+    if (pwNew.length < 6) return feedback('pw', 'err', 'Mindestens 6 Zeichen erforderlich');
+    busy('pw', true);
+    try {
+      await axios.put('/api/auth/password', { currentPassword: pwCurrent, newPassword: pwNew });
+      setPwCurrent(''); setPwNew(''); setPwConfirm('');
+      feedback('pw', 'ok', 'Passwort geändert');
+    } catch (err) {
+      feedback('pw', 'err', err.response?.data?.error || 'Fehler');
+    }
+    busy('pw', false);
+  };
 
   // Hetzner Token speichern
   const saveHetzner = async () => {
@@ -102,6 +120,39 @@ export default function Settings() {
 
   return (
     <div className="space-y-4 max-w-xl">
+
+      {/* Passwort ändern */}
+      <Card title={<span className="flex items-center gap-2"><Lock size={14} />Passwort ändern</span>}>
+        <div className="space-y-3">
+          {[
+            ['Aktuelles Passwort', pwCurrent, setPwCurrent],
+            ['Neues Passwort', pwNew, setPwNew],
+            ['Neues Passwort bestätigen', pwConfirm, setPwConfirm],
+          ].map(([label, val, set]) => (
+            <div key={label}>
+              <label className="block text-xs text-panel-muted mb-1">{label}</label>
+              <div className="relative">
+                <input
+                  type={showPw ? 'text' : 'password'}
+                  value={val}
+                  onChange={e => set(e.target.value)}
+                  placeholder="••••••••"
+                  className={inputCls + ' pr-9'}
+                  onKeyDown={e => e.key === 'Enter' && changePassword()}
+                />
+                <button type="button" onClick={() => setShowPw(v => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
+                  {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+            </div>
+          ))}
+          <Button onClick={changePassword} disabled={!pwCurrent || !pwNew || !pwConfirm || loading.pw} size="sm">
+            Passwort speichern
+          </Button>
+          <Msg k="pw" />
+        </div>
+      </Card>
 
       {/* Hetzner */}
       <Card title={<span className="flex items-center gap-2"><Cloud size={14} />Hetzner Cloud API</span>}>
