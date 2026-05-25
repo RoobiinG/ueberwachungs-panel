@@ -1,31 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
+import { useWS, useWSMessage } from '../context/WSContext';
 
-export const useWebSocket = (token) => {
+/**
+ * Thin Consumer: abonniert 'stats'-Nachrichten aus dem gemeinsamen WS-Context.
+ */
+export const useWebSocket = () => {
+  const { connected } = useWS();
   const [data, setData] = useState(null);
-  const [connected, setConnected] = useState(false);
-  const wsRef = useRef(null);
-
-  useEffect(() => {
-    if (!token) return;
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // Token NICHT im URL-Parameter übergeben (wird in Server-Logs gespeichert)
-    // Stattdessen als erste Nachricht nach dem Verbindungsaufbau senden
-    const ws = new WebSocket(`${proto}//${window.location.host}/ws`);
-    wsRef.current = ws;
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: 'auth', token }));
-    };
-    ws.onclose = () => setConnected(false);
-    ws.onerror = () => setConnected(false);
-    ws.onmessage = (e) => {
-      try {
-        const msg = JSON.parse(e.data);
-        if (msg.type === 'connected') setConnected(true);
-        if (msg.type === 'stats') setData(msg.payload);
-      } catch {}
-    };
-    return () => ws.close();
-  }, [token]);
-
+  useWSMessage('stats', (msg) => setData(msg.payload));
   return { data, connected };
 };

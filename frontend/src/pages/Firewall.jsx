@@ -3,11 +3,13 @@ import axios from 'axios';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
+import { useAuth } from '../context/AuthContext';
 import { Plus, Trash2, RefreshCw } from 'lucide-react';
 
 const inputCls = 'w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:border-panel-accent';
 
 export default function Firewall() {
+  const { canWrite } = useAuth();
   const [status, setStatus] = useState('');
   const [rules, setRules] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -50,7 +52,9 @@ export default function Firewall() {
     <div className="space-y-3">
       <div className="flex justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={load}><RefreshCw size={14} className="mr-1" />Aktualisieren</Button>
-        <Button size="sm" onClick={() => setShowAdd(true)}><Plus size={14} className="mr-1" />Regel hinzufügen</Button>
+        {canWrite && (
+          <Button size="sm" onClick={() => setShowAdd(true)}><Plus size={14} className="mr-1" />Regel hinzufügen</Button>
+        )}
       </div>
 
       {error && (
@@ -80,7 +84,9 @@ export default function Firewall() {
                   <span className={r.action?.includes('ALLOW') ? 'text-panel-green font-medium' : 'text-panel-red font-medium'}>{r.action}</span>
                   <span className="text-panel-muted truncate">{r.from}</span>
                 </div>
-                <Button size="sm" variant="danger" onClick={() => deleteRule(r.num)} className="ml-2 flex-shrink-0"><Trash2 size={12} /></Button>
+                {canWrite && (
+                  <Button size="sm" variant="danger" onClick={() => deleteRule(r.num)} className="ml-2 flex-shrink-0"><Trash2 size={12} /></Button>
+                )}
               </div>
             ))}
           </div>

@@ -4,10 +4,12 @@ import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { RefreshCw, Play, Square, RotateCcw } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 const activeColor = (s) => s === 'active' ? 'green' : s === 'activating' ? 'orange' : 'red';
 
 export default function Services() {
+  const { canWrite } = useAuth();
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
@@ -56,13 +58,15 @@ export default function Services() {
                   </div>
                   {s.description && <div className="text-xs text-panel-muted mt-0.5 truncate">{s.description}</div>}
                 </div>
-                <div className="flex items-center gap-1">
-                  {s.active !== 'active'
-                    ? <Button size="sm" variant="success" onClick={() => act(s.name, 'start')}><Play size={11} /></Button>
-                    : <Button size="sm" variant="danger" onClick={() => act(s.name, 'stop')}><Square size={11} /></Button>
-                  }
-                  <Button size="sm" variant="ghost" onClick={() => act(s.name, 'restart')}><RotateCcw size={11} /></Button>
-                </div>
+                {canWrite && (
+                  <div className="flex items-center gap-1">
+                    {s.active !== 'active'
+                      ? <Button size="sm" variant="success" onClick={() => act(s.name, 'start')}><Play size={11} /></Button>
+                      : <Button size="sm" variant="danger" onClick={() => act(s.name, 'stop')}><Square size={11} /></Button>
+                    }
+                    <Button size="sm" variant="ghost" onClick={() => act(s.name, 'restart')}><RotateCcw size={11} /></Button>
+                  </div>
+                )}
               </div>
             ))}
           </div>

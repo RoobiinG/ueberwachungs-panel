@@ -1,8 +1,8 @@
 const router = require('express').Router();
-const axios = require('axios');
 const db = require('../db');
 const requireRole = require('../middleware/roles');
 const { validatePublicUrl } = require('../utils/validateUrl');
+const { sendWebhook } = require('../utils/sendWebhook');
 
 router.get('/', requireRole('admin'), (req, res) => {
   const rows = db.prepare('SELECT * FROM webhooks').all();
@@ -28,24 +28,17 @@ router.put('/:id', requireRole('admin'), (req, res) => {
 });
 
 router.delete('/:id', requireRole('admin'), (req, res) => {
+  // Warnen wenn Alert-Regeln diesen Webhook referenzieren (werden durch CASCADE gelöscht)
+  const count = db.prepare('SELECT COUNT(*) AS n FROM alert_rules WHERE webhook_id = ?').get(req.params.id)?.n ?? 0;
   db.prepare('DELETE FROM webhooks WHERE id = ?').run(req.params.id);
-  res.json({ success: true });
+  res.json({ success: true, alertRulesDeleted: count });
 });
 
 router.post('/:id/test', requireRole('admin'), async (req, res) => {
   const webhook = db.prepare('SELECT * FROM webhooks WHERE id = ?').get(req.params.id);
   if (!webhook) return res.status(404).json({ error: 'Webhook not found' });
   try {
-    if (webhook.type === 'discord') {
-      await axios.post(webhook.url, { content: '🔔 Test-Benachrichtigung vom Überwachungs-Panel' });
-    } else if (webhook.type === 'telegram') {
-      const urlObj = new URL(webhook.url);
-      const token = urlObj.pathname.split('/')[2] || '';
-      const chatId = urlObj.searchParams.get('chat_id') || '';
-      await axios.post(`https://api.telegram.org/bot${token}/sendMessage`, {
-        chat_id: chatId, text: '🔔 Test-Benachrichtigung vom Überwachungs-Panel',
-      });
-    }
+    await sendWebhook(webhook, '🔔 Test-Benachrichtigung vom Überwachungs-Panel');
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
