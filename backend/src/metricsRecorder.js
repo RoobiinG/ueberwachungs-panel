@@ -34,8 +34,8 @@ async function record() {
 
 function start() {
   record();                                    // sofort beim Start einmal aufzeichnen
-  setInterval(record, 5 * 60 * 1000);         // dann alle 5 Minuten
-  console.log('Metrics-Recorder gestartet (alle 5 min, 30 Tage Aufbewahrung)');
+  setInterval(record, 10_000);                // dann alle 10 Sekunden
+  console.log('Metrics-Recorder gestartet (alle 10 Sek, 30 Tage Aufbewahrung)');
 }
 
 module.exports = { start };
