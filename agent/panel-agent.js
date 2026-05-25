@@ -3,15 +3,18 @@
  * Überwachungs-Panel Agent
  * Installieren: curl -sL https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master/agent/install.sh | bash
  */
-const http = require('http');
-const os = require('os');
+const http  = require('http');
+const https = require('https');
+const os    = require('os');
+const path  = require('path');
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const fs = require('fs');
 
 const execAsync = promisify(exec);
-const PORT = parseInt(process.env.PANEL_AGENT_PORT || '7331');
+const PORT  = parseInt(process.env.PANEL_AGENT_PORT || '7331');
 const TOKEN = process.env.PANEL_AGENT_TOKEN || '';
+const DIR   = __dirname;
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -76,8 +79,8 @@ async function getServices() {
 }
 
 async function serviceAction(name, action) {
-  const validActions = ['start', 'stop', 'restart', 'reload', 'enable', 'disable'];
-  if (!validActions.includes(action)) throw new Error('Ungültige Aktion');
+  const valid = ['start', 'stop', 'restart', 'reload', 'enable', 'disable'];
+  if (!valid.includes(action)) throw new Error('Ungültige Aktion');
   if (!/^[a-zA-Z0-9@._:-]+$/.test(name)) throw new Error('Ungültiger Service-Name');
   const { stdout } = await execAsync(`systemctl ${action} ${name}`, { timeout: 10000 });
   return stdout;
@@ -88,7 +91,7 @@ function respond(res, status, data) {
   res.end(JSON.stringify(data));
 }
 
-const server = http.createServer(async (req, res) => {
+async function handler(req, res) {
   if (TOKEN && req.headers['x-agent-token'] !== TOKEN) {
     return respond(res, 401, { error: 'Unauthorized' });
   }
@@ -97,7 +100,7 @@ const server = http.createServer(async (req, res) => {
 
   try {
     if (url === '/ping' && req.method === 'GET') {
-      respond(res, 200, { ok: true, hostname: os.hostname() });
+      respond(res, 200, { ok: true, hostname: os.hostname(), tls: req.socket.encrypted || false });
 
     } else if (url === '/stats' && req.method === 'GET') {
       respond(res, 200, await getStats());
@@ -116,9 +119,19 @@ const server = http.createServer(async (req, res) => {
   } catch (err) {
     respond(res, 500, { error: err.message });
   }
-});
+}
+
+// HTTPS wenn Zertifikat vorhanden, sonst HTTP (Fallback)
+const certPath = path.join(DIR, 'cert.pem');
+const keyPath  = path.join(DIR, 'key.pem');
+const useTLS   = fs.existsSync(certPath) && fs.existsSync(keyPath);
+
+const server = useTLS
+  ? https.createServer({ cert: fs.readFileSync(certPath), key: fs.readFileSync(keyPath) }, handler)
+  : http.createServer(handler);
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Panel Agent läuft auf Port ${PORT}`);
-  if (!TOKEN) console.warn('WARNUNG: Kein PANEL_AGENT_TOKEN gesetzt — Agent ist ungeschützt!');
+  const proto = useTLS ? 'HTTPS' : 'HTTP (kein Zertifikat gefunden — unsicher!)';
+  console.log(`Panel Agent [${proto}] läuft auf Port ${PORT}`);
+  if (!TOKEN) console.warn('WARNUNG: Kein PANEL_AGENT_TOKEN gesetzt!');
 });

@@ -9,10 +9,8 @@ SERVICE_FILE="/etc/systemd/system/panel-agent.service"
 
 echo "=== Überwachungs-Panel Agent ==="
 
-# Root-Check
 if [ "$(id -u)" -ne 0 ]; then
-  echo "FEHLER: Bitte als root ausführen (sudo bash)" >&2
-  exit 1
+  echo "FEHLER: Bitte als root ausführen (sudo bash)" >&2; exit 1
 fi
 
 # Node.js prüfen / installieren
@@ -27,17 +25,31 @@ if ! command -v node &>/dev/null; then
     curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
     yum install -y nodejs
   else
-    echo "FEHLER: Node.js manuell installieren: https://nodejs.org" >&2
-    exit 1
+    echo "FEHLER: Node.js manuell installieren: https://nodejs.org" >&2; exit 1
   fi
 fi
-
 echo "Node.js $(node -v) gefunden"
 
-# Agent herunterladen
 mkdir -p "$INSTALL_DIR"
 curl -sL "$REPO/agent/panel-agent.js" -o "$INSTALL_DIR/panel-agent.js"
 chmod 755 "$INSTALL_DIR/panel-agent.js"
+
+# TLS-Zertifikat erzeugen (falls noch keines vorhanden)
+if [ ! -f "$INSTALL_DIR/cert.pem" ]; then
+  echo "Erzeuge selbstsigniertes TLS-Zertifikat..."
+  SERVER_IP=$(hostname -I | awk '{print $1}')
+  openssl req -x509 -newkey rsa:4096 \
+    -keyout "$INSTALL_DIR/key.pem" \
+    -out    "$INSTALL_DIR/cert.pem" \
+    -days 3650 -nodes \
+    -subj "/CN=panel-agent" \
+    -addext "subjectAltName=IP:${SERVER_IP},IP:127.0.0.1" \
+    2>/dev/null
+  chmod 600 "$INSTALL_DIR/key.pem"
+  echo "TLS-Zertifikat erstellt (gültig 10 Jahre)"
+fi
+
+FINGERPRINT=$(openssl x509 -in "$INSTALL_DIR/cert.pem" -noout -fingerprint -sha256 2>/dev/null | cut -d= -f2)
 
 # Env-Datei — bestehenden Token nicht überschreiben
 if [ ! -f "$INSTALL_DIR/.env" ]; then
@@ -47,12 +59,11 @@ PANEL_AGENT_TOKEN=$AGENT_TOKEN
 EOF
   chmod 600 "$INSTALL_DIR/.env"
 else
-  echo "Bestehende .env beibehalten (Token unverändert)"
-  AGENT_TOKEN=$(grep PANEL_AGENT_TOKEN "$INSTALL_DIR/.env" | cut -d= -f2)
-  AGENT_PORT=$(grep PANEL_AGENT_PORT "$INSTALL_DIR/.env" | cut -d= -f2)
+  echo "Bestehende .env beibehalten"
+  AGENT_TOKEN=$(grep PANEL_AGENT_TOKEN "$INSTALL_DIR/.env" | cut -d= -f2-)
+  AGENT_PORT=$(grep PANEL_AGENT_PORT  "$INSTALL_DIR/.env" | cut -d= -f2-)
 fi
 
-# Systemd-Service
 cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=Überwachungs-Panel Agent
@@ -76,13 +87,18 @@ EOF
 systemctl daemon-reload
 systemctl enable --now panel-agent
 
+SERVER_IP=$(hostname -I | awk '{print $1}')
+
 echo ""
-echo "✓ Agent erfolgreich installiert!"
+echo "╔══════════════════════════════════════════════════════════╗"
+echo "║         Agent erfolgreich installiert! (HTTPS)           ║"
+echo "╠══════════════════════════════════════════════════════════╣"
+echo "║  Im Panel unter 'Server' hinzufügen:                     ║"
+echo "║                                                          ║"
+echo "║  URL:         https://${SERVER_IP}:${AGENT_PORT}"
+echo "║  Token:       ${AGENT_TOKEN:0:48}"
+echo "║  Fingerprint: ${FINGERPRINT}"
+echo "╚══════════════════════════════════════════════════════════╝"
 echo ""
-echo "Im Panel unter 'Server' hinzufügen:"
-echo "  Name:  $(hostname)"
-echo "  URL:   http://$(hostname -I | awk '{print $1}'):$AGENT_PORT"
-echo "  Token: $AGENT_TOKEN"
-echo ""
-echo "Status prüfen: systemctl status panel-agent"
-echo "Logs anzeigen: journalctl -u panel-agent -f"
+echo "Status:  systemctl status panel-agent"
+echo "Logs:    journalctl -u panel-agent -f"
