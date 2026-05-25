@@ -13,6 +13,7 @@ import Webhooks from './pages/Webhooks';
 import Users from './pages/Users';
 import Hetzner from './pages/Hetzner';
 import MCHost from './pages/MCHost';
+import Settings from './pages/Settings';
 
 const ProtectedRoute = ({ children, adminOnly }) => {
   const { user } = useAuth();
@@ -47,6 +48,7 @@ const AppRoutes = () => {
         <Route path="/hetzner" element={<Hetzner />} />
         <Route path="/mchost" element={<MCHost />} />
         <Route path="/users" element={<ProtectedRoute adminOnly><Users /></ProtectedRoute>} />
+        <Route path="/settings" element={<ProtectedRoute adminOnly><Settings /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>

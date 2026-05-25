@@ -22,6 +22,7 @@ app.use('/api/users', auth, require('./routes/users'));
 app.use('/api/webhooks', auth, require('./routes/webhooks'));
 app.use('/api/hetzner', auth, require('./routes/hetzner'));
 app.use('/api/mchost', auth, require('./routes/mchost'));
+app.use('/api/settings', auth, require('./routes/settings'));
 
 // Serve React frontend in production
 const frontendDist = path.join(__dirname, '../../frontend/dist');

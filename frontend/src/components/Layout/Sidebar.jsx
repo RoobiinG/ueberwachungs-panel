@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Container, Wrench, Shield, Activity,
-  Terminal, Webhook, Users, Cloud, Gamepad2, ChevronLeft, ChevronRight, Server
+  Terminal, Webhook, Users, Cloud, Gamepad2, ChevronLeft, ChevronRight, Server, Settings
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
@@ -19,6 +19,7 @@ const navItems = [
   { to: '/mchost', icon: Gamepad2, label: 'MC-Host24' },
   { divider: true },
   { to: '/users', icon: Users, label: 'Benutzer', adminOnly: true },
+  { to: '/settings', icon: Settings, label: 'Einstellungen', adminOnly: true },
 ];
 
 export const Sidebar = () => {
