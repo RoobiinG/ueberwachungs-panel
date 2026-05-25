@@ -30,6 +30,10 @@ router.post('/', requireRole('admin'), (req, res) => {
 router.put('/:id', requireRole('admin'), (req, res) => {
   const { role, password } = req.body;
   const userId = parseInt(req.params.id);
+
+  const target = db.prepare('SELECT id, role FROM users WHERE id = ?').get(userId);
+  if (!target) return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+
   if (role) {
     if (role === 'admin') return res.status(403).json({ error: 'Admin-Rolle kann nicht vergeben werden' });
     const validRole = db.prepare('SELECT name FROM roles WHERE name = ?').get(role);
@@ -40,7 +44,10 @@ router.put('/:id', requireRole('admin'), (req, res) => {
     }
     db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, userId);
   }
-  if (password) db.prepare('UPDATE users SET password = ? WHERE id = ?').run(bcrypt.hashSync(password, 10), userId);
+  if (password) {
+    if (!password.trim()) return res.status(400).json({ error: 'Passwort darf nicht leer sein' });
+    db.prepare('UPDATE users SET password = ? WHERE id = ?').run(bcrypt.hashSync(password, 10), userId);
+  }
   res.json({ success: true });
 });
 
