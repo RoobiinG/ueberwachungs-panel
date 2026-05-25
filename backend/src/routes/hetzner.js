@@ -6,26 +6,31 @@ const api = () => axios.create({
   headers: { Authorization: `Bearer ${process.env.HETZNER_API_TOKEN}` },
 });
 
-router.get('/servers', async (req, res) => {
-  try { res.json((await api().get('/servers')).data); }
-  catch (err) { res.status(500).json({ error: err.response?.data?.error?.message || err.message }); }
-});
+const handle = async (res, fn) => {
+  try { res.json((await fn()).data); }
+  catch (err) { res.status(err.response?.status || 500).json({ error: err.response?.data?.error?.message || err.message }); }
+};
 
+// Server auflisten
+router.get('/servers', (req, res) => handle(res, () => api().get('/servers')));
+
+// Power-Aktionen
 router.post('/servers/:id/:action', async (req, res) => {
-  const valid = ['poweron', 'poweroff', 'reboot', 'reset'];
+  const valid = ['poweron', 'poweroff', 'reboot', 'reset', 'shutdown'];
   if (!valid.includes(req.params.action)) return res.status(400).json({ error: 'Invalid action' });
-  try { res.json((await api().post(`/servers/${req.params.id}/actions/${req.params.action}`)).data); }
-  catch (err) { res.status(500).json({ error: err.response?.data?.error?.message || err.message }); }
+  handle(res, () => api().post(`/servers/${req.params.id}/actions/${req.params.action}`));
 });
 
-router.get('/volumes', async (req, res) => {
-  try { res.json((await api().get('/volumes')).data); }
-  catch (err) { res.status(500).json({ error: err.response?.data?.error?.message || err.message }); }
+// Backups aktivieren / deaktivieren
+router.post('/servers/:id/backup/:toggle', async (req, res) => {
+  const { toggle } = req.params;
+  if (!['enable', 'disable'].includes(toggle)) return res.status(400).json({ error: 'Invalid toggle' });
+  handle(res, () => api().post(`/servers/${req.params.id}/actions/${toggle}_backup`));
 });
 
-router.get('/networks', async (req, res) => {
-  try { res.json((await api().get('/networks')).data); }
-  catch (err) { res.status(500).json({ error: err.response?.data?.error?.message || err.message }); }
-});
+// Backup-Images eines Servers auflisten
+router.get('/servers/:id/backups', (req, res) =>
+  handle(res, () => api().get(`/images?type=backup&bound_to=${req.params.id}`))
+);
 
 module.exports = router;
