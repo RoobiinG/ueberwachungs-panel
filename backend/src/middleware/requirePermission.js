@@ -6,11 +6,15 @@ const { ALL_KEYS } = require('../permissions');
  * Admin-Rollen bekommen ALL_KEYS.
  */
 function getPermissions(roleName) {
-  const role = db.prepare('SELECT id, is_admin FROM roles WHERE name = ?').get(roleName);
-  if (!role) return [];
-  if (role.is_admin) return ALL_KEYS;
-  return db.prepare('SELECT permission_key FROM role_permissions WHERE role_id = ?')
-    .all(role.id).map(r => r.permission_key);
+  try {
+    const role = db.prepare('SELECT id, is_admin FROM roles WHERE name = ?').get(roleName);
+    if (!role) return [];
+    if (role.is_admin) return ALL_KEYS;
+    return db.prepare('SELECT permission_key FROM role_permissions WHERE role_id = ?')
+      .all(role.id).map(r => r.permission_key);
+  } catch {
+    return [];
+  }
 }
 
 /**

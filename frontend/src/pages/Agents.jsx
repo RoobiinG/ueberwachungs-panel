@@ -346,7 +346,6 @@ export default function Agents() {
           );
         })}
       </div>
-    </div>
 
       {/* ── Edit-Modal ── */}
       {editAgent && (
@@ -395,6 +394,6 @@ export default function Agents() {
           </div>
         </Modal>
       )}
-  </div>
+    </div>
   );
 }
