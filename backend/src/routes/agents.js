@@ -173,4 +173,45 @@ router.post('/:id/services/:name/:action', requireRole('admin', 'operator'), asy
   }
 });
 
+// ── Docker Proxy ────────────────────────────────────────────────────────────
+
+router.get('/:id/docker', async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  try {
+    const { data } = await agentApi(agent).get('/docker');
+    res.json(data);
+  } catch (err) {
+    const status = err.response?.status || 502;
+    res.status(status).json({ error: err.response?.data?.error || err.message });
+  }
+});
+
+router.get('/:id/docker/containers', async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  try {
+    const { data } = await agentApi(agent).get('/docker/containers');
+    res.json(data);
+  } catch (err) {
+    const status = err.response?.status || 502;
+    res.status(status).json({ error: err.response?.data?.error || err.message });
+  }
+});
+
+router.post('/:id/docker/containers/:containerId/:action', requireRole('admin', 'operator'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  const { containerId, action } = req.params;
+  const valid = ['start', 'stop', 'restart', 'pause', 'unpause', 'kill'];
+  if (!valid.includes(action)) return res.status(400).json({ error: 'Ungültige Aktion' });
+  if (!/^[a-fA-F0-9]{12,64}$/.test(containerId)) return res.status(400).json({ error: 'Ungültige Container-ID' });
+  try {
+    const { data } = await agentApi(agent).post(`/docker/containers/${containerId}/${action}`);
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.response?.data?.error || err.message });
+  }
+});
+
 module.exports = router;
