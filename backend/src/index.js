@@ -24,7 +24,8 @@ app.use('/api/hetzner', auth, require('./routes/hetzner'));
 app.use('/api/mchost', auth, require('./routes/mchost'));
 app.use('/api/settings', auth, require('./routes/settings'));
 app.use('/api/agents',  auth, require('./routes/agents'));
-app.use('/api/metrics', auth, require('./routes/metrics'));
+app.use('/api/metrics',      auth, require('./routes/metrics'));
+app.use('/api/uptime-kuma', auth, require('./routes/uptimeKuma'));
 
 // Serve React frontend in production
 const frontendDist = path.join(__dirname, '../../frontend/dist');
