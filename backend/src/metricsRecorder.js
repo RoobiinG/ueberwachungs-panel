@@ -21,7 +21,7 @@ async function record() {
     insert.run(
       ts,
       Math.round(cpu.currentLoad * 10) / 10,
-      mem.used,
+      mem.total - mem.available,   // MemAvailable-basiert = entspricht htop/free -h
       mem.total,
       root?.used  ?? 0,
       root?.size  ?? 0,
