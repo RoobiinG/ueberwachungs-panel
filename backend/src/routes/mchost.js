@@ -1,6 +1,7 @@
-const router = require('express').Router();
-const axios  = require('axios');
-const db     = require('../db');
+const router      = require('express').Router();
+const axios       = require('axios');
+const db          = require('../db');
+const requireRole = require('../middleware/roles');
 
 const getSetting = (key) =>
   db.prepare('SELECT value FROM settings WHERE key = ?').get(key)?.value || '';
@@ -85,7 +86,7 @@ router.get('/vserver/:id/status', async (req, res) =>
   handle(res, async () => (await api()).get(`/vserver/${req.params.id}/status`))
 );
 
-router.post('/vserver/:id/:action', async (req, res) => {
+router.post('/vserver/:id/:action', requireRole('admin'), async (req, res) => {
   const valid = ['start', 'stop', 'shutdown', 'restart'];
   if (!valid.includes(req.params.action)) return res.status(400).json({ error: 'Ungültige Aktion' });
   handle(res, async () => (await api()).post(`/vserver/${req.params.id}/${req.params.action}`));

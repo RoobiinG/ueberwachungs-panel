@@ -1,6 +1,7 @@
-const router = require('express').Router();
-const axios = require('axios');
-const db = require('../db');
+const router      = require('express').Router();
+const axios       = require('axios');
+const db          = require('../db');
+const requireRole = require('../middleware/roles');
 
 const getToken = () =>
   db.prepare("SELECT value FROM settings WHERE key = 'hetzner_api_token'").get()?.value ||
@@ -25,13 +26,13 @@ const handle = async (res, fn) => {
 
 router.get('/servers', (req, res) => handle(res, () => api().get('/servers')));
 
-router.post('/servers/:id/:action', (req, res) => {
+router.post('/servers/:id/:action', requireRole('admin'), (req, res) => {
   const valid = ['poweron', 'poweroff', 'reboot', 'reset', 'shutdown'];
   if (!valid.includes(req.params.action)) return res.status(400).json({ error: 'Invalid action' });
   handle(res, () => api().post(`/servers/${req.params.id}/actions/${req.params.action}`));
 });
 
-router.post('/servers/:id/backup/:toggle', (req, res) => {
+router.post('/servers/:id/backup/:toggle', requireRole('admin'), (req, res) => {
   if (!['enable', 'disable'].includes(req.params.toggle)) return res.status(400).json({ error: 'Invalid toggle' });
   handle(res, () => api().post(`/servers/${req.params.id}/actions/${req.params.toggle}_backup`));
 });

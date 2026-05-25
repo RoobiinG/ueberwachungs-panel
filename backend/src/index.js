@@ -1,15 +1,30 @@
 require('dotenv').config();
 const express = require('express');
-const cors = require('cors');
-const http = require('http');
-const path = require('path');
-const auth = require('./middleware/auth');
+const cors    = require('cors');
+const http    = require('http');
+const path    = require('path');
+const auth    = require('./middleware/auth');
 const { setup: setupWS } = require('./websocket');
 
-const app = express();
+// ─── Startup-Sicherheitscheck ────────────────────────────────────────────────
+const JWT_PLACEHOLDER = 'HIER_SICHEREN_KEY_EINTRAGEN_MINDESTENS_32_ZEICHEN';
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET === JWT_PLACEHOLDER || process.env.JWT_SECRET.length < 32) {
+  console.error('❌ FATAL: JWT_SECRET ist nicht gesetzt oder zu unsicher!');
+  console.error('   Setze JWT_SECRET in docker-compose.prod.yml auf einen zufälligen 32+-Zeichen-String.');
+  console.error('   Generieren mit: openssl rand -hex 32');
+  process.exit(1);
+}
+
+const app    = express();
 const server = http.createServer(app);
 
-app.use(cors());
+// CORS: In Produktion nur erlaubte Origin; Standard = kein Cross-Origin
+const allowedOrigin = process.env.ALLOWED_ORIGIN;
+app.use(cors(
+  allowedOrigin
+    ? { origin: allowedOrigin, credentials: false }
+    : { origin: false }
+));
 app.use(express.json());
 
 app.use('/api/auth', require('./routes/auth'));

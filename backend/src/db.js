@@ -1,6 +1,7 @@
 const Database = require('better-sqlite3');
-const bcrypt = require('bcryptjs');
-const path = require('path');
+const bcrypt   = require('bcryptjs');
+const crypto   = require('crypto');
+const path     = require('path');
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, '../../data.db');
 const db = new Database(DB_PATH);
@@ -55,9 +56,19 @@ try { db.exec('ALTER TABLE remote_agents ADD COLUMN fingerprint TEXT NOT NULL DE
 
 const adminExists = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
 if (!adminExists) {
-  const hash = bcrypt.hashSync('admin', 10);
+  // Kein bekanntes Default-Passwort: ADMIN_PASSWORD-Env nutzen oder einmalig
+  // ein zufälliges generieren und in den Logs ausgeben.
+  const adminPass = process.env.ADMIN_PASSWORD || crypto.randomBytes(16).toString('hex');
+  const hash = bcrypt.hashSync(adminPass, 10);
   db.prepare('INSERT INTO users (username, password, role) VALUES (?, ?, ?)').run('admin', hash, 'admin');
-  console.log('Default admin user created: admin / admin — please change the password!');
+  if (!process.env.ADMIN_PASSWORD) {
+    console.warn('╔══════════════════════════════════════════════════════════╗');
+    console.warn('║  ADMIN-PASSWORT (einmalig – sofort notieren!)            ║');
+    console.warn(`║  Benutzer:  admin                                        ║`);
+    console.warn(`║  Passwort:  ${adminPass}  ║`);
+    console.warn('║  Passwort in den Einstellungen ändern!                   ║');
+    console.warn('╚══════════════════════════════════════════════════════════╝');
+  }
 }
 
 module.exports = db;
