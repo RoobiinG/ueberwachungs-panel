@@ -144,6 +144,8 @@ try { db.exec('ALTER TABLE users ADD COLUMN reset_token TEXT'); } catch {}
 try { db.exec('ALTER TABLE users ADD COLUMN reset_expires INTEGER'); } catch {}
 // Alte 'viewer'-Rolle auf 'guest' migrieren
 try { db.exec("UPDATE users SET role = 'guest' WHERE role = 'viewer'"); } catch {}
+// Username 'admin' → 'Admin' (Großschreibung)
+try { db.exec("UPDATE users SET username = 'Admin' WHERE username = 'admin' AND role = 'admin'"); } catch {}
 
 // ─── Standard-Rollen seeden ───────────────────────────────────────────────────
 const seedRole = db.transaction((name, label, isSystem, isAdmin, permissions) => {
@@ -162,17 +164,16 @@ seedRole('admin',    'Admin',        true,  true,  ALL_KEYS);
 seedRole('operator', 'App-Betrieb',  true,  false, OPERATOR_PERMISSIONS);
 seedRole('guest',    'Gast',         true,  false, GUEST_PERMISSIONS);
 
-const adminExists = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
+// Frisch-Installation: Admin-Benutzer anlegen (Suche case-insensitiv)
+const adminExists = db.prepare("SELECT id FROM users WHERE LOWER(username) = 'admin'").get();
 if (!adminExists) {
-  // Kein bekanntes Default-Passwort: ADMIN_PASSWORD-Env nutzen oder einmalig
-  // ein zufälliges generieren und in den Logs ausgeben.
   const adminPass = process.env.ADMIN_PASSWORD || crypto.randomBytes(16).toString('hex');
   const hash = bcrypt.hashSync(adminPass, 10);
-  db.prepare('INSERT INTO users (username, password, role) VALUES (?, ?, ?)').run('admin', hash, 'admin');
+  db.prepare('INSERT INTO users (username, password, role) VALUES (?, ?, ?)').run('Admin', hash, 'admin');
   if (!process.env.ADMIN_PASSWORD) {
     console.warn('╔══════════════════════════════════════════════════════════╗');
     console.warn('║  ADMIN-PASSWORT (einmalig – sofort notieren!)            ║');
-    console.warn(`║  Benutzer:  admin                                        ║`);
+    console.warn(`║  Benutzer:  Admin                                        ║`);
     console.warn(`║  Passwort:  ${adminPass}  ║`);
     console.warn('║  Passwort in den Einstellungen ändern!                   ║');
     console.warn('╚══════════════════════════════════════════════════════════╝');
