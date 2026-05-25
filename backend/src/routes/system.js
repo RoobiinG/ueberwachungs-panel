@@ -23,9 +23,11 @@ router.get('/stats', async (req, res) => {
       cpu: { usage: Math.round(cpu.currentLoad), cores: cpu.cpus?.length || 0 },
       memory: {
         total: mem.total,
-        used: mem.used,
+        // mem.available = MemAvailable (Linux), entspricht dem was htop/free -h zeigen.
+        // mem.used wäre nur MemTotal - MemFree (ohne Cache-Abzug) → viel zu hoch.
+        used: mem.total - mem.available,
         free: mem.free,
-        usedPercent: Math.round((mem.used / mem.total) * 100),
+        usedPercent: Math.round(((mem.total - mem.available) / mem.total) * 100),
       },
       disk,
       network: network.map(n => ({ iface: n.iface, rxBytes: n.rx_bytes, txBytes: n.tx_bytes, rxSec: n.rx_sec, txSec: n.tx_sec })),

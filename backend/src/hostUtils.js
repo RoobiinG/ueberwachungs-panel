@@ -28,7 +28,20 @@ async function getHostDisks() {
         };
       })
       .filter(d => d.size > 0);
-    return disks.length > 0 ? disks : null;
+
+    // Pro Gerät nur den "Haupt-Mountpoint" behalten:
+    // Bei Docker-Bind-Mounts zeigt dasselbe Gerät für /etc/hostname, /app/data, /
+    // gleichzeitig auf — wir wollen nur den kürzesten (= root-nächsten) Pfad.
+    const deduped = new Map();
+    for (const d of disks) {
+      const cur = deduped.get(d.fs);
+      if (!cur || d.mount.length < cur.mount.length) {
+        deduped.set(d.fs, d);
+      }
+    }
+
+    const result = [...deduped.values()];
+    return result.length > 0 ? result : null;
   } catch {
     return null;
   }
