@@ -20,7 +20,7 @@ const startMonitoring = () => {
         type: 'stats',
         payload: {
           cpu: Math.round(cpu.currentLoad),
-          memory: { total: mem.total, used: mem.used, usedPercent: Math.round((mem.used / mem.total) * 100) },
+          memory: { total: mem.total, used: mem.total - mem.available, usedPercent: Math.round(((mem.total - mem.available) / mem.total) * 100) },
           network: network.map(n => ({ iface: n.iface, rxSec: n.rx_sec, txSec: n.tx_sec })),
           timestamp: Date.now(),
         },
