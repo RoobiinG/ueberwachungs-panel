@@ -76,6 +76,35 @@ router.post('/', requireRole('admin'), async (req, res) => {
   res.status(201).json({ id: result.lastInsertRowid, name: name.trim(), url: cleanUrl, fingerprint });
 });
 
+router.put('/:id', requireRole('admin'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+
+  const { name, url, token } = req.body;
+  const newUrl = (url ?? agent.url).trim().replace(/\/$/, '');
+
+  if (url && url !== agent.url) {
+    try { validatePublicUrl(newUrl); } catch (e) { return res.status(400).json({ error: e.message }); }
+  }
+
+  // Neuen Fingerprint holen wenn URL geändert wurde
+  let fingerprint = agent.fingerprint;
+  if (url && url !== agent.url && newUrl.startsWith('https://')) {
+    try { fingerprint = (await fetchFingerprint(newUrl)) || ''; } catch { fingerprint = ''; }
+  }
+
+  db.prepare(`
+    UPDATE remote_agents SET
+      name        = COALESCE(?, name),
+      url         = ?,
+      token       = COALESCE(?, token),
+      fingerprint = ?
+    WHERE id = ?
+  `).run(name?.trim() ?? null, newUrl, token !== undefined ? token.trim() : null, fingerprint, agent.id);
+
+  res.json({ success: true });
+});
+
 router.delete('/:id', requireRole('admin'), (req, res) => {
   db.prepare('DELETE FROM remote_agents WHERE id = ?').run(req.params.id);
   res.json({ success: true });
