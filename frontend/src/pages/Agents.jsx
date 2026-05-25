@@ -6,7 +6,7 @@ import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import {
   ServerCog, Plus, Trash2, Wifi, WifiOff, Eye, EyeOff,
-  ChevronRight, Terminal, Lock, LockOpen, ShieldAlert, RefreshCw, Pencil
+  ChevronRight, Terminal, Lock, LockOpen, ShieldAlert, RefreshCw, Pencil, Container
 } from 'lucide-react';
 
 const inputCls = 'w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:border-panel-accent transition-colors';
@@ -23,7 +23,8 @@ export default function Agents() {
   const [showToken, setShowToken] = useState(false);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState('');
-  const [repinning, setRepinning] = useState({});
+  const [repinning, setRepinning]   = useState({});
+  const [dockerInfo, setDockerInfo] = useState({});
   const [editAgent,    setEditAgent]    = useState(null);
   const [editName,     setEditName]     = useState('');
   const [editUrl,      setEditUrl]      = useState('');
@@ -45,6 +46,12 @@ export default function Agents() {
     try {
       const { data } = await axios.get(`/api/agents/${id}/ping`);
       setStatus(s => ({ ...s, [id]: data }));
+      if (data.online) {
+        // Docker-Info im Hintergrund laden
+        axios.get(`/api/agents/${id}/docker`)
+          .then(r => setDockerInfo(d => ({ ...d, [id]: r.data })))
+          .catch(() => {});
+      }
     } catch {
       setStatus(s => ({ ...s, [id]: { online: false } }));
     }
@@ -185,10 +192,11 @@ export default function Agents() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
         {agents.map(agent => {
-          const s    = status[agent.id];
+          const s       = status[agent.id];
           const online  = s?.online;
           const secured = isHttps(agent.url) && !!agent.fingerprint;
           const mitm    = s?.mitm;
+          const dk      = dockerInfo[agent.id];
 
           return (
             <div key={agent.id}
@@ -208,6 +216,20 @@ export default function Agents() {
                   </div>
                   <p className="text-xs text-panel-muted mt-0.5 truncate">{agent.url}</p>
                   {s?.hostname && <p className="text-xs text-panel-muted">{s.hostname}</p>}
+
+                  {/* Docker-Info */}
+                  {dk && (
+                    <div className="mt-1 flex items-center gap-1 text-xs text-panel-muted">
+                      <Container size={11} className="text-panel-accent" />
+                      <span>
+                        <span className="text-panel-green">{dk.containers?.running ?? 0}</span> running
+                        {dk.containers?.stopped > 0 && (
+                          <span> · <span className="text-panel-red">{dk.containers.stopped}</span> stopped</span>
+                        )}
+                        <span className="ml-1 text-panel-muted/60">· {dk.images ?? 0} images</span>
+                      </span>
+                    </div>
+                  )}
 
                   {/* Security-Status */}
                   <div className="mt-1.5 flex items-center gap-1.5">
