@@ -19,8 +19,8 @@ COPY backend/ ./
 FROM node:20-alpine
 WORKDIR /app/backend
 
-# Laufzeit-Abhängigkeit für SQLite
-RUN apk add --no-cache sqlite-libs
+# sqlite-libs: SQLite runtime; util-linux: nsenter für Host-Namespace-Zugriff
+RUN apk add --no-cache sqlite-libs util-linux
 
 COPY --from=backend-builder /app/backend ./
 COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
