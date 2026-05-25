@@ -3,7 +3,21 @@
     "allow": [
       "Bash(gh repo *)",
       "WebFetch(domain:mc-host24.github.io)",
-      "WebFetch(domain:docs.hetzner.cloud)"
+      "WebFetch(domain:docs.hetzner.cloud)",
+      "Bash(git add *)",
+      "Bash(git commit -m 'fix: Fehlermeldungen korrigiert + öffentliche IP im Netzwerk *)",
+      "Bash(git push *)",
+      "Bash(git commit *)",
+      "Bash(cat backend/src/websocket.js)",
+      "Bash(cat backend/src/websocket/index.js)",
+      "WebFetch(domain:mc-host24.de)",
+      "WebFetch(domain:github.com)",
+      "Bash(gh pr *)",
+      "Bash(git branch *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\gRobi\\\\Nextcloud2\\\\Coding\\\\Überwachungs-Panel\\\\backend\\\\src\" -Recurse -File)",
+      "Bash(Select-Object FullName)",
+      "Bash(find \"C:\\\\\\\\Users\\\\\\\\gRobi\\\\\\\\Nextcloud2\\\\\\\\Coding\\\\\\\\Überwachungs-Panel\\\\\\\\backend\\\\\\\\src\" -type f -name \"*.js\")",
+      "Bash(npm list *)"
     ]
   }
 }

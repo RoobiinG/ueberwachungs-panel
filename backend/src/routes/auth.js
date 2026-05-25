@@ -5,6 +5,7 @@ const crypto    = require('crypto');
 const rateLimit = require('express-rate-limit');
 const db        = require('../db');
 const authMiddleware = require('../middleware/auth');
+const { getPermissions } = require('../middleware/requirePermission');
 
 // ─── Rate-Limiting ────────────────────────────────────────────────────────────
 
@@ -61,7 +62,8 @@ router.post('/login', loginLimiter, (req, res) => {
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
   );
-  res.json({ token, user: { id: user.id, username: user.username, role: user.role } });
+  const permissions = getPermissions(user.role);
+  res.json({ token, user: { id: user.id, username: user.username, role: user.role }, permissions });
 });
 
 // ─── Passkey-Login (öffentlich) ───────────────────────────────────────────────
@@ -120,7 +122,11 @@ router.post('/reset-password', async (req, res) => {
 
 router.get('/me', authMiddleware, (req, res) => {
   const user = db.prepare('SELECT id, username, role, email, created_at FROM users WHERE id = ?').get(req.user.id);
-  res.json(user);
+  if (!user) return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+  const permissions = getPermissions(user.role);
+  // Rollenbezeichnung aus der roles-Tabelle holen
+  const roleRow = db.prepare('SELECT label FROM roles WHERE name = ?').get(user.role);
+  res.json({ ...user, roleLabel: roleRow?.label || user.role, permissions });
 });
 
 router.put('/password', authMiddleware, (req, res) => {

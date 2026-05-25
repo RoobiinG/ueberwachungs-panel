@@ -38,6 +38,7 @@ app.use('/api/services', auth, require('./routes/services'));
 app.use('/api/firewall', auth, require('./routes/firewall'));
 app.use('/api/network', auth, require('./routes/network'));
 app.use('/api/users', auth, require('./routes/users'));
+app.use('/api/roles', auth, require('./routes/roles'));
 app.use('/api/webhooks', auth, require('./routes/webhooks'));
 app.use('/api/hetzner', auth, require('./routes/hetzner'));
 app.use('/api/mchost', auth, require('./routes/mchost'));
