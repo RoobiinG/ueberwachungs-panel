@@ -4,20 +4,25 @@ const db = require('../db');
 const requireRole = require('../middleware/roles');
 
 router.get('/', requireRole('admin'), (req, res) => {
-  res.json(db.prepare('SELECT id, username, role, created_at FROM users').all());
+  const users = db.prepare('SELECT id, username, role, created_at FROM users').all();
+  const roles = db.prepare('SELECT name, label FROM roles').all();
+  const roleMap = Object.fromEntries(roles.map(r => [r.name, r.label]));
+  res.json(users.map(u => ({ ...u, roleLabel: roleMap[u.role] || u.role })));
 });
 
 router.post('/', requireRole('admin'), (req, res) => {
-  const { username, password, role = 'viewer' } = req.body;
+  const { username, password, role = 'guest' } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
-  const validRoles = ['admin', 'operator', 'viewer'];
-  if (!validRoles.includes(role)) return res.status(400).json({ error: 'Invalid role' });
+  // Rolle muss in der roles-Tabelle existieren (außer admin — schreibgeschützt)
+  const validRole = db.prepare('SELECT name FROM roles WHERE name = ?').get(role);
+  if (!validRole) return res.status(400).json({ error: 'Ungültige Rolle' });
+  if (role === 'admin') return res.status(403).json({ error: 'Admin-Rolle kann nicht vergeben werden' });
   try {
     const hash = bcrypt.hashSync(password, 10);
     const result = db.prepare('INSERT INTO users (username, password, role) VALUES (?, ?, ?)').run(username, hash, role);
     res.status(201).json({ id: result.lastInsertRowid, username, role });
   } catch (err) {
-    if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Username already exists' });
+    if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Benutzername bereits vergeben' });
     res.status(500).json({ error: err.message });
   }
 });
@@ -25,7 +30,16 @@ router.post('/', requireRole('admin'), (req, res) => {
 router.put('/:id', requireRole('admin'), (req, res) => {
   const { role, password } = req.body;
   const userId = parseInt(req.params.id);
-  if (role) db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, userId);
+  if (role) {
+    if (role === 'admin') return res.status(403).json({ error: 'Admin-Rolle kann nicht vergeben werden' });
+    const validRole = db.prepare('SELECT name FROM roles WHERE name = ?').get(role);
+    if (!validRole) return res.status(400).json({ error: 'Ungültige Rolle' });
+    // Eigene Admin-Rolle nicht entziehen
+    if (userId === req.user.id && req.user.role === 'admin') {
+      return res.status(403).json({ error: 'Eigene Admin-Rolle kann nicht geändert werden' });
+    }
+    db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, userId);
+  }
   if (password) db.prepare('UPDATE users SET password = ? WHERE id = ?').run(bcrypt.hashSync(password, 10), userId);
   res.json({ success: true });
 });

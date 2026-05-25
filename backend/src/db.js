@@ -2,6 +2,7 @@ const Database = require('better-sqlite3');
 const bcrypt   = require('bcryptjs');
 const crypto   = require('crypto');
 const path     = require('path');
+const { ALL_KEYS, OPERATOR_PERMISSIONS, GUEST_PERMISSIONS } = require('./permissions');
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, '../../data.db');
 const db = new Database(DB_PATH);
@@ -119,13 +120,47 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE INDEX IF NOT EXISTS idx_ssh_hosts_user ON ssh_hosts(user_id);
+
+  CREATE TABLE IF NOT EXISTS roles (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL UNIQUE,
+    label      TEXT NOT NULL,
+    is_system  INTEGER NOT NULL DEFAULT 0,
+    is_admin   INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS role_permissions (
+    role_id        INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    permission_key TEXT NOT NULL,
+    PRIMARY KEY (role_id, permission_key)
+  );
 `);
 
-// Migrationen für bestehende Datenbanken
+// ─── Migrationen ─────────────────────────────────────────────────────────────
 try { db.exec('ALTER TABLE remote_agents ADD COLUMN fingerprint TEXT NOT NULL DEFAULT ""'); } catch {}
 try { db.exec('ALTER TABLE users ADD COLUMN email TEXT'); } catch {}
 try { db.exec('ALTER TABLE users ADD COLUMN reset_token TEXT'); } catch {}
 try { db.exec('ALTER TABLE users ADD COLUMN reset_expires INTEGER'); } catch {}
+// Alte 'viewer'-Rolle auf 'guest' migrieren
+try { db.exec("UPDATE users SET role = 'guest' WHERE role = 'viewer'"); } catch {}
+
+// ─── Standard-Rollen seeden ───────────────────────────────────────────────────
+const seedRole = db.transaction((name, label, isSystem, isAdmin, permissions) => {
+  let role = db.prepare('SELECT id FROM roles WHERE name = ?').get(name);
+  if (!role) {
+    const res = db.prepare(
+      'INSERT INTO roles (name, label, is_system, is_admin) VALUES (?, ?, ?, ?)'
+    ).run(name, label, isSystem ? 1 : 0, isAdmin ? 1 : 0);
+    role = { id: res.lastInsertRowid };
+    const ins = db.prepare('INSERT OR IGNORE INTO role_permissions (role_id, permission_key) VALUES (?, ?)');
+    for (const key of permissions) ins.run(role.id, key);
+  }
+});
+
+seedRole('admin',    'Admin',        true,  true,  ALL_KEYS);
+seedRole('operator', 'App-Betrieb',  true,  false, OPERATOR_PERMISSIONS);
+seedRole('guest',    'Gast',         true,  false, GUEST_PERMISSIONS);
 
 const adminExists = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
 if (!adminExists) {

@@ -16,6 +16,7 @@ const pageTitles = {
   '/agents': 'Agenten',
   '/uptime-kuma': 'Uptime Kuma',
   '/users': 'Benutzerverwaltung',
+  '/roles': 'Rollen & Rechte',
   '/settings': 'Einstellungen',
 };
 
