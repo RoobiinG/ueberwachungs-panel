@@ -45,9 +45,16 @@ router.post('/mchost/login', requireRole('admin'), async (req, res) => {
   if (!username || !password) return res.status(400).json({ error: 'Username und Passwort erforderlich' });
 
   try {
-    const { data } = await axios.post('https://mc-host24.de/api/v1/token', { username, password });
-    const apiToken = data.api_token;
-    if (!apiToken) return res.status(401).json({ error: 'Login fehlgeschlagen — kein Token erhalten' });
+    const { data } = await axios.post(
+      'https://mc-host24.de/api/v1/token',
+      { username, password },
+      { headers: { 'Content-Type': 'application/json', Accept: 'application/json' } }
+    );
+    // API antwortet mit: { status: "SUCCESS", data: { api_token: "..." } }
+    const apiToken = data?.data?.api_token ?? data?.api_token;
+    if (!apiToken) {
+      return res.status(401).json({ error: `Kein Token in der API-Antwort: ${JSON.stringify(data)}` });
+    }
 
     set('mchost_username', username);
     set('mchost_password', password);
@@ -55,7 +62,10 @@ router.post('/mchost/login', requireRole('admin'), async (req, res) => {
 
     res.json({ success: true, message: 'Login erfolgreich, Token gespeichert' });
   } catch (err) {
-    res.status(401).json({ error: err.response?.data?.message || 'Login fehlgeschlagen' });
+    const msg = err.response?.data?.messages
+      ? Object.values(err.response.data.messages).flat().join(', ')
+      : err.response?.data?.message || err.message;
+    res.status(err.response?.status || 500).json({ error: msg });
   }
 });
 
@@ -74,11 +84,20 @@ router.post('/mchost/refresh', requireRole('admin'), async (req, res) => {
   if (!username || !password) return res.status(400).json({ error: 'Keine Zugangsdaten hinterlegt' });
 
   try {
-    const { data } = await axios.post('https://mc-host24.de/api/v1/token', { username, password });
-    set('mchost_api_token', data.api_token);
+    const { data } = await axios.post(
+      'https://mc-host24.de/api/v1/token',
+      { username, password },
+      { headers: { 'Content-Type': 'application/json', Accept: 'application/json' } }
+    );
+    const apiToken = data?.data?.api_token ?? data?.api_token;
+    if (!apiToken) return res.status(401).json({ error: `Kein Token erhalten: ${JSON.stringify(data)}` });
+    set('mchost_api_token', apiToken);
     res.json({ success: true, message: 'Token erneuert' });
   } catch (err) {
-    res.status(401).json({ error: err.response?.data?.message || 'Token-Erneuerung fehlgeschlagen' });
+    const msg = err.response?.data?.messages
+      ? Object.values(err.response.data.messages).flat().join(', ')
+      : err.response?.data?.message || err.message;
+    res.status(err.response?.status || 500).json({ error: msg });
   }
 });
 

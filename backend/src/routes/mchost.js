@@ -26,17 +26,16 @@ const getToken = async () => {
       { headers: { 'Content-Type': 'application/json', Accept: 'application/json' } }
     ));
   } catch (err) {
-    const msg = err.response?.data?.message
-      || Object.values(err.response?.data?.messages || {}).flat().join(', ')
-      || err.message;
+    const msg = err.response?.data?.messages
+      ? Object.values(err.response.data.messages).flat().join(', ')
+      : err.response?.data?.message || err.message;
     throw new Error(`Login fehlgeschlagen: ${msg}`);
   }
 
-  // MC-Host24 kann das Token unter verschiedenen Feldnamen zurückgeben
-  const token = data?.api_token ?? data?.token ?? data?.access_token ?? data?.data?.token;
+  // API antwortet mit: { status: "SUCCESS", data: { api_token: "..." } }
+  const token = data?.data?.api_token ?? data?.api_token ?? data?.token ?? data?.access_token;
 
   if (!token) {
-    // Zeige die vollständige API-Antwort im Fehler um das Feld zu finden
     throw new Error(`Kein Token in der API-Antwort gefunden. Response: ${JSON.stringify(data)}`);
   }
 
@@ -51,8 +50,8 @@ const api = async () => {
   return axios.create({
     baseURL: 'https://mc-host24.de/api/v1',
     headers: {
-      // MC-Host24 akzeptiert das Token als Bearer oder direkt — wir versuchen beide Varianten
-      'Authorization': `Bearer ${token}`,
+      // Laut offizieller Swagger-Doku: Authorization: {token} — KEIN "Bearer"!
+      'Authorization': token,
       'Content-Type':  'application/json',
       'Accept':        'application/json',
     },
@@ -65,13 +64,13 @@ const handle = async (res, fn) => {
   try {
     res.json((await fn()).data);
   } catch (err) {
-    // 401 → Token abgelaufen, beim nächsten Call neu holen
-    if (err.response?.status === 401) {
+    // 401/403 → Token abgelaufen, beim nächsten Call neu holen
+    if (err.response?.status === 401 || err.response?.status === 403) {
       db.prepare("DELETE FROM settings WHERE key = 'mchost_api_token'").run();
     }
-    const msg = err.response?.data?.message
-      || Object.values(err.response?.data?.messages || {}).flat().join(', ')
-      || err.message;
+    const msg = err.response?.data?.messages
+      ? Object.values(err.response.data.messages).flat().join(', ')
+      : err.response?.data?.message || err.message;
     res.status(err.response?.status || 500).json({ error: msg });
   }
 };
