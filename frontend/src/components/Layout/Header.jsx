@@ -13,6 +13,7 @@ const pageTitles = {
   '/hetzner': 'Hetzner Cloud',
   '/mchost': 'MC-Host24',
   '/users': 'Benutzerverwaltung',
+  '/settings': 'Einstellungen',
 };
 
 export const Header = ({ connected }) => {
