@@ -15,6 +15,7 @@ import Hetzner from './pages/Hetzner';
 import MCHost from './pages/MCHost';
 import Agents from './pages/Agents';
 import AgentDetail from './pages/AgentDetail';
+import UptimeKuma from './pages/UptimeKuma';
 import Settings from './pages/Settings';
 
 const ProtectedRoute = ({ children, adminOnly }) => {
@@ -48,6 +49,7 @@ const AppRoutes = () => {
         <Route path="/ssh" element={<SSH />} />
         <Route path="/agents" element={<Agents />} />
         <Route path="/agents/:id" element={<AgentDetail />} />
+        <Route path="/uptime-kuma" element={<UptimeKuma />} />
         <Route path="/webhooks" element={<Webhooks />} />
         <Route path="/hetzner" element={<Hetzner />} />
         <Route path="/mchost" element={<MCHost />} />
