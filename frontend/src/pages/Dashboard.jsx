@@ -14,7 +14,9 @@ const RANGES = [
 
 const fmtTs = (ts, range) => {
   const d = new Date(ts * 1000);
-  if (range === '1h' || range === '24h')
+  if (range === '1h')
+    return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  if (range === '24h')
     return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
   return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
 };
