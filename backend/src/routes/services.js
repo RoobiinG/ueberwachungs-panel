@@ -7,7 +7,11 @@ const requireRole = require('../middleware/roles');
 // Befehle im Host-Namespace ausführen (erfordert pid:host + privileged in docker-compose)
 const host = (cmd) => execAsync(`nsenter --target 1 --mount --uts --ipc --net --pid -- ${cmd}`);
 
+// Systemd Unit-Namen: Buchstaben, Ziffern, Bindestrich, Unterstrich, Punkt,
+// @ (Template-Instanzen wie getty@tty1.service) und : (Slice-Trenner).
+// Maximallänge 255 Zeichen (systemd-Limit). Kein Shell-Sonderzeichen erlaubt.
 const validName = (name) => {
+  if (typeof name !== 'string' || name.length > 255) throw new Error('Ungültiger Service-Name');
   if (!/^[a-zA-Z0-9@._:-]+$/.test(name)) throw new Error('Ungültiger Service-Name');
   return name;
 };

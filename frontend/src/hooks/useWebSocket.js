@@ -8,14 +8,19 @@ export const useWebSocket = (token) => {
   useEffect(() => {
     if (!token) return;
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${proto}//${window.location.host}/ws?token=${token}`);
+    // Token NICHT im URL-Parameter übergeben (wird in Server-Logs gespeichert)
+    // Stattdessen als erste Nachricht nach dem Verbindungsaufbau senden
+    const ws = new WebSocket(`${proto}//${window.location.host}/ws`);
     wsRef.current = ws;
-    ws.onopen = () => setConnected(true);
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: 'auth', token }));
+    };
     ws.onclose = () => setConnected(false);
     ws.onerror = () => setConnected(false);
     ws.onmessage = (e) => {
       try {
         const msg = JSON.parse(e.data);
+        if (msg.type === 'connected') setConnected(true);
         if (msg.type === 'stats') setData(msg.payload);
       } catch {}
     };

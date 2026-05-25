@@ -8,7 +8,8 @@ const broadcast = (data) => {
   if (!wss) return;
   const payload = JSON.stringify(data);
   wss.clients.forEach(client => {
-    if (client.readyState === WebSocket.OPEN) client.send(payload);
+    // Nur an authentifizierte Clients senden
+    if (client.readyState === WebSocket.OPEN && client.authenticated) client.send(payload);
   });
 };
 
@@ -31,16 +32,31 @@ const startMonitoring = () => {
 
 const setup = (server) => {
   wss = new WebSocket.Server({ server, path: '/ws' });
-  wss.on('connection', (ws, req) => {
-    const url = new URL(req.url, 'http://localhost');
-    const token = url.searchParams.get('token');
-    if (!token) return ws.close(1008, 'No token');
-    try {
-      jwt.verify(token, process.env.JWT_SECRET);
-      ws.send(JSON.stringify({ type: 'connected' }));
-    } catch {
-      ws.close(1008, 'Invalid token');
-    }
+  wss.on('connection', (ws) => {
+    ws.authenticated = false;
+
+    // Auth-Timeout: Wenn kein gültiges Token binnen 5 s → Verbindung trennen
+    const authTimeout = setTimeout(() => {
+      if (!ws.authenticated) ws.close(1008, 'Auth timeout');
+    }, 5000);
+
+    ws.on('message', (data) => {
+      if (ws.authenticated) return; // Nur einmalige Auth nötig
+      try {
+        const msg = JSON.parse(data);
+        if (msg?.type === 'auth' && msg?.token) {
+          jwt.verify(msg.token, process.env.JWT_SECRET);
+          ws.authenticated = true;
+          clearTimeout(authTimeout);
+          ws.send(JSON.stringify({ type: 'connected' }));
+        } else {
+          ws.close(1008, 'Invalid auth message');
+        }
+      } catch {
+        ws.close(1008, 'Invalid token');
+      }
+    });
+
     ws.on('error', console.error);
   });
   startMonitoring();
