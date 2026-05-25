@@ -6,8 +6,10 @@ import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import {
   ServerCog, Plus, Trash2, Wifi, WifiOff, Eye, EyeOff,
-  ChevronRight, Terminal, Lock, LockOpen, ShieldAlert, RefreshCw, Pencil, Container
+  ChevronRight, Terminal, Lock, LockOpen, ShieldAlert, RefreshCw, Pencil, Container,
+  ArrowUpCircle
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 const inputCls = 'w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:border-panel-accent transition-colors';
 
@@ -23,8 +25,12 @@ export default function Agents() {
   const [showToken, setShowToken] = useState(false);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState('');
-  const [repinning, setRepinning]   = useState({});
-  const [dockerInfo, setDockerInfo] = useState({});
+  const [repinning, setRepinning]       = useState({});
+  const [dockerInfo, setDockerInfo]     = useState({});
+  const [agentVersions, setAgentVersions] = useState({});
+  const [latestVersion, setLatestVersion] = useState(null);
+  const [updating, setUpdating]         = useState({});
+  const { isAdmin } = useAuth();
   const [editAgent,    setEditAgent]    = useState(null);
   const [editName,     setEditName]     = useState('');
   const [editUrl,      setEditUrl]      = useState('');
@@ -40,6 +46,13 @@ export default function Agents() {
     data.forEach(a => pingAgent(a.id));
   }, []);
 
+  // Neueste verfügbare Version einmalig laden
+  useEffect(() => {
+    axios.get('/api/agents/latest-version')
+      .then(r => setLatestVersion(r.data.version))
+      .catch(() => {});
+  }, []);
+
   useEffect(() => { load(); }, [load]);
 
   const pingAgent = async (id) => {
@@ -47,9 +60,12 @@ export default function Agents() {
       const { data } = await axios.get(`/api/agents/${id}/ping`);
       setStatus(s => ({ ...s, [id]: data }));
       if (data.online) {
-        // Docker-Info im Hintergrund laden
+        // Docker-Info + Version im Hintergrund laden
         axios.get(`/api/agents/${id}/docker`)
           .then(r => setDockerInfo(d => ({ ...d, [id]: r.data })))
+          .catch(() => {});
+        axios.get(`/api/agents/${id}/version`)
+          .then(r => setAgentVersions(v => ({ ...v, [id]: r.data.version })))
           .catch(() => {});
       }
     } catch {
@@ -111,6 +127,24 @@ export default function Agents() {
       alert(err.response?.data?.error || 'Fehler beim Erneuern');
     }
     setRepinning(r => ({ ...r, [id]: false }));
+  };
+
+  const updateAgent = async (id) => {
+    if (!confirm('Agent jetzt auf die neueste Version aktualisieren?')) return;
+    setUpdating(u => ({ ...u, [id]: true }));
+    try {
+      const { data } = await axios.post(`/api/agents/${id}/update`);
+      alert(`✓ Update erfolgreich!\n${data.oldVersion} → ${data.newVersion}\nAgent wird neu gestartet…`);
+      // Nach Neustart Version neu laden
+      setTimeout(() => {
+        axios.get(`/api/agents/${id}/version`)
+          .then(r => setAgentVersions(v => ({ ...v, [id]: r.data.version })))
+          .catch(() => {});
+      }, 4000);
+    } catch (err) {
+      alert(err.response?.data?.error || 'Update fehlgeschlagen');
+    }
+    setUpdating(u => ({ ...u, [id]: false }));
   };
 
   const isHttps = (u) => u?.startsWith('https://');
@@ -192,11 +226,13 @@ export default function Agents() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
         {agents.map(agent => {
-          const s       = status[agent.id];
-          const online  = s?.online;
-          const secured = isHttps(agent.url) && !!agent.fingerprint;
-          const mitm    = s?.mitm;
-          const dk      = dockerInfo[agent.id];
+          const s          = status[agent.id];
+          const online     = s?.online;
+          const secured    = isHttps(agent.url) && !!agent.fingerprint;
+          const mitm       = s?.mitm;
+          const dk         = dockerInfo[agent.id];
+          const agentVer   = agentVersions[agent.id];
+          const hasUpdate  = agentVer && latestVersion && agentVer !== latestVersion;
 
           return (
             <div key={agent.id}
@@ -228,6 +264,18 @@ export default function Agents() {
                         )}
                         <span className="ml-1 text-panel-muted/60">· {dk.images ?? 0} images</span>
                       </span>
+                    </div>
+                  )}
+
+                  {/* Version + Update */}
+                  {agentVer && (
+                    <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                      <span className="text-xs text-panel-muted font-mono">v{agentVer}</span>
+                      {hasUpdate && (
+                        <span className="text-xs text-panel-orange font-medium">
+                          → v{latestVersion} verfügbar
+                        </span>
+                      )}
                     </div>
                   )}
 
@@ -263,6 +311,18 @@ export default function Agents() {
                       disabled={repinning[agent.id]}
                       className="p-1 text-panel-muted hover:text-panel-text transition-colors disabled:opacity-40">
                       <RefreshCw size={13} className={repinning[agent.id] ? 'animate-spin' : ''} />
+                    </button>
+                  )}
+                  {isAdmin && online && !mitm && (
+                    <button title={hasUpdate ? `Update auf v${latestVersion}` : 'Agent aktualisieren'}
+                      onClick={() => updateAgent(agent.id)}
+                      disabled={updating[agent.id]}
+                      className={`p-1 transition-colors disabled:opacity-40 ${
+                        hasUpdate
+                          ? 'text-panel-orange hover:text-panel-orange/80'
+                          : 'text-panel-muted hover:text-panel-text'
+                      }`}>
+                      <ArrowUpCircle size={13} className={updating[agent.id] ? 'animate-spin' : ''} />
                     </button>
                   )}
                   <button onClick={() => remove(agent.id, agent.name)}

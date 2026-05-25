@@ -12,11 +12,37 @@ const { promisify } = require('util');
 const fs = require('fs');
 
 const execAsync = promisify(exec);
+const VERSION = '2.0.0';
+const REPO_RAW = 'https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master/agent/panel-agent.js';
 const PORT  = parseInt(process.env.PANEL_AGENT_PORT || '7331');
 const TOKEN = process.env.PANEL_AGENT_TOKEN || '';
 const DIR   = __dirname;
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// ─── Datei-Download (HTTPS, folgt Weiterleitungen) ───────────────────────────
+
+function downloadFile(url, dest, redirects = 5) {
+  return new Promise((resolve, reject) => {
+    if (redirects <= 0) return reject(new Error('Zu viele Weiterleitungen'));
+    const file = fs.createWriteStream(dest);
+    const req = https.get(url, { headers: { 'User-Agent': 'panel-agent-updater' } }, (res) => {
+      if (res.statusCode === 301 || res.statusCode === 302) {
+        file.destroy(); fs.unlink(dest, () => {});
+        return downloadFile(res.headers.location, dest, redirects - 1).then(resolve).catch(reject);
+      }
+      if (res.statusCode !== 200) {
+        file.destroy(); fs.unlink(dest, () => {});
+        return reject(new Error(`HTTP ${res.statusCode}`));
+      }
+      res.pipe(file);
+      file.on('finish', () => file.close(resolve));
+      file.on('error', e => { fs.unlink(dest, () => {}); reject(e); });
+    });
+    req.on('error', e => { try { file.destroy(); fs.unlink(dest, () => {}); } catch {} reject(e); });
+    req.setTimeout(20000, () => { req.destroy(); reject(new Error('Download-Timeout')); });
+  });
+}
 
 // ─── System Stats ────────────────────────────────────────────────────────────
 
@@ -240,7 +266,25 @@ async function handler(req, res) {
   try {
     // ── System ────────────────────────────────────────────────────────────────
     if (url === '/ping' && req.method === 'GET') {
-      respond(res, 200, { ok: true, hostname: os.hostname(), tls: req.socket.encrypted || false });
+      respond(res, 200, { ok: true, hostname: os.hostname(), tls: req.socket.encrypted || false, version: VERSION });
+
+    } else if (url === '/version' && req.method === 'GET') {
+      respond(res, 200, { version: VERSION, nodeVersion: process.version });
+
+    } else if (url === '/update' && req.method === 'POST') {
+      const tmpPath  = path.join(DIR, '_panel-agent.new.js');
+      const selfPath = path.join(DIR, 'panel-agent.js');
+      try {
+        await downloadFile(REPO_RAW, tmpPath);
+        const content    = fs.readFileSync(tmpPath, 'utf8');
+        const newVersion = (content.match(/^const VERSION\s*=\s*['"]([^'"]+)['"]/m) || [])[1] || 'unbekannt';
+        fs.renameSync(tmpPath, selfPath);
+        respond(res, 200, { success: true, oldVersion: VERSION, newVersion, message: 'Agent wird neu gestartet…' });
+        setTimeout(() => exec('systemctl restart panel-agent', () => {}), 1500);
+      } catch (err) {
+        try { fs.unlinkSync(tmpPath); } catch {}
+        respond(res, 500, { error: err.message });
+      }
 
     } else if (url === '/stats' && req.method === 'GET') {
       respond(res, 200, await getStats());

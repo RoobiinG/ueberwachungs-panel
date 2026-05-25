@@ -6,6 +6,20 @@ const db          = require('../db');
 const requireRole = require('../middleware/roles');
 const { validatePublicUrl } = require('../utils/validateUrl');
 
+const AGENT_RAW_URL = 'https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master/agent/panel-agent.js';
+
+// Neueste GitHub-Version gecacht (1 Stunde TTL)
+let _latestCache = { version: null, ts: 0 };
+async function fetchLatestVersion() {
+  if (Date.now() - _latestCache.ts < 3600000 && _latestCache.version) return _latestCache.version;
+  try {
+    const { data } = await axios.get(AGENT_RAW_URL, { timeout: 10000, responseType: 'text' });
+    const m = data.match(/^const VERSION\s*=\s*['"]([^'"]+)['"]/m);
+    _latestCache = { version: m?.[1] || null, ts: Date.now() };
+    return _latestCache.version;
+  } catch { return _latestCache.version; }
+}
+
 const getAll = () => db.prepare(
   'SELECT id, name, url, fingerprint, created_at FROM remote_agents ORDER BY name'
 ).all();
@@ -50,6 +64,12 @@ const agentApi = (agent) => {
 
   return axios.create(cfg);
 };
+
+// Neueste verfügbare Agent-Version von GitHub
+router.get('/latest-version', async (req, res) => {
+  const version = await fetchLatestVersion();
+  res.json({ version });
+});
 
 router.get('/', (req, res) => {
   res.json(getAll());
@@ -167,6 +187,32 @@ router.post('/:id/services/:name/:action', requireRole('admin', 'operator'), asy
   if (!valid.includes(action)) return res.status(400).json({ error: 'Ungültige Aktion' });
   try {
     const { data } = await agentApi(agent).post(`/services/${encodeURIComponent(name)}/${action}`);
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.response?.data?.error || err.message });
+  }
+});
+
+// ── Version & Update ─────────────────────────────────────────────────────────
+
+router.get('/:id/version', async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  try {
+    const { data } = await agentApi(agent).get('/version');
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+router.post('/:id/update', requireRole('admin'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  try {
+    const { data } = await agentApi(agent).post('/update', {}, { timeout: 30000 });
+    // Versions-Cache invalidieren damit nächste Abfrage aktuell ist
+    _latestCache.ts = 0;
     res.json(data);
   } catch (err) {
     res.status(502).json({ error: err.response?.data?.error || err.message });
