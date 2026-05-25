@@ -13,6 +13,8 @@ import Webhooks from './pages/Webhooks';
 import Users from './pages/Users';
 import Hetzner from './pages/Hetzner';
 import MCHost from './pages/MCHost';
+import Agents from './pages/Agents';
+import AgentDetail from './pages/AgentDetail';
 import Settings from './pages/Settings';
 
 const ProtectedRoute = ({ children, adminOnly }) => {
@@ -44,6 +46,8 @@ const AppRoutes = () => {
         <Route path="/firewall" element={<Firewall />} />
         <Route path="/network" element={<Network liveStats={liveStats} />} />
         <Route path="/ssh" element={<SSH />} />
+        <Route path="/agents" element={<Agents />} />
+        <Route path="/agents/:id" element={<AgentDetail />} />
         <Route path="/webhooks" element={<Webhooks />} />
         <Route path="/hetzner" element={<Hetzner />} />
         <Route path="/mchost" element={<MCHost />} />
