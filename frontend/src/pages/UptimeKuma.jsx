@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   RefreshCw, Settings2, CheckCircle2, XCircle, Clock, Wrench,
-  AlertTriangle, MonitorCheck, Eye, EyeOff,
+  AlertTriangle, MonitorCheck, Eye, EyeOff, Key,
 } from 'lucide-react';
 import axios from 'axios';
 import { Card } from '../components/ui/Card';
@@ -44,17 +44,17 @@ export default function UptimeKuma() {
   const [loading,    setLoading]    = useState(false);
   const [error,      setError]      = useState('');
   const [lastUpdate, setLastUpdate] = useState(null);
-  const [config,     setConfig]     = useState({ url: '', username: '', hasPassword: false, slug: 'default' });
+  const [config,     setConfig]     = useState({ url: '', hasApiKey: false, slug: 'default' });
   const [editMode,   setEditMode]   = useState(false);
-  const [draft,      setDraft]      = useState({ url: '', username: '', password: '', slug: 'default' });
+  const [draft,      setDraft]      = useState({ url: '', apiKey: '', slug: 'default' });
   const [saving,     setSaving]     = useState(false);
-  const [showPw,     setShowPw]     = useState(false);
+  const [showKey,    setShowKey]    = useState(false);
 
   // Konfiguration laden
   useEffect(() => {
     axios.get('/api/uptime-kuma/config').then(r => {
       setConfig(r.data);
-      setDraft({ ...r.data, password: '' }); // Passwort nie zurück ins Formular
+      setDraft({ url: r.data.url, apiKey: '', slug: r.data.slug });
       if (!r.data.url) setEditMode(true);
     }).catch(() => setEditMode(true));
   }, []);
@@ -84,17 +84,17 @@ export default function UptimeKuma() {
   const saveConfig = async () => {
     setSaving(true);
     try {
-      // Leeres Passwort nicht schicken (würde gespeichertes überschreiben)
-      const payload = { ...draft };
-      if (!payload.password) delete payload.password;
+      const payload = { url: draft.url, slug: draft.slug };
+      // API-Key nur senden wenn neu eingegeben (leer = behalte alten)
+      if (draft.apiKey) payload.apiKey = draft.apiKey;
       await axios.post('/api/uptime-kuma/config', payload);
-      setConfig({ ...draft, hasPassword: !!(config.hasPassword || draft.password) });
+      setConfig({ url: draft.url, hasApiKey: !!(config.hasApiKey || draft.apiKey), slug: draft.slug });
       setEditMode(false);
     } catch {}
     setSaving(false);
   };
 
-  const usesApi = config.username && config.hasPassword;
+  const usesApi = config.hasApiKey;
   const up      = monitors.filter(m => m.status === 1).length;
   const down    = monitors.filter(m => m.status === 0).length;
 
@@ -144,48 +144,38 @@ export default function UptimeKuma() {
             />
 
             <div className="border-t border-panel-border pt-4">
-              <p className="text-xs text-panel-text font-medium mb-3">
-                Zugangsdaten <span className="text-panel-muted font-normal">(empfohlen — gibt Zugriff auf alle Monitore)</span>
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <InputField
-                  label="Benutzername"
-                  value={draft.username}
-                  onChange={e => setDraft(d => ({ ...d, username: e.target.value }))}
-                  placeholder="admin"
-                />
-                <div>
-                  <label className="block text-xs text-panel-muted mb-1">Passwort</label>
-                  <div className="relative">
-                    <input
-                      type={showPw ? 'text' : 'password'}
-                      value={draft.password}
-                      onChange={e => setDraft(d => ({ ...d, password: e.target.value }))}
-                      placeholder={config.hasPassword ? '(gespeichert — leer lassen zum Behalten)' : 'Passwort eingeben'}
-                      autoComplete="new-password"
-                      className="w-full bg-panel-surface border border-panel-border rounded px-3 py-1.5 pr-9 text-sm text-panel-text placeholder:text-panel-muted/40 focus:outline-none focus:border-panel-accent"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPw(s => !s)}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text transition-colors">
-                      {showPw ? <EyeOff size={13} /> : <Eye size={13} />}
-                    </button>
-                  </div>
+              <div className="flex items-center gap-2 mb-3">
+                <Key size={13} className="text-panel-accent" />
+                <p className="text-xs text-panel-text font-medium">
+                  API-Key <span className="text-panel-muted font-normal">— Uptime Kuma → Einstellungen → API-Keys → Erstellen</span>
+                </p>
+              </div>
+              <div>
+                <label className="block text-xs text-panel-muted mb-1">API-Key</label>
+                <div className="relative">
+                  <input
+                    type={showKey ? 'text' : 'password'}
+                    value={draft.apiKey}
+                    onChange={e => setDraft(d => ({ ...d, apiKey: e.target.value }))}
+                    placeholder={config.hasApiKey ? '(gespeichert — leer lassen zum Behalten)' : 'uk1_xxxxxxxxxxxxxxxx'}
+                    autoComplete="off"
+                    className="w-full bg-panel-surface border border-panel-border rounded px-3 py-1.5 pr-9 text-sm text-panel-text placeholder:text-panel-muted/40 font-mono focus:outline-none focus:border-panel-accent"
+                  />
+                  <button type="button" onClick={() => setShowKey(s => !s)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text transition-colors">
+                    {showKey ? <EyeOff size={13} /> : <Eye size={13} />}
+                  </button>
                 </div>
               </div>
             </div>
 
             <div className="border-t border-panel-border pt-4">
-              <p className="text-xs text-panel-text font-medium mb-3">
-                Öffentliche Status-Seite <span className="text-panel-muted font-normal">(Fallback ohne Zugangsdaten)</span>
-              </p>
               <InputField
-                label="Status-Seite Slug"
+                label="Status-Seite Slug (Fallback ohne API-Key)"
                 value={draft.slug}
                 onChange={e => setDraft(d => ({ ...d, slug: e.target.value }))}
                 placeholder="default"
-                hint='Den Slug findest du in Uptime Kuma unter Einstellungen → Status-Seiten. Standard ist "default".'
+                hint='Nur genutzt wenn kein API-Key gesetzt ist. Slug in Uptime Kuma unter Einstellungen → Status-Seiten.'
               />
             </div>
 
