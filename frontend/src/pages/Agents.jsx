@@ -3,9 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
+import { Modal } from '../components/ui/Modal';
 import {
   ServerCog, Plus, Trash2, Wifi, WifiOff, Eye, EyeOff,
-  ChevronRight, Terminal, Lock, LockOpen, ShieldAlert, RefreshCw
+  ChevronRight, Terminal, Lock, LockOpen, ShieldAlert, RefreshCw, Pencil
 } from 'lucide-react';
 
 const inputCls = 'w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:border-panel-accent transition-colors';
@@ -23,6 +24,13 @@ export default function Agents() {
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState('');
   const [repinning, setRepinning] = useState({});
+  const [editAgent,    setEditAgent]    = useState(null);
+  const [editName,     setEditName]     = useState('');
+  const [editUrl,      setEditUrl]      = useState('');
+  const [editToken,    setEditToken]    = useState('');
+  const [showEditToken, setShowEditToken] = useState(false);
+  const [editLoading,  setEditLoading]  = useState(false);
+  const [editError,    setEditError]    = useState('');
   const navigate = useNavigate();
 
   const load = useCallback(async () => {
@@ -59,6 +67,32 @@ export default function Agents() {
     if (!confirm(`"${agentName}" wirklich entfernen?`)) return;
     await axios.delete(`/api/agents/${id}`);
     load();
+  };
+
+  const openEdit = (agent) => {
+    setEditAgent(agent);
+    setEditName(agent.name);
+    setEditUrl(agent.url);
+    setEditToken('');
+    setEditError('');
+    setShowEditToken(false);
+  };
+
+  const saveEdit = async () => {
+    if (!editName.trim() || !editUrl.trim()) return setEditError('Name und URL erforderlich');
+    setEditLoading(true); setEditError('');
+    try {
+      await axios.put(`/api/agents/${editAgent.id}`, {
+        name:  editName.trim(),
+        url:   editUrl.trim(),
+        token: editToken, // leer = unverändert lassen wenn Backend COALESCE nutzt
+      });
+      setEditAgent(null);
+      load();
+    } catch (err) {
+      setEditError(err.response?.data?.error || 'Fehler beim Speichern');
+    }
+    setEditLoading(false);
   };
 
   const repin = async (id) => {
@@ -198,6 +232,10 @@ export default function Agents() {
                 </div>
 
                 <div className="flex flex-col gap-1 flex-shrink-0">
+                  <button title="Bearbeiten (Token/URL ändern)" onClick={() => openEdit(agent)}
+                    className="p-1 text-panel-muted hover:text-panel-text transition-colors">
+                    <Pencil size={13} />
+                  </button>
                   {isHttps(agent.url) && (
                     <button title="Fingerprint erneuern" onClick={() => repin(agent.id)}
                       disabled={repinning[agent.id]}
@@ -227,5 +265,54 @@ export default function Agents() {
         })}
       </div>
     </div>
+
+      {/* ── Edit-Modal ── */}
+      {editAgent && (
+        <Modal
+          open={!!editAgent}
+          onClose={() => setEditAgent(null)}
+          title={`Server bearbeiten: ${editAgent.name}`}
+          footer={<>
+            <Button variant="ghost" size="sm" onClick={() => setEditAgent(null)}>Abbrechen</Button>
+            <Button size="sm" onClick={saveEdit} disabled={editLoading}>
+              {editLoading ? 'Speichere…' : 'Speichern'}
+            </Button>
+          </>}
+        >
+          <div className="space-y-3">
+            {editError && <p className="text-xs text-panel-red">{editError}</p>}
+            <div>
+              <label className="block text-xs text-panel-muted mb-1">Name</label>
+              <input className={inputCls} value={editName} onChange={e => setEditName(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs text-panel-muted mb-1">Agent URL</label>
+              <input className={inputCls} value={editUrl} onChange={e => setEditUrl(e.target.value)} />
+            </div>
+            <div>
+              <label className="block text-xs text-panel-muted mb-1">
+                Token <span className="text-panel-muted font-normal">(leer lassen = unverändert)</span>
+              </label>
+              <div className="relative">
+                <input
+                  className={inputCls + ' pr-9'}
+                  type={showEditToken ? 'text' : 'password'}
+                  value={editToken}
+                  onChange={e => setEditToken(e.target.value)}
+                  placeholder="Neues Token eingeben…"
+                />
+                <button type="button" onClick={() => setShowEditToken(v => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
+                  {showEditToken ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+              <p className="text-xs text-panel-muted mt-1">
+                Token findest du auf dem Server in: <code className="text-panel-text">/opt/panel-agent/.env</code>
+              </p>
+            </div>
+          </div>
+        </Modal>
+      )}
+  </div>
   );
 }
