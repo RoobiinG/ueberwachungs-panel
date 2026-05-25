@@ -1,9 +1,10 @@
 const router = require('express').Router();
 const si = require('systeminformation');
+const { getHostDisks } = require('../hostUtils');
 
 router.get('/stats', async (req, res) => {
   try {
-    const [cpu, mem, disk, network, os, time] = await Promise.all([
+    const [cpu, mem, siDisk, network, os, time] = await Promise.all([
       si.currentLoad(),
       si.mem(),
       si.fsSize(),
@@ -11,6 +12,13 @@ router.get('/stats', async (req, res) => {
       si.osInfo(),
       si.time(),
     ]);
+
+    // Disk: nsenter liefert echte Host-Daten; Fallback auf si.fsSize()
+    const hostDisk = await getHostDisks();
+    const disk = hostDisk || siDisk.map(d => ({
+      fs: d.fs, size: d.size, used: d.used, free: d.available, usedPercent: d.use, mount: d.mount,
+    }));
+
     res.json({
       cpu: { usage: Math.round(cpu.currentLoad), cores: cpu.cpus?.length || 0 },
       memory: {
@@ -19,7 +27,7 @@ router.get('/stats', async (req, res) => {
         free: mem.free,
         usedPercent: Math.round((mem.used / mem.total) * 100),
       },
-      disk: disk.map(d => ({ fs: d.fs, type: d.type, size: d.size, used: d.used, usedPercent: d.use, mount: d.mount })),
+      disk,
       network: network.map(n => ({ iface: n.iface, rxBytes: n.rx_bytes, txBytes: n.tx_bytes, rxSec: n.rx_sec, txSec: n.tx_sec })),
       os: {
         distro: os.distro,
