@@ -1,6 +1,7 @@
 services:
   panel:
     image: ghcr.io/roobiing/ueberwachungs-panel:latest
+    pull_policy: always
     container_name: ueberwachungs-panel
     restart: unless-stopped
     ports:

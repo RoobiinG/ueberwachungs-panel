@@ -23,9 +23,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Docker Metadata (Tags)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/roobiing/ueberwachungs-panel
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=,format=short
+
       - name: Docker Image bauen und pushen
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: ghcr.io/roobiing/ueberwachungs-panel:latest
+          tags: ${{ steps.meta.outputs.tags }}
