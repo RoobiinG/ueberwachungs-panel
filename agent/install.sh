@@ -87,6 +87,19 @@ EOF
 systemctl daemon-reload
 systemctl enable --now panel-agent
 
+# Firewall-Port öffnen (falls UFW aktiv)
+if command -v ufw &>/dev/null && ufw status | grep -q "^Status: active"; then
+  ufw allow "${AGENT_PORT}/tcp" >/dev/null 2>&1
+  echo "UFW: Port ${AGENT_PORT}/tcp geöffnet"
+fi
+
+# Firewall-Port öffnen (falls firewalld aktiv, z.B. RHEL/CentOS)
+if command -v firewall-cmd &>/dev/null && systemctl is-active --quiet firewalld; then
+  firewall-cmd --permanent --add-port="${AGENT_PORT}/tcp" >/dev/null 2>&1
+  firewall-cmd --reload >/dev/null 2>&1
+  echo "firewalld: Port ${AGENT_PORT}/tcp geöffnet"
+fi
+
 SERVER_IP=$(hostname -I | awk '{print $1}')
 
 echo ""
@@ -102,3 +115,7 @@ echo "╚═══════════════════════�
 echo ""
 echo "Status:  systemctl status panel-agent"
 echo "Logs:    journalctl -u panel-agent -f"
+echo ""
+echo "WICHTIG: Falls eine Cloud-Firewall (Hetzner, AWS, etc.) aktiv ist,"
+echo "         TCP-Port ${AGENT_PORT} in der Cloud-Konsole freigeben!"
+echo "Lokal testen:  curl -k https://127.0.0.1:${AGENT_PORT}/ping"
