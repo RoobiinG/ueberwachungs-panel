@@ -53,7 +53,7 @@ router.get('/:id/agents', requireRole('admin'), (req, res) => {
   if (!role) return res.status(404).json({ error: 'Rolle nicht gefunden' });
   const agentIds = db.prepare('SELECT agent_id FROM agent_grants WHERE role_id = ?')
     .all(role.id).map(r => r.agent_id);
-  res.json({ restrictAgents: !!role.restrict_agents, agentIds });
+  res.json({ restrictAgents: !!role.restrict_agents, agentIds, hideLocal: !!role.hide_local });
 });
 
 // ─── Server-Zuweisungen einer Rolle setzen ────────────────────────────────────
@@ -62,11 +62,14 @@ router.put('/:id/agents', requireRole('admin'), (req, res) => {
   if (!role) return res.status(404).json({ error: 'Rolle nicht gefunden' });
   if (role.is_admin) return res.status(403).json({ error: 'Admin-Rolle kann nicht eingeschränkt werden' });
 
-  const { restrictAgents, agentIds = [] } = req.body;
+  const { restrictAgents, agentIds = [], hideLocal } = req.body;
 
   db.transaction(() => {
     if (restrictAgents !== undefined) {
       db.prepare('UPDATE roles SET restrict_agents = ? WHERE id = ?').run(restrictAgents ? 1 : 0, role.id);
+    }
+    if (hideLocal !== undefined) {
+      db.prepare('UPDATE roles SET hide_local = ? WHERE id = ?').run(hideLocal ? 1 : 0, role.id);
     }
     db.prepare('DELETE FROM agent_grants WHERE role_id = ?').run(role.id);
     const ins = db.prepare('INSERT OR IGNORE INTO agent_grants (role_id, agent_id) VALUES (?, ?)');

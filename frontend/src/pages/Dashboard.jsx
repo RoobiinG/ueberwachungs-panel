@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 import { Card } from '../components/ui/Card';
+import { useAuth } from '../context/AuthContext';
 import {
   ComposedChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip,
@@ -196,6 +197,7 @@ const CustomTooltip = ({ active, payload, label, range }) => {
 // ── Haupt-Komponente ─────────────────────────────────────────────────────────
 export default function Dashboard({ liveStats }) {
   const navigate = useNavigate();
+  const { hideLocal } = useAuth();
 
   // Lokaler Server
   const [localInfo,   setLocalInfo]   = useState(null);
@@ -310,9 +312,9 @@ export default function Dashboard({ liveStats }) {
   const showDefaultLine = thresholdLines.length === 0;
 
   // ── Zusammenfassung ──────────────────────────────────────────────────────
-  const totalServers  = 1 + agents.length;
+  const totalServers  = (hideLocal ? 0 : 1) + agents.length;
   const onlineRemote  = Object.values(agentOnline).filter(Boolean).length;
-  const totalOnline   = onlineRemote + 1; // +1 für lokalen Server
+  const totalOnline   = onlineRemote + (hideLocal ? 0 : 1); // +1 für lokalen Server (falls sichtbar)
   const totalContainerRunning = Object.values(agentDocker)
     .flat()
     .filter(c => c?.state === 'running').length;
@@ -346,14 +348,16 @@ export default function Dashboard({ liveStats }) {
 
       {/* ── Server-Grid ─────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-        {/* Lokaler Server */}
-        <ServerCard
-          name="Panel-Server"
-          stats={localStats}
-          online={true}
-          isLocal={true}
-          docker={null}
-        />
+        {/* Lokaler Server (nur wenn nicht per Rolle ausgeblendet) */}
+        {!hideLocal && (
+          <ServerCard
+            name="Panel-Server"
+            stats={localStats}
+            online={true}
+            isLocal={true}
+            docker={null}
+          />
+        )}
 
         {/* Remote Agents */}
         {agents.map(agent => (
@@ -369,8 +373,8 @@ export default function Dashboard({ liveStats }) {
         ))}
       </div>
 
-      {/* ── Langzeit-Monitoring (Lokaler Server) ────────────────────────── */}
-      <Card title={
+      {/* ── Langzeit-Monitoring (Lokaler Server, nur wenn sichtbar) ────── */}
+      {!hideLocal && <Card title={
         <div className="flex items-center justify-between w-full gap-3">
           <div>
             <span>Langzeit-Monitoring</span>
@@ -443,7 +447,7 @@ export default function Dashboard({ liveStats }) {
             </ComposedChart>
           </ResponsiveContainer>
         )}
-      </Card>
+      </Card>}
 
     </div>
   );

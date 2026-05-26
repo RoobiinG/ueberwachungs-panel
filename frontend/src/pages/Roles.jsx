@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import {
   Lock, Plus, Trash2, Pencil, Check, X, ShieldCheck,
-  ChevronDown, ChevronRight, Users, Save, Server, Globe,
+  ChevronDown, ChevronRight, Users, Save, Server, Globe, Monitor,
 } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -106,6 +106,7 @@ export default function Roles() {
   // Server-Zugriff
   const [agentRestrict,  setAgentRestrict]  = useState(false);
   const [grantedAgents,  setGrantedAgents]  = useState(new Set());
+  const [hideLocal,      setHideLocal]      = useState(false);
   const [agentsDirty,    setAgentsDirty]    = useState(false);
   const [agentsSaving,   setAgentsSaving]   = useState(false);
   const [agentsSaveMsg,  setAgentsSaveMsg]  = useState('');
@@ -146,6 +147,7 @@ export default function Roles() {
       setSelPerms(new Set(permDefs.map(p => p.key)));
       setAgentRestrict(false);
       setGrantedAgents(new Set());
+      setHideLocal(false);
       return;
     }
     const [permRes, agentRes] = await Promise.all([
@@ -155,6 +157,7 @@ export default function Roles() {
     setSelPerms(new Set(permRes.data));
     setAgentRestrict(agentRes.data.restrictAgents);
     setGrantedAgents(new Set(agentRes.data.agentIds));
+    setHideLocal(!!agentRes.data.hideLocal);
   };
 
   const handlePermChange = (next) => {
@@ -187,6 +190,7 @@ export default function Roles() {
       await axios.put(`/api/roles/${selected.id}/agents`, {
         restrictAgents: agentRestrict,
         agentIds: [...grantedAgents],
+        hideLocal,
       });
       setAgentsSaveMsg('✓ Gespeichert');
       setAgentsDirty(false);
@@ -430,6 +434,24 @@ export default function Roles() {
                       Diese Rolle hat Zugriff auf alle Server.
                     </div>
                   )}
+
+                  {/* Lokalen Server ausblenden */}
+                  <div className="flex items-center gap-3 px-3 py-2.5 border-t border-panel-border/50">
+                    <Monitor size={12} className="text-panel-muted flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-panel-text">Lokalen Server ausblenden</p>
+                      <p className="text-xs text-panel-muted">Panel-Server wird im Dashboard und ServerSelector nicht angezeigt</p>
+                    </div>
+                    <button
+                      onClick={() => { setHideLocal(h => !h); setAgentsDirty(true); setAgentsSaveMsg(''); }}
+                      className={`text-xs px-2 py-0.5 rounded transition-colors ml-2 flex-shrink-0 ${
+                        hideLocal
+                          ? 'bg-panel-orange/20 text-panel-orange hover:bg-panel-orange/30'
+                          : 'bg-panel-surface text-panel-muted hover:bg-panel-card border border-panel-border'
+                      }`}>
+                      {hideLocal ? 'Ausgeblendet' : 'Sichtbar'}
+                    </button>
+                  </div>
 
                   {/* Speichern-Leiste */}
                   {(agentsDirty || agentsSaveMsg) && (
