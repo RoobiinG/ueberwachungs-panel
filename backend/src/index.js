@@ -3,7 +3,8 @@ const express = require('express');
 const cors    = require('cors');
 const http    = require('http');
 const path    = require('path');
-const auth    = require('./middleware/auth');
+const auth               = require('./middleware/auth');
+const requireLocalAccess = require('./middleware/requireLocalAccess');
 const { setup: setupWS } = require('./websocket');
 
 // ─── Startup-Sicherheitscheck ────────────────────────────────────────────────
@@ -32,11 +33,12 @@ try {
   const { router: passkeyRouter } = require('./routes/passkeys');
   app.use('/api/passkeys', auth, passkeyRouter);
 } catch (e) { console.warn('Passkey-Route übersprungen:', e.message); }
-app.use('/api/system', auth, require('./routes/system'));
-app.use('/api/docker', auth, require('./routes/docker'));
-app.use('/api/services', auth, require('./routes/services'));
-app.use('/api/firewall', auth, require('./routes/firewall'));
-app.use('/api/network', auth, require('./routes/network'));
+// Lokaler Server — hide_local wird jetzt auch backend-seitig durchgesetzt
+app.use('/api/system',  auth, requireLocalAccess, require('./routes/system'));
+app.use('/api/docker',  auth, requireLocalAccess, require('./routes/docker'));
+app.use('/api/services',auth, requireLocalAccess, require('./routes/services'));
+app.use('/api/firewall',auth, requireLocalAccess, require('./routes/firewall'));
+app.use('/api/network', auth, requireLocalAccess, require('./routes/network'));
 app.use('/api/users', auth, require('./routes/users'));
 app.use('/api/roles', auth, require('./routes/roles'));
 app.use('/api/webhooks', auth, require('./routes/webhooks'));
@@ -44,10 +46,10 @@ app.use('/api/hetzner', auth, require('./routes/hetzner'));
 app.use('/api/mchost', auth, require('./routes/mchost'));
 app.use('/api/settings', auth, require('./routes/settings'));
 app.use('/api/agents',  auth, require('./routes/agents'));
-app.use('/api/metrics',      auth, require('./routes/metrics'));
+app.use('/api/metrics',      auth, requireLocalAccess, require('./routes/metrics'));
 app.use('/api/uptime-kuma', auth, require('./routes/uptimeKuma'));
 app.use('/api/alerts',      auth, require('./routes/alerts'));
-app.use('/api/docker/metrics', auth, require('./routes/containerMetrics'));
+app.use('/api/docker/metrics', auth, requireLocalAccess, require('./routes/containerMetrics'));
 app.use('/api/audit',       auth, require('./routes/audit'));
 app.use('/api/version',          require('./routes/version'));
 
