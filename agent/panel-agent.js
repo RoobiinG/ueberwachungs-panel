@@ -12,7 +12,7 @@ const { promisify } = require('util');
 const fs = require('fs');
 
 const execAsync = promisify(exec);
-const VERSION = '2.1.0';
+const VERSION = '2.2.0';
 const REPO_RAW = 'https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master/agent/panel-agent.js';
 const PORT  = parseInt(process.env.PANEL_AGENT_PORT || '7331');
 const TOKEN = process.env.PANEL_AGENT_TOKEN || '';
@@ -312,6 +312,35 @@ function getNetworkInterfaces() {
   return result;
 }
 
+// Netzwerk-Traffic aus /proc/net/dev (2× lesen, Rate berechnen)
+async function getNetworkStats() {
+  try {
+    const readNet = () => {
+      const lines = fs.readFileSync('/proc/net/dev', 'utf8').split('\n').slice(2);
+      const out = {};
+      for (const line of lines) {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length < 10) continue;
+        const iface = parts[0].replace(':', '');
+        out[iface] = { rx: parseInt(parts[1]) || 0, tx: parseInt(parts[9]) || 0 };
+      }
+      return out;
+    };
+    const s1 = readNet();
+    await sleep(1000);
+    const s2 = readNet();
+    return Object.entries(s2)
+      .filter(([iface]) => iface !== 'lo')
+      .map(([iface, v]) => ({
+        iface,
+        rx_sec:   Math.max(0, v.rx - (s1[iface]?.rx || 0)),
+        tx_sec:   Math.max(0, v.tx - (s1[iface]?.tx || 0)),
+        rx_bytes: v.rx,
+        tx_bytes: v.tx,
+      }));
+  } catch { return []; }
+}
+
 function getPublicIp() {
   return new Promise((resolve) => {
     const req = https.get('https://api.ipify.org?format=json',
@@ -430,8 +459,25 @@ async function handler(req, res) {
     } else if (url === '/network/interfaces' && req.method === 'GET') {
       respond(res, 200, getNetworkInterfaces());
 
+    } else if (url === '/network/stats' && req.method === 'GET') {
+      respond(res, 200, await getNetworkStats());
+
     } else if (url === '/network/public-ip' && req.method === 'GET') {
       respond(res, 200, await getPublicIp());
+
+    // ── Deinstallation ────────────────────────────────────────────────────────
+    } else if (url === '/uninstall' && req.method === 'POST') {
+      // Antwort sofort senden, dann im Hintergrund deinstallieren
+      respond(res, 200, { success: true, message: 'Agent wird deinstalliert…' });
+      setTimeout(() => {
+        // & entkoppelt den bash-Prozess vom Node.js-Prozess (läuft weiter nach systemctl stop)
+        exec(
+          `bash -c 'sleep 1 && systemctl disable panel-agent --now && ` +
+          `rm -f /etc/systemd/system/panel-agent.service && systemctl daemon-reload && ` +
+          `ufw delete allow ${PORT}/tcp 2>/dev/null; rm -rf /opt/panel-agent' &`,
+          () => {}
+        );
+      }, 600);
 
     } else {
       respond(res, 404, { error: 'Not found' });
