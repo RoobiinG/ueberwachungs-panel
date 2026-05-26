@@ -12,7 +12,7 @@ const { promisify } = require('util');
 const fs = require('fs');
 
 const execAsync = promisify(exec);
-const VERSION = '2.0.0';
+const VERSION = '2.1.0';
 const REPO_RAW = 'https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master/agent/panel-agent.js';
 const PORT  = parseInt(process.env.PANEL_AGENT_PORT || '7331');
 const TOKEN = process.env.PANEL_AGENT_TOKEN || '';
@@ -249,6 +249,71 @@ async function getDockerOverview() {
   };
 }
 
+// ─── Firewall (UFW) ──────────────────────────────────────────────────────────
+
+async function getFirewallStatus() {
+  const { stdout } = await execAsync('ufw status verbose', { timeout: 5000 });
+  return { status: stdout };
+}
+
+async function getFirewallRules() {
+  try {
+    const { stdout } = await execAsync('ufw status numbered', { timeout: 5000 });
+    return stdout.split('\n').filter(l => /^\[\s*\d+\]/.test(l)).map(line => {
+      const m = line.match(/^\[\s*(\d+)\]\s+(.+?)\s{2,}(.+?)\s{2,}(.+)$/);
+      if (!m) return { raw: line.trim() };
+      return { num: m[1].trim(), to: m[2].trim(), action: m[3].trim(), from: m[4].trim() };
+    });
+  } catch { return []; }
+}
+
+const _validPort  = (p) => {
+  if (!p) throw new Error('Port erforderlich');
+  const s = String(p);
+  if (!/^\d{1,5}(:\d{1,5})?$/.test(s)) throw new Error('Ungültiger Port');
+  return s;
+};
+const _validProto = (p) => { if (p && !['tcp', 'udp'].includes(p)) throw new Error('Ungültiges Protokoll'); return p; };
+const _IPV4_RE    = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
+const _IPV6_RE    = /^[0-9a-fA-F:]+(%[a-z0-9]+)?(\/\d{1,3})?$/;
+const _validFrom  = (f) => {
+  if (!f) return f;
+  if (!_IPV4_RE.test(f) && !_IPV6_RE.test(f)) throw new Error('Ungültige IP/CIDR');
+  return f;
+};
+
+// ─── Netzwerk ─────────────────────────────────────────────────────────────────
+
+function getNetworkInterfaces() {
+  const result = [];
+  for (const [name, addrs] of Object.entries(os.networkInterfaces())) {
+    for (const addr of (addrs || [])) {
+      if (!addr.internal) result.push({
+        iface: name, ifaceName: name,
+        ip4: addr.family === 'IPv4' ? addr.address : '',
+        ip6: addr.family === 'IPv6' ? addr.address : '',
+        mac: addr.mac || '', type: addr.family, internal: false,
+      });
+    }
+  }
+  return result;
+}
+
+function getPublicIp() {
+  return new Promise((resolve) => {
+    const req = https.get('https://api.ipify.org?format=json',
+      { headers: { 'User-Agent': 'panel-agent' } },
+      (res) => {
+        let data = '';
+        res.on('data', c => data += c);
+        res.on('end', () => { try { resolve({ ip: JSON.parse(data).ip }); } catch { resolve({ ip: null }); } });
+      }
+    );
+    req.on('error', () => resolve({ ip: null }));
+    req.setTimeout(8000, () => { req.destroy(); resolve({ ip: null }); });
+  });
+}
+
 // ─── HTTP Handler ─────────────────────────────────────────────────────────────
 
 function respond(res, status, data) {
@@ -317,6 +382,43 @@ async function handler(req, res) {
       if (!/^[a-fA-F0-9]{12,64}$/.test(cid)) return respond(res, 400, { error: 'Ungültige Container-ID' });
       const result  = await dockerApi(`/containers/${cid}/${action}`, 'POST');
       respond(res, 200, { success: true, result });
+
+    // ── Firewall ──────────────────────────────────────────────────────────────
+    } else if (url === '/firewall/status' && req.method === 'GET') {
+      respond(res, 200, await getFirewallStatus());
+
+    } else if (url === '/firewall/rules' && req.method === 'GET') {
+      respond(res, 200, await getFirewallRules());
+
+    } else if ((url === '/firewall/allow' || url === '/firewall/deny') && req.method === 'POST') {
+      const raw = await new Promise((resolve) => {
+        let data = '';
+        req.on('data', c => data += c);
+        req.on('end', () => resolve(data));
+      });
+      const { port, proto, from } = JSON.parse(raw || '{}');
+      const action = url.endsWith('/allow') ? 'allow' : 'deny';
+      const p  = _validPort(port);
+      const pr = _validProto(proto);
+      const fr = _validFrom(from);
+      const cmd = (action === 'allow' && fr)
+        ? `ufw allow from ${fr} to any port ${p}${pr ? ' proto ' + pr : ''}`
+        : `ufw ${action} ${p}${pr ? '/' + pr : ''}`;
+      await execAsync(cmd, { timeout: 10000 });
+      respond(res, 200, { success: true });
+
+    } else if (url.startsWith('/firewall/rules/') && req.method === 'DELETE') {
+      const num = url.split('/')[3];
+      if (!/^\d+$/.test(num)) return respond(res, 400, { error: 'Ungültige Regel-Nummer' });
+      await execAsync(`sh -c 'echo y | ufw delete ${num}'`, { timeout: 10000 });
+      respond(res, 200, { success: true });
+
+    // ── Netzwerk ──────────────────────────────────────────────────────────────
+    } else if (url === '/network/interfaces' && req.method === 'GET') {
+      respond(res, 200, getNetworkInterfaces());
+
+    } else if (url === '/network/public-ip' && req.method === 'GET') {
+      respond(res, 200, await getPublicIp());
 
     } else {
       respond(res, 404, { error: 'Not found' });
