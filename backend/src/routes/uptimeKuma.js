@@ -18,9 +18,62 @@ const setSetting = (key, val) =>
 const CACHE = new Map();
 const TTL   = 30_000;
 
-// ─── Socket.IO via API-Key ────────────────────────────────────────────────────
-// Uptime Kuma v1.23+ unterstützt API-Keys über den Socket-Auth-Header.
-// Der Key wird als "x-api-key" im auth-Objekt beim Verbindungsaufbau übergeben.
+// ─── REST API (Uptime Kuma v2+) ──────────────────────────────────────────────
+// Uptime Kuma v2 stellt eine REST-API bereit.
+// Authentifizierung über Authorization: ApiKey <key>
+
+async function fetchViaRest(url, apiKey) {
+  const key    = `${url}|${apiKey.slice(0, 8)}`;
+  const cached = CACHE.get(key);
+  if (cached && Date.now() - cached.ts < TTL) return cached.data;
+
+  const base = url.replace(/\/+$/, '');
+  const { data } = await axios.get(`${base}/api/v1/monitor`, {
+    headers: { Authorization: `ApiKey ${apiKey}` },
+    timeout: 10000,
+  });
+
+  if (!data.ok || !Array.isArray(data.monitors)) {
+    throw new Error('Unerwartetes Antwortformat der Uptime-Kuma-API');
+  }
+
+  // Uptime kann als Bruch (0–1) oder als Prozentwert (0–100) kommen
+  const toPercent = (v) => {
+    if (v == null) return null;
+    const n = parseFloat(v);
+    if (isNaN(n)) return null;
+    return Math.round((n <= 1 ? n * 100 : n) * 10) / 10;
+  };
+
+  const monitors = data.monitors
+    .filter(m => m.active)
+    .map(m => {
+      const hb = m.lastHeartBeat ?? m.heartbeat ?? {};
+      return {
+        id:        m.id,
+        name:      m.name,
+        type:      m.type,
+        group:     m.tags?.length ? m.tags[0]?.name : null,
+        status:    m.currentStatus ?? hb.status    ?? 3,
+        ping:      hb.ping         ?? hb.duration  ?? null,
+        msg:       hb.msg          ?? '',
+        lastCheck: hb.time         ? new Date(hb.time.replace(' ', 'T')).toISOString() : null,
+        uptime24h: toPercent(m.uptime   ?? m.uptimeDay   ?? null),
+        uptime30d: toPercent(m.uptimeMonth              ?? null),
+      };
+    });
+
+  monitors.sort((a, b) =>
+    (a.status === 0 ? -1 : b.status === 0 ? 1 : 0) || a.name.localeCompare(b.name)
+  );
+
+  const result = { monitors, incident: null };
+  CACHE.set(key, { data: result, ts: Date.now() });
+  return result;
+}
+
+// ─── Socket.IO (Uptime Kuma v1.x Fallback) ───────────────────────────────────
+// Uptime Kuma v1.23+ unterstützt API-Keys über socket.handshake.auth.apiKey
 
 function fetchViaSocket(url, apiKey) {
   const key    = `${url}|${apiKey.slice(0, 8)}`;
@@ -32,7 +85,7 @@ function fetchViaSocket(url, apiKey) {
       transports:   ['polling', 'websocket'],  // Polling zuerst (Proxy-kompatibel)
       reconnection: false,
       timeout:      10000,
-      auth: { apiKey },                       // Uptime Kuma erwartet handshake.auth.apiKey
+      auth: { apiKey },
     });
 
     const monitors  = {};
@@ -47,14 +100,12 @@ function fetchViaSocket(url, apiKey) {
       if (err) return reject(err);
       const result = buildResult(monitors, heartbeats, uptime);
       if (result.monitors.length === 0) {
-        // Wenn nach dem Timeout keine Monitore kamen → wahrscheinlich Auth-Fehler
-        return reject(new Error('Keine Monitore empfangen — API-Key gültig? (Uptime Kuma ≥ v1.23 erforderlich)'));
+        return reject(new Error('Keine Monitore empfangen — API-Key gültig? (Uptime Kuma v1.23+ erforderlich)'));
       }
       CACHE.set(key, { data: result, ts: Date.now() });
       resolve(result);
     };
 
-    // Passive Listener — werden von manchen Uptime-Kuma-Versionen automatisch gepusht
     socket.on('monitorList',   (list)            => { Object.assign(monitors, list); });
     socket.on('heartbeatList', (id, list)        => { heartbeats[id] = list; });
     socket.on('uptime',        (id, period, val) => {
@@ -62,13 +113,9 @@ function fetchViaSocket(url, apiKey) {
       uptime[id][period] = val;
     });
 
-    // Nach erfolgreichem Connect aktiv Monitor-Liste anfordern
-    // (Uptime Kuma schickt monitorList nach API-Key-Auth nicht immer automatisch)
     socket.on('connect', () => {
       socket.emit('getMonitorList', (res) => {
-        if (res?.ok && res.monitors) {
-          Object.assign(monitors, res.monitors);
-        }
+        if (res?.ok && res.monitors) Object.assign(monitors, res.monitors);
       });
     });
 
@@ -79,12 +126,12 @@ function fetchViaSocket(url, apiKey) {
       finish(new Error(err.message || 'Socket-Fehler'))
     );
 
-    // Nach 9 Sekunden auflösen (Uptime-Events kommen verzögert)
     setTimeout(() => finish(null), 9000);
   });
 }
 
-// Uptime aus Heartbeat-Liste berechnen (Fallback wenn kein uptime-Event kam)
+// ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
+
 function calcUptime(hbList, hours) {
   if (!hbList?.length) return null;
   const since    = Date.now() - hours * 3_600_000;
@@ -151,12 +198,17 @@ router.get('/monitors', async (req, res) => {
 
   if (!url) return res.status(400).json({ error: 'Uptime Kuma URL nicht konfiguriert.' });
 
-  // Mit API-Key: vollständige API via Socket.IO
   if (apiKey) {
+    // Zuerst REST API versuchen (Uptime Kuma v2+)
     try {
-      return res.json(await fetchViaSocket(url, apiKey));
-    } catch (err) {
-      return res.status(502).json({ error: err.message });
+      return res.json(await fetchViaRest(url, apiKey));
+    } catch (restErr) {
+      // Fallback: Socket.IO (Uptime Kuma v1.x)
+      try {
+        return res.json(await fetchViaSocket(url, apiKey));
+      } catch (sockErr) {
+        return res.status(502).json({ error: sockErr.message });
+      }
     }
   }
 
