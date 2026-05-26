@@ -5,3 +5,6 @@ dist/
 *.db-shm
 *.db-wal
 npm-debug.log*
+
+# Produktions-Config mit echten Secrets/Domains — nie auf GitHub!
+docker-compose.prod.yml
