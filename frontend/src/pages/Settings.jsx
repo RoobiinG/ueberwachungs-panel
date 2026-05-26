@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   Cloud, Server, Eye, EyeOff, CheckCircle, XCircle,
   RefreshCw, Trash2, Lock, Mail, Key, ShieldCheck, Send,
+  User, Settings2,
 } from 'lucide-react';
 
 const inputCls = 'w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:border-panel-accent transition-colors';
@@ -20,8 +21,9 @@ const Msg = ({ msg }) => msg ? (
 
 export default function Settings() {
   const { isAdmin } = useAuth();
+  const [tab, setTab]     = useState('profile'); // 'profile' | 'system'
 
-  const [status, setStatus] = useState({});
+  const [status,  setStatus]  = useState({});
   const [loading, setLoading] = useState({});
   const [msgs,    setMsgs]    = useState({});
 
@@ -33,7 +35,6 @@ export default function Settings() {
 
   // E-Mail
   const [email,     setEmail]    = useState('');
-  const [showEmail, setShowEmail] = useState(false);
 
   // Hetzner
   const [hetznerToken, setHetznerToken] = useState('');
@@ -53,15 +54,16 @@ export default function Settings() {
 
   // ── Laden ─────────────────────────────────────────────────────────────────
 
-  const load = async () => {
+  const loadAdmin = async () => {
+    if (!isAdmin) return;
     try {
       const { data } = await axios.get('/api/settings');
       setStatus(data);
       if (data.mchost_username) setMcUsername(data.mchost_username);
-      if (data.smtp_host)       setSmtp(s => ({ ...s, host: data.smtp_host  || '' }));
-      if (data.smtp_port)       setSmtp(s => ({ ...s, port: data.smtp_port  || 587 }));
-      if (data.smtp_user)       setSmtp(s => ({ ...s, user: data.smtp_user  || '' }));
-      if (data.smtp_from)       setSmtp(s => ({ ...s, from: data.smtp_from  || '' }));
+      if (data.smtp_host)  setSmtp(s => ({ ...s, host:   data.smtp_host  || '' }));
+      if (data.smtp_port)  setSmtp(s => ({ ...s, port:   data.smtp_port  || 587 }));
+      if (data.smtp_user)  setSmtp(s => ({ ...s, user:   data.smtp_user  || '' }));
+      if (data.smtp_from)  setSmtp(s => ({ ...s, from:   data.smtp_from  || '' }));
       if (data.smtp_secure !== undefined) setSmtp(s => ({ ...s, secure: !!data.smtp_secure }));
     } catch {}
   };
@@ -81,10 +83,11 @@ export default function Settings() {
   };
 
   useEffect(() => {
-    load();
+    loadAdmin();
     loadPasskeys();
     loadEmail();
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin]);
 
   // ── Hilfsfunktionen ───────────────────────────────────────────────────────
 
@@ -94,11 +97,11 @@ export default function Settings() {
   };
   const busy = (key, val) => setLoading(l => ({ ...l, [key]: val }));
 
-  // ── Aktionen ──────────────────────────────────────────────────────────────
+  // ── Profil-Aktionen ───────────────────────────────────────────────────────
 
   const changePassword = async () => {
     if (pwNew !== pwConfirm) return feedback('pw', 'err', 'Passwörter stimmen nicht überein');
-    if (pwNew.length < 6)    return feedback('pw', 'err', 'Mindestens 6 Zeichen erforderlich');
+    if (pwNew.length < 12)   return feedback('pw', 'err', 'Mindestens 12 Zeichen erforderlich');
     busy('pw', true);
     try {
       await axios.put('/api/auth/password', { currentPassword: pwCurrent, newPassword: pwNew });
@@ -121,13 +124,39 @@ export default function Settings() {
     busy('email', false);
   };
 
+  const registerPasskey = async () => {
+    busy('passkey', true);
+    try {
+      const { startRegistration } = await import('@simplewebauthn/browser');
+      const optRes   = await axios.get('/api/passkeys/register/start');
+      const attResp  = await startRegistration({ optionsJSON: optRes.data });
+      await axios.post('/api/passkeys/register/finish', { registration: attResp, name: 'Passkey' });
+      await loadPasskeys();
+      feedback('passkey', 'ok', 'Passkey erfolgreich registriert');
+    } catch (err) {
+      feedback('passkey', 'err', err.response?.data?.error || err.message || 'Registrierung fehlgeschlagen');
+    }
+    busy('passkey', false);
+  };
+
+  const deletePasskey = async (id) => {
+    if (!confirm('Passkey wirklich löschen?')) return;
+    try {
+      await axios.delete(`/api/passkeys/${id}`);
+      await loadPasskeys();
+      feedback('passkey', 'ok', 'Passkey gelöscht');
+    } catch { feedback('passkey', 'err', 'Fehler beim Löschen'); }
+  };
+
+  // ── System-Aktionen (Admin) ───────────────────────────────────────────────
+
   const saveHetzner = async () => {
     if (!hetznerToken.trim()) return;
     busy('hetzner', true);
     try {
       await axios.put('/api/settings/hetzner', { token: hetznerToken });
       setHetznerToken('');
-      await load();
+      await loadAdmin();
       feedback('hetzner', 'ok', 'Token gespeichert');
     } catch (err) {
       feedback('hetzner', 'err', err.response?.data?.error || 'Fehler');
@@ -137,7 +166,7 @@ export default function Settings() {
 
   const deleteHetzner = async () => {
     busy('hetzner_del', true);
-    try { await axios.delete('/api/settings/hetzner'); await load(); feedback('hetzner', 'ok', 'Token gelöscht'); }
+    try { await axios.delete('/api/settings/hetzner'); await loadAdmin(); feedback('hetzner', 'ok', 'Token gelöscht'); }
     catch { feedback('hetzner', 'err', 'Fehler beim Löschen'); }
     busy('hetzner_del', false);
   };
@@ -148,7 +177,7 @@ export default function Settings() {
     try {
       const { data } = await axios.post('/api/settings/mchost/login', { username: mcUsername, password: mcPassword });
       setMcPassword('');
-      await load();
+      await loadAdmin();
       feedback('mchost', 'ok', data.message || 'Login erfolgreich');
     } catch (err) {
       feedback('mchost', 'err', err.response?.data?.error || 'Login fehlgeschlagen');
@@ -160,7 +189,7 @@ export default function Settings() {
     busy('mchost_refresh', true);
     try {
       const { data } = await axios.post('/api/settings/mchost/refresh');
-      await load();
+      await loadAdmin();
       feedback('mchost', 'ok', data.message || 'Token erneuert');
     } catch (err) {
       feedback('mchost', 'err', err.response?.data?.error || 'Fehler');
@@ -173,7 +202,7 @@ export default function Settings() {
     try {
       await axios.delete('/api/settings/mchost');
       setMcUsername(''); setMcPassword('');
-      await load();
+      await loadAdmin();
       feedback('mchost', 'ok', 'Zugangsdaten gelöscht');
     } catch { feedback('mchost', 'err', 'Fehler beim Löschen'); }
     busy('mchost_del', false);
@@ -182,11 +211,10 @@ export default function Settings() {
   const saveSmtp = async () => {
     busy('smtp', true);
     try {
-      // Leeres Passwort-Feld → nicht überschreiben
       const payload = { ...smtp };
       if (!payload.pass) delete payload.pass;
       await axios.put('/api/settings/smtp', payload);
-      await load();
+      await loadAdmin();
       feedback('smtp', 'ok', 'SMTP gespeichert');
     } catch (err) {
       feedback('smtp', 'err', err.response?.data?.error || 'Fehler');
@@ -205,30 +233,6 @@ export default function Settings() {
     busy('smtp_test', false);
   };
 
-  const registerPasskey = async () => {
-    busy('passkey', true);
-    try {
-      const { startRegistration } = await import('@simplewebauthn/browser');
-      const optRes = await axios.get('/api/passkeys/register/start');
-      const attResp = await startRegistration(optRes.data);
-      await axios.post('/api/passkeys/register/finish', attResp);
-      await loadPasskeys();
-      feedback('passkey', 'ok', 'Passkey erfolgreich registriert');
-    } catch (err) {
-      feedback('passkey', 'err', err.response?.data?.error || err.message || 'Registrierung fehlgeschlagen');
-    }
-    busy('passkey', false);
-  };
-
-  const deletePasskey = async (id) => {
-    if (!confirm('Passkey löschen?')) return;
-    try {
-      await axios.delete(`/api/passkeys/${id}`);
-      await loadPasskeys();
-      feedback('passkey', 'ok', 'Passkey gelöscht');
-    } catch { feedback('passkey', 'err', 'Fehler beim Löschen'); }
-  };
-
   const fmtDate = (s) => s ? new Date(s).toLocaleString('de-DE') : '—';
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -236,219 +240,138 @@ export default function Settings() {
   return (
     <div className="space-y-4 max-w-xl">
 
-      {/* ── Passwort ändern ── */}
-      <Card title={<span className="flex items-center gap-2"><Lock size={14} />Passwort ändern</span>}>
-        <div className="space-y-3">
-          {[
-            ['Aktuelles Passwort', pwCurrent, setPwCurrent],
-            ['Neues Passwort',     pwNew,     setPwNew],
-            ['Bestätigen',         pwConfirm, setPwConfirm],
-          ].map(([label, val, set]) => (
-            <div key={label}>
-              <label className="block text-xs text-panel-muted mb-1">{label}</label>
-              <div className="relative">
-                <input
-                  type={showPw ? 'text' : 'password'}
-                  value={val}
-                  onChange={e => set(e.target.value)}
-                  placeholder="••••••••"
-                  className={inputCls + ' pr-9'}
-                  onKeyDown={e => e.key === 'Enter' && changePassword()}
-                />
-                <button type="button" onClick={() => setShowPw(v => !v)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
-                  {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
-              </div>
-            </div>
-          ))}
-          <Button onClick={changePassword}
-            disabled={!pwCurrent || !pwNew || !pwConfirm || loading.pw} size="sm">
-            Passwort speichern
-          </Button>
-          <Msg msg={msgs.pw} />
-        </div>
-      </Card>
+      {/* Tab-Header */}
+      <div className="flex gap-1 bg-panel-surface border border-panel-border rounded-lg p-1">
+        <button
+          onClick={() => setTab('profile')}
+          className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-sm transition-colors ${
+            tab === 'profile' ? 'bg-panel-card text-panel-text font-medium' : 'text-panel-muted hover:text-panel-text'
+          }`}>
+          <User size={14} />Mein Profil
+        </button>
+        {isAdmin && (
+          <button
+            onClick={() => setTab('system')}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-sm transition-colors ${
+              tab === 'system' ? 'bg-panel-card text-panel-text font-medium' : 'text-panel-muted hover:text-panel-text'
+            }`}>
+            <Settings2 size={14} />System
+          </button>
+        )}
+      </div>
 
-      {/* ── E-Mail-Adresse ── */}
-      <Card title={<span className="flex items-center gap-2"><Mail size={14} />E-Mail-Adresse</span>}>
-        <div className="space-y-3">
-          <p className="text-xs text-panel-muted">
-            Wird für Passwort-Reset-E-Mails verwendet.
-          </p>
-          <div className="relative">
+      {/* ═══════════════════ PROFIL-TAB ═══════════════════ */}
+      {tab === 'profile' && (<>
+
+        {/* ── Passwort ändern ── */}
+        <Card title={<span className="flex items-center gap-2"><Lock size={14} />Passwort ändern</span>}>
+          <div className="space-y-3">
+            {[
+              ['Aktuelles Passwort', pwCurrent, setPwCurrent],
+              ['Neues Passwort',     pwNew,     setPwNew],
+              ['Bestätigen',         pwConfirm, setPwConfirm],
+            ].map(([label, val, set]) => (
+              <div key={label}>
+                <label className="block text-xs text-panel-muted mb-1">{label}</label>
+                <div className="relative">
+                  <input
+                    type={showPw ? 'text' : 'password'}
+                    value={val}
+                    onChange={e => set(e.target.value)}
+                    placeholder="••••••••"
+                    className={inputCls + ' pr-9'}
+                    onKeyDown={e => e.key === 'Enter' && changePassword()}
+                  />
+                  <button type="button" onClick={() => setShowPw(v => !v)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
+                    {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+              </div>
+            ))}
+            <Button onClick={changePassword}
+              disabled={!pwCurrent || !pwNew || !pwConfirm || loading.pw} size="sm">
+              Passwort speichern
+            </Button>
+            <Msg msg={msgs.pw} />
+          </div>
+        </Card>
+
+        {/* ── E-Mail-Adresse ── */}
+        <Card title={<span className="flex items-center gap-2"><Mail size={14} />E-Mail-Adresse</span>}>
+          <div className="space-y-3">
+            <p className="text-xs text-panel-muted">Wird für Passwort-Reset-E-Mails verwendet.</p>
             <input
-              type={showEmail ? 'text' : 'email'}
+              type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
               placeholder="deine@email.de"
-              className={inputCls + ' pr-9'}
+              className={inputCls}
               onKeyDown={e => e.key === 'Enter' && saveEmail()}
             />
-            <button type="button" onClick={() => setShowEmail(v => !v)}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
-              {showEmail ? <EyeOff size={14} /> : <Eye size={14} />}
-            </button>
+            <Button onClick={saveEmail} disabled={loading.email} size="sm">
+              E-Mail speichern
+            </Button>
+            <Msg msg={msgs.email} />
           </div>
-          <Button onClick={saveEmail} disabled={loading.email} size="sm">
-            E-Mail speichern
-          </Button>
-          <Msg msg={msgs.email} />
-        </div>
-      </Card>
+        </Card>
 
-      {/* ── Passkeys ── */}
-      <Card title={<span className="flex items-center gap-2"><ShieldCheck size={14} />Passkeys (WebAuthn)</span>}>
-        <div className="space-y-3">
-          {passkeys.length > 0 ? (
-            <div className="divide-y divide-panel-border -mx-4">
-              {passkeys.map(pk => (
-                <div key={pk.id} className="flex items-center justify-between px-4 py-2.5">
-                  <div>
-                    <p className="text-xs text-panel-text">{pk.device_type || 'Passkey'}</p>
-                    <p className="text-xs text-panel-muted">{fmtDate(pk.created_at)}</p>
-                  </div>
-                  <Button size="sm" variant="danger" onClick={() => deletePasskey(pk.id)}>
-                    <Trash2 size={12} />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-xs text-panel-muted">Keine Passkeys registriert</p>
-          )}
-          <Button onClick={registerPasskey} disabled={loading.passkey} size="sm">
-            <Key size={13} className="mr-1" />Passkey registrieren
-          </Button>
-          <Msg msg={msgs.passkey} />
-        </div>
-      </Card>
-
-      {/* ── Hetzner ── */}
-      <Card title={<span className="flex items-center gap-2"><Cloud size={14} />Hetzner Cloud API</span>}>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <StatusBadge set={!!status.hetzner_api_token} />
-            {status.hetzner_api_token && (
-              <Button size="sm" variant="danger" onClick={deleteHetzner} disabled={loading.hetzner_del}>
-                <Trash2 size={12} className="mr-1" />Entfernen
-              </Button>
-            )}
-          </div>
-          <div>
-            <label className="block text-xs text-panel-muted mb-1">
-              {status.hetzner_api_token ? 'Neuen Token eintragen (überschreibt)' : 'API Token'}
-            </label>
-            <div className="relative">
-              <input
-                type={showHetzner ? 'text' : 'password'}
-                value={hetznerToken}
-                onChange={e => setHetznerToken(e.target.value)}
-                placeholder="hv1-..."
-                className={inputCls + ' pr-9'}
-                onKeyDown={e => e.key === 'Enter' && saveHetzner()}
-              />
-              <button type="button" onClick={() => setShowHetzner(v => !v)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
-                {showHetzner ? <EyeOff size={14} /> : <Eye size={14} />}
-              </button>
-            </div>
-          </div>
-          <Button onClick={saveHetzner} disabled={!hetznerToken.trim() || loading.hetzner} size="sm">
-            Speichern
-          </Button>
-          <Msg msg={msgs.hetzner} />
-        </div>
-      </Card>
-
-      {/* ── MC-Host24 ── */}
-      <Card title={<span className="flex items-center gap-2"><Server size={14} />MC-Host24</span>}>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <StatusBadge set={status.mchost_token_set} />
-              {status.mchost_token_set && (
-                <p className="text-xs text-panel-muted">Token aktiv · wird automatisch erneuert</p>
-              )}
-            </div>
-            <div className="flex gap-1">
-              {status.mchost_token_set && (
-                <Button size="sm" variant="ghost" onClick={refreshMcHost} disabled={loading.mchost_refresh}>
-                  <RefreshCw size={12} className="mr-1" />Erneuern
-                </Button>
-              )}
-              {(status.mchost_token_set || status.mchost_username) && (
-                <Button size="sm" variant="danger" onClick={deleteMcHost} disabled={loading.mchost_del}>
-                  <Trash2 size={12} className="mr-1" />Entfernen
-                </Button>
-              )}
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs text-panel-muted mb-1">E-Mail-Adresse</label>
-            <input type="email" value={mcUsername} onChange={e => setMcUsername(e.target.value)}
-              placeholder="deine@email.de" className={inputCls} />
-            <p className="text-xs text-panel-muted mt-1">
-              Verwende deine MC-Host24 <strong>Login-E-Mail</strong>, nicht deinen Anzeigenamen.
+        {/* ── Passkeys ── */}
+        <Card title={<span className="flex items-center gap-2"><ShieldCheck size={14} />Passkeys (WebAuthn)</span>}>
+          <div className="space-y-3">
+            <p className="text-xs text-panel-muted">
+              Passkeys ermöglichen passwortlosen Login per Fingerabdruck, Face ID oder Hardware-Key.
             </p>
+            {passkeys.length > 0 ? (
+              <div className="divide-y divide-panel-border -mx-4">
+                {passkeys.map(pk => (
+                  <div key={pk.id} className="flex items-center justify-between px-4 py-2.5">
+                    <div>
+                      <p className="text-xs text-panel-text font-medium">{pk.device_type || 'Passkey'}</p>
+                      <p className="text-xs text-panel-muted">{fmtDate(pk.created_at)}</p>
+                    </div>
+                    <Button size="sm" variant="danger" onClick={() => deletePasskey(pk.id)}>
+                      <Trash2 size={12} />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-panel-muted">Keine Passkeys registriert</p>
+            )}
+            <Button onClick={registerPasskey} disabled={loading.passkey} size="sm">
+              <Key size={13} className="mr-1" />
+              {loading.passkey ? 'Warte auf Gerät…' : 'Passkey registrieren'}
+            </Button>
+            <Msg msg={msgs.passkey} />
           </div>
-          <div>
-            <label className="block text-xs text-panel-muted mb-1">Passwort</label>
-            <div className="relative">
-              <input
-                type={showMcPw ? 'text' : 'password'}
-                value={mcPassword}
-                onChange={e => setMcPassword(e.target.value)}
-                placeholder="••••••••"
-                className={inputCls + ' pr-9'}
-                onKeyDown={e => e.key === 'Enter' && loginMcHost()}
-              />
-              <button type="button" onClick={() => setShowMcPw(v => !v)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
-                {showMcPw ? <EyeOff size={14} /> : <Eye size={14} />}
-              </button>
-            </div>
-          </div>
-          <Button onClick={loginMcHost} disabled={!mcUsername || !mcPassword || loading.mchost} size="sm">
-            {status.mchost_token_set ? 'Neu einloggen' : 'Einloggen & Token holen'}
-          </Button>
-          <Msg msg={msgs.mchost} />
-        </div>
-      </Card>
+        </Card>
 
-      {/* ── SMTP (nur Admin) ── */}
-      {isAdmin && (
+      </>)}
+
+      {/* ═══════════════════ SYSTEM-TAB (Admin) ═══════════════════ */}
+      {tab === 'system' && isAdmin && (<>
+
+        {/* ── SMTP ── */}
         <Card title={<span className="flex items-center gap-2"><Send size={14} />SMTP E-Mail (Passwort-Reset)</span>}>
           <div className="space-y-3">
             <div className="grid grid-cols-3 gap-2">
               <div className="col-span-2">
                 <label className="block text-xs text-panel-muted mb-1">SMTP Host</label>
-                <input
-                  value={smtp.host}
-                  onChange={e => setSmtp(s => ({ ...s, host: e.target.value }))}
-                  placeholder="smtp.example.com"
-                  className={inputCls}
-                />
+                <input value={smtp.host} onChange={e => setSmtp(s => ({ ...s, host: e.target.value }))}
+                  placeholder="smtp.example.com" className={inputCls} />
               </div>
               <div>
                 <label className="block text-xs text-panel-muted mb-1">Port</label>
-                <input
-                  type="number"
-                  value={smtp.port}
+                <input type="number" value={smtp.port}
                   onChange={e => setSmtp(s => ({ ...s, port: Number(e.target.value) }))}
-                  placeholder="587"
-                  className={inputCls}
-                />
+                  placeholder="587" className={inputCls} />
               </div>
             </div>
             <div>
               <label className="block text-xs text-panel-muted mb-1">Benutzername</label>
-              <input
-                value={smtp.user}
-                onChange={e => setSmtp(s => ({ ...s, user: e.target.value }))}
-                placeholder="user@example.com"
-                className={inputCls}
-              />
+              <input value={smtp.user} onChange={e => setSmtp(s => ({ ...s, user: e.target.value }))}
+                placeholder="user@example.com" className={inputCls} />
             </div>
             <div>
               <label className="block text-xs text-panel-muted mb-1">Passwort</label>
@@ -457,7 +380,7 @@ export default function Settings() {
                   type={showSmtpPw ? 'text' : 'password'}
                   value={smtp.pass}
                   onChange={e => setSmtp(s => ({ ...s, pass: e.target.value }))}
-                  placeholder={status.smtp_pass === '***gesetzt***' ? '***gesetzt*** (leer lassen = behalten)' : ''}
+                  placeholder={status.smtp_pass === '***gesetzt***' ? '(gesetzt — leer lassen = behalten)' : ''}
                   className={inputCls + ' pr-9'}
                 />
                 <button type="button" onClick={() => setShowSmtpPw(v => !v)}
@@ -468,26 +391,17 @@ export default function Settings() {
             </div>
             <div>
               <label className="block text-xs text-panel-muted mb-1">Absender-Adresse (From)</label>
-              <input
-                value={smtp.from}
-                onChange={e => setSmtp(s => ({ ...s, from: e.target.value }))}
-                placeholder="Monitoring Panel <noreply@example.com>"
-                className={inputCls}
-              />
+              <input value={smtp.from} onChange={e => setSmtp(s => ({ ...s, from: e.target.value }))}
+                placeholder="Monitoring Panel <noreply@example.com>" className={inputCls} />
             </div>
             <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={smtp.secure}
+              <input type="checkbox" checked={smtp.secure}
                 onChange={e => setSmtp(s => ({ ...s, secure: e.target.checked }))}
-                className="rounded border-panel-border"
-              />
+                className="rounded border-panel-border" />
               <span className="text-xs text-panel-text">SSL/TLS (Port 465) — deaktiviert für STARTTLS (Port 587)</span>
             </label>
             <div className="flex gap-2">
-              <Button onClick={saveSmtp} disabled={loading.smtp} size="sm">
-                SMTP speichern
-              </Button>
+              <Button onClick={saveSmtp} disabled={loading.smtp} size="sm">SMTP speichern</Button>
               <Button onClick={testSmtp} disabled={loading.smtp_test} size="sm" variant="ghost">
                 <Send size={12} className="mr-1" />Test-Mail senden
               </Button>
@@ -495,7 +409,98 @@ export default function Settings() {
             <Msg msg={msgs.smtp} />
           </div>
         </Card>
-      )}
+
+        {/* ── Hetzner ── */}
+        <Card title={<span className="flex items-center gap-2"><Cloud size={14} />Hetzner Cloud API</span>}>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <StatusBadge set={!!status.hetzner_api_token} />
+              {status.hetzner_api_token && (
+                <Button size="sm" variant="danger" onClick={deleteHetzner} disabled={loading.hetzner_del}>
+                  <Trash2 size={12} className="mr-1" />Entfernen
+                </Button>
+              )}
+            </div>
+            <div>
+              <label className="block text-xs text-panel-muted mb-1">
+                {status.hetzner_api_token ? 'Neuen Token eintragen (überschreibt)' : 'API Token'}
+              </label>
+              <div className="relative">
+                <input
+                  type={showHetzner ? 'text' : 'password'}
+                  value={hetznerToken}
+                  onChange={e => setHetznerToken(e.target.value)}
+                  placeholder="hv1-..."
+                  className={inputCls + ' pr-9'}
+                  onKeyDown={e => e.key === 'Enter' && saveHetzner()}
+                />
+                <button type="button" onClick={() => setShowHetzner(v => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
+                  {showHetzner ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+            </div>
+            <Button onClick={saveHetzner} disabled={!hetznerToken.trim() || loading.hetzner} size="sm">Speichern</Button>
+            <Msg msg={msgs.hetzner} />
+          </div>
+        </Card>
+
+        {/* ── MC-Host24 ── */}
+        <Card title={<span className="flex items-center gap-2"><Server size={14} />MC-Host24</span>}>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <StatusBadge set={status.mchost_token_set} />
+                {status.mchost_token_set && (
+                  <p className="text-xs text-panel-muted">Token aktiv · wird automatisch erneuert</p>
+                )}
+              </div>
+              <div className="flex gap-1">
+                {status.mchost_token_set && (
+                  <Button size="sm" variant="ghost" onClick={refreshMcHost} disabled={loading.mchost_refresh}>
+                    <RefreshCw size={12} className="mr-1" />Erneuern
+                  </Button>
+                )}
+                {(status.mchost_token_set || status.mchost_username) && (
+                  <Button size="sm" variant="danger" onClick={deleteMcHost} disabled={loading.mchost_del}>
+                    <Trash2 size={12} className="mr-1" />Entfernen
+                  </Button>
+                )}
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-panel-muted mb-1">E-Mail-Adresse</label>
+              <input type="email" value={mcUsername} onChange={e => setMcUsername(e.target.value)}
+                placeholder="deine@email.de" className={inputCls} />
+              <p className="text-xs text-panel-muted mt-1">
+                Verwende deine MC-Host24 <strong>Login-E-Mail</strong>, nicht deinen Anzeigenamen.
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs text-panel-muted mb-1">Passwort</label>
+              <div className="relative">
+                <input
+                  type={showMcPw ? 'text' : 'password'}
+                  value={mcPassword}
+                  onChange={e => setMcPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className={inputCls + ' pr-9'}
+                  onKeyDown={e => e.key === 'Enter' && loginMcHost()}
+                />
+                <button type="button" onClick={() => setShowMcPw(v => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
+                  {showMcPw ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+            </div>
+            <Button onClick={loginMcHost} disabled={!mcUsername || !mcPassword || loading.mchost} size="sm">
+              {status.mchost_token_set ? 'Neu einloggen' : 'Einloggen & Token holen'}
+            </Button>
+            <Msg msg={msgs.mchost} />
+          </div>
+        </Card>
+
+      </>)}
 
     </div>
   );

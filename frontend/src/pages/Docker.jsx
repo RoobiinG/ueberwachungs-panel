@@ -4,7 +4,7 @@ import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { ServerSelector } from '../components/ui/ServerSelector';
-import { RefreshCw, Play, Square, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
+import { RefreshCw, Play, Square, RotateCcw, ChevronDown, ChevronUp, Tag, Check, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
   LineChart, Line, AreaChart, Area,
@@ -130,9 +130,22 @@ export default function Docker({ liveStats }) {
   const [error, setError]           = useState('');
   const [expanded, setExpanded]     = useState(null);
 
+  // Spitznamen: { containerId: { nickname, tag } }
+  const [labels,      setLabels]      = useState({});
+  const [editingLabel, setEditingLabel] = useState(null); // containerId
+  const [labelDraft,  setLabelDraft]  = useState({ nickname: '', tag: '' });
+
   // Sparkline-Historie: letzten 20 CPU%-Werte pro Container-ID (nur lokal)
   const sparkRef = useRef({});
   const [sparkData, setSparkData] = useState({});
+
+  const loadLabels = async (srv) => {
+    const server = srv ?? (selectedServer ? String(selectedServer) : 'local');
+    try {
+      const { data } = await axios.get(`/api/docker/labels?server=${encodeURIComponent(server)}`);
+      setLabels(data);
+    } catch {}
+  };
 
   const load = async () => {
     setLoading(true);
@@ -152,9 +165,31 @@ export default function Docker({ liveStats }) {
   useEffect(() => {
     setContainers([]);
     setExpanded(null);
+    setEditingLabel(null);
+    const srv = selectedServer ? String(selectedServer) : 'local';
     load();
+    loadLabels(srv);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedServer]);
+
+  const openLabelEdit = (cid, currentNickname, currentTag) => {
+    setEditingLabel(cid);
+    setLabelDraft({ nickname: currentNickname || '', tag: currentTag || '' });
+  };
+
+  const saveLabel = async (cid) => {
+    const server = selectedServer ? String(selectedServer) : 'local';
+    try {
+      await axios.put('/api/docker/labels', {
+        server,
+        containerId: cid,
+        nickname: labelDraft.nickname,
+        tag:      labelDraft.tag,
+      });
+      await loadLabels(server);
+    } catch {}
+    setEditingLabel(null);
+  };
 
   // Sparklines nur für lokalen Docker via WebSocket-Broadcast
   useEffect(() => {
@@ -234,13 +269,54 @@ export default function Docker({ liveStats }) {
                   <div className="flex items-center justify-between px-4 py-3">
                     {/* Name & Status */}
                     <div className="flex-1 min-w-0 mr-3">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <Badge color={statusColor(status || state)}>{state}</Badge>
-                        <span className="text-sm text-panel-text font-medium truncate">{name}</span>
-                        {selectedServer && c.stack && (
-                          <span className="text-xs text-panel-muted bg-panel-surface px-1.5 py-0.5 rounded">{c.stack}</span>
-                        )}
-                      </div>
+                      {editingLabel === cid ? (
+                        /* ── Inline-Edit für Nickname + Tag ── */
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <input
+                            autoFocus
+                            value={labelDraft.nickname}
+                            onChange={e => setLabelDraft(d => ({ ...d, nickname: e.target.value }))}
+                            placeholder="Spitzname…"
+                            className="bg-panel-surface border border-panel-accent rounded px-2 py-0.5 text-xs text-panel-text focus:outline-none w-28"
+                            onKeyDown={e => { if (e.key === 'Enter') saveLabel(cid); if (e.key === 'Escape') setEditingLabel(null); }}
+                          />
+                          <input
+                            value={labelDraft.tag}
+                            onChange={e => setLabelDraft(d => ({ ...d, tag: e.target.value }))}
+                            placeholder="Tag…"
+                            className="bg-panel-surface border border-panel-border rounded px-2 py-0.5 text-xs text-panel-text focus:outline-none w-20"
+                            onKeyDown={e => { if (e.key === 'Enter') saveLabel(cid); if (e.key === 'Escape') setEditingLabel(null); }}
+                          />
+                          <button onClick={() => saveLabel(cid)}
+                            className="p-0.5 text-panel-green hover:text-panel-green/80"><Check size={13} /></button>
+                          <button onClick={() => setEditingLabel(null)}
+                            className="p-0.5 text-panel-muted hover:text-panel-red"><X size={13} /></button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Badge color={statusColor(status || state)}>{state}</Badge>
+                          {labels[cid]?.nickname
+                            ? <span className="text-sm text-panel-text font-medium truncate">{labels[cid].nickname}</span>
+                            : <span className="text-sm text-panel-text font-medium truncate">{name}</span>
+                          }
+                          {labels[cid]?.nickname && (
+                            <span className="text-xs text-panel-muted truncate">({name})</span>
+                          )}
+                          {labels[cid]?.tag && (
+                            <span className="px-1.5 py-0.5 bg-panel-accent/20 text-panel-accent text-[10px] rounded font-mono">
+                              {labels[cid].tag}
+                            </span>
+                          )}
+                          {selectedServer && c.stack && !labels[cid]?.tag && (
+                            <span className="text-xs text-panel-muted bg-panel-surface px-1.5 py-0.5 rounded">{c.stack}</span>
+                          )}
+                          <button onClick={() => openLabelEdit(cid, labels[cid]?.nickname, labels[cid]?.tag)}
+                            className="p-0.5 text-panel-muted hover:text-panel-text opacity-40 hover:opacity-100 transition-opacity"
+                            title="Spitzname / Tag bearbeiten">
+                            <Tag size={11} />
+                          </button>
+                        </div>
+                      )}
                       <div className="text-xs text-panel-muted mt-0.5 truncate">{image}</div>
                       {/* Live-Werte */}
                       {isRun && (cpuPct != null || memUsed != null) && (
