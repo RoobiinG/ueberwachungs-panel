@@ -21,6 +21,7 @@ import Settings from './pages/Settings';
 import Alerts from './pages/Alerts';
 import Roles from './pages/Roles';
 import AuditLog from './pages/AuditLog';
+import Monitoring from './pages/Monitoring';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 
@@ -54,7 +55,8 @@ const AppRoutes = () => {
         <Route path="/docker" element={<Docker liveStats={liveStats} />} />
         <Route path="/services" element={<Services />} />
         <Route path="/firewall" element={<Firewall />} />
-        <Route path="/network" element={<Network liveStats={liveStats} />} />
+        <Route path="/network"    element={<Network liveStats={liveStats} />} />
+        <Route path="/monitoring" element={<ProtectedRoute permission="metrics.view"><Monitoring /></ProtectedRoute>} />
         <Route path="/ssh" element={<SSH />} />
         <Route path="/agents" element={<Agents />} />
         <Route path="/agents/:id" element={<AgentDetail />} />

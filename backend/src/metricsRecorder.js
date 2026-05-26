@@ -3,10 +3,10 @@ const db  = require('./db');
 const { getHostDisks } = require('./hostUtils');
 
 const insert  = db.prepare(`
-  INSERT OR REPLACE INTO metrics (ts, cpu, mem_used, mem_total, disk_used, disk_total)
-  VALUES (?, ?, ?, ?, ?, ?)
+  INSERT OR REPLACE INTO metrics (ts, server_id, cpu, mem_used, mem_total, disk_used, disk_total)
+  VALUES (?, 'local', ?, ?, ?, ?, ?)
 `);
-const cleanup = db.prepare('DELETE FROM metrics WHERE ts < ?');
+const cleanup = db.prepare("DELETE FROM metrics WHERE ts < ? AND server_id = 'local'");
 
 async function record() {
   try {
