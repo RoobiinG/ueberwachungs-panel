@@ -67,18 +67,18 @@ function MetricPanel({ panel, data, spanSeconds, loading }) {
         )}
       </div>
 
-      <div className="h-[200px] px-1 pt-3 pb-1">
+      <div className="px-1 pt-3 pb-1">
         {loading ? (
-          <div className="h-full flex items-center justify-center">
+          <div className="flex items-center justify-center" style={{ height: 200 }}>
             <RefreshCw size={16} className="text-panel-muted animate-spin" />
           </div>
         ) : data.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center gap-1">
+          <div className="flex flex-col items-center justify-center gap-1" style={{ height: 200 }}>
             <span className="text-panel-muted text-sm">Keine Daten</span>
             <span className="text-panel-muted/60 text-xs">Noch keine Messungen für diesen Zeitraum</span>
           </div>
         ) : (
-          <ResponsiveContainer width="100%" height="100%">
+          <ResponsiveContainer width="100%" height={200}>
             <AreaChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
               <defs>
                 <linearGradient id={panel.gradientId} x1="0" y1="0" x2="0" y2="1">
