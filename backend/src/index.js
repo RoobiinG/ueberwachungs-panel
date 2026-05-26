@@ -1,8 +1,9 @@
 require('dotenv').config();
-const express = require('express');
-const cors    = require('cors');
-const http    = require('http');
-const path    = require('path');
+const express     = require('express');
+const cors        = require('cors');
+const compression = require('compression');
+const http        = require('http');
+const path        = require('path');
 const auth               = require('./middleware/auth');
 const requireLocalAccess = require('./middleware/requireLocalAccess');
 const { setup: setupWS } = require('./websocket');
@@ -26,6 +27,7 @@ app.use(cors(
     ? { origin: allowedOrigin, credentials: false }
     : { origin: false }
 ));
+app.use(compression());   // gzip für API-Responses + statische Assets
 app.use(express.json());
 
 app.use('/api/auth', require('./routes/auth'));
@@ -49,7 +51,7 @@ app.use('/api/hetzner', auth, require('./routes/hetzner'));
 app.use('/api/mchost', auth, require('./routes/mchost'));
 app.use('/api/settings', auth, require('./routes/settings'));
 app.use('/api/agents',  auth, require('./routes/agents'));
-app.use('/api/metrics',      auth, requireLocalAccess, require('./routes/metrics'));
+app.use('/api/metrics',      auth, require('./routes/metrics'));  // Kein requireLocalAccess: Daten kommen aus lokaler SQLite (auch Remote-Agent-Daten)
 app.use('/api/uptime-kuma', auth, require('./routes/uptimeKuma'));
 app.use('/api/alerts',      auth, require('./routes/alerts'));
 app.use('/api/docker/metrics', auth, requireLocalAccess, require('./routes/containerMetrics'));

@@ -6,7 +6,20 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': { target: 'http://localhost:3001', changeOrigin: true },
-      '/ws': { target: 'ws://localhost:3001', ws: true },
+      '/ws':  { target: 'ws://localhost:3001',   ws: true },
     },
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor:  ['react', 'react-dom', 'react-router-dom'],
+          charts:  ['recharts'],
+          icons:   ['lucide-react'],
+          ui:      ['axios', 'jsonwebtoken'],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 600,
   },
 });

@@ -81,8 +81,7 @@ async function recordContainerStats() {
     ).run(ts, id, name, cpuPercent, memUsed, memLimit, rxSec, txSec);
   }));
 
-  // Alte Einträge löschen (> 24h)
-  db.prepare('DELETE FROM container_metrics WHERE ts < ?').run(ts - RETENTION);
+  // Cleanup läuft separat stündlich — nicht bei jeder Aufzeichnung
 }
 
 function start() {
@@ -92,6 +91,10 @@ function start() {
   }
   recordContainerStats().catch(() => {});
   setInterval(() => recordContainerStats().catch(() => {}), 30_000);
+  // Cleanup stündlich
+  const runCleanup = () => db.prepare('DELETE FROM container_metrics WHERE ts < ?').run(Math.floor(Date.now() / 1000) - 86_400);
+  runCleanup();
+  setInterval(runCleanup, 3_600_000);
   console.log('Docker-Metriken-Recorder gestartet (alle 30s, 24h Aufbewahrung)');
 }
 
