@@ -18,8 +18,10 @@ services:
       JWT_EXPIRES_IN: "24h"
       # Optional: Admin-Passwort beim Erststart setzen (sonst zufällig generiert + in Logs ausgegeben)
       # ADMIN_PASSWORD: "mein-sicheres-passwort"
-      # Optional: CORS auf Frontend-Origin einschränken (z. B. https://panel.example.com)
+      # Für Passkeys (WebAuthn) und CORS erforderlich — Domain oder IP des Panels eintragen:
       # ALLOWED_ORIGIN: "https://panel.example.com"
+      # Bei IP-Zugriff ohne Domain (z. B. http://192.168.1.10:3001):
+      # ALLOWED_ORIGIN: "http://192.168.1.10:3001"
     # Für systemctl/UFW auf dem Host erforderlich:
     # privileged: true
     # pid: "host"
