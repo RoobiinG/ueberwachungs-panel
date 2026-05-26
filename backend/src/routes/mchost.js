@@ -1,7 +1,14 @@
 const router      = require('express').Router();
 const axios       = require('axios');
 const db          = require('../db');
-const { requirePermission } = require('../middleware/requirePermission');
+const { requirePermission, getPermissions } = require('../middleware/requirePermission');
+
+const actionPermMap = {
+  start:    'mchost.start',
+  stop:     'mchost.stop',
+  shutdown: 'mchost.stop',
+  restart:  'mchost.restart',
+};
 
 const getSetting = (key) =>
   db.prepare('SELECT value FROM settings WHERE key = ?').get(key)?.value || '';
@@ -88,10 +95,11 @@ router.get('/vserver/:id/status', requirePermission('mchost.view'), async (req, 
   handle(res, async () => (await api()).get(`/vserver/${req.params.id}/status`));
 });
 
-router.post('/vserver/:id/:action', requirePermission('mchost.control'), async (req, res) => {
+router.post('/vserver/:id/:action', async (req, res) => {
   if (!validId(req.params.id)) return res.status(400).json({ error: 'Ungültige VServer-ID' });
-  const valid = ['start', 'stop', 'shutdown', 'restart'];
-  if (!valid.includes(req.params.action)) return res.status(400).json({ error: 'Ungültige Aktion' });
+  const perm = actionPermMap[req.params.action];
+  if (!perm) return res.status(400).json({ error: 'Ungültige Aktion' });
+  if (!getPermissions(req.user.role).includes(perm)) return res.status(403).json({ error: 'Keine Berechtigung' });
   handle(res, async () => (await api()).post(`/vserver/${req.params.id}/${req.params.action}`));
 });
 
@@ -100,7 +108,7 @@ router.get('/vserver/:id/backups', requirePermission('mchost.view'), async (req,
   handle(res, async () => (await api()).get(`/vserver/${req.params.id}/backups`));
 });
 
-router.post('/vserver/:id/backups', requirePermission('mchost.control'), async (req, res) => {
+router.post('/vserver/:id/backups', requirePermission('mchost.backup'), async (req, res) => {
   if (!validId(req.params.id)) return res.status(400).json({ error: 'Ungültige VServer-ID' });
   handle(res, async () => (await api()).post(`/vserver/${req.params.id}/backups`));
 });
