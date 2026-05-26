@@ -66,7 +66,7 @@ const AppRoutes = () => {
         <Route path="/users"     element={<ProtectedRoute adminOnly><Users /></ProtectedRoute>} />
         <Route path="/roles"     element={<ProtectedRoute adminOnly><Roles /></ProtectedRoute>} />
         <Route path="/audit"     element={<ProtectedRoute permission="audit.view"><AuditLog /></ProtectedRoute>} />
-        <Route path="/settings"  element={<ProtectedRoute adminOnly><Settings /></ProtectedRoute>} />
+        <Route path="/settings"  element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>

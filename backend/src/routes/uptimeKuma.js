@@ -29,7 +29,7 @@ function fetchViaSocket(url, apiKey) {
 
   return new Promise((resolve, reject) => {
     const socket = io(url.replace(/\/+$/, ''), {
-      transports:   ['websocket', 'polling'], // WebSocket bevorzugt
+      transports:   ['polling', 'websocket'],  // Polling zuerst (Proxy-kompatibel)
       reconnection: false,
       timeout:      10000,
       auth: { apiKey },                       // Uptime Kuma erwartet handshake.auth.apiKey

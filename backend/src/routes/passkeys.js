@@ -58,29 +58,32 @@ router.post('/register/finish', async (req, res) => {
   if (!stored) return res.status(400).json({ error: 'Challenge abgelaufen — bitte neu starten' });
   challenges.delete(`reg:${req.user.id}`);
 
-  const { name: deviceName = 'Passkey' } = req.body;
+  // Frontend kann direkt attResp oder { registration: attResp, name: '...' } senden
+  const regResponse = req.body.registration ?? req.body;
+  const deviceName  = req.body.name || 'Passkey';
 
   try {
     const verification = await verifyRegistrationResponse({
-      response:           req.body.registration,
-      expectedChallenge:  stored.challenge,
-      expectedOrigin:     process.env.ALLOWED_ORIGIN || `http://localhost:${process.env.PORT || 3001}`,
-      expectedRPID:       getRpId(),
+      response:          regResponse,
+      expectedChallenge: stored.challenge,
+      expectedOrigin:    process.env.ALLOWED_ORIGIN || `http://localhost:${process.env.PORT || 3001}`,
+      expectedRPID:      getRpId(),
     });
 
     if (!verification.verified) return res.status(400).json({ error: 'Verifizierung fehlgeschlagen' });
 
-    const { credentialID, credentialPublicKey, counter, credentialDeviceType, credentialBackedUp } = verification.registrationInfo;
+    // SimpleWebAuthn v9+: registrationInfo.credential statt direkte Felder
+    const { credential, credentialDeviceType } = verification.registrationInfo;
 
     db.prepare(
       'INSERT INTO passkeys (user_id, credential_id, public_key, counter, device_type, transports) VALUES (?, ?, ?, ?, ?, ?)'
     ).run(
       req.user.id,
-      Buffer.from(credentialID).toString('base64url'),
-      Buffer.from(credentialPublicKey).toString('base64url'),
-      counter,
+      credential.id,                                               // Bereits Base64URL-String
+      Buffer.from(credential.publicKey).toString('base64url'),
+      credential.counter,
       deviceName,
-      JSON.stringify(req.body.registration?.response?.transports || []),
+      JSON.stringify(credential.transports || regResponse.response?.transports || []),
     );
 
     res.json({ ok: true });

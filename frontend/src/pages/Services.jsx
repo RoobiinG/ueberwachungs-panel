@@ -15,7 +15,9 @@ export default function Services() {
   const [selectedServer, setSelectedServer] = useState(null); // null = lokal
   const [services, setServices] = useState([]);
   const [loading, setLoading]   = useState(true);
-  const [filter, setFilter]     = useState('');
+  const [filter,   setFilter]   = useState('');
+  const [actError, setActError] = useState('');
+  const [actBusy,  setActBusy]  = useState({});
 
   const load = async () => {
     setLoading(true);
@@ -33,18 +35,24 @@ export default function Services() {
 
   useEffect(() => {
     setServices([]);
+    setActError('');
     load();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedServer]);
 
   const act = async (name, action) => {
+    setActError('');
+    setActBusy(b => ({ ...b, [name]: action }));
     try {
       const url = selectedServer
         ? `/api/agents/${selectedServer}/services/${encodeURIComponent(name)}/${action}`
-        : `/api/services/${name}/${action}`;
+        : `/api/services/${encodeURIComponent(name)}/${action}`;
       await axios.post(url);
       await load();
-    } catch {}
+    } catch (err) {
+      setActError(err.response?.data?.error || `Aktion "${action}" fehlgeschlagen`);
+    }
+    setActBusy(b => ({ ...b, [name]: null }));
   };
 
   const filtered = services.filter(s => s.name?.toLowerCase().includes(filter.toLowerCase()));
@@ -65,6 +73,12 @@ export default function Services() {
         </div>
       </div>
 
+      {actError && (
+        <div className="bg-panel-red/10 border border-panel-red/30 text-panel-red text-xs rounded-md px-3 py-2">
+          {actError}
+        </div>
+      )}
+
       <Card title={`Systemd Services (${filtered.length})`}>
         {loading ? (
           <div className="text-panel-muted text-sm py-4 text-center">Lade...</div>
@@ -82,10 +96,13 @@ export default function Services() {
                 {canWrite && (
                   <div className="flex items-center gap-1">
                     {s.active !== 'active'
-                      ? <Button size="sm" variant="success" onClick={() => act(s.name, 'start')}><Play size={11} /></Button>
-                      : <Button size="sm" variant="danger"  onClick={() => act(s.name, 'stop')}><Square size={11} /></Button>
+                      ? <Button size="sm" variant="success" onClick={() => act(s.name, 'start')}
+                          disabled={!!actBusy[s.name]}><Play size={11} /></Button>
+                      : <Button size="sm" variant="danger"  onClick={() => act(s.name, 'stop')}
+                          disabled={!!actBusy[s.name]}><Square size={11} /></Button>
                     }
-                    <Button size="sm" variant="ghost" onClick={() => act(s.name, 'restart')}><RotateCcw size={11} /></Button>
+                    <Button size="sm" variant="ghost" onClick={() => act(s.name, 'restart')}
+                      disabled={!!actBusy[s.name]}><RotateCcw size={11} /></Button>
                   </div>
                 )}
               </div>

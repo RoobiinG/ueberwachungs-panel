@@ -26,7 +26,7 @@ const navItems = [
   { to: '/users',    icon: Users,          label: 'Benutzer',        adminOnly: true },
   { to: '/roles',    icon: ShieldCheck,    label: 'Rollen & Rechte', adminOnly: true },
   { to: '/audit',    icon: ClipboardList,  label: 'Audit-Log',       permission: 'audit.view' },
-  { to: '/settings', icon: Settings,       label: 'Einstellungen',   adminOnly: true },
+  { to: '/settings', icon: Settings,       label: 'Einstellungen' },
 ];
 
 export const Sidebar = () => {
