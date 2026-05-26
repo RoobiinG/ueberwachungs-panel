@@ -33,7 +33,7 @@ async function getMetricValue(rule) {
     `SELECT cpu,
             ROUND(mem_used * 100.0 / mem_total, 1) AS memory,
             ROUND(disk_used * 100.0 / disk_total, 1) AS disk
-     FROM metrics WHERE mem_total > 0 ORDER BY ts DESC LIMIT 1`
+     FROM metrics WHERE server_id = 'local' AND mem_total > 0 ORDER BY ts DESC LIMIT 1`
   ).get();
   return latest?.[rule.metric] ?? null;
 }

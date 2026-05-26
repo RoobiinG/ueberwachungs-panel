@@ -67,6 +67,7 @@ setupWS(server);
 require('./metricsRecorder').start();
 require('./alertEvaluator').start();
 try { require('./dockerMetricsRecorder').start(); } catch (e) { console.warn('Docker-Metriken deaktiviert:', e.message); }
+try { require('./remoteMetricsRecorder').start(); } catch (e) { console.warn('Remote-Metriken deaktiviert:', e.message); }
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => console.log(`Überwachungs-Panel running on port ${PORT}`));

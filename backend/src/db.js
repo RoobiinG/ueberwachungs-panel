@@ -153,6 +153,30 @@ try { db.exec('ALTER TABLE alert_rules ADD COLUMN agent_id INTEGER REFERENCES re
 try { db.exec("ALTER TABLE alert_history ADD COLUMN type TEXT NOT NULL DEFAULT 'fired'"); } catch {}
 // Rollen: Lokalen Server für diese Rolle ausblenden
 try { db.exec('ALTER TABLE roles ADD COLUMN hide_local INTEGER NOT NULL DEFAULT 0'); } catch {}
+// Metrics: server_id-Spalte für Multi-Server-Langzeit-Monitoring
+try {
+  const has = db.prepare("SELECT COUNT(*) AS c FROM pragma_table_info('metrics') WHERE name='server_id'").get().c > 0;
+  if (!has) {
+    db.exec(`
+      CREATE TABLE metrics_new (
+        ts         INTEGER NOT NULL,
+        server_id  TEXT    NOT NULL DEFAULT 'local',
+        cpu        REAL,
+        mem_used   INTEGER,
+        mem_total  INTEGER,
+        disk_used  INTEGER,
+        disk_total INTEGER,
+        PRIMARY KEY (ts, server_id)
+      );
+      INSERT OR IGNORE INTO metrics_new (ts, server_id, cpu, mem_used, mem_total, disk_used, disk_total)
+        SELECT ts, 'local', cpu, mem_used, mem_total, disk_used, disk_total FROM metrics;
+      DROP TABLE metrics;
+      ALTER TABLE metrics_new RENAME TO metrics;
+      CREATE INDEX IF NOT EXISTS idx_metrics_ts        ON metrics(ts);
+      CREATE INDEX IF NOT EXISTS idx_metrics_server_ts ON metrics(server_id, ts);
+    `);
+  }
+} catch (e) { console.warn('Metrics-Migration fehlgeschlagen:', e.message); }
 // Container-Spitznamen (panel-seitig, kein Agent nötig)
 db.exec(`
   CREATE TABLE IF NOT EXISTS container_labels (
