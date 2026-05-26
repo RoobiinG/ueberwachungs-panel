@@ -168,6 +168,7 @@ db.exec(`
     details     TEXT,
     ip          TEXT,
     user_agent  TEXT,
+    location    TEXT,
     created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at DESC);
@@ -199,6 +200,16 @@ const seedRole = db.transaction((name, label, isSystem, isAdmin, permissions) =>
 seedRole('admin',    'Admin',        true,  true,  ALL_KEYS);
 seedRole('operator', 'App-Betrieb',  true,  false, OPERATOR_PERMISSIONS);
 seedRole('guest',    'Gast',         true,  false, GUEST_PERMISSIONS);
+
+// Permissions für bestehende System-Rollen nachpflegen (fügt fehlende hinzu, entfernt nichts)
+const syncRolePermissions = db.transaction((name, permissions) => {
+  const role = db.prepare('SELECT id FROM roles WHERE name = ? AND is_system = 1').get(name);
+  if (!role) return;
+  const ins = db.prepare('INSERT OR IGNORE INTO role_permissions (role_id, permission_key) VALUES (?, ?)');
+  for (const key of permissions) ins.run(role.id, key);
+});
+syncRolePermissions('operator', OPERATOR_PERMISSIONS);
+syncRolePermissions('guest', GUEST_PERMISSIONS);
 
 // Frisch-Installation: Admin-Benutzer anlegen (Suche case-insensitiv)
 const adminExists = db.prepare("SELECT id FROM users WHERE LOWER(username) = 'admin'").get();

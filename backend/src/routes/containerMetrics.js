@@ -1,8 +1,9 @@
 const router = require('express').Router();
 const db     = require('../db');
+const { requirePermission } = require('../middleware/requirePermission');
 
 // Aktueller Snapshot aller Container (aus letztem Recorder-Lauf)
-router.get('/', (req, res) => {
+router.get('/', requirePermission('docker.view'), (req, res) => {
   try {
     const { getLatestStats } = require('../dockerMetricsRecorder');
     return res.json(getLatestStats());
@@ -10,7 +11,7 @@ router.get('/', (req, res) => {
 });
 
 // Zeitreihe für einen Container
-router.get('/:id', (req, res) => {
+router.get('/:id', requirePermission('docker.view'), (req, res) => {
   const range = req.query.range || '1h';
   const RANGES = { '1h': 3600, '24h': 86400 };
   const duration = RANGES[range] ?? 3600;

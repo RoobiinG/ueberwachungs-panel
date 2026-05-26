@@ -3,7 +3,7 @@ const axios       = require('axios');
 const https       = require('https');
 const tls         = require('tls');
 const db          = require('../db');
-const requireRole = require('../middleware/roles');
+const { requirePermission } = require('../middleware/requirePermission');
 const { validatePublicUrl } = require('../utils/validateUrl');
 const { auditLog } = require('../utils/audit');
 
@@ -71,12 +71,12 @@ const agentApi = (agent) => {
 };
 
 // Neueste verfügbare Agent-Version von GitHub
-router.get('/latest-version', async (req, res) => {
+router.get('/latest-version', requirePermission('agents.view'), async (req, res) => {
   const version = await fetchLatestVersion();
   res.json({ version });
 });
 
-router.get('/', (req, res) => {
+router.get('/', requirePermission('agents.view'), (req, res) => {
   const roleName = req.user?.role;
   const role = db.prepare('SELECT id, is_admin, restrict_agents FROM roles WHERE name = ?').get(roleName);
 
@@ -96,7 +96,7 @@ router.get('/', (req, res) => {
   `).all(role.id));
 });
 
-router.post('/', requireRole('admin'), async (req, res) => {
+router.post('/', requirePermission('agents.add'), async (req, res) => {
   const { name, url, token = '', fingerprint: fpProvided = '' } = req.body;
   if (!name || !url) return res.status(400).json({ error: 'Name und URL erforderlich' });
   try { validatePublicUrl(url); } catch (e) { return res.status(400).json({ error: e.message }); }
@@ -118,7 +118,7 @@ router.post('/', requireRole('admin'), async (req, res) => {
   res.status(201).json({ id: result.lastInsertRowid, name: name.trim(), url: cleanUrl, fingerprint });
 });
 
-router.put('/:id', requireRole('admin'), async (req, res) => {
+router.put('/:id', requirePermission('agents.edit'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
 
@@ -148,7 +148,7 @@ router.put('/:id', requireRole('admin'), async (req, res) => {
   res.json({ success: true });
 });
 
-router.delete('/:id', requireRole('admin'), (req, res) => {
+router.delete('/:id', requirePermission('agents.delete'), (req, res) => {
   const delAgent = getOne(req.params.id);
   db.prepare('DELETE FROM remote_agents WHERE id = ?').run(req.params.id);
   auditLog(req, 'agent.delete', 'agent', delAgent?.name || req.params.id);
@@ -156,7 +156,7 @@ router.delete('/:id', requireRole('admin'), (req, res) => {
 });
 
 // Fingerprint neu abrufen und speichern (bei Zertifikats-Rotation)
-router.post('/:id/repin', requireRole('admin'), async (req, res) => {
+router.post('/:id/repin', requirePermission('agents.edit'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!agent.url.startsWith('https://')) return res.status(400).json({ error: 'Nur für HTTPS' });
@@ -170,7 +170,7 @@ router.post('/:id/repin', requireRole('admin'), async (req, res) => {
   }
 });
 
-router.get('/:id/ping', async (req, res) => {
+router.get('/:id/ping', requirePermission('agents.view'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
@@ -183,7 +183,7 @@ router.get('/:id/ping', async (req, res) => {
   }
 });
 
-router.get('/:id/stats', async (req, res) => {
+router.get('/:id/stats', requirePermission('metrics.view'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
@@ -195,7 +195,7 @@ router.get('/:id/stats', async (req, res) => {
   }
 });
 
-router.get('/:id/services', async (req, res) => {
+router.get('/:id/services', requirePermission('services.view'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
@@ -203,11 +203,11 @@ router.get('/:id/services', async (req, res) => {
     const { data } = await agentApi(agent).get('/services');
     res.json(data);
   } catch (err) {
-    res.status(502).json({ error: err.message });
+    res.status(502).json({ error: err.response?.data?.error || err.message });
   }
 });
 
-router.post('/:id/services/:name/:action', requireRole('admin', 'operator'), async (req, res) => {
+router.post('/:id/services/:name/:action', requirePermission('services.control'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
@@ -224,9 +224,10 @@ router.post('/:id/services/:name/:action', requireRole('admin', 'operator'), asy
 
 // ── Version & Update ─────────────────────────────────────────────────────────
 
-router.get('/:id/version', async (req, res) => {
+router.get('/:id/version', requirePermission('agents.view'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   try {
     const { data } = await agentApi(agent).get('/version');
     res.json(data);
@@ -235,7 +236,7 @@ router.get('/:id/version', async (req, res) => {
   }
 });
 
-router.post('/:id/update', requireRole('admin'), async (req, res) => {
+router.post('/:id/update', requirePermission('agents.update'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   try {
@@ -250,7 +251,7 @@ router.post('/:id/update', requireRole('admin'), async (req, res) => {
 
 // ── Docker Proxy ────────────────────────────────────────────────────────────
 
-router.get('/:id/docker', async (req, res) => {
+router.get('/:id/docker', requirePermission('docker.view'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
@@ -263,7 +264,7 @@ router.get('/:id/docker', async (req, res) => {
   }
 });
 
-router.get('/:id/docker/containers', async (req, res) => {
+router.get('/:id/docker/containers', requirePermission('docker.view'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
@@ -276,9 +277,10 @@ router.get('/:id/docker/containers', async (req, res) => {
   }
 });
 
-router.post('/:id/docker/containers/:containerId/:action', requireRole('admin', 'operator'), async (req, res) => {
+router.post('/:id/docker/containers/:containerId/:action', requirePermission('docker.control'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   const { containerId, action } = req.params;
   const valid = ['start', 'stop', 'restart', 'pause', 'unpause', 'kill'];
   if (!valid.includes(action)) return res.status(400).json({ error: 'Ungültige Aktion' });
@@ -293,7 +295,7 @@ router.post('/:id/docker/containers/:containerId/:action', requireRole('admin', 
 
 // ── Firewall Proxy ──────────────────────────────────────────────────────────
 
-router.get('/:id/firewall/status', async (req, res) => {
+router.get('/:id/firewall/status', requirePermission('firewall.view'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
@@ -305,7 +307,7 @@ router.get('/:id/firewall/status', async (req, res) => {
   }
 });
 
-router.get('/:id/firewall/rules', async (req, res) => {
+router.get('/:id/firewall/rules', requirePermission('firewall.view'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
@@ -317,7 +319,7 @@ router.get('/:id/firewall/rules', async (req, res) => {
   }
 });
 
-router.post('/:id/firewall/allow', requireRole('admin', 'operator'), async (req, res) => {
+router.post('/:id/firewall/allow', requirePermission('firewall.manage'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
@@ -329,7 +331,7 @@ router.post('/:id/firewall/allow', requireRole('admin', 'operator'), async (req,
   }
 });
 
-router.post('/:id/firewall/deny', requireRole('admin', 'operator'), async (req, res) => {
+router.post('/:id/firewall/deny', requirePermission('firewall.manage'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
@@ -341,7 +343,7 @@ router.post('/:id/firewall/deny', requireRole('admin', 'operator'), async (req, 
   }
 });
 
-router.delete('/:id/firewall/rules/:num', requireRole('admin', 'operator'), async (req, res) => {
+router.delete('/:id/firewall/rules/:num', requirePermission('firewall.manage'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
@@ -356,7 +358,7 @@ router.delete('/:id/firewall/rules/:num', requireRole('admin', 'operator'), asyn
 
 // ── Netzwerk Proxy ──────────────────────────────────────────────────────────
 
-router.get('/:id/network/interfaces', async (req, res) => {
+router.get('/:id/network/interfaces', requirePermission('metrics.view'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
@@ -368,7 +370,7 @@ router.get('/:id/network/interfaces', async (req, res) => {
   }
 });
 
-router.get('/:id/network/public-ip', async (req, res) => {
+router.get('/:id/network/public-ip', requirePermission('metrics.view'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });

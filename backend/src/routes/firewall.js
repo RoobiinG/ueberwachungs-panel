@@ -2,7 +2,7 @@ const router = require('express').Router();
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
-const requireRole = require('../middleware/roles');
+const { requirePermission } = require('../middleware/requirePermission');
 const { auditLog } = require('../utils/audit');
 
 const host = (cmd) => execAsync(`nsenter --target 1 --mount --uts --ipc --net --pid -- ${cmd}`);
@@ -18,14 +18,14 @@ const validFrom = (f) => {
   return f;
 };
 
-router.get('/status', async (req, res) => {
+router.get('/status', requirePermission('firewall.view'), async (req, res) => {
   try {
     const { stdout } = await host('ufw status verbose');
     res.json({ status: stdout });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.get('/rules', async (req, res) => {
+router.get('/rules', requirePermission('firewall.view'), async (req, res) => {
   try {
     const { stdout } = await host('ufw status numbered');
     const rules = stdout.split('\n').filter(l => l.match(/^\[\s*\d+\]/)).map(line => {
@@ -37,7 +37,7 @@ router.get('/rules', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/allow', requireRole('admin'), async (req, res) => {
+router.post('/allow', requirePermission('firewall.manage'), async (req, res) => {
   const { port, proto, from } = req.body;
   if (!port) return res.status(400).json({ error: 'Port required' });
   try {
@@ -51,7 +51,7 @@ router.post('/allow', requireRole('admin'), async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.post('/deny', requireRole('admin'), async (req, res) => {
+router.post('/deny', requirePermission('firewall.manage'), async (req, res) => {
   const { port, proto } = req.body;
   if (!port) return res.status(400).json({ error: 'Port required' });
   try {
@@ -62,7 +62,7 @@ router.post('/deny', requireRole('admin'), async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.delete('/rules/:num', requireRole('admin'), async (req, res) => {
+router.delete('/rules/:num', requirePermission('firewall.manage'), async (req, res) => {
   const num = req.params.num;
   if (!/^\d+$/.test(num)) return res.status(400).json({ error: 'Ungültige Regel-Nummer' });
   try {
