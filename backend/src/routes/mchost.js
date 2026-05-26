@@ -1,7 +1,7 @@
 const router      = require('express').Router();
 const axios       = require('axios');
 const db          = require('../db');
-const requireRole = require('../middleware/roles');
+const { requirePermission } = require('../middleware/requirePermission');
 
 const getSetting = (key) =>
   db.prepare('SELECT value FROM settings WHERE key = ?').get(key)?.value || '';
@@ -77,25 +77,25 @@ const handle = async (res, fn) => {
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
-router.get('/vserver', requireRole('admin'), async (req, res) =>
+router.get('/vserver', requirePermission('mchost.view'), async (req, res) =>
   handle(res, async () => (await api()).get('/vserver'))
 );
 
-router.get('/vserver/:id/status', requireRole('admin'), async (req, res) =>
+router.get('/vserver/:id/status', requirePermission('mchost.view'), async (req, res) =>
   handle(res, async () => (await api()).get(`/vserver/${req.params.id}/status`))
 );
 
-router.post('/vserver/:id/:action', requireRole('admin'), async (req, res) => {
+router.post('/vserver/:id/:action', requirePermission('mchost.control'), async (req, res) => {
   const valid = ['start', 'stop', 'shutdown', 'restart'];
   if (!valid.includes(req.params.action)) return res.status(400).json({ error: 'Ungültige Aktion' });
   handle(res, async () => (await api()).post(`/vserver/${req.params.id}/${req.params.action}`));
 });
 
-router.get('/vserver/:id/backups', requireRole('admin'), async (req, res) =>
+router.get('/vserver/:id/backups', requirePermission('mchost.view'), async (req, res) =>
   handle(res, async () => (await api()).get(`/vserver/${req.params.id}/backups`))
 );
 
-router.post('/vserver/:id/backups', requireRole('admin'), async (req, res) =>
+router.post('/vserver/:id/backups', requirePermission('mchost.control'), async (req, res) =>
   handle(res, async () => (await api()).post(`/vserver/${req.params.id}/backups`))
 );
 

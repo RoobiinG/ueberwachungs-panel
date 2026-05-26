@@ -8,23 +8,26 @@ import { useAuth } from '../../context/AuthContext';
  * onChange(null)   → Lokal ausgewählt
  * onChange(id)     → Remote-Agent mit dieser ID ausgewählt
  *
- * Wenn die Rolle hideLocal=true hat, wird "Lokal" nicht angezeigt.
- * Wenn keine sichtbaren Optionen übrig bleiben, wird nichts gerendert.
+ * Wenn die Rolle hideLocal=true hat, wird "Lokal" nicht angezeigt
+ * und der erste verfügbare Agent wird automatisch gewählt.
  */
 export function ServerSelector({ selected, onChange }) {
   const [agents, setAgents] = useState([]);
   const { hideLocal } = useAuth();
 
   useEffect(() => {
-    axios.get('/api/agents').then(r => setAgents(r.data)).catch(() => {});
+    axios.get('/api/agents').then(r => {
+      setAgents(r.data);
+      // Auto-Select: wenn Lokal ausgeblendet und noch kein Remote-Server gewählt
+      if (hideLocal && !selected && r.data.length > 0) {
+        onChange(r.data[0].id);
+      }
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Wenn hideLocal und kein Agent vorhanden → nichts rendern
-  // Wenn kein Agent vorhanden und lokal sichtbar → auch nichts rendern (nur eine Option)
+  // Wenn kein Agent vorhanden → nichts rendern (nur ein Element wäre sinnlos)
   if (agents.length === 0) return null;
-
-  // Wenn lokal ausgeblendet und es gibt Agents: beim ersten Render automatisch ersten Agent wählen
-  // (wird via useEffect im aufrufenden Component behandelt — wir zeigen nur nichts für "Lokal")
 
   const pill = (active) =>
     `flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${

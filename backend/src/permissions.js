@@ -53,6 +53,14 @@ const PERMISSIONS = [
   { key: 'audit.view_geo',      category: 'Audit-Protokoll',    label: 'Geo-Standort sehen',              description: 'Geografischen Standort (Stadt, Land) im Audit-Log anzeigen' },
   { key: 'audit.clear',         category: 'Audit-Protokoll',    label: 'Protokoll leeren',                description: 'Audit-Log-Einträge löschen' },
 
+  // ─── Hetzner Cloud ───────────────────────────────────────────────────────────
+  { key: 'hetzner.view',        category: 'Hetzner Cloud',      label: 'Server anzeigen',                 description: 'Hetzner-Server und Backups einsehen' },
+  { key: 'hetzner.control',     category: 'Hetzner Cloud',      label: 'Server steuern',                  description: 'Server starten, stoppen, neustarten und Backups verwalten' },
+
+  // ─── MC-Host24 ───────────────────────────────────────────────────────────────
+  { key: 'mchost.view',         category: 'MC-Host24',          label: 'VServer anzeigen',                description: 'MC-Host24 VServer und Backups einsehen' },
+  { key: 'mchost.control',      category: 'MC-Host24',          label: 'VServer steuern',                 description: 'VServer starten, stoppen, neustarten und Backups erstellen' },
+
   // ─── Einstellungen ────────────────────────────────────────────────────────
   { key: 'settings.view',       category: 'Einstellungen',      label: 'Einstellungen anzeigen',          description: 'System-Einstellungen einsehen' },
   { key: 'settings.manage',     category: 'Einstellungen',      label: 'Einstellungen ändern',            description: 'SMTP, Integrationen und Systemparameter konfigurieren' },
@@ -72,6 +80,8 @@ const OPERATOR_PERMISSIONS = [
   'alerts.view',
   'ssh.view', 'ssh.connect', 'ssh.manage',
   'metrics.view',
+  'hetzner.view', 'hetzner.control',
+  'mchost.view', 'mchost.control',
   'users.view',
   'audit.view', 'audit.view_ip', 'audit.view_geo',
   'settings.view',

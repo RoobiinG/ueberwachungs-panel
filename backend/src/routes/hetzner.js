@@ -1,7 +1,7 @@
 const router      = require('express').Router();
 const axios       = require('axios');
 const db          = require('../db');
-const requireRole = require('../middleware/roles');
+const { requirePermission } = require('../middleware/requirePermission');
 
 const getToken = () =>
   db.prepare("SELECT value FROM settings WHERE key = 'hetzner_api_token'").get()?.value ||
@@ -24,20 +24,20 @@ const handle = async (res, fn) => {
   }
 };
 
-router.get('/servers', requireRole('admin'), (req, res) => handle(res, () => api().get('/servers')));
+router.get('/servers', requirePermission('hetzner.view'), (req, res) => handle(res, () => api().get('/servers')));
 
-router.post('/servers/:id/:action', requireRole('admin'), (req, res) => {
+router.post('/servers/:id/:action', requirePermission('hetzner.control'), (req, res) => {
   const valid = ['poweron', 'poweroff', 'reboot', 'reset', 'shutdown'];
   if (!valid.includes(req.params.action)) return res.status(400).json({ error: 'Invalid action' });
   handle(res, () => api().post(`/servers/${req.params.id}/actions/${req.params.action}`));
 });
 
-router.post('/servers/:id/backup/:toggle', requireRole('admin'), (req, res) => {
+router.post('/servers/:id/backup/:toggle', requirePermission('hetzner.control'), (req, res) => {
   if (!['enable', 'disable'].includes(req.params.toggle)) return res.status(400).json({ error: 'Invalid toggle' });
   handle(res, () => api().post(`/servers/${req.params.id}/actions/${req.params.toggle}_backup`));
 });
 
-router.get('/servers/:id/backups', requireRole('admin'), (req, res) =>
+router.get('/servers/:id/backups', requirePermission('hetzner.view'), (req, res) =>
   handle(res, () => api().get(`/images?type=backup&bound_to=${req.params.id}`))
 );
 
