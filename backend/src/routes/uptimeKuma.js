@@ -29,10 +29,10 @@ function fetchViaSocket(url, apiKey) {
 
   return new Promise((resolve, reject) => {
     const socket = io(url.replace(/\/+$/, ''), {
-      transports:   ['polling', 'websocket'], // polling zuerst (Nginx-kompatibel), dann WebSocket
+      transports:   ['websocket', 'polling'], // WebSocket bevorzugt
       reconnection: false,
-      timeout:      8000,
-      auth: { 'x-api-key': apiKey },
+      timeout:      10000,
+      auth: { apiKey },                       // Uptime Kuma erwartet handshake.auth.apiKey
     });
 
     const monitors  = {};
@@ -68,8 +68,8 @@ function fetchViaSocket(url, apiKey) {
       finish(new Error(err.message || 'Socket-Fehler'))
     );
 
-    // Nach 7 Sekunden auflösen (Uptime-Events kommen verzögert)
-    setTimeout(() => finish(null), 7000);
+    // Nach 9 Sekunden auflösen (Uptime-Events kommen verzögert)
+    setTimeout(() => finish(null), 9000);
   });
 }
 
