@@ -53,7 +53,7 @@ function MetricPanel({ panel, data, spanSeconds, loading }) {
   const latest = data.length > 0 ? data[data.length - 1]?.[panel.key] ?? null : null;
 
   return (
-    <div className="bg-panel-surface border border-panel-border rounded-lg overflow-hidden flex flex-col">
+    <div className="bg-panel-surface border border-panel-border rounded-lg overflow-hidden">
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-panel-border">
         <span className="text-xs font-semibold uppercase tracking-wider text-panel-muted">
           {panel.label}
@@ -67,7 +67,7 @@ function MetricPanel({ panel, data, spanSeconds, loading }) {
         )}
       </div>
 
-      <div className="flex-1 h-[200px] px-1 pt-3 pb-1">
+      <div className="h-[200px] px-1 pt-3 pb-1">
         {loading ? (
           <div className="h-full flex items-center justify-center">
             <RefreshCw size={16} className="text-panel-muted animate-spin" />
