@@ -3,8 +3,8 @@ const https = require('https');
 const db    = require('./db');
 
 const insert  = db.prepare(`
-  INSERT OR REPLACE INTO metrics (ts, server_id, cpu, mem_used, mem_total, disk_used, disk_total)
-  VALUES (?, ?, ?, ?, ?, ?, ?)
+  INSERT OR REPLACE INTO metrics (ts, server_id, cpu, mem_used, mem_total, disk_used, disk_total, net_rx_sec, net_tx_sec)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 const cleanup = db.prepare('DELETE FROM metrics WHERE ts < ? AND server_id = ?');
 
@@ -31,13 +31,41 @@ const agentApi = (agent) => {
 
 async function recordAgent(agent) {
   try {
-    const { data } = await agentApi(agent).get('/stats');
+    const api = agentApi(agent);
+    const [statsRes, netRes] = await Promise.allSettled([
+      api.get('/stats'),
+      api.get('/network/stats'),
+    ]);
+
+    const data    = statsRes.status === 'fulfilled' ? statsRes.value.data : null;
+    if (!data) return;
+
     const ts       = Math.floor(Date.now() / 1000);
     const serverId = `agent:${agent.id}`;
+
     const disk = Array.isArray(data.disk)
       ? (data.disk.find(d => d.mount === '/') || data.disk[0])
       : null;
-    insert.run(ts, serverId, data.cpu?.usage ?? 0, data.memory?.used ?? 0, data.memory?.total ?? 1, disk?.used ?? 0, disk?.size ?? 1);
+
+    // Netzwerk-Durchsatz aus /network/stats summieren
+    let rxSec = 0, txSec = 0;
+    if (netRes.status === 'fulfilled' && Array.isArray(netRes.value.data)) {
+      for (const n of netRes.value.data) {
+        rxSec += n.rx_sec || 0;
+        txSec += n.tx_sec || 0;
+      }
+    }
+
+    insert.run(
+      ts, serverId,
+      data.cpu?.usage ?? 0,
+      data.memory?.used ?? 0,
+      data.memory?.total ?? 1,
+      disk?.used ?? 0,
+      disk?.size ?? 1,
+      Math.round(rxSec),
+      Math.round(txSec),
+    );
   } catch {}
 }
 

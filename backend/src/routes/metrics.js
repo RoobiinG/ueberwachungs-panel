@@ -33,7 +33,9 @@ const queryRows = (from, to, bucket, serverId) => {
         ts                                                        AS t,
         cpu,
         ROUND(mem_used  * 100.0 / mem_total,  1)                 AS mem,
-        ROUND(disk_used * 100.0 / disk_total, 1)                 AS disk
+        ROUND(disk_used * 100.0 / disk_total, 1)                 AS disk,
+        ROUND(net_rx_sec / 1024.0, 2)                            AS net_rx,
+        ROUND(net_tx_sec / 1024.0, 2)                            AS net_tx
       FROM metrics
       WHERE ts >= ? AND ts <= ? AND server_id = ? AND mem_total > 0
       ORDER BY t ASC
@@ -44,7 +46,9 @@ const queryRows = (from, to, bucket, serverId) => {
       (ts / ?) * ?                                              AS t,
       ROUND(AVG(cpu), 1)                                        AS cpu,
       ROUND(AVG(mem_used)  * 100.0 / AVG(mem_total),  1)       AS mem,
-      ROUND(AVG(disk_used) * 100.0 / AVG(disk_total), 1)       AS disk
+      ROUND(AVG(disk_used) * 100.0 / AVG(disk_total), 1)       AS disk,
+      ROUND(AVG(net_rx_sec) / 1024.0, 2)                       AS net_rx,
+      ROUND(AVG(net_tx_sec) / 1024.0, 2)                       AS net_tx
     FROM metrics
     WHERE ts >= ? AND ts <= ? AND server_id = ? AND mem_total > 0
     GROUP BY (ts / ?)
