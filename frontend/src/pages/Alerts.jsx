@@ -60,9 +60,8 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
 
   const inputCls = 'w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:border-panel-accent';
 
-  if (!open) return null;
   return (
-    <Modal title={initial?.id ? 'Regel bearbeiten' : 'Neue Alert-Regel'} onClose={onClose}>
+    <Modal open={open} title={initial?.id ? 'Regel bearbeiten' : 'Neue Alert-Regel'} onClose={onClose}>
       <div className="space-y-3">
         {error && <p className="text-panel-red text-xs bg-panel-red/10 rounded p-2">{error}</p>}
 
