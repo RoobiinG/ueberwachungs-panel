@@ -18,7 +18,7 @@ const validName = (name) => {
 
 router.get('/', requirePermission('services.view'), async (req, res) => {
   try {
-    const { stdout } = await host('systemctl list-units --type=service --no-pager --plain --no-legend');
+    const { stdout } = await host('systemctl list-units --type=service --all --no-pager --plain --no-legend');
     const services = stdout.trim().split('\n').map(line => {
       const parts = line.trim().split(/\s+/);
       return { name: parts[0], load: parts[1], active: parts[2], sub: parts[3], description: parts.slice(4).join(' ') };

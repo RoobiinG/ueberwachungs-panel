@@ -120,7 +120,8 @@ function ContainerChart({ containerId, containerName }) {
 }
 
 export default function Docker({ liveStats }) {
-  const { canWrite, hideLocal } = useAuth();
+  const { canWrite, hideLocal, hasPermission } = useAuth();
+  const canLabel = hasPermission('docker.label');
 
   const [selectedServer, setSelectedServer] = useState(null); // null = lokal
   const [containers, setContainers] = useState([]);
@@ -188,8 +189,11 @@ export default function Docker({ liveStats }) {
         tag:      labelDraft.tag,
       });
       await loadLabels(server);
-    } catch {}
-    setEditingLabel(null);
+      setEditingLabel(null);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Label konnte nicht gespeichert werden');
+      setEditingLabel(null);
+    }
   };
 
   // Sparklines nur für lokalen Docker via WebSocket-Broadcast
@@ -270,7 +274,7 @@ export default function Docker({ liveStats }) {
                   <div className="flex items-center justify-between px-4 py-3">
                     {/* Name & Status */}
                     <div className="flex-1 min-w-0 mr-3">
-                      {editingLabel === cid ? (
+                      {editingLabel === cid && canLabel ? (
                         /* ── Inline-Edit für Nickname + Tag ── */
                         <div className="flex items-center gap-1 flex-wrap">
                           <input
@@ -311,11 +315,13 @@ export default function Docker({ liveStats }) {
                           {selectedServer && c.stack && !labels[cid]?.tag && (
                             <span className="text-xs text-panel-muted bg-panel-surface px-1.5 py-0.5 rounded">{c.stack}</span>
                           )}
-                          <button onClick={() => openLabelEdit(cid, labels[cid]?.nickname, labels[cid]?.tag)}
-                            className="p-0.5 text-panel-muted hover:text-panel-text opacity-40 hover:opacity-100 transition-opacity"
-                            title="Spitzname / Tag bearbeiten">
-                            <Tag size={11} />
-                          </button>
+                          {canLabel && (
+                            <button onClick={() => openLabelEdit(cid, labels[cid]?.nickname, labels[cid]?.tag)}
+                              className="p-0.5 text-panel-muted hover:text-panel-text opacity-40 hover:opacity-100 transition-opacity"
+                              title="Spitzname / Tag bearbeiten">
+                              <Tag size={11} />
+                            </button>
+                          )}
                         </div>
                       )}
                       <div className="text-xs text-panel-muted mt-0.5 truncate">{image}</div>
