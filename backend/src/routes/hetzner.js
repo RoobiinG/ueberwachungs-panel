@@ -1,7 +1,15 @@
 const router      = require('express').Router();
 const axios       = require('axios');
 const db          = require('../db');
-const { requirePermission } = require('../middleware/requirePermission');
+const { requirePermission, getPermissions } = require('../middleware/requirePermission');
+
+const actionPermMap = {
+  poweron:  'hetzner.start',
+  poweroff: 'hetzner.stop',
+  shutdown: 'hetzner.stop',
+  reset:    'hetzner.stop',
+  reboot:   'hetzner.restart',
+};
 
 const getToken = () =>
   db.prepare("SELECT value FROM settings WHERE key = 'hetzner_api_token'").get()?.value ||
@@ -28,14 +36,15 @@ const validId = (id) => /^\d+$/.test(id);
 
 router.get('/servers', requirePermission('hetzner.view'), (req, res) => handle(res, () => api().get('/servers')));
 
-router.post('/servers/:id/:action', requirePermission('hetzner.control'), (req, res) => {
+router.post('/servers/:id/:action', (req, res) => {
   if (!validId(req.params.id)) return res.status(400).json({ error: 'Ungültige Server-ID' });
-  const valid = ['poweron', 'poweroff', 'reboot', 'reset', 'shutdown'];
-  if (!valid.includes(req.params.action)) return res.status(400).json({ error: 'Ungültige Aktion' });
+  const perm = actionPermMap[req.params.action];
+  if (!perm) return res.status(400).json({ error: 'Ungültige Aktion' });
+  if (!getPermissions(req.user.role).includes(perm)) return res.status(403).json({ error: 'Keine Berechtigung' });
   handle(res, () => api().post(`/servers/${req.params.id}/actions/${req.params.action}`));
 });
 
-router.post('/servers/:id/backup/:toggle', requirePermission('hetzner.control'), (req, res) => {
+router.post('/servers/:id/backup/:toggle', requirePermission('hetzner.backup'), (req, res) => {
   if (!validId(req.params.id)) return res.status(400).json({ error: 'Ungültige Server-ID' });
   if (!['enable', 'disable'].includes(req.params.toggle)) return res.status(400).json({ error: 'Ungültiger Wert' });
   handle(res, () => api().post(`/servers/${req.params.id}/actions/${req.params.toggle}_backup`));

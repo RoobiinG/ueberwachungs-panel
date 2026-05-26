@@ -11,7 +11,10 @@ const statusColor = (s) => s === 'running' ? 'green' : s === 'off' ? 'red' : 'or
 export default function Hetzner() {
   const { hasPermission, isAdmin } = useAuth();
   const canView    = isAdmin || hasPermission('hetzner.view');
-  const canControl = isAdmin || hasPermission('hetzner.control');
+  const canStart   = isAdmin || hasPermission('hetzner.start');
+  const canStop    = isAdmin || hasPermission('hetzner.stop');
+  const canRestart = isAdmin || hasPermission('hetzner.restart');
+  const canBackup  = isAdmin || hasPermission('hetzner.backup');
 
   const [servers, setServers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -36,8 +39,9 @@ export default function Hetzner() {
 
   useEffect(() => { load(); }, []);
 
+  const canControl = canStart || canStop || canRestart;
+
   const act = async (id, action) => {
-    if (!canControl) return;
     setActError('');
     setBusy(b => ({ ...b, [`${id}_${action}`]: true }));
     try { await axios.post(`/api/hetzner/servers/${id}/${action}`); setTimeout(load, 2000); }
@@ -46,7 +50,7 @@ export default function Hetzner() {
   };
 
   const toggleBackup = async (id, current) => {
-    if (!canControl) return;
+    if (!canBackup) return;
     setActError('');
     try { await axios.post(`/api/hetzner/servers/${id}/backup/${current ? 'disable' : 'enable'}`); setTimeout(load, 1500); }
     catch (err) { setActError(err.response?.data?.error || 'Backup-Einstellung fehlgeschlagen'); }
@@ -110,15 +114,11 @@ export default function Hetzner() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
-                    {canControl && (
-                      <>
-                        {s.status === 'off'
-                          ? <Button size="sm" variant="success" onClick={() => act(s.id, 'poweron')} disabled={busy[`${s.id}_poweron`]}><Power size={12} /></Button>
-                          : <Button size="sm" variant="danger" onClick={() => act(s.id, 'poweroff')} disabled={busy[`${s.id}_poweroff`]}><PowerOff size={12} /></Button>
-                        }
-                        <Button size="sm" variant="ghost" onClick={() => act(s.id, 'reboot')} disabled={busy[`${s.id}_reboot`]}><RotateCcw size={12} /></Button>
-                      </>
-                    )}
+                    {s.status === 'off'
+                      ? canStart   && <Button size="sm" variant="success" onClick={() => act(s.id, 'poweron')} disabled={busy[`${s.id}_poweron`]}><Power size={12} /></Button>
+                      : canStop    && <Button size="sm" variant="danger" onClick={() => act(s.id, 'poweroff')} disabled={busy[`${s.id}_poweroff`]}><PowerOff size={12} /></Button>
+                    }
+                    {canRestart && <Button size="sm" variant="ghost" onClick={() => act(s.id, 'reboot')} disabled={busy[`${s.id}_reboot`]}><RotateCcw size={12} /></Button>}
                     <Button size="sm" variant="ghost" onClick={() => loadBackups(s.id)}>
                       <HardDrive size={12} />
                       {expanded[s.id] ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
@@ -131,7 +131,7 @@ export default function Hetzner() {
                   <div className="px-4 pb-3 bg-panel-surface/50">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-medium text-panel-muted">Automatische Backups</span>
-                      {canControl && (
+                      {canBackup && (
                         <Button
                           size="sm"
                           variant={s.backup_window ? 'danger' : 'success'}

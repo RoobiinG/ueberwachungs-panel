@@ -17,7 +17,10 @@ const statusColor = (s) => {
 export default function MCHost() {
   const { hasPermission, isAdmin } = useAuth();
   const canView    = isAdmin || hasPermission('mchost.view');
-  const canControl = isAdmin || hasPermission('mchost.control');
+  const canStart   = isAdmin || hasPermission('mchost.start');
+  const canStop    = isAdmin || hasPermission('mchost.stop');
+  const canRestart = isAdmin || hasPermission('mchost.restart');
+  const canBackup  = isAdmin || hasPermission('mchost.backup');
 
   const [servers, setServers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -44,7 +47,6 @@ export default function MCHost() {
   useEffect(() => { load(); }, []);
 
   const act = async (id, action) => {
-    if (!canControl) return;
     setActError('');
     setBusy(b => ({ ...b, [`${id}_${action}`]: true }));
     try { await axios.post(`/api/mchost/vserver/${id}/${action}`); setTimeout(load, 1500); }
@@ -64,7 +66,7 @@ export default function MCHost() {
   };
 
   const createBackup = async (id) => {
-    if (!canControl) return;
+    if (!canBackup) return;
     setActError('');
     setBackupLoading(b => ({ ...b, [id]: true }));
     try {
@@ -124,14 +126,10 @@ export default function MCHost() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
-                    {canControl && (
-                      <>
-                        <Button size="sm" variant="success" onClick={() => act(s.id, 'start')} disabled={busy[`${s.id}_start`]}><Play size={12} /></Button>
-                        <Button size="sm" variant="danger" onClick={() => act(s.id, 'stop')} disabled={busy[`${s.id}_stop`]}><Square size={12} /></Button>
-                        <Button size="sm" variant="warning" onClick={() => act(s.id, 'shutdown')} disabled={busy[`${s.id}_shutdown`]}><PowerOff size={12} /></Button>
-                        <Button size="sm" variant="ghost" onClick={() => act(s.id, 'restart')} disabled={busy[`${s.id}_restart`]}><RotateCcw size={12} /></Button>
-                      </>
-                    )}
+                    {canStart   && <Button size="sm" variant="success" onClick={() => act(s.id, 'start')} disabled={busy[`${s.id}_start`]}><Play size={12} /></Button>}
+                    {canStop    && <Button size="sm" variant="danger" onClick={() => act(s.id, 'stop')} disabled={busy[`${s.id}_stop`]}><Square size={12} /></Button>}
+                    {canStop    && <Button size="sm" variant="warning" onClick={() => act(s.id, 'shutdown')} disabled={busy[`${s.id}_shutdown`]}><PowerOff size={12} /></Button>}
+                    {canRestart && <Button size="sm" variant="ghost" onClick={() => act(s.id, 'restart')} disabled={busy[`${s.id}_restart`]}><RotateCcw size={12} /></Button>}
                     <Button size="sm" variant="ghost" onClick={() => toggleBackups(s.id)}>
                       <HardDrive size={12} />
                       {expanded[s.id] ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
@@ -144,7 +142,7 @@ export default function MCHost() {
                   <div className="px-4 pb-3 bg-panel-surface/50">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-medium text-panel-muted">Backups</span>
-                      {canControl && (
+                      {canBackup && (
                         <Button size="sm" variant="ghost" onClick={() => createBackup(s.id)} disabled={backupLoading[s.id]}>
                           <Plus size={12} className="mr-1" />Backup erstellen
                         </Button>

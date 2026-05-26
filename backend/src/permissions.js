@@ -56,11 +56,17 @@ const PERMISSIONS = [
 
   // ─── Hetzner Cloud ───────────────────────────────────────────────────────────
   { key: 'hetzner.view',        category: 'Hetzner Cloud',      label: 'Server anzeigen',                 description: 'Hetzner-Server und Backups einsehen' },
-  { key: 'hetzner.control',     category: 'Hetzner Cloud',      label: 'Server steuern',                  description: 'Server starten, stoppen, neustarten und Backups verwalten' },
+  { key: 'hetzner.start',       category: 'Hetzner Cloud',      label: 'Server starten',                  description: 'Server einschalten (Power on)' },
+  { key: 'hetzner.stop',        category: 'Hetzner Cloud',      label: 'Server stoppen',                  description: 'Server ausschalten und herunterfahren' },
+  { key: 'hetzner.restart',     category: 'Hetzner Cloud',      label: 'Server neustarten',               description: 'Server neu starten (Reboot)' },
+  { key: 'hetzner.backup',      category: 'Hetzner Cloud',      label: 'Backups verwalten',               description: 'Automatische Backups aktivieren und deaktivieren' },
 
   // ─── MC-Host24 ───────────────────────────────────────────────────────────────
   { key: 'mchost.view',         category: 'MC-Host24',          label: 'VServer anzeigen',                description: 'MC-Host24 VServer und Backups einsehen' },
-  { key: 'mchost.control',      category: 'MC-Host24',          label: 'VServer steuern',                 description: 'VServer starten, stoppen, neustarten und Backups erstellen' },
+  { key: 'mchost.start',        category: 'MC-Host24',          label: 'VServer starten',                 description: 'VServer einschalten' },
+  { key: 'mchost.stop',         category: 'MC-Host24',          label: 'VServer stoppen',                 description: 'VServer stoppen und herunterfahren' },
+  { key: 'mchost.restart',      category: 'MC-Host24',          label: 'VServer neustarten',              description: 'VServer neu starten' },
+  { key: 'mchost.backup',       category: 'MC-Host24',          label: 'Backups erstellen',               description: 'VServer-Backups manuell erstellen' },
 
   // ─── Einstellungen ────────────────────────────────────────────────────────
   { key: 'settings.view',       category: 'Einstellungen',      label: 'Einstellungen anzeigen',          description: 'System-Einstellungen einsehen' },
@@ -81,8 +87,8 @@ const OPERATOR_PERMISSIONS = [
   'alerts.view',
   'ssh.view', 'ssh.connect', 'ssh.manage',
   'metrics.view',
-  'hetzner.view', 'hetzner.control',
-  'mchost.view', 'mchost.control',
+  'hetzner.view', 'hetzner.start', 'hetzner.stop', 'hetzner.restart', 'hetzner.backup',
+  'mchost.view', 'mchost.start', 'mchost.stop', 'mchost.restart', 'mchost.backup',
   'users.view',
   'audit.view', 'audit.view_ip', 'audit.view_geo',
   'settings.view',
