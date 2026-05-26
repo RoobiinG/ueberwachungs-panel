@@ -5,6 +5,9 @@ const { requirePermission, getPermissions } = require('../middleware/requirePerm
 // ─── Hilfsfunktion: hat der anfragende Nutzer ein bestimmtes Recht? ────────────
 const hasPerm = (req, key) => getPermissions(req.user?.role || '').includes(key);
 
+// LIKE-Sonderzeichen escapen damit Nutzereingaben nicht als Wildcards wirken
+const escLike = (s) => s.replace(/[%_\\]/g, c => `\\${c}`);
+
 // ─── Audit-Log abrufen ─────────────────────────────────────────────────────────
 router.get('/', requirePermission('audit.view'), (req, res) => {
   const limit  = Math.min(parseInt(req.query.limit)  || 100, 500);
@@ -17,8 +20,8 @@ router.get('/', requirePermission('audit.view'), (req, res) => {
   let where   = 'WHERE 1=1';
   const params = [];
 
-  if (user)   { where += ' AND username LIKE ?';    params.push(`%${user}%`); }
-  if (action) { where += ' AND action   LIKE ?';    params.push(`%${action}%`); }
+  if (user)   { where += ' AND username LIKE ? ESCAPE \'\\\'';    params.push(`%${escLike(user)}%`); }
+  if (action) { where += ' AND action   LIKE ? ESCAPE \'\\\'';    params.push(`%${escLike(action)}%`); }
   if (from)   { where += ' AND created_at >= ?';    params.push(from); }
   if (to)     { where += ' AND created_at <= ?';    params.push(`${to} 23:59:59`); }
 

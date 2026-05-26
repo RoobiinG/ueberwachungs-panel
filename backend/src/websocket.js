@@ -1,6 +1,8 @@
 const WebSocket = require('ws');
 const jwt = require('jsonwebtoken');
 const si  = require('systeminformation');
+const { getPermissions } = require('./middleware/requirePermission');
+const db = require('./db');
 
 let wss;
 let sshManager;
@@ -67,9 +69,17 @@ const setup = (server) => {
         // ─── Post-Auth: SSH-Nachrichtenrouting ───────────────────
         if (!sshManager) return;
         switch (msg?.type) {
-          case 'ssh_connect':
+          case 'ssh_connect': {
+            // Berechtigung prüfen: ssh.connect erforderlich
+            const userRow = db.prepare('SELECT role FROM users WHERE id = ?').get(ws.userId);
+            const perms   = userRow ? getPermissions(userRow.role) : [];
+            if (!perms.includes('ssh.connect')) {
+              sendToClient(ws, 'ssh_error', { message: 'Keine Berechtigung für SSH-Verbindungen' });
+              return;
+            }
             sshManager.connect(ws, msg.hostId, ws.userId);
             break;
+          }
           case 'ssh_input':
             sshManager.write(ws, msg.data);
             break;
