@@ -1,7 +1,7 @@
 /**
  * Audit-Log-Hilfsfunktion
  *
- * Schreibt einen Eintrag in die audit_log-Tabelle.
+ * Schreibt einen Eintrag in die audit_log-Tabelle inkl. GeoIP-Standort.
  * Fehler beim Logging blockieren nie die eigentliche Operation.
  *
  * action:     Aktionsbezeichner, z.B. 'user.create', 'docker.stop', 'login'
@@ -11,13 +11,61 @@
  */
 const db = require('../db');
 
+// GeoIP lazy-loaded — wirft keinen Fehler wenn Paket noch nicht installiert
+let _geoip = null;
+function getGeoip() {
+  if (_geoip !== null) return _geoip;
+  try { _geoip = require('geoip-lite'); }
+  catch { _geoip = false; } // Paket nicht verfügbar → false als Sentinel
+  return _geoip;
+}
+
+/**
+ * Standort aus IP ermitteln.
+ * Lokale / private IPs → 'Lokal'
+ * Unbekannte IPs       → null
+ * Bekannte IPs         → 'Berlin, DE' o.ä.
+ */
+function resolveLocation(ip) {
+  if (!ip || ip === '—') return null;
+
+  // IPv6-localhost und IPv4-mapped-IPv6 normalisieren
+  const clean = ip
+    .replace(/^::ffff:/, '')   // ::ffff:1.2.3.4  → 1.2.3.4
+    .replace(/^::1$/, '127.0.0.1');
+
+  // Lokale / private Adressen
+  if (
+    clean === '127.0.0.1' ||
+    clean.startsWith('192.168.') ||
+    clean.startsWith('10.')      ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(clean) ||
+    clean === 'localhost'
+  ) return 'Lokal';
+
+  const geoip = getGeoip();
+  if (!geoip) return null;
+
+  try {
+    const geo = geoip.lookup(clean);
+    if (!geo) return null;
+    // Stadt + Land (ISO-Code), z.B. "Berlin, DE"
+    const parts = [geo.city, geo.country].filter(Boolean);
+    return parts.length ? parts.join(', ') : null;
+  } catch {
+    return null;
+  }
+}
+
 function auditLog(req, action, targetType = null, targetName = null, details = null) {
   try {
     // IP: X-Forwarded-For (Proxy/Docker) hat Vorrang, dann direkte Socket-Adresse
-    const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
-               || req.socket?.remoteAddress
-               || req.connection?.remoteAddress
-               || '—';
+    const rawIp = (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+                  || req.socket?.remoteAddress
+                  || req.connection?.remoteAddress
+                  || '—';
+
+    const location = resolveLocation(rawIp);
 
     const detailsStr = details != null
       ? (typeof details === 'string' ? details : JSON.stringify(details))
@@ -25,8 +73,8 @@ function auditLog(req, action, targetType = null, targetName = null, details = n
 
     db.prepare(`
       INSERT INTO audit_log
-        (user_id, username, action, target_type, target_name, details, ip, user_agent)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        (user_id, username, action, target_type, target_name, details, ip, user_agent, location)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       req.user?.id    ?? null,
       req.user?.username ?? 'Gast',
@@ -34,8 +82,9 @@ function auditLog(req, action, targetType = null, targetName = null, details = n
       targetType,
       targetName,
       detailsStr,
-      ip,
-      req.headers['user-agent'] || ''
+      rawIp,
+      req.headers['user-agent'] || '',
+      location
     );
   } catch (err) {
     // Audit-Fehler dürfen die Haupt-Operation nie unterbrechen
