@@ -8,7 +8,6 @@ import Dashboard from './pages/Dashboard';
 import Docker from './pages/Docker';
 import Services from './pages/Services';
 import Firewall from './pages/Firewall';
-import Network from './pages/Network';
 import SSH from './pages/SSH';
 import Webhooks from './pages/Webhooks';
 import Users from './pages/Users';
@@ -55,8 +54,8 @@ const AppRoutes = () => {
         <Route path="/docker" element={<Docker liveStats={liveStats} />} />
         <Route path="/services" element={<Services />} />
         <Route path="/firewall" element={<Firewall />} />
-        <Route path="/network"    element={<Network liveStats={liveStats} />} />
-        <Route path="/monitoring" element={<ProtectedRoute permission="metrics.view"><Monitoring /></ProtectedRoute>} />
+        <Route path="/network"    element={<Navigate to="/monitoring" replace />} />
+        <Route path="/monitoring" element={<Monitoring liveStats={liveStats} />} />
         <Route path="/ssh" element={<SSH />} />
         <Route path="/agents" element={<Agents />} />
         <Route path="/agents/:id" element={<AgentDetail />} />
