@@ -34,7 +34,7 @@ const startMonitoring = () => {
         },
       });
     } catch {}
-  }, 2000);
+  }, 5000);
 };
 
 const setup = (server) => {

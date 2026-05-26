@@ -13,7 +13,6 @@ async function record() {
     const [cpu, mem, siDisk] = await Promise.all([si.currentLoad(), si.mem(), si.fsSize()]);
     const ts = Math.floor(Date.now() / 1000);
 
-    // Disk: nsenter für echte Host-Daten, Fallback auf si.fsSize()
     const hostDisk = await getHostDisks();
     const disks = hostDisk || siDisk.map(d => ({ mount: d.mount, used: d.used, size: d.size }));
     const root = disks.find(d => d.mount === '/') || disks[0];
@@ -21,20 +20,21 @@ async function record() {
     insert.run(
       ts,
       Math.round(cpu.currentLoad * 10) / 10,
-      mem.total - mem.available,   // MemAvailable-basiert = entspricht htop/free -h
+      mem.total - mem.available,
       mem.total,
       root?.used  ?? 0,
       root?.size  ?? 0,
     );
-
-    // Daten älter als 30 Tage löschen
-    cleanup.run(ts - 30 * 24 * 3600);
   } catch {}
 }
 
 function start() {
-  record();                                    // sofort beim Start einmal aufzeichnen
-  setInterval(record, 10_000);                // dann alle 10 Sekunden
+  record();
+  setInterval(record, 10_000);
+  // Cleanup nur stündlich statt bei jedem Messwert
+  const runCleanup = () => cleanup.run(Math.floor(Date.now() / 1000) - 30 * 24 * 3600);
+  runCleanup();
+  setInterval(runCleanup, 3_600_000);
   console.log('Metrics-Recorder gestartet (alle 10 Sek, 30 Tage Aufbewahrung)');
 }
 

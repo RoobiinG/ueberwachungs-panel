@@ -7,6 +7,13 @@ const { ALL_KEYS, OPERATOR_PERMISSIONS, GUEST_PERMISSIONS } = require('./permiss
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, '../../data.db');
 const db = new Database(DB_PATH);
 
+// ─── SQLite Performance-Pragmas ──────────────────────────────────────────────
+db.pragma('journal_mode = WAL');        // Concurrent reads + writes ohne Lock
+db.pragma('synchronous  = NORMAL');     // Schneller als FULL, sicher mit WAL
+db.pragma('cache_size   = -32000');     // 32 MB Seitencache
+db.pragma('temp_store   = MEMORY');     // Temporäre Tabellen im RAM
+db.pragma('mmap_size    = 268435456');  // 256 MB Memory-mapped I/O
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
