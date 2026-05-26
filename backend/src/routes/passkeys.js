@@ -10,12 +10,39 @@ const jwt = require('jsonwebtoken');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const getRpId = () => {
+/**
+ * RP ID = Hostname ohne Port, muss zur aktuellen Browser-Origin passen.
+ * Reihenfolge:
+ *  1. ALLOWED_ORIGIN env (explizit konfiguriert)
+ *  2. Origin-Header des Requests (zuverlässigste Quelle beim Browser-Aufruf)
+ *  3. Host-Header (Proxy-Szenarien)
+ *  4. Fallback localhost
+ */
+const getRpId = (req) => {
   if (process.env.ALLOWED_ORIGIN) {
     try { return new URL(process.env.ALLOWED_ORIGIN).hostname; } catch {}
   }
+  if (req?.headers?.origin) {
+    try { return new URL(req.headers.origin).hostname; } catch {}
+  }
+  if (req?.headers?.host) {
+    return req.headers.host.split(':')[0];
+  }
   return 'localhost';
 };
+
+/**
+ * Erwartete Origin für WebAuthn-Verifizierung.
+ * Muss exakt mit der Origin übereinstimmen, die der Browser beim Registrieren sah.
+ */
+const getOrigin = (req) => {
+  if (process.env.ALLOWED_ORIGIN) return process.env.ALLOWED_ORIGIN;
+  if (req?.headers?.origin) return req.headers.origin;
+  const proto = req?.headers?.['x-forwarded-proto'] || (req?.secure ? 'https' : 'http');
+  const host  = req?.headers?.['x-forwarded-host'] || req?.headers?.host || `localhost:${process.env.PORT || 3001}`;
+  return `${proto}://${host}`;
+};
+
 const getRpName = () => 'Überwachungs-Panel';
 
 // In-Memory Challenge-Store mit 5-Min-TTL
@@ -35,7 +62,7 @@ router.get('/register/start', async (req, res) => {
 
   const options = await generateRegistrationOptions({
     rpName:          getRpName(),
-    rpID:            getRpId(),
+    rpID:            getRpId(req),
     userName:        user.username,
     userID:          new TextEncoder().encode(String(user.id)),
     attestationType: 'none',
@@ -66,8 +93,8 @@ router.post('/register/finish', async (req, res) => {
     const verification = await verifyRegistrationResponse({
       response:          regResponse,
       expectedChallenge: stored.challenge,
-      expectedOrigin:    process.env.ALLOWED_ORIGIN || `http://localhost:${process.env.PORT || 3001}`,
-      expectedRPID:      getRpId(),
+      expectedOrigin:    getOrigin(req),
+      expectedRPID:      getRpId(req),
     });
 
     if (!verification.verified) return res.status(400).json({ error: 'Verifizierung fehlgeschlagen' });
@@ -113,7 +140,7 @@ router.delete('/:id', (req, res) => {
 
 const loginStart = async (req, res) => {
   const options = await generateAuthenticationOptions({
-    rpID:             getRpId(),
+    rpID:             getRpId(req),
     userVerification: 'preferred',
     allowCredentials: [], // Passkey sucht selbst nach passenden Keys (discoverable)
   });
@@ -138,8 +165,8 @@ const loginFinish = async (req, res) => {
     const verification = await verifyAuthenticationResponse({
       response:              req.body,
       expectedChallenge:     stored.challenge,
-      expectedOrigin:        process.env.ALLOWED_ORIGIN || `http://localhost:${process.env.PORT || 3001}`,
-      expectedRPID:          getRpId(),
+      expectedOrigin:        getOrigin(req),
+      expectedRPID:          getRpId(req),
       credential: {
         id:        pk.credential_id,
         publicKey: Buffer.from(pk.public_key, 'base64url'),
