@@ -209,7 +209,7 @@ export default function Settings() {
     busy('passkey', true);
     try {
       const { startRegistration } = await import('@simplewebauthn/browser');
-      const optRes = await axios.post('/api/passkeys/register/start');
+      const optRes = await axios.get('/api/passkeys/register/start');
       const attResp = await startRegistration(optRes.data);
       await axios.post('/api/passkeys/register/finish', attResp);
       await loadPasskeys();
