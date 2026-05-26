@@ -16,24 +16,38 @@ const fmtSpeed = (bps) => {
 export default function Network({ liveStats }) {
   const [selectedServer, setSelectedServer] = useState(null); // null = lokal
 
-  const [interfaces, setInterfaces] = useState([]);
-  const [publicIp,   setPublicIp]   = useState('');
-  const [history,    setHistory]    = useState([]);
+  const [interfaces,   setInterfaces]   = useState([]);
+  const [publicIp,     setPublicIp]     = useState('');
+  const [history,      setHistory]      = useState([]);
+  const [remoteStats,  setRemoteStats]  = useState(null); // Netzwerk-Stats vom Remote-Agent
 
   // Interfaces + Public-IP laden (lokal oder remote)
   useEffect(() => {
     setInterfaces([]);
     setPublicIp('');
     setHistory([]);
+    setRemoteStats(null);
 
     const base = selectedServer ? `/api/agents/${selectedServer}` : '/api';
     axios.get(`${base}/network/interfaces`).then(r => setInterfaces(r.data)).catch(() => {});
     axios.get(`${base}/network/public-ip`).then(r => setPublicIp(r.data.ip || '')).catch(() => {});
   }, [selectedServer]);
 
-  // Live-Chart nur für lokalen Server via WebSocket
+  // Remote-Agent: Netzwerk-Stats alle 3 Sekunden pollen
   useEffect(() => {
-    if (selectedServer) return;
+    if (!selectedServer) { setRemoteStats(null); return; }
+    const fetch = () =>
+      axios.get(`/api/agents/${selectedServer}/network/stats`)
+        .then(r => setRemoteStats(r.data))
+        .catch(() => {});
+    fetch();
+    const id = setInterval(fetch, 3000);
+    return () => clearInterval(id);
+  }, [selectedServer]);
+
+  // Live-Chart: lokal via WebSocket, remote via gepollte Stats
+  useEffect(() => {
+    if (selectedServer) return; // remote Chart läuft im zweiten useEffect
     if (!liveStats?.network?.[0]) return;
     const n = liveStats.network[0];
     setHistory(h => [...h.slice(-29), {
@@ -43,20 +57,31 @@ export default function Network({ liveStats }) {
     }]);
   }, [liveStats, selectedServer]);
 
-  const n0 = !selectedServer ? liveStats?.network?.[0] : null;
+  useEffect(() => {
+    if (!selectedServer || !remoteStats?.[0]) return;
+    const n = remoteStats[0];
+    setHistory(h => [...h.slice(-29), {
+      t: new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      rx: Math.round((n.rx_sec || 0) / 1024),
+      tx: Math.round((n.tx_sec || 0) / 1024),
+    }]);
+  }, [remoteStats, selectedServer]);
+
+  // Aktive Stats: lokal via WebSocket, remote via polling
+  const n0 = selectedServer ? remoteStats?.[0] : liveStats?.network?.[0];
 
   return (
     <div className="space-y-3">
       <ServerSelector selected={selectedServer} onChange={setSelectedServer} />
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        <StatCard title="Download" value={n0 ? fmtSpeed(n0.rxSec) : '—'} unit="" icon={Activity} color="green" />
-        <StatCard title="Upload"   value={n0 ? fmtSpeed(n0.txSec) : '—'} unit="" icon={Activity} color="blue" />
+        <StatCard title="Download" value={n0 ? fmtSpeed(n0.rxSec ?? n0.rx_sec) : '—'} unit="" icon={Activity} color="green" />
+        <StatCard title="Upload"   value={n0 ? fmtSpeed(n0.txSec ?? n0.tx_sec) : '—'} unit="" icon={Activity} color="blue" />
         <StatCard title="Öffentliche IP" value={publicIp || '—'} unit="" icon={Globe} color="purple" />
       </div>
 
-      {/* Live-Chart: nur lokal (WebSocket) */}
-      {!selectedServer && history.length > 1 && (
+      {/* Live-Chart: lokal via WebSocket, remote via Polling */}
+      {history.length > 1 && (
         <Card title="Netzwerk-Traffic (Live)">
           <ResponsiveContainer width="100%" height={180}>
             <LineChart data={history}>
@@ -77,7 +102,7 @@ export default function Network({ liveStats }) {
 
       {selectedServer && (
         <div className="bg-panel-surface/50 border border-panel-border rounded-md px-3 py-2 text-xs text-panel-muted">
-          Live-Traffic wird nur für den lokalen Server angezeigt (kein WebSocket-Stream zu Remote-Agents).
+          Live-Traffic via 3-Sekunden-Polling (kein WebSocket-Stream zu Remote-Agents).
         </div>
       )}
 
