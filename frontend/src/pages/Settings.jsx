@@ -385,9 +385,12 @@ export default function Settings() {
             </div>
           </div>
           <div>
-            <label className="block text-xs text-panel-muted mb-1">Benutzername</label>
-            <input type="text" value={mcUsername} onChange={e => setMcUsername(e.target.value)}
-              placeholder="dein@email.de" className={inputCls} />
+            <label className="block text-xs text-panel-muted mb-1">E-Mail-Adresse</label>
+            <input type="email" value={mcUsername} onChange={e => setMcUsername(e.target.value)}
+              placeholder="deine@email.de" className={inputCls} />
+            <p className="text-xs text-panel-muted mt-1">
+              Verwende deine MC-Host24 <strong>Login-E-Mail</strong>, nicht deinen Anzeigenamen.
+            </p>
           </div>
           <div>
             <label className="block text-xs text-panel-muted mb-1">Passwort</label>

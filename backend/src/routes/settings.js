@@ -51,10 +51,15 @@ router.post('/mchost/login', requireRole('admin'), async (req, res) => {
       { username, password },
       { headers: { 'Content-Type': 'application/json', Accept: 'application/json' } }
     );
+    // Prüfen ob API Erfolg gemeldet hat (status: "SUCCESS")
+    if (data?.status !== 'SUCCESS' || data?.success === false) {
+      const apiMsg = data?.message || data?.messages?.[0] || 'Anmeldung fehlgeschlagen';
+      return res.status(401).json({ error: `MC-Host24: ${apiMsg}. Tipp: E-Mail-Adresse (nicht Anzeigename) verwenden.` });
+    }
     // API antwortet mit: { status: "SUCCESS", data: { api_token: "..." } }
     const apiToken = data?.data?.api_token ?? data?.api_token;
     if (!apiToken) {
-      return res.status(401).json({ error: `Kein Token in der API-Antwort: ${JSON.stringify(data)}` });
+      return res.status(401).json({ error: `Kein Token in der Antwort. Bitte Support kontaktieren.` });
     }
 
     set('mchost_username', username);
