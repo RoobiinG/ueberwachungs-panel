@@ -1,6 +1,7 @@
 const router = require('express').Router();
 let Docker;
 try { Docker = require('dockerode'); } catch { Docker = null; }
+const { auditLog } = require('../utils/audit');
 
 const getDocker = () => {
   if (!Docker) throw new Error('dockerode not available');
@@ -26,7 +27,14 @@ router.post('/containers/:id/:action', async (req, res) => {
   const valid = ['start', 'stop', 'restart', 'kill', 'pause', 'unpause'];
   if (!valid.includes(action)) return res.status(400).json({ error: 'Invalid action' });
   try {
+    // Containernamen für Log ermitteln
+    let containerName = id;
+    try {
+      const info = await getDocker().getContainer(id).inspect();
+      containerName = (info.Name || info.Names?.[0] || id).replace(/^\//, '');
+    } catch {}
     await getDocker().getContainer(id)[action]();
+    auditLog(req, `docker.${action}`, 'container', containerName, { containerId: id.slice(0, 12) });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

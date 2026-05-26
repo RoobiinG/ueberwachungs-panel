@@ -154,6 +154,24 @@ try { db.exec("ALTER TABLE alert_history ADD COLUMN type TEXT NOT NULL DEFAULT '
 // Rollen: Lokalen Server für diese Rolle ausblenden
 try { db.exec('ALTER TABLE roles ADD COLUMN hide_local INTEGER NOT NULL DEFAULT 0'); } catch {}
 
+// Audit-Log: alle sicherheitsrelevanten Aktionen protokollieren
+db.exec(`
+  CREATE TABLE IF NOT EXISTS audit_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER,
+    username    TEXT NOT NULL DEFAULT 'System',
+    action      TEXT NOT NULL,
+    target_type TEXT,
+    target_name TEXT,
+    details     TEXT,
+    ip          TEXT,
+    user_agent  TEXT,
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_audit_user    ON audit_log(username);
+`);
+
 // Tabelle für Server-Zuweisungen pro Rolle
 db.exec(`
   CREATE TABLE IF NOT EXISTS agent_grants (

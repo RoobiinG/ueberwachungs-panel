@@ -5,6 +5,7 @@ const tls         = require('tls');
 const db          = require('../db');
 const requireRole = require('../middleware/roles');
 const { validatePublicUrl } = require('../utils/validateUrl');
+const { auditLog } = require('../utils/audit');
 
 const AGENT_RAW_URL = 'https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master/agent/panel-agent.js';
 
@@ -113,6 +114,7 @@ router.post('/', requireRole('admin'), async (req, res) => {
     'INSERT INTO remote_agents (name, url, token, fingerprint) VALUES (?, ?, ?, ?)'
   ).run(name.trim(), cleanUrl, token.trim(), fingerprint);
 
+  auditLog(req, 'agent.create', 'agent', name.trim(), { url: cleanUrl });
   res.status(201).json({ id: result.lastInsertRowid, name: name.trim(), url: cleanUrl, fingerprint });
 });
 
@@ -142,11 +144,14 @@ router.put('/:id', requireRole('admin'), async (req, res) => {
     WHERE id = ?
   `).run(name?.trim() ?? null, newUrl, token !== undefined ? token.trim() : null, fingerprint, agent.id);
 
+  auditLog(req, 'agent.edit', 'agent', agent.name, { newUrl });
   res.json({ success: true });
 });
 
 router.delete('/:id', requireRole('admin'), (req, res) => {
+  const delAgent = getOne(req.params.id);
   db.prepare('DELETE FROM remote_agents WHERE id = ?').run(req.params.id);
+  auditLog(req, 'agent.delete', 'agent', delAgent?.name || req.params.id);
   res.json({ success: true });
 });
 
