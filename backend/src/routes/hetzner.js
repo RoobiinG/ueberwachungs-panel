@@ -24,21 +24,26 @@ const handle = async (res, fn) => {
   }
 };
 
+const validId = (id) => /^\d+$/.test(id);
+
 router.get('/servers', requirePermission('hetzner.view'), (req, res) => handle(res, () => api().get('/servers')));
 
 router.post('/servers/:id/:action', requirePermission('hetzner.control'), (req, res) => {
+  if (!validId(req.params.id)) return res.status(400).json({ error: 'Ungültige Server-ID' });
   const valid = ['poweron', 'poweroff', 'reboot', 'reset', 'shutdown'];
-  if (!valid.includes(req.params.action)) return res.status(400).json({ error: 'Invalid action' });
+  if (!valid.includes(req.params.action)) return res.status(400).json({ error: 'Ungültige Aktion' });
   handle(res, () => api().post(`/servers/${req.params.id}/actions/${req.params.action}`));
 });
 
 router.post('/servers/:id/backup/:toggle', requirePermission('hetzner.control'), (req, res) => {
-  if (!['enable', 'disable'].includes(req.params.toggle)) return res.status(400).json({ error: 'Invalid toggle' });
+  if (!validId(req.params.id)) return res.status(400).json({ error: 'Ungültige Server-ID' });
+  if (!['enable', 'disable'].includes(req.params.toggle)) return res.status(400).json({ error: 'Ungültiger Wert' });
   handle(res, () => api().post(`/servers/${req.params.id}/actions/${req.params.toggle}_backup`));
 });
 
-router.get('/servers/:id/backups', requirePermission('hetzner.view'), (req, res) =>
-  handle(res, () => api().get(`/images?type=backup&bound_to=${req.params.id}`))
-);
+router.get('/servers/:id/backups', requirePermission('hetzner.view'), (req, res) => {
+  if (!validId(req.params.id)) return res.status(400).json({ error: 'Ungültige Server-ID' });
+  handle(res, () => api().get(`/images?type=backup&bound_to=${req.params.id}`));
+});
 
 module.exports = router;
