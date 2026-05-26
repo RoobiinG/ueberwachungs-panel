@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
+import { useAuth } from '../context/AuthContext';
 import {
   Shield, Search, Trash2, ChevronLeft, ChevronRight,
   RefreshCw, Filter, Monitor, User, Container, Webhook,
@@ -76,10 +77,14 @@ function fmtDate(s) {
 const PAGE_SIZE = 50;
 
 export default function AuditLog() {
-  const [rows,    setRows]    = useState([]);
-  const [total,   setTotal]   = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [page,    setPage]    = useState(0);
+  const { hasPermission } = useAuth();
+  const canClear = hasPermission('audit.clear');
+  const [rows,      setRows]      = useState([]);
+  const [total,     setTotal]     = useState(0);
+  const [loading,   setLoading]   = useState(true);
+  const [page,      setPage]      = useState(0);
+  const [canSeeIp,  setCanSeeIp]  = useState(false);
+  const [canSeeGeo, setCanSeeGeo] = useState(false);
 
   // Filter
   const [filterUser,   setFilterUser]   = useState('');
@@ -102,6 +107,8 @@ export default function AuditLog() {
       const { data } = await axios.get(`/api/audit?${params}`);
       setRows(data.rows);
       setTotal(data.total);
+      setCanSeeIp(!!data.canSeeIp);
+      setCanSeeGeo(!!data.canSeeGeo);
     } catch {}
     setLoading(false);
   }, [page, filterUser, filterAction, filterFrom, filterTo]);
@@ -131,10 +138,12 @@ export default function AuditLog() {
             <Button size="sm" variant="ghost" onClick={() => load(page)}>
               <RefreshCw size={12} className="mr-1" />Aktualisieren
             </Button>
-            <Button size="sm" variant="ghost" onClick={clearLog}
-              className="text-panel-red hover:bg-panel-red/10">
-              <Trash2 size={12} className="mr-1" />Log leeren
-            </Button>
+            {canClear && (
+              <Button size="sm" variant="ghost" onClick={clearLog}
+                className="text-panel-red hover:bg-panel-red/10">
+                <Trash2 size={12} className="mr-1" />Log leeren
+              </Button>
+            )}
           </div>
         </div>
       }>
@@ -248,13 +257,15 @@ export default function AuditLog() {
                       </span>
                     )}
 
-                    {/* IP */}
-                    <span className="text-[11px] text-panel-muted flex-shrink-0 hidden md:block font-mono">
-                      {row.ip || '—'}
-                    </span>
+                    {/* IP — nur wenn Recht vorhanden */}
+                    {canSeeIp && (
+                      <span className="text-[11px] text-panel-muted flex-shrink-0 hidden md:block font-mono">
+                        {row.ip || '—'}
+                      </span>
+                    )}
 
-                    {/* Standort */}
-                    {row.location && (
+                    {/* Standort — nur wenn Recht vorhanden */}
+                    {canSeeGeo && row.location && (
                       <span className="text-[11px] text-panel-muted flex-shrink-0 hidden lg:flex items-center gap-0.5">
                         <MapPin size={10} className="flex-shrink-0" />
                         {row.location}
@@ -273,12 +284,16 @@ export default function AuditLog() {
                     <div className="ml-6 mt-1 space-y-1 text-[11px] text-panel-muted border-t border-panel-border/40 pt-2">
                       <div className="grid grid-cols-2 gap-x-6 gap-y-1">
                         <div><span className="text-panel-text font-medium">Benutzer:</span> {row.username} (ID: {row.user_id ?? '—'})</div>
-                        <div><span className="text-panel-text font-medium">IP-Adresse:</span> {row.ip || '—'}</div>
-                        <div><span className="text-panel-text font-medium">Standort:</span>{' '}
-                          {row.location
-                            ? <span className="inline-flex items-center gap-1"><MapPin size={10} />{row.location}</span>
-                            : '—'}
-                        </div>
+                        {canSeeIp && (
+                          <div><span className="text-panel-text font-medium">IP-Adresse:</span> {row.ip || '—'}</div>
+                        )}
+                        {canSeeGeo && (
+                          <div><span className="text-panel-text font-medium">Standort:</span>{' '}
+                            {row.location
+                              ? <span className="inline-flex items-center gap-1"><MapPin size={10} />{row.location}</span>
+                              : '—'}
+                          </div>
+                        )}
                         <div><span className="text-panel-text font-medium">Aktion:</span> <code className="text-panel-accent">{row.action}</code></div>
                         <div><span className="text-panel-text font-medium">Ziel-Typ:</span> {row.target_type || '—'}</div>
                         <div><span className="text-panel-text font-medium">Ziel-Name:</span> {row.target_name || '—'}</div>

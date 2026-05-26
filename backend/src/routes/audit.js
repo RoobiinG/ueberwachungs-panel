@@ -1,14 +1,20 @@
-const router      = require('express').Router();
-const db          = require('../db');
-const requireRole = require('../middleware/roles');
+const router             = require('express').Router();
+const db                 = require('../db');
+const { requirePermission, getPermissions } = require('../middleware/requirePermission');
 
-// Nur Admins dürfen das Audit-Log einsehen
-router.get('/', requireRole('admin'), (req, res) => {
+// ─── Hilfsfunktion: hat der anfragende Nutzer ein bestimmtes Recht? ────────────
+const hasPerm = (req, key) => getPermissions(req.user?.role || '').includes(key);
+
+// ─── Audit-Log abrufen ─────────────────────────────────────────────────────────
+router.get('/', requirePermission('audit.view'), (req, res) => {
   const limit  = Math.min(parseInt(req.query.limit)  || 100, 500);
   const offset = Math.max(parseInt(req.query.offset) || 0, 0);
   const { user, action, from, to } = req.query;
 
-  let where  = 'WHERE 1=1';
+  const canSeeIp  = hasPerm(req, 'audit.view_ip');
+  const canSeeGeo = hasPerm(req, 'audit.view_geo');
+
+  let where   = 'WHERE 1=1';
   const params = [];
 
   if (user)   { where += ' AND username LIKE ?';    params.push(`%${user}%`); }
@@ -21,17 +27,24 @@ router.get('/', requireRole('admin'), (req, res) => {
     `SELECT * FROM audit_log ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
   ).all(...params, limit, offset);
 
-  res.json({ rows, total, limit, offset });
+  // Felder je nach Berechtigung maskieren
+  const masked = rows.map(r => ({
+    ...r,
+    ip:       canSeeIp  ? r.ip       : null,
+    location: canSeeGeo ? r.location : null,
+  }));
+
+  res.json({ rows: masked, total, limit, offset, canSeeIp, canSeeGeo });
 });
 
-// Einzelnen Eintrag löschen
-router.delete('/:id', requireRole('admin'), (req, res) => {
+// ─── Einzelnen Eintrag löschen ────────────────────────────────────────────────
+router.delete('/:id', requirePermission('audit.clear'), (req, res) => {
   db.prepare('DELETE FROM audit_log WHERE id = ?').run(req.params.id);
   res.json({ success: true });
 });
 
-// Komplettes Log leeren
-router.delete('/', requireRole('admin'), (req, res) => {
+// ─── Komplettes Log leeren ────────────────────────────────────────────────────
+router.delete('/', requirePermission('audit.clear'), (req, res) => {
   db.prepare('DELETE FROM audit_log').run();
   res.json({ success: true });
 });

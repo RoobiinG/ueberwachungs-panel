@@ -24,10 +24,11 @@ import AuditLog from './pages/AuditLog';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 
-const ProtectedRoute = ({ children, adminOnly }) => {
-  const { user } = useAuth();
+const ProtectedRoute = ({ children, adminOnly, permission }) => {
+  const { user, hasPermission } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
   if (adminOnly && user.role !== 'admin') return <Navigate to="/" replace />;
+  if (permission && !hasPermission(permission)) return <Navigate to="/" replace />;
   return children;
 };
 
@@ -64,7 +65,7 @@ const AppRoutes = () => {
         <Route path="/mchost" element={<MCHost />} />
         <Route path="/users"     element={<ProtectedRoute adminOnly><Users /></ProtectedRoute>} />
         <Route path="/roles"     element={<ProtectedRoute adminOnly><Roles /></ProtectedRoute>} />
-        <Route path="/audit"     element={<ProtectedRoute adminOnly><AuditLog /></ProtectedRoute>} />
+        <Route path="/audit"     element={<ProtectedRoute permission="audit.view"><AuditLog /></ProtectedRoute>} />
         <Route path="/settings"  element={<ProtectedRoute adminOnly><Settings /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -47,6 +47,12 @@ const PERMISSIONS = [
   { key: 'users.manage',        category: 'Benutzerverwaltung', label: 'Benutzer verwalten',              description: 'Benutzer erstellen, bearbeiten, löschen' },
   { key: 'roles.manage',        category: 'Benutzerverwaltung', label: 'Rollen verwalten',                description: 'Rollen und Berechtigungen konfigurieren' },
 
+  // ─── Audit-Protokoll ─────────────────────────────────────────────────────
+  { key: 'audit.view',          category: 'Audit-Protokoll',    label: 'Protokoll einsehen',              description: 'Audit-Log mit allen Aktionen anzeigen' },
+  { key: 'audit.view_ip',       category: 'Audit-Protokoll',    label: 'IP-Adressen sehen',               description: 'IP-Adressen der Einträge im Audit-Log anzeigen' },
+  { key: 'audit.view_geo',      category: 'Audit-Protokoll',    label: 'Geo-Standort sehen',              description: 'Geografischen Standort (Stadt, Land) im Audit-Log anzeigen' },
+  { key: 'audit.clear',         category: 'Audit-Protokoll',    label: 'Protokoll leeren',                description: 'Audit-Log-Einträge löschen' },
+
   // ─── Einstellungen ────────────────────────────────────────────────────────
   { key: 'settings.view',       category: 'Einstellungen',      label: 'Einstellungen anzeigen',          description: 'System-Einstellungen einsehen' },
   { key: 'settings.manage',     category: 'Einstellungen',      label: 'Einstellungen ändern',            description: 'SMTP, Integrationen und Systemparameter konfigurieren' },
@@ -67,6 +73,7 @@ const OPERATOR_PERMISSIONS = [
   'ssh.view', 'ssh.connect', 'ssh.manage',
   'metrics.view',
   'users.view',
+  'audit.view', 'audit.view_ip', 'audit.view_geo',
   'settings.view',
 ];
 
