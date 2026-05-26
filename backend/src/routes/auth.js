@@ -63,7 +63,9 @@ router.post('/login', loginLimiter, (req, res) => {
     { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
   );
   const permissions = getPermissions(user.role);
-  res.json({ token, user: { id: user.id, username: user.username, role: user.role }, permissions });
+  const roleRow = db.prepare('SELECT hide_local, is_admin FROM roles WHERE name = ?').get(user.role);
+  const hideLocal = roleRow?.is_admin ? false : !!roleRow?.hide_local;
+  res.json({ token, user: { id: user.id, username: user.username, role: user.role }, permissions, hideLocal });
 });
 
 // ─── Passkey-Login (öffentlich) ───────────────────────────────────────────────
@@ -124,9 +126,11 @@ router.get('/me', authMiddleware, (req, res) => {
   const user = db.prepare('SELECT id, username, role, email, created_at FROM users WHERE id = ?').get(req.user.id);
   if (!user) return res.status(404).json({ error: 'Benutzer nicht gefunden' });
   const permissions = getPermissions(user.role);
-  // Rollenbezeichnung aus der roles-Tabelle holen
-  const roleRow = db.prepare('SELECT label FROM roles WHERE name = ?').get(user.role);
-  res.json({ ...user, roleLabel: roleRow?.label || user.role, permissions });
+  // Rollenbezeichnung + hide_local-Flag aus der roles-Tabelle holen
+  const roleRow = db.prepare('SELECT label, hide_local, is_admin FROM roles WHERE name = ?').get(user.role);
+  // Admins sehen immer alles
+  const hideLocal = roleRow?.is_admin ? false : !!roleRow?.hide_local;
+  res.json({ ...user, roleLabel: roleRow?.label || user.role, permissions, hideLocal });
 });
 
 router.put('/password', authMiddleware, (req, res) => {

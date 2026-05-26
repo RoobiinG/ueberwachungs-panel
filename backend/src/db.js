@@ -151,6 +151,8 @@ try { db.exec('ALTER TABLE roles ADD COLUMN restrict_agents INTEGER NOT NULL DEF
 // Alerts: Remote-Agent-Unterstützung + History-Typ
 try { db.exec('ALTER TABLE alert_rules ADD COLUMN agent_id INTEGER REFERENCES remote_agents(id) ON DELETE SET NULL'); } catch {}
 try { db.exec("ALTER TABLE alert_history ADD COLUMN type TEXT NOT NULL DEFAULT 'fired'"); } catch {}
+// Rollen: Lokalen Server für diese Rolle ausblenden
+try { db.exec('ALTER TABLE roles ADD COLUMN hide_local INTEGER NOT NULL DEFAULT 0'); } catch {}
 
 // Tabelle für Server-Zuweisungen pro Rolle
 db.exec(`

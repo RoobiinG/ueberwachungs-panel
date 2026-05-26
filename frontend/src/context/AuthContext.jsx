@@ -11,6 +11,9 @@ export const AuthProvider = ({ children }) => {
   const [permissions, setPermissions] = useState(() => {
     try { return JSON.parse(localStorage.getItem('permissions')) || []; } catch { return []; }
   });
+  const [hideLocal, setHideLocal] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('hideLocal')) || false; } catch { return false; }
+  });
 
   if (token) axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
 
@@ -19,10 +22,13 @@ export const AuthProvider = ({ children }) => {
     if (!token) return;
     axios.get('/api/auth/me').then(r => {
       const u = { id: r.data.id, username: r.data.username, role: r.data.role, roleLabel: r.data.roleLabel };
+      const hl = !!r.data.hideLocal;
       setUser(u);
       setPermissions(r.data.permissions || []);
+      setHideLocal(hl);
       localStorage.setItem('user', JSON.stringify(u));
       localStorage.setItem('permissions', JSON.stringify(r.data.permissions || []));
+      localStorage.setItem('hideLocal', JSON.stringify(hl));
     }).catch(() => {
       // Token abgelaufen / ungültig → ausloggen
       logout();
@@ -30,20 +36,22 @@ export const AuthProvider = ({ children }) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  const saveSession = useCallback((userData, tokenStr, perms = []) => {
+  const saveSession = useCallback((userData, tokenStr, perms = [], hl = false) => {
     const u = { id: userData.id, username: userData.username, role: userData.role, roleLabel: userData.roleLabel };
     setUser(u);
     setToken(tokenStr);
     setPermissions(perms);
+    setHideLocal(hl);
     localStorage.setItem('token', tokenStr);
     localStorage.setItem('user', JSON.stringify(u));
     localStorage.setItem('permissions', JSON.stringify(perms));
+    localStorage.setItem('hideLocal', JSON.stringify(hl));
     axios.defaults.headers.common['Authorization'] = `Bearer ${tokenStr}`;
   }, []);
 
   const login = useCallback(async (username, password) => {
     const { data } = await axios.post('/api/auth/login', { username, password });
-    saveSession(data.user, data.token, data.permissions || []);
+    saveSession(data.user, data.token, data.permissions || [], !!data.hideLocal);
     return data;
   }, [saveSession]);
 
@@ -51,9 +59,11 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
     setToken(null);
     setPermissions([]);
+    setHideLocal(false);
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     localStorage.removeItem('permissions');
+    localStorage.removeItem('hideLocal');
     delete axios.defaults.headers.common['Authorization'];
   }, []);
 
@@ -70,7 +80,7 @@ export const AuthProvider = ({ children }) => {
       user, token, permissions,
       login, logout, saveSession,
       isAdmin, isOperator, canWrite,
-      hasPermission,
+      hasPermission, hideLocal,
     }}>
       {children}
     </AuthContext.Provider>
