@@ -25,13 +25,13 @@ const navItems = [
   { divider: true },
   { to: '/users',    icon: Users,          label: 'Benutzer',        adminOnly: true },
   { to: '/roles',    icon: ShieldCheck,    label: 'Rollen & Rechte', adminOnly: true },
-  { to: '/audit',    icon: ClipboardList,  label: 'Audit-Log',       adminOnly: true },
+  { to: '/audit',    icon: ClipboardList,  label: 'Audit-Log',       permission: 'audit.view' },
   { to: '/settings', icon: Settings,       label: 'Einstellungen',   adminOnly: true },
 ];
 
 export const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, hasPermission } = useAuth();
   const [version, setVersion] = useState(null);
 
   useEffect(() => {
@@ -59,6 +59,7 @@ export const Sidebar = () => {
         {navItems.map((item, i) => {
           if (item.divider) return <div key={i} className="my-1 mx-3 border-t border-panel-border" />;
           if (item.adminOnly && !isAdmin) return null;
+          if (item.permission && !hasPermission(item.permission)) return null;
           return (
             <NavLink
               key={item.to}
