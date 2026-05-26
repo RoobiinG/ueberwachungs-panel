@@ -55,33 +55,7 @@ router.get('/info', requirePermission('docker.view'), async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ─── Container-Labels (Spitznamen / Tags — panel-seitig gespeichert) ──────────
-
-// GET /api/docker/labels?server=local  → alle Labels für einen Server
-router.get('/labels', requirePermission('docker.view'), (req, res) => {
-  const server = req.query.server || 'local';
-  const rows = db.prepare('SELECT container_id, nickname, tag FROM container_labels WHERE server = ?').all(server);
-  const map = {};
-  for (const r of rows) map[r.container_id] = { nickname: r.nickname, tag: r.tag };
-  res.json(map);
-});
-
-// PUT /api/docker/labels  body: { server, containerId, nickname, tag }
-router.put('/labels', requirePermission('docker.view'), (req, res) => {
-  const { server = 'local', containerId, nickname = '', tag = '' } = req.body;
-  if (!containerId) return res.status(400).json({ error: 'containerId erforderlich' });
-  db.prepare(`
-    INSERT INTO container_labels (server, container_id, nickname, tag) VALUES (?, ?, ?, ?)
-    ON CONFLICT(server, container_id) DO UPDATE SET nickname = excluded.nickname, tag = excluded.tag
-  `).run(server, containerId, nickname.trim(), tag.trim());
-  res.json({ ok: true });
-});
-
-// DELETE /api/docker/labels/:server/:containerId
-router.delete('/labels/:server/:containerId', requirePermission('docker.view'), (req, res) => {
-  db.prepare('DELETE FROM container_labels WHERE server = ? AND container_id = ?')
-    .run(req.params.server, req.params.containerId);
-  res.json({ ok: true });
-});
+// Hinweis: Container-Labels werden in routes/dockerLabels.js verwaltet
+// und sind ohne requireLocalAccess gemountet (panel-seitige SQLite-Daten).
 
 module.exports = router;
