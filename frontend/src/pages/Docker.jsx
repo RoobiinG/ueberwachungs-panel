@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
+import { ServerSelector } from '../components/ui/ServerSelector';
 import { RefreshCw, Play, Square, RotateCcw, ChevronDown, ChevronUp } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -10,7 +11,10 @@ import {
   XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid,
 } from 'recharts';
 
-const statusColor = (s) => s?.includes('Up') ? 'green' : s?.includes('Exited') ? 'red' : 'gray';
+// Farbe anhand Status-String (lokal: "Up 2 hours" / "Exited…"; remote: "running" / "exited")
+const statusColor = (s) =>
+  s?.includes('Up') || s === 'running'   ? 'green' :
+  s?.includes('Exited') || s === 'exited' ? 'red'  : 'gray';
 
 const fmtBytes = (b) => {
   if (b == null || b === 0) return '0 B';
@@ -19,9 +23,10 @@ const fmtBytes = (b) => {
   return `${(b / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 };
 
-const fmtTs = (ts) => ts ? new Date(ts * 1000).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '';
+const fmtTs = (ts) =>
+  ts ? new Date(ts * 1000).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '';
 
-// Mini-Sparkline für CPU % pro Container (letzte 20 Werte)
+// Mini-Sparkline für CPU % pro Container (letzte 20 Werte) — nur lokal
 function Sparkline({ data }) {
   if (!data || data.length < 2) return null;
   return (
@@ -35,7 +40,7 @@ function Sparkline({ data }) {
   );
 }
 
-// Detail-Chart für einen Container
+// Detail-Chart für einen lokalen Container
 function ContainerChart({ containerId, containerName }) {
   const [range, setRange]     = useState('1h');
   const [data, setData]       = useState([]);
@@ -68,7 +73,6 @@ function ContainerChart({ containerId, containerName }) {
         <div className="text-panel-muted text-xs py-3 text-center">Noch keine Verlaufsdaten</div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {/* CPU */}
           <div>
             <div className="text-xs text-panel-muted mb-1">CPU %</div>
             <ResponsiveContainer width="100%" height={90}>
@@ -88,11 +92,11 @@ function ContainerChart({ containerId, containerName }) {
               </AreaChart>
             </ResponsiveContainer>
           </div>
-          {/* RAM */}
           <div>
             <div className="text-xs text-panel-muted mb-1">RAM</div>
             <ResponsiveContainer width="100%" height={90}>
-              <AreaChart data={data.map(d => ({ ...d, memPct: d.mem_limit > 0 ? Math.round(d.mem_used / d.mem_limit * 100) : 0 }))}
+              <AreaChart
+                data={data.map(d => ({ ...d, memPct: d.mem_limit > 0 ? Math.round(d.mem_used / d.mem_limit * 100) : 0 }))}
                 margin={{ top: 2, right: 4, bottom: 0, left: -10 }}>
                 <defs>
                   <linearGradient id="dmem" x1="0" y1="0" x2="0" y2="1">
@@ -119,21 +123,25 @@ export default function Docker({ liveStats }) {
   const { user } = useAuth();
   const canWrite = user?.role === 'admin' || user?.role === 'operator';
 
+  const [selectedServer, setSelectedServer] = useState(null); // null = lokal
   const [containers, setContainers] = useState([]);
   const [loading, setLoading]       = useState(true);
   const [busy, setBusy]             = useState({});
   const [error, setError]           = useState('');
   const [expanded, setExpanded]     = useState(null);
 
-  // Sparkline-Historie: letzten 20 CPU%-Werte pro Container-ID
-  const sparkRef  = useRef({});
+  // Sparkline-Historie: letzten 20 CPU%-Werte pro Container-ID (nur lokal)
+  const sparkRef = useRef({});
   const [sparkData, setSparkData] = useState({});
 
   const load = async () => {
     setLoading(true);
     setError('');
     try {
-      const { data } = await axios.get('/api/docker/containers');
+      const url = selectedServer
+        ? `/api/agents/${selectedServer}/docker/containers`
+        : '/api/docker/containers';
+      const { data } = await axios.get(url);
       setContainers(data);
     } catch (err) {
       setError(err.response?.data?.error || 'Docker nicht erreichbar');
@@ -141,10 +149,16 @@ export default function Docker({ liveStats }) {
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, []);
-
-  // Container-Stats aus WS-Broadcast in Sparklines eintragen
   useEffect(() => {
+    setContainers([]);
+    setExpanded(null);
+    load();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedServer]);
+
+  // Sparklines nur für lokalen Docker via WebSocket-Broadcast
+  useEffect(() => {
+    if (selectedServer) return;
     const cs = liveStats?.containers;
     if (!cs) return;
     const updated = { ...sparkRef.current };
@@ -154,22 +168,35 @@ export default function Docker({ liveStats }) {
     }
     sparkRef.current = updated;
     setSparkData({ ...updated });
-  }, [liveStats?.containers]);
+  }, [liveStats?.containers, selectedServer]);
 
-  const act = async (id, action) => {
-    setBusy(b => ({ ...b, [id]: action }));
-    try { await axios.post(`/api/docker/containers/${id}/${action}`); await load(); } catch {}
-    setBusy(b => ({ ...b, [id]: null }));
+  const act = async (cid, action) => {
+    setBusy(b => ({ ...b, [cid]: action }));
+    try {
+      const url = selectedServer
+        ? `/api/agents/${selectedServer}/docker/containers/${cid}/${action}`
+        : `/api/docker/containers/${cid}/${action}`;
+      await axios.post(url);
+      await load();
+    } catch {}
+    setBusy(b => ({ ...b, [cid]: null }));
   };
 
   const toggle = (id) => setExpanded(e => e === id ? null : id);
 
-  // Aktuellen Container-Stat aus liveStats
-  const getStat = (id) => liveStats?.containers?.[id];
+  // Accessor-Helfer: lokal nutzt dockerode-Format, remote nutzt normalisierten Agent-Output
+  const getId     = (c) => selectedServer ? c.id    : c.Id;
+  const getName   = (c) => selectedServer ? c.name  : (c.Names?.[0]?.replace('/', '') || c.Id?.slice(0, 12));
+  const getState  = (c) => selectedServer ? c.state : c.State;
+  const getStatus = (c) => selectedServer ? c.status : c.Status;
+  const getImage  = (c) => selectedServer ? c.image : c.Image;
+  // Live-WS-Stats (nur lokal)
+  const getLiveStat = (c) => !selectedServer ? liveStats?.containers?.[c.Id] : null;
 
   return (
     <div className="space-y-3">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <ServerSelector selected={selectedServer} onChange={setSelectedServer} />
         <Button variant="ghost" size="sm" onClick={load}><RefreshCw size={14} className="mr-1" />Aktualisieren</Button>
       </div>
 
@@ -187,34 +214,51 @@ export default function Docker({ liveStats }) {
         ) : (
           <div className="divide-y divide-panel-border -mx-4 -mb-4">
             {containers.map(c => {
-              const stat    = getStat(c.Id);
-              const isOpen  = expanded === c.Id;
-              const name    = c.Names?.[0]?.replace('/', '') || c.Id.slice(0, 12);
+              const cid      = getId(c);
+              const name     = getName(c);
+              const state    = getState(c);
+              const status   = getStatus(c);
+              const image    = getImage(c);
+              const liveStat = getLiveStat(c);
+              const isOpen   = expanded === cid;
+              const isRun    = state === 'running';
+
+              // CPU / RAM: remote → aus API; lokal → aus WS
+              const cpuPct  = selectedServer ? c.cpu         : liveStat?.cpuPercent;
+              const memUsed = selectedServer ? c.memUsed     : liveStat?.memUsed;
+              const rxSec   = selectedServer ? null          : liveStat?.rxSec;
+              const txSec   = selectedServer ? null          : liveStat?.txSec;
 
               return (
-                <div key={c.Id}>
+                <div key={cid}>
                   <div className="flex items-center justify-between px-4 py-3">
                     {/* Name & Status */}
                     <div className="flex-1 min-w-0 mr-3">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <Badge color={statusColor(c.Status)}>{c.State}</Badge>
+                        <Badge color={statusColor(status || state)}>{state}</Badge>
                         <span className="text-sm text-panel-text font-medium truncate">{name}</span>
+                        {selectedServer && c.stack && (
+                          <span className="text-xs text-panel-muted bg-panel-surface px-1.5 py-0.5 rounded">{c.stack}</span>
+                        )}
                       </div>
-                      <div className="text-xs text-panel-muted mt-0.5 truncate">{c.Image}</div>
+                      <div className="text-xs text-panel-muted mt-0.5 truncate">{image}</div>
                       {/* Live-Werte */}
-                      {stat && c.State === 'running' && (
+                      {isRun && (cpuPct != null || memUsed != null) && (
                         <div className="flex items-center gap-3 mt-1 text-xs text-panel-muted">
-                          <span className="text-blue-400 font-mono">{stat.cpuPercent?.toFixed(1)}% CPU</span>
-                          <span className="text-green-400 font-mono">{fmtBytes(stat.memUsed)} RAM</span>
-                          {(stat.rxSec > 0 || stat.txSec > 0) && (
-                            <span className="font-mono">↑{fmtBytes(stat.txSec)}/s ↓{fmtBytes(stat.rxSec)}/s</span>
+                          {cpuPct  != null && <span className="text-blue-400  font-mono">{Number(cpuPct).toFixed(1)}% CPU</span>}
+                          {memUsed != null && <span className="text-green-400 font-mono">{fmtBytes(memUsed)} RAM</span>}
+                          {!selectedServer && rxSec != null && (rxSec > 0 || txSec > 0) && (
+                            <span className="font-mono">↑{fmtBytes(txSec)}/s ↓{fmtBytes(rxSec)}/s</span>
+                          )}
+                          {selectedServer && c.ports?.length > 0 && (
+                            <span className="text-panel-muted/70">{c.ports.slice(0, 3).join(' · ')}</span>
                           )}
                         </div>
                       )}
                     </div>
 
-                    {/* Sparkline */}
-                    {sparkData[c.Id]?.length >= 2 && c.State === 'running' && (
+                    {/* Sparkline (nur lokal) */}
+                    {!selectedServer && sparkData[c.Id]?.length >= 2 && isRun && (
                       <Sparkline data={sparkData[c.Id]} />
                     )}
 
@@ -222,22 +266,25 @@ export default function Docker({ liveStats }) {
                     <div className="flex items-center gap-1 ml-2">
                       {canWrite && (
                         <>
-                          {c.State !== 'running'
-                            ? <Button size="sm" variant="success" onClick={() => act(c.Id, 'start')} disabled={!!busy[c.Id]}><Play size={12} /></Button>
-                            : <Button size="sm" variant="danger"  onClick={() => act(c.Id, 'stop')} disabled={!!busy[c.Id]}><Square size={12} /></Button>
+                          {!isRun
+                            ? <Button size="sm" variant="success" onClick={() => act(cid, 'start')}  disabled={!!busy[cid]}><Play size={12} /></Button>
+                            : <Button size="sm" variant="danger"  onClick={() => act(cid, 'stop')}   disabled={!!busy[cid]}><Square size={12} /></Button>
                           }
-                          <Button size="sm" variant="ghost" onClick={() => act(c.Id, 'restart')} disabled={!!busy[c.Id]}><RotateCcw size={12} /></Button>
+                          <Button size="sm" variant="ghost" onClick={() => act(cid, 'restart')} disabled={!!busy[cid]}><RotateCcw size={12} /></Button>
                         </>
                       )}
-                      <button onClick={() => toggle(c.Id)}
-                        className="p-1.5 rounded hover:bg-panel-card text-panel-muted hover:text-panel-text transition-colors">
-                        {isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                      </button>
+                      {/* Detail-Chart nur lokal */}
+                      {!selectedServer && (
+                        <button onClick={() => toggle(cid)}
+                          className="p-1.5 rounded hover:bg-panel-card text-panel-muted hover:text-panel-text transition-colors">
+                          {isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        </button>
+                      )}
                     </div>
                   </div>
 
-                  {/* Ausklappbarer Detail-Chart */}
-                  {isOpen && (
+                  {/* Ausklappbarer Detail-Chart (nur lokal) */}
+                  {!selectedServer && isOpen && (
                     <div className="px-4 pb-3">
                       <ContainerChart containerId={c.Id} containerName={name} />
                     </div>

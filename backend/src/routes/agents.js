@@ -286,4 +286,93 @@ router.post('/:id/docker/containers/:containerId/:action', requireRole('admin', 
   }
 });
 
+// ── Firewall Proxy ──────────────────────────────────────────────────────────
+
+router.get('/:id/firewall/status', async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  try {
+    const { data } = await agentApi(agent).get('/firewall/status');
+    res.json(data);
+  } catch (err) {
+    res.status(err.response?.status || 502).json({ error: err.response?.data?.error || err.message });
+  }
+});
+
+router.get('/:id/firewall/rules', async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  try {
+    const { data } = await agentApi(agent).get('/firewall/rules');
+    res.json(data);
+  } catch (err) {
+    res.status(err.response?.status || 502).json({ error: err.response?.data?.error || err.message });
+  }
+});
+
+router.post('/:id/firewall/allow', requireRole('admin', 'operator'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  try {
+    const { data } = await agentApi(agent).post('/firewall/allow', req.body);
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.response?.data?.error || err.message });
+  }
+});
+
+router.post('/:id/firewall/deny', requireRole('admin', 'operator'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  try {
+    const { data } = await agentApi(agent).post('/firewall/deny', req.body);
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.response?.data?.error || err.message });
+  }
+});
+
+router.delete('/:id/firewall/rules/:num', requireRole('admin', 'operator'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  if (!/^\d+$/.test(req.params.num)) return res.status(400).json({ error: 'Ungültige Regel-Nummer' });
+  try {
+    const { data } = await agentApi(agent).delete(`/firewall/rules/${req.params.num}`);
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.response?.data?.error || err.message });
+  }
+});
+
+// ── Netzwerk Proxy ──────────────────────────────────────────────────────────
+
+router.get('/:id/network/interfaces', async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  try {
+    const { data } = await agentApi(agent).get('/network/interfaces');
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.response?.data?.error || err.message });
+  }
+});
+
+router.get('/:id/network/public-ip', async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  try {
+    const { data } = await agentApi(agent).get('/network/public-ip');
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.response?.data?.error || err.message });
+  }
+});
+
 module.exports = router;

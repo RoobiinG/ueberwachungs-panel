@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
+import { ServerSelector } from '../components/ui/ServerSelector';
 import { RefreshCw, Play, Square, RotateCcw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -10,38 +11,58 @@ const activeColor = (s) => s === 'active' ? 'green' : s === 'activating' ? 'oran
 
 export default function Services() {
   const { canWrite } = useAuth();
+
+  const [selectedServer, setSelectedServer] = useState(null); // null = lokal
   const [services, setServices] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('');
+  const [loading, setLoading]   = useState(true);
+  const [filter, setFilter]     = useState('');
 
   const load = async () => {
     setLoading(true);
     try {
-      const { data } = await axios.get('/api/services');
+      const url = selectedServer
+        ? `/api/agents/${selectedServer}/services`
+        : '/api/services';
+      const { data } = await axios.get(url);
       setServices(data);
-    } catch {}
+    } catch {
+      setServices([]);
+    }
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    setServices([]);
+    load();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedServer]);
 
   const act = async (name, action) => {
-    try { await axios.post(`/api/services/${name}/${action}`); await load(); } catch {}
+    try {
+      const url = selectedServer
+        ? `/api/agents/${selectedServer}/services/${encodeURIComponent(name)}/${action}`
+        : `/api/services/${name}/${action}`;
+      await axios.post(url);
+      await load();
+    } catch {}
   };
 
   const filtered = services.filter(s => s.name?.toLowerCase().includes(filter.toLowerCase()));
 
   return (
     <div className="space-y-3">
-      <div className="flex gap-2">
-        <input
-          type="text"
-          placeholder="Service suchen..."
-          value={filter}
-          onChange={e => setFilter(e.target.value)}
-          className="flex-1 bg-panel-surface border border-panel-border rounded-md px-3 py-1.5 text-sm text-panel-text focus:outline-none focus:border-panel-accent"
-        />
-        <Button variant="ghost" size="sm" onClick={load}><RefreshCw size={14} className="mr-1" />Aktualisieren</Button>
+      <div className="flex items-center gap-2 flex-wrap">
+        <ServerSelector selected={selectedServer} onChange={setSelectedServer} />
+        <div className="flex gap-2 ml-auto">
+          <input
+            type="text"
+            placeholder="Service suchen..."
+            value={filter}
+            onChange={e => setFilter(e.target.value)}
+            className="bg-panel-surface border border-panel-border rounded-md px-3 py-1.5 text-sm text-panel-text focus:outline-none focus:border-panel-accent"
+          />
+          <Button variant="ghost" size="sm" onClick={load}><RefreshCw size={14} className="mr-1" />Aktualisieren</Button>
+        </div>
       </div>
 
       <Card title={`Systemd Services (${filtered.length})`}>
@@ -62,7 +83,7 @@ export default function Services() {
                   <div className="flex items-center gap-1">
                     {s.active !== 'active'
                       ? <Button size="sm" variant="success" onClick={() => act(s.name, 'start')}><Play size={11} /></Button>
-                      : <Button size="sm" variant="danger" onClick={() => act(s.name, 'stop')}><Square size={11} /></Button>
+                      : <Button size="sm" variant="danger"  onClick={() => act(s.name, 'stop')}><Square size={11} /></Button>
                     }
                     <Button size="sm" variant="ghost" onClick={() => act(s.name, 'restart')}><RotateCcw size={11} /></Button>
                   </div>
