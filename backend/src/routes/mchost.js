@@ -77,26 +77,32 @@ const handle = async (res, fn) => {
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
+const validId = (id) => /^\d+$/.test(id);
+
 router.get('/vserver', requirePermission('mchost.view'), async (req, res) =>
   handle(res, async () => (await api()).get('/vserver'))
 );
 
-router.get('/vserver/:id/status', requirePermission('mchost.view'), async (req, res) =>
-  handle(res, async () => (await api()).get(`/vserver/${req.params.id}/status`))
-);
+router.get('/vserver/:id/status', requirePermission('mchost.view'), async (req, res) => {
+  if (!validId(req.params.id)) return res.status(400).json({ error: 'Ungültige VServer-ID' });
+  handle(res, async () => (await api()).get(`/vserver/${req.params.id}/status`));
+});
 
 router.post('/vserver/:id/:action', requirePermission('mchost.control'), async (req, res) => {
+  if (!validId(req.params.id)) return res.status(400).json({ error: 'Ungültige VServer-ID' });
   const valid = ['start', 'stop', 'shutdown', 'restart'];
   if (!valid.includes(req.params.action)) return res.status(400).json({ error: 'Ungültige Aktion' });
   handle(res, async () => (await api()).post(`/vserver/${req.params.id}/${req.params.action}`));
 });
 
-router.get('/vserver/:id/backups', requirePermission('mchost.view'), async (req, res) =>
-  handle(res, async () => (await api()).get(`/vserver/${req.params.id}/backups`))
-);
+router.get('/vserver/:id/backups', requirePermission('mchost.view'), async (req, res) => {
+  if (!validId(req.params.id)) return res.status(400).json({ error: 'Ungültige VServer-ID' });
+  handle(res, async () => (await api()).get(`/vserver/${req.params.id}/backups`));
+});
 
-router.post('/vserver/:id/backups', requirePermission('mchost.control'), async (req, res) =>
-  handle(res, async () => (await api()).post(`/vserver/${req.params.id}/backups`))
-);
+router.post('/vserver/:id/backups', requirePermission('mchost.control'), async (req, res) => {
+  if (!validId(req.params.id)) return res.status(400).json({ error: 'Ungültige VServer-ID' });
+  handle(res, async () => (await api()).post(`/vserver/${req.params.id}/backups`));
+});
 
 module.exports = router;

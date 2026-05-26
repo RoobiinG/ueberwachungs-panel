@@ -120,8 +120,7 @@ function ContainerChart({ containerId, containerName }) {
 }
 
 export default function Docker({ liveStats }) {
-  const { user } = useAuth();
-  const canWrite = user?.role === 'admin' || user?.role === 'operator';
+  const { canWrite, hideLocal } = useAuth();
 
   const [selectedServer, setSelectedServer] = useState(null); // null = lokal
   const [containers, setContainers] = useState([]);
@@ -163,6 +162,8 @@ export default function Docker({ liveStats }) {
   };
 
   useEffect(() => {
+    // Warte auf Auto-Select wenn lokaler Zugriff ausgeblendet ist
+    if (hideLocal && selectedServer === null) return;
     setContainers([]);
     setExpanded(null);
     setEditingLabel(null);
@@ -170,7 +171,7 @@ export default function Docker({ liveStats }) {
     load();
     loadLabels(srv);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedServer]);
+  }, [selectedServer, hideLocal]);
 
   const openLabelEdit = (cid, currentNickname, currentTag) => {
     setEditingLabel(cid);

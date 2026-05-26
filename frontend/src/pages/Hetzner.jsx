@@ -16,6 +16,7 @@ export default function Hetzner() {
   const [servers, setServers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [actError, setActError] = useState('');
   const [busy, setBusy] = useState({});
   const [expanded, setExpanded] = useState({});
   const [backups, setBackups] = useState({});
@@ -37,14 +38,18 @@ export default function Hetzner() {
 
   const act = async (id, action) => {
     if (!canControl) return;
+    setActError('');
     setBusy(b => ({ ...b, [`${id}_${action}`]: true }));
-    try { await axios.post(`/api/hetzner/servers/${id}/${action}`); setTimeout(load, 2000); } catch {}
+    try { await axios.post(`/api/hetzner/servers/${id}/${action}`); setTimeout(load, 2000); }
+    catch (err) { setActError(err.response?.data?.error || `Aktion "${action}" fehlgeschlagen`); }
     setBusy(b => ({ ...b, [`${id}_${action}`]: false }));
   };
 
   const toggleBackup = async (id, current) => {
     if (!canControl) return;
-    try { await axios.post(`/api/hetzner/servers/${id}/backup/${current ? 'disable' : 'enable'}`); setTimeout(load, 1500); } catch {}
+    setActError('');
+    try { await axios.post(`/api/hetzner/servers/${id}/backup/${current ? 'disable' : 'enable'}`); setTimeout(load, 1500); }
+    catch (err) { setActError(err.response?.data?.error || 'Backup-Einstellung fehlgeschlagen'); }
   };
 
   const loadBackups = async (id) => {
@@ -75,6 +80,12 @@ export default function Hetzner() {
       {error && (
         <div className="bg-panel-orange/10 border border-panel-orange/30 text-panel-orange text-sm rounded-md px-3 py-2">
           {error} — Bitte den API-Token unter <a href="/settings" className="underline font-medium">Einstellungen → Hetzner Cloud API</a> hinterlegen.
+        </div>
+      )}
+
+      {actError && (
+        <div className="bg-panel-red/10 border border-panel-red/30 text-panel-red text-xs rounded-md px-3 py-2">
+          {actError}
         </div>
       )}
 

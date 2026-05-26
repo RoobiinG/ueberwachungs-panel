@@ -10,7 +10,7 @@ import { useAuth } from '../context/AuthContext';
 const activeColor = (s) => s === 'active' ? 'green' : s === 'activating' ? 'orange' : 'red';
 
 export default function Services() {
-  const { canWrite } = useAuth();
+  const { canWrite, hideLocal } = useAuth();
 
   const [selectedServer, setSelectedServer] = useState(null); // null = lokal
   const [services, setServices] = useState([]);
@@ -34,11 +34,13 @@ export default function Services() {
   };
 
   useEffect(() => {
+    // Warte auf Auto-Select wenn lokaler Zugriff ausgeblendet ist
+    if (hideLocal && selectedServer === null) return;
     setServices([]);
     setActError('');
     load();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedServer]);
+  }, [selectedServer, hideLocal]);
 
   const act = async (name, action) => {
     setActError('');

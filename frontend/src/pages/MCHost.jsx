@@ -22,6 +22,7 @@ export default function MCHost() {
   const [servers, setServers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [actError, setActError] = useState('');
   const [busy, setBusy] = useState({});
   const [expanded, setExpanded] = useState({});
   const [backups, setBackups] = useState({});
@@ -44,8 +45,10 @@ export default function MCHost() {
 
   const act = async (id, action) => {
     if (!canControl) return;
+    setActError('');
     setBusy(b => ({ ...b, [`${id}_${action}`]: true }));
-    try { await axios.post(`/api/mchost/vserver/${id}/${action}`); setTimeout(load, 1500); } catch {}
+    try { await axios.post(`/api/mchost/vserver/${id}/${action}`); setTimeout(load, 1500); }
+    catch (err) { setActError(err.response?.data?.error || `Aktion "${action}" fehlgeschlagen`); }
     setBusy(b => ({ ...b, [`${id}_${action}`]: false }));
   };
 
@@ -62,12 +65,15 @@ export default function MCHost() {
 
   const createBackup = async (id) => {
     if (!canControl) return;
+    setActError('');
     setBackupLoading(b => ({ ...b, [id]: true }));
     try {
       await axios.post(`/api/mchost/vserver/${id}/backups`);
       const { data } = await axios.get(`/api/mchost/vserver/${id}/backups`);
       setBackups(b => ({ ...b, [id]: Array.isArray(data) ? data : [] }));
-    } catch {}
+    } catch (err) {
+      setActError(err.response?.data?.error || 'Backup-Erstellung fehlgeschlagen');
+    }
     setBackupLoading(b => ({ ...b, [id]: false }));
   };
 
@@ -88,6 +94,12 @@ export default function MCHost() {
       {error && (
         <div className="bg-panel-orange/10 border border-panel-orange/30 text-panel-orange text-sm rounded-md px-3 py-2">
           {error} — Bitte unter <a href="/settings" className="underline font-medium">Einstellungen → MC-Host24</a> einloggen.
+        </div>
+      )}
+
+      {actError && (
+        <div className="bg-panel-red/10 border border-panel-red/30 text-panel-red text-xs rounded-md px-3 py-2">
+          {actError}
         </div>
       )}
 

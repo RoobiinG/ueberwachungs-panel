@@ -92,10 +92,12 @@ function fetchViaSocket(url, apiKey) {
     const heartbeats = {};
     const uptime    = {};
     let done = false;
+    let timeoutId;
 
     const finish = (err) => {
       if (done) return;
       done = true;
+      clearTimeout(timeoutId);
       socket.disconnect();
       if (err) return reject(err);
       const result = buildResult(monitors, heartbeats, uptime);
@@ -126,7 +128,7 @@ function fetchViaSocket(url, apiKey) {
       finish(new Error(err.message || 'Socket-Fehler'))
     );
 
-    setTimeout(() => finish(null), 9000);
+    timeoutId = setTimeout(() => finish(null), 9000);
   });
 }
 
