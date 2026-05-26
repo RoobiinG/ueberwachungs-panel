@@ -31,7 +31,7 @@ export default function Agents() {
   const [latestVersion, setLatestVersion] = useState(null);
   const [updating,     setUpdating]     = useState({});
   const [uninstalling, setUninstalling] = useState({});
-  const { isAdmin } = useAuth();
+  const { isAdmin, hasPermission } = useAuth();
   const [editAgent,    setEditAgent]    = useState(null);
   const [editName,     setEditName]     = useState('');
   const [editUrl,      setEditUrl]      = useState('');
@@ -324,11 +324,13 @@ export default function Agents() {
                 </div>
 
                 <div className="flex flex-col gap-1 flex-shrink-0">
-                  <button title="Bearbeiten (Token/URL ändern)" onClick={() => openEdit(agent)}
-                    className="p-1 text-panel-muted hover:text-panel-text transition-colors">
-                    <Pencil size={13} />
-                  </button>
-                  {isHttps(agent.url) && (
+                  {hasPermission('agents.edit') && (
+                    <button title="Bearbeiten (Token/URL ändern)" onClick={() => openEdit(agent)}
+                      className="p-1 text-panel-muted hover:text-panel-text transition-colors">
+                      <Pencil size={13} />
+                    </button>
+                  )}
+                  {isHttps(agent.url) && hasPermission('agents.edit') && (
                     <button title="Fingerprint erneuern" onClick={() => repin(agent.id)}
                       disabled={repinning[agent.id]}
                       className="p-1 text-panel-muted hover:text-panel-text transition-colors disabled:opacity-40">
@@ -356,12 +358,14 @@ export default function Agents() {
                       <PackageX size={13} className={uninstalling[agent.id] ? 'animate-pulse' : ''} />
                     </button>
                   )}
-                  <button
-                    title="Nur aus Panel entfernen (Agent bleibt auf Server)"
-                    onClick={() => remove(agent.id, agent.name)}
-                    className="p-1 text-panel-muted hover:text-panel-red transition-colors">
-                    <Trash2 size={13} />
-                  </button>
+                  {hasPermission('agents.delete') && (
+                    <button
+                      title="Nur aus Panel entfernen (Agent bleibt auf Server)"
+                      onClick={() => remove(agent.id, agent.name)}
+                      className="p-1 text-panel-muted hover:text-panel-red transition-colors">
+                      <Trash2 size={13} />
+                    </button>
+                  )}
                 </div>
               </div>
 
