@@ -16,7 +16,7 @@ export default defineConfig({
           vendor:  ['react', 'react-dom', 'react-router-dom'],
           charts:  ['recharts'],
           icons:   ['lucide-react'],
-          ui:      ['axios', 'jsonwebtoken'],
+          ui:      ['axios'],
         },
       },
     },
