@@ -4,6 +4,7 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { RefreshCw, Play, Square, PowerOff, RotateCcw, HardDrive, ChevronDown, ChevronUp, Plus } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 const statusColor = (s) => {
   if (!s) return 'gray';
@@ -14,6 +15,10 @@ const statusColor = (s) => {
 };
 
 export default function MCHost() {
+  const { hasPermission, isAdmin } = useAuth();
+  const canView    = isAdmin || hasPermission('mchost.view');
+  const canControl = isAdmin || hasPermission('mchost.control');
+
   const [servers, setServers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -23,6 +28,7 @@ export default function MCHost() {
   const [backupLoading, setBackupLoading] = useState({});
 
   const load = async () => {
+    if (!canView) { setLoading(false); return; }
     setLoading(true);
     setError('');
     try {
@@ -37,6 +43,7 @@ export default function MCHost() {
   useEffect(() => { load(); }, []);
 
   const act = async (id, action) => {
+    if (!canControl) return;
     setBusy(b => ({ ...b, [`${id}_${action}`]: true }));
     try { await axios.post(`/api/mchost/vserver/${id}/${action}`); setTimeout(load, 1500); } catch {}
     setBusy(b => ({ ...b, [`${id}_${action}`]: false }));
@@ -54,6 +61,7 @@ export default function MCHost() {
   };
 
   const createBackup = async (id) => {
+    if (!canControl) return;
     setBackupLoading(b => ({ ...b, [id]: true }));
     try {
       await axios.post(`/api/mchost/vserver/${id}/backups`);
@@ -62,6 +70,14 @@ export default function MCHost() {
     } catch {}
     setBackupLoading(b => ({ ...b, [id]: false }));
   };
+
+  if (!canView) {
+    return (
+      <div className="bg-panel-orange/10 border border-panel-orange/30 text-panel-orange text-sm rounded-md px-4 py-3">
+        Du hast keine Berechtigung, MC-Host24 VServer anzuzeigen.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">
@@ -96,10 +112,14 @@ export default function MCHost() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
-                    <Button size="sm" variant="success" onClick={() => act(s.id, 'start')} disabled={busy[`${s.id}_start`]}><Play size={12} /></Button>
-                    <Button size="sm" variant="danger" onClick={() => act(s.id, 'stop')} disabled={busy[`${s.id}_stop`]}><Square size={12} /></Button>
-                    <Button size="sm" variant="warning" onClick={() => act(s.id, 'shutdown')} disabled={busy[`${s.id}_shutdown`]}><PowerOff size={12} /></Button>
-                    <Button size="sm" variant="ghost" onClick={() => act(s.id, 'restart')} disabled={busy[`${s.id}_restart`]}><RotateCcw size={12} /></Button>
+                    {canControl && (
+                      <>
+                        <Button size="sm" variant="success" onClick={() => act(s.id, 'start')} disabled={busy[`${s.id}_start`]}><Play size={12} /></Button>
+                        <Button size="sm" variant="danger" onClick={() => act(s.id, 'stop')} disabled={busy[`${s.id}_stop`]}><Square size={12} /></Button>
+                        <Button size="sm" variant="warning" onClick={() => act(s.id, 'shutdown')} disabled={busy[`${s.id}_shutdown`]}><PowerOff size={12} /></Button>
+                        <Button size="sm" variant="ghost" onClick={() => act(s.id, 'restart')} disabled={busy[`${s.id}_restart`]}><RotateCcw size={12} /></Button>
+                      </>
+                    )}
                     <Button size="sm" variant="ghost" onClick={() => toggleBackups(s.id)}>
                       <HardDrive size={12} />
                       {expanded[s.id] ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
@@ -112,9 +132,11 @@ export default function MCHost() {
                   <div className="px-4 pb-3 bg-panel-surface/50">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-medium text-panel-muted">Backups</span>
-                      <Button size="sm" variant="ghost" onClick={() => createBackup(s.id)} disabled={backupLoading[s.id]}>
-                        <Plus size={12} className="mr-1" />Backup erstellen
-                      </Button>
+                      {canControl && (
+                        <Button size="sm" variant="ghost" onClick={() => createBackup(s.id)} disabled={backupLoading[s.id]}>
+                          <Plus size={12} className="mr-1" />Backup erstellen
+                        </Button>
+                      )}
                     </div>
                     {backups[s.id]?.length > 0 ? (
                       <div className="space-y-1">

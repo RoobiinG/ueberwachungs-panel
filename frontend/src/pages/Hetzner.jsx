@@ -4,10 +4,15 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { RefreshCw, Power, PowerOff, RotateCcw, HardDrive, ChevronDown, ChevronUp } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 const statusColor = (s) => s === 'running' ? 'green' : s === 'off' ? 'red' : 'orange';
 
 export default function Hetzner() {
+  const { hasPermission, isAdmin } = useAuth();
+  const canView    = isAdmin || hasPermission('hetzner.view');
+  const canControl = isAdmin || hasPermission('hetzner.control');
+
   const [servers, setServers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -16,6 +21,7 @@ export default function Hetzner() {
   const [backups, setBackups] = useState({});
 
   const load = async () => {
+    if (!canView) { setLoading(false); return; }
     setLoading(true);
     setError('');
     try {
@@ -30,12 +36,14 @@ export default function Hetzner() {
   useEffect(() => { load(); }, []);
 
   const act = async (id, action) => {
+    if (!canControl) return;
     setBusy(b => ({ ...b, [`${id}_${action}`]: true }));
     try { await axios.post(`/api/hetzner/servers/${id}/${action}`); setTimeout(load, 2000); } catch {}
     setBusy(b => ({ ...b, [`${id}_${action}`]: false }));
   };
 
   const toggleBackup = async (id, current) => {
+    if (!canControl) return;
     try { await axios.post(`/api/hetzner/servers/${id}/backup/${current ? 'disable' : 'enable'}`); setTimeout(load, 1500); } catch {}
   };
 
@@ -49,6 +57,14 @@ export default function Hetzner() {
       } catch { setBackups(b => ({ ...b, [id]: [] })); }
     }
   };
+
+  if (!canView) {
+    return (
+      <div className="bg-panel-orange/10 border border-panel-orange/30 text-panel-orange text-sm rounded-md px-4 py-3">
+        Du hast keine Berechtigung, Hetzner Cloud Server anzuzeigen.
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">
@@ -83,11 +99,15 @@ export default function Hetzner() {
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
-                    {s.status === 'off'
-                      ? <Button size="sm" variant="success" onClick={() => act(s.id, 'poweron')} disabled={busy[`${s.id}_poweron`]}><Power size={12} /></Button>
-                      : <Button size="sm" variant="danger" onClick={() => act(s.id, 'poweroff')} disabled={busy[`${s.id}_poweroff`]}><PowerOff size={12} /></Button>
-                    }
-                    <Button size="sm" variant="ghost" onClick={() => act(s.id, 'reboot')} disabled={busy[`${s.id}_reboot`]}><RotateCcw size={12} /></Button>
+                    {canControl && (
+                      <>
+                        {s.status === 'off'
+                          ? <Button size="sm" variant="success" onClick={() => act(s.id, 'poweron')} disabled={busy[`${s.id}_poweron`]}><Power size={12} /></Button>
+                          : <Button size="sm" variant="danger" onClick={() => act(s.id, 'poweroff')} disabled={busy[`${s.id}_poweroff`]}><PowerOff size={12} /></Button>
+                        }
+                        <Button size="sm" variant="ghost" onClick={() => act(s.id, 'reboot')} disabled={busy[`${s.id}_reboot`]}><RotateCcw size={12} /></Button>
+                      </>
+                    )}
                     <Button size="sm" variant="ghost" onClick={() => loadBackups(s.id)}>
                       <HardDrive size={12} />
                       {expanded[s.id] ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
@@ -100,13 +120,15 @@ export default function Hetzner() {
                   <div className="px-4 pb-3 bg-panel-surface/50">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-medium text-panel-muted">Automatische Backups</span>
-                      <Button
-                        size="sm"
-                        variant={s.backup_window ? 'danger' : 'success'}
-                        onClick={() => toggleBackup(s.id, !!s.backup_window)}
-                      >
-                        {s.backup_window ? 'Deaktivieren' : 'Aktivieren'}
-                      </Button>
+                      {canControl && (
+                        <Button
+                          size="sm"
+                          variant={s.backup_window ? 'danger' : 'success'}
+                          onClick={() => toggleBackup(s.id, !!s.backup_window)}
+                        >
+                          {s.backup_window ? 'Deaktivieren' : 'Aktivieren'}
+                        </Button>
+                      )}
                     </div>
                     {s.backup_window && (
                       <p className="text-xs text-panel-muted mb-2">Fenster: {s.backup_window}</p>
