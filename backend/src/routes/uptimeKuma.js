@@ -54,11 +54,22 @@ function fetchViaSocket(url, apiKey) {
       resolve(result);
     };
 
+    // Passive Listener — werden von manchen Uptime-Kuma-Versionen automatisch gepusht
     socket.on('monitorList',   (list)            => { Object.assign(monitors, list); });
     socket.on('heartbeatList', (id, list)        => { heartbeats[id] = list; });
     socket.on('uptime',        (id, period, val) => {
       if (!uptime[id]) uptime[id] = {};
       uptime[id][period] = val;
+    });
+
+    // Nach erfolgreichem Connect aktiv Monitor-Liste anfordern
+    // (Uptime Kuma schickt monitorList nach API-Key-Auth nicht immer automatisch)
+    socket.on('connect', () => {
+      socket.emit('getMonitorList', (res) => {
+        if (res?.ok && res.monitors) {
+          Object.assign(monitors, res.monitors);
+        }
+      });
     });
 
     socket.on('connect_error', (err) =>
