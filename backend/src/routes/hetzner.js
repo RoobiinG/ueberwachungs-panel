@@ -24,7 +24,7 @@ const handle = async (res, fn) => {
   }
 };
 
-router.get('/servers', (req, res) => handle(res, () => api().get('/servers')));
+router.get('/servers', requireRole('admin'), (req, res) => handle(res, () => api().get('/servers')));
 
 router.post('/servers/:id/:action', requireRole('admin'), (req, res) => {
   const valid = ['poweron', 'poweroff', 'reboot', 'reset', 'shutdown'];
@@ -37,7 +37,7 @@ router.post('/servers/:id/backup/:toggle', requireRole('admin'), (req, res) => {
   handle(res, () => api().post(`/servers/${req.params.id}/actions/${req.params.toggle}_backup`));
 });
 
-router.get('/servers/:id/backups', (req, res) =>
+router.get('/servers/:id/backups', requireRole('admin'), (req, res) =>
   handle(res, () => api().get(`/images?type=backup&bound_to=${req.params.id}`))
 );
 

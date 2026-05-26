@@ -8,17 +8,17 @@ const getRole  = (id) => db.prepare('SELECT * FROM roles WHERE id = ?').get(id);
 const allRoles = ()   => db.prepare('SELECT id, name, label, is_system, is_admin, restrict_agents, created_at FROM roles ORDER BY is_admin DESC, is_system DESC, label').all();
 
 // ─── Alle Rollen listen (für Dropdown in Benutzerverwaltung) ──────────────────
-router.get('/', (req, res) => {
+router.get('/', requireRole('admin'), (req, res) => {
   res.json(allRoles());
 });
 
 // ─── Alle Berechtigungs-Definitionen (für UI) ─────────────────────────────────
-router.get('/permissions', (req, res) => {
+router.get('/permissions', requireRole('admin'), (req, res) => {
   res.json(PERMISSIONS);
 });
 
 // ─── Berechtigungen einer Rolle abrufen ───────────────────────────────────────
-router.get('/:id/permissions', (req, res) => {
+router.get('/:id/permissions', requireRole('admin'), (req, res) => {
   const role = getRole(req.params.id);
   if (!role) return res.status(404).json({ error: 'Rolle nicht gefunden' });
   if (role.is_admin) return res.json(ALL_KEYS);

@@ -1,8 +1,9 @@
 const router = require('express').Router();
 const si = require('systeminformation');
 const { getHostDisks } = require('../hostUtils');
+const { requirePermission } = require('../middleware/requirePermission');
 
-router.get('/stats', async (req, res) => {
+router.get('/stats', requirePermission('metrics.view'), async (req, res) => {
   try {
     const [cpu, mem, siDisk, network, os, time] = await Promise.all([
       si.currentLoad(),
@@ -44,7 +45,7 @@ router.get('/stats', async (req, res) => {
   }
 });
 
-router.get('/info', async (req, res) => {
+router.get('/info', requirePermission('metrics.view'), async (req, res) => {
   try {
     const [cpu, system] = await Promise.all([si.cpu(), si.system()]);
     res.json({ cpu, system });

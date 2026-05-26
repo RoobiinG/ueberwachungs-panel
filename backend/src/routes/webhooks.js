@@ -1,16 +1,16 @@
 const router = require('express').Router();
 const db = require('../db');
-const requireRole = require('../middleware/roles');
+const { requirePermission } = require('../middleware/requirePermission');
 const { validatePublicUrl } = require('../utils/validateUrl');
 const { sendWebhook } = require('../utils/sendWebhook');
 const { auditLog } = require('../utils/audit');
 
-router.get('/', requireRole('admin'), (req, res) => {
+router.get('/', requirePermission('webhooks.view'), (req, res) => {
   const rows = db.prepare('SELECT * FROM webhooks').all();
   res.json(rows.map(w => ({ ...w, events: JSON.parse(w.events) })));
 });
 
-router.post('/', requireRole('admin'), (req, res) => {
+router.post('/', requirePermission('webhooks.manage'), (req, res) => {
   const { name, type, url, events = [] } = req.body;
   if (!name || !type || !url) return res.status(400).json({ error: 'name, type, url required' });
   try { validatePublicUrl(url); } catch (e) { return res.status(400).json({ error: e.message }); }
@@ -19,7 +19,7 @@ router.post('/', requireRole('admin'), (req, res) => {
   res.status(201).json({ id: result.lastInsertRowid, name, type, url, events });
 });
 
-router.put('/:id', requireRole('admin'), (req, res) => {
+router.put('/:id', requirePermission('webhooks.manage'), (req, res) => {
   const { name, url, events, active } = req.body;
   if (url !== undefined) {
     try { validatePublicUrl(url); } catch (e) { return res.status(400).json({ error: e.message }); }
@@ -31,7 +31,7 @@ router.put('/:id', requireRole('admin'), (req, res) => {
   res.json({ success: true });
 });
 
-router.delete('/:id', requireRole('admin'), (req, res) => {
+router.delete('/:id', requirePermission('webhooks.manage'), (req, res) => {
   const existing = db.prepare('SELECT name FROM webhooks WHERE id = ?').get(req.params.id);
   const count = db.prepare('SELECT COUNT(*) AS n FROM alert_rules WHERE webhook_id = ?').get(req.params.id)?.n ?? 0;
   db.prepare('DELETE FROM webhooks WHERE id = ?').run(req.params.id);
@@ -39,7 +39,7 @@ router.delete('/:id', requireRole('admin'), (req, res) => {
   res.json({ success: true, alertRulesDeleted: count });
 });
 
-router.post('/:id/test', requireRole('admin'), async (req, res) => {
+router.post('/:id/test', requirePermission('webhooks.test'), async (req, res) => {
   const webhook = db.prepare('SELECT * FROM webhooks WHERE id = ?').get(req.params.id);
   if (!webhook) return res.status(404).json({ error: 'Webhook not found' });
   try {

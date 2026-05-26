@@ -2,7 +2,7 @@ const router = require('express').Router();
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
-const requireRole = require('../middleware/roles');
+const { requirePermission } = require('../middleware/requirePermission');
 
 // Befehle im Host-Namespace ausführen (erfordert pid:host + privileged in docker-compose)
 const host = (cmd) => execAsync(`nsenter --target 1 --mount --uts --ipc --net --pid -- ${cmd}`);
@@ -16,7 +16,7 @@ const validName = (name) => {
   return name;
 };
 
-router.get('/', async (req, res) => {
+router.get('/', requirePermission('services.view'), async (req, res) => {
   try {
     const { stdout } = await host('systemctl list-units --type=service --no-pager --plain --no-legend');
     const services = stdout.trim().split('\n').map(line => {
@@ -27,14 +27,14 @@ router.get('/', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.get('/:name/status', async (req, res) => {
+router.get('/:name/status', requirePermission('services.view'), async (req, res) => {
   try {
     const { stdout } = await host(`systemctl status ${validName(req.params.name)} --no-pager`);
     res.json({ status: stdout });
   } catch (err) { res.json({ status: err.stdout || err.message }); }
 });
 
-router.post('/:name/:action', requireRole('admin', 'operator'), async (req, res) => {
+router.post('/:name/:action', requirePermission('services.control'), async (req, res) => {
   const { name, action } = req.params;
   const valid = ['start', 'stop', 'restart', 'reload', 'enable', 'disable'];
   if (!valid.includes(action)) return res.status(400).json({ error: 'Invalid action' });

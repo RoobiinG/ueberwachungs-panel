@@ -77,11 +77,11 @@ const handle = async (res, fn) => {
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
-router.get('/vserver', async (req, res) =>
+router.get('/vserver', requireRole('admin'), async (req, res) =>
   handle(res, async () => (await api()).get('/vserver'))
 );
 
-router.get('/vserver/:id/status', async (req, res) =>
+router.get('/vserver/:id/status', requireRole('admin'), async (req, res) =>
   handle(res, async () => (await api()).get(`/vserver/${req.params.id}/status`))
 );
 
@@ -91,11 +91,11 @@ router.post('/vserver/:id/:action', requireRole('admin'), async (req, res) => {
   handle(res, async () => (await api()).post(`/vserver/${req.params.id}/${req.params.action}`));
 });
 
-router.get('/vserver/:id/backups', async (req, res) =>
+router.get('/vserver/:id/backups', requireRole('admin'), async (req, res) =>
   handle(res, async () => (await api()).get(`/vserver/${req.params.id}/backups`))
 );
 
-router.post('/vserver/:id/backups', async (req, res) =>
+router.post('/vserver/:id/backups', requireRole('admin'), async (req, res) =>
   handle(res, async () => (await api()).post(`/vserver/${req.params.id}/backups`))
 );
 

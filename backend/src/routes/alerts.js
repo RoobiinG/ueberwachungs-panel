@@ -1,12 +1,12 @@
 const router      = require('express').Router();
 const db          = require('../db');
-const requireRole = require('../middleware/roles');
+const { requirePermission } = require('../middleware/requirePermission');
 const { sendWebhook } = require('../utils/sendWebhook');
 const { auditLog } = require('../utils/audit');
 
-// ─── Regel-CRUD (nur Admin) ───────────────────────────────────────────────────
+// ─── Regel-CRUD ───────────────────────────────────────────────────────────────
 
-router.get('/rules', (req, res) => {
+router.get('/rules', requirePermission('alerts.view'), (req, res) => {
   const rules = db.prepare(`
     SELECT r.*, w.name AS webhook_name, w.type AS webhook_type,
            a.name AS agent_name
@@ -18,7 +18,7 @@ router.get('/rules', (req, res) => {
   res.json(rules);
 });
 
-router.post('/rules', requireRole('admin'), (req, res) => {
+router.post('/rules', requirePermission('alerts.manage'), (req, res) => {
   const {
     name, metric, condition, threshold,
     duration_seconds = 0, cooldown_minutes = 30,
@@ -51,7 +51,7 @@ router.post('/rules', requireRole('admin'), (req, res) => {
   res.status(201).json({ id: result.lastInsertRowid, name, metric, condition, threshold, duration_seconds, cooldown_minutes, webhook_id, agent_id, enabled: 1 });
 });
 
-router.put('/rules/:id', requireRole('admin'), (req, res) => {
+router.put('/rules/:id', requirePermission('alerts.manage'), (req, res) => {
   const { name, metric, condition, threshold, duration_seconds, cooldown_minutes, webhook_id, agent_id, enabled } = req.body;
   const rule = db.prepare('SELECT id FROM alert_rules WHERE id = ?').get(req.params.id);
   if (!rule) return res.status(404).json({ error: 'Regel nicht gefunden' });
@@ -82,7 +82,7 @@ router.put('/rules/:id', requireRole('admin'), (req, res) => {
   res.json({ success: true });
 });
 
-router.delete('/rules/:id', requireRole('admin'), (req, res) => {
+router.delete('/rules/:id', requirePermission('alerts.manage'), (req, res) => {
   const rule = db.prepare('SELECT name FROM alert_rules WHERE id = ?').get(req.params.id);
   db.prepare('DELETE FROM alert_rules WHERE id = ?').run(req.params.id);
   auditLog(req, 'alert.delete', 'alert_rule', rule?.name || req.params.id);
@@ -90,7 +90,7 @@ router.delete('/rules/:id', requireRole('admin'), (req, res) => {
 });
 
 // Webhook testweise auslösen (ignoriert Cooldown und Dauer)
-router.post('/rules/:id/test', requireRole('admin'), async (req, res) => {
+router.post('/rules/:id/test', requirePermission('alerts.manage'), async (req, res) => {
   const rule = db.prepare(
     'SELECT r.*, w.type, w.url, a.name AS agent_name FROM alert_rules r JOIN webhooks w ON r.webhook_id = w.id LEFT JOIN remote_agents a ON r.agent_id = a.id WHERE r.id = ?'
   ).get(req.params.id);
@@ -110,7 +110,7 @@ router.post('/rules/:id/test', requireRole('admin'), async (req, res) => {
 
 // ─── Alert-History ────────────────────────────────────────────────────────────
 
-router.get('/history', (req, res) => {
+router.get('/history', requirePermission('alerts.view'), (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 50, 200);
   const rows = db.prepare(`
     SELECT h.id, h.triggered_at, h.value, h.message, h.type,

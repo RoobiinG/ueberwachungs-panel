@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const db = require('../db');
+const { requirePermission } = require('../middleware/requirePermission');
 
 // Zeitbereiche: bucket=null → Rohdaten; sonst Durchschnitt pro Bucket
 const RANGES = {
@@ -9,7 +10,7 @@ const RANGES = {
   '30d': { seconds: 30 * 86400,   bucket: 21600 },  // 6-Std-Buckets     → 120 Punkte
 };
 
-router.get('/', (req, res) => {
+router.get('/', requirePermission('metrics.view'), (req, res) => {
   const range  = RANGES[req.query.range] ? req.query.range : '24h';
   const { seconds, bucket } = RANGES[range];
   const since  = Math.floor(Date.now() / 1000) - seconds;
@@ -46,7 +47,7 @@ router.get('/', (req, res) => {
 });
 
 // Ersten bekannten Messpunkt (für Uptime-Anzeige)
-router.get('/first', (req, res) => {
+router.get('/first', requirePermission('metrics.view'), (req, res) => {
   const row = db.prepare('SELECT ts FROM metrics ORDER BY ts ASC LIMIT 1').get();
   res.json({ ts: row?.ts ?? null });
 });

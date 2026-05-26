@@ -2,6 +2,7 @@ const router    = require('express').Router();
 const db        = require('../db');
 const { encrypt, decrypt } = require('../utils/keyEncryption');
 const { validatePublicUrl } = require('../utils/validateUrl');
+const { requirePermission } = require('../middleware/requirePermission');
 
 let sshUtils;
 try { sshUtils = require('ssh2').utils; } catch {}
@@ -16,7 +17,7 @@ const ownKey = (keyId, userId) =>
 
 // ─── SSH-Keys ─────────────────────────────────────────────────────────────────
 
-router.get('/keys', (req, res) => {
+router.get('/keys', requirePermission('ssh.view'), (req, res) => {
   const keys = db.prepare(
     'SELECT id, label, public_key, created_at FROM ssh_keys WHERE user_id = ? ORDER BY created_at DESC'
   ).all(req.user.id);
@@ -24,7 +25,7 @@ router.get('/keys', (req, res) => {
 });
 
 // Server-seitig ein Keypair generieren und verschlüsselten Private Key speichern
-router.post('/keys/generate', async (req, res) => {
+router.post('/keys/generate', requirePermission('ssh.manage'), async (req, res) => {
   const { label = 'Neuer Key' } = req.body;
   if (!label.trim()) return res.status(400).json({ error: 'Label erforderlich' });
   if (!sshUtils) return res.status(503).json({ error: 'ssh2 nicht verfügbar' });
@@ -44,7 +45,7 @@ router.post('/keys/generate', async (req, res) => {
 });
 
 // Eigenen Private Key importieren
-router.post('/keys/import', (req, res) => {
+router.post('/keys/import', requirePermission('ssh.manage'), (req, res) => {
   const { label = 'Importierter Key', privateKey } = req.body;
   if (!privateKey) return res.status(400).json({ error: 'privateKey erforderlich' });
   if (!sshUtils) return res.status(503).json({ error: 'ssh2 nicht verfügbar' });
@@ -63,7 +64,7 @@ router.post('/keys/import', (req, res) => {
   res.status(201).json({ id: result.lastInsertRowid, label: label.trim(), public_key: pubKeyStr });
 });
 
-router.delete('/keys/:id', (req, res) => {
+router.delete('/keys/:id', requirePermission('ssh.manage'), (req, res) => {
   const key = ownKey(req.params.id, req.user.id);
   if (!key) return res.status(404).json({ error: 'Key nicht gefunden' });
   db.prepare('DELETE FROM ssh_keys WHERE id = ?').run(req.params.id);
@@ -72,7 +73,7 @@ router.delete('/keys/:id', (req, res) => {
 
 // ─── SSH-Hosts ────────────────────────────────────────────────────────────────
 
-router.get('/hosts', (req, res) => {
+router.get('/hosts', requirePermission('ssh.view'), (req, res) => {
   const hosts = db.prepare(`
     SELECT h.id, h.label, h.hostname, h.port, h.username, h.auth_type,
            h.ssh_key_id, k.label AS key_label, h.created_at
@@ -84,7 +85,7 @@ router.get('/hosts', (req, res) => {
   res.json(hosts);
 });
 
-router.post('/hosts', (req, res) => {
+router.post('/hosts', requirePermission('ssh.manage'), (req, res) => {
   const { label, hostname, port = 22, username, auth_type = 'key', ssh_key_id = null } = req.body;
   if (!label || !hostname || !username) return res.status(400).json({ error: 'label, hostname, username erforderlich' });
   if (port < 1 || port > 65535) return res.status(400).json({ error: 'Ungültiger Port' });
@@ -105,7 +106,7 @@ router.post('/hosts', (req, res) => {
   res.status(201).json({ id: result.lastInsertRowid, label, hostname, port, username, auth_type });
 });
 
-router.put('/hosts/:id', (req, res) => {
+router.put('/hosts/:id', requirePermission('ssh.manage'), (req, res) => {
   const host = ownHost(req.params.id, req.user.id);
   if (!host) return res.status(404).json({ error: 'Host nicht gefunden' });
   const { label, hostname, port, username, auth_type, ssh_key_id } = req.body;
@@ -124,7 +125,7 @@ router.put('/hosts/:id', (req, res) => {
   res.json({ success: true });
 });
 
-router.delete('/hosts/:id', (req, res) => {
+router.delete('/hosts/:id', requirePermission('ssh.manage'), (req, res) => {
   const host = ownHost(req.params.id, req.user.id);
   if (!host) return res.status(404).json({ error: 'Host nicht gefunden' });
   db.prepare('DELETE FROM ssh_hosts WHERE id = ?').run(req.params.id);
