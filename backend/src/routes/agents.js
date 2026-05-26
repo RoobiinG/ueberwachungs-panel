@@ -371,6 +371,18 @@ router.get('/:id/network/interfaces', requirePermission('metrics.view'), async (
   }
 });
 
+router.get('/:id/network/stats', requirePermission('metrics.view'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  try {
+    const { data } = await agentApi(agent).get('/network/stats', { timeout: 12000 }); // 1s Messung + Puffer
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.response?.data?.error || err.message });
+  }
+});
+
 router.get('/:id/network/public-ip', requirePermission('metrics.view'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
@@ -381,6 +393,23 @@ router.get('/:id/network/public-ip', requirePermission('metrics.view'), async (r
   } catch (err) {
     res.status(502).json({ error: err.response?.data?.error || err.message });
   }
+});
+
+// ── Agent deinstallieren (stoppt + entfernt Service auf dem Server) ──────────
+
+router.post('/:id/uninstall', requirePermission('agents.delete'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  try {
+    await agentApi(agent).post('/uninstall', {}, { timeout: 10000 });
+  } catch {
+    // Agent antwortet ggf. nicht mehr nach dem Stop — Fehler ignorieren
+  }
+  // Agent aus Panel-DB entfernen
+  db.prepare('DELETE FROM remote_agents WHERE id = ?').run(agent.id);
+  auditLog(req, 'agent.uninstall', 'agent', agent.name, { url: agent.url });
+  res.json({ success: true, message: 'Agent deinstalliert und aus Panel entfernt' });
 });
 
 module.exports = router;

@@ -7,7 +7,7 @@ import { Modal } from '../components/ui/Modal';
 import {
   ServerCog, Plus, Trash2, Wifi, WifiOff, Eye, EyeOff,
   ChevronRight, Terminal, Lock, LockOpen, ShieldAlert, RefreshCw, Pencil, Container,
-  ArrowUpCircle
+  ArrowUpCircle, PackageX
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -29,7 +29,8 @@ export default function Agents() {
   const [dockerInfo, setDockerInfo]     = useState({});
   const [agentVersions, setAgentVersions] = useState({});
   const [latestVersion, setLatestVersion] = useState(null);
-  const [updating, setUpdating]         = useState({});
+  const [updating,     setUpdating]     = useState({});
+  const [uninstalling, setUninstalling] = useState({});
   const { isAdmin } = useAuth();
   const [editAgent,    setEditAgent]    = useState(null);
   const [editName,     setEditName]     = useState('');
@@ -147,6 +148,22 @@ export default function Agents() {
     setUpdating(u => ({ ...u, [id]: false }));
   };
 
+  const uninstallAgent = async (id, agentName) => {
+    if (!confirm(
+      `"${agentName}" wirklich deinstallieren?\n\n` +
+      `Der Agent-Service wird auf dem Server gestoppt und vollständig entfernt.\n` +
+      `Der Server wird anschließend auch aus diesem Panel gelöscht.`
+    )) return;
+    setUninstalling(u => ({ ...u, [id]: true }));
+    try {
+      await axios.post(`/api/agents/${id}/uninstall`);
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Deinstallation fehlgeschlagen');
+      setUninstalling(u => ({ ...u, [id]: false }));
+    }
+  };
+
   const isHttps = (u) => u?.startsWith('https://');
 
   return (
@@ -213,6 +230,11 @@ export default function Agents() {
         </pre>
         <p className="text-xs text-panel-muted mt-2">
           Das Skript gibt am Ende URL, Token und TLS-Fingerprint aus. Der Panel speichert den Fingerprint automatisch beim Hinzufügen.
+        </p>
+        <p className="text-xs text-panel-muted mt-3 pt-3 border-t border-panel-border">
+          <span className="text-panel-text font-medium">Deinstallieren:</span>{' '}
+          Über den <PackageX size={11} className="inline mx-0.5 text-panel-red" />-Button in der Serverkarte (Agent muss online sein) —
+          oder manuell: <code className="text-panel-text">systemctl disable panel-agent --now && rm -rf /opt/panel-agent</code>
         </p>
       </Card>
 
@@ -325,7 +347,18 @@ export default function Agents() {
                       <ArrowUpCircle size={13} className={updating[agent.id] ? 'animate-spin' : ''} />
                     </button>
                   )}
-                  <button onClick={() => remove(agent.id, agent.name)}
+                  {isAdmin && online && !mitm && (
+                    <button
+                      title="Agent auf dem Server deinstallieren"
+                      onClick={() => uninstallAgent(agent.id, agent.name)}
+                      disabled={uninstalling[agent.id]}
+                      className="p-1 text-panel-muted hover:text-panel-red transition-colors disabled:opacity-40">
+                      <PackageX size={13} className={uninstalling[agent.id] ? 'animate-pulse' : ''} />
+                    </button>
+                  )}
+                  <button
+                    title="Nur aus Panel entfernen (Agent bleibt auf Server)"
+                    onClick={() => remove(agent.id, agent.name)}
                     className="p-1 text-panel-muted hover:text-panel-red transition-colors">
                     <Trash2 size={13} />
                   </button>
