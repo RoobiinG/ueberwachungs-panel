@@ -2,6 +2,7 @@ const router = require('express').Router();
 const axios = require('axios');
 const db = require('../db');
 const requireRole = require('../middleware/roles');
+const { auditLog } = require('../utils/audit');
 
 const SENSITIVE = ['hetzner_api_token', 'mchost_password', 'mchost_api_token', 'smtp_pass'];
 
@@ -111,6 +112,7 @@ router.put('/smtp', requireRole('admin'), (req, res) => {
   if (pass !== undefined && pass !== '***gesetzt***') set('smtp_pass', pass);
   if (from !== undefined) set('smtp_from', from.trim());
   if (secure !== undefined) set('smtp_secure', String(secure));
+  auditLog(req, 'settings.smtp_save', 'settings', 'SMTP');
   res.json({ success: true });
 });
 

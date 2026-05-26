@@ -2,9 +2,10 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Container, Wrench, Shield, Activity,
   Terminal, Webhook, Users, Cloud, Gamepad2, ChevronLeft, ChevronRight,
-  Server, Settings, ServerCog, MonitorCheck, Bell, ShieldCheck,
+  Server, Settings, ServerCog, MonitorCheck, Bell, ShieldCheck, ClipboardList,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 
 const navItems = [
@@ -22,14 +23,20 @@ const navItems = [
   { to: '/hetzner', icon: Cloud, label: 'Hetzner' },
   { to: '/mchost', icon: Gamepad2, label: 'MC-Host24' },
   { divider: true },
-  { to: '/users',    icon: Users,        label: 'Benutzer',       adminOnly: true },
-  { to: '/roles',    icon: ShieldCheck,  label: 'Rollen & Rechte', adminOnly: true },
-  { to: '/settings', icon: Settings,    label: 'Einstellungen',  adminOnly: true },
+  { to: '/users',    icon: Users,          label: 'Benutzer',        adminOnly: true },
+  { to: '/roles',    icon: ShieldCheck,    label: 'Rollen & Rechte', adminOnly: true },
+  { to: '/audit',    icon: ClipboardList,  label: 'Audit-Log',       adminOnly: true },
+  { to: '/settings', icon: Settings,       label: 'Einstellungen',   adminOnly: true },
 ];
 
 export const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
   const { user, isAdmin } = useAuth();
+  const [version, setVersion] = useState(null);
+
+  useEffect(() => {
+    axios.get('/api/version').then(r => setVersion(r.data)).catch(() => {});
+  }, []);
 
   return (
     <aside className={`flex flex-col bg-panel-surface border-r border-panel-border transition-all duration-200 flex-shrink-0 ${collapsed ? 'w-14' : 'w-56'}`}>
@@ -73,11 +80,18 @@ export const Sidebar = () => {
         })}
       </nav>
 
+      {/* Benutzer-Info + Versionsnummer */}
       <div className="px-3 py-3 border-t border-panel-border">
         {!collapsed && user && (
           <div className="text-xs text-panel-muted truncate">
             <span className="text-panel-text">{user.username}</span>
             <span className="ml-1">({user.roleLabel || user.role})</span>
+          </div>
+        )}
+        {version && (
+          <div className={`mt-1 text-[10px] text-panel-muted/60 ${collapsed ? 'text-center' : ''}`}
+            title={`Build ${version.build} · ${version.date}`}>
+            {collapsed ? `v${version.version}` : `v${version.version} · Build ${version.build}`}
           </div>
         )}
       </div>

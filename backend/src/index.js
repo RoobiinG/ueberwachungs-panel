@@ -48,6 +48,8 @@ app.use('/api/metrics',      auth, require('./routes/metrics'));
 app.use('/api/uptime-kuma', auth, require('./routes/uptimeKuma'));
 app.use('/api/alerts',      auth, require('./routes/alerts'));
 app.use('/api/docker/metrics', auth, require('./routes/containerMetrics'));
+app.use('/api/audit',       auth, require('./routes/audit'));
+app.use('/api/version',          require('./routes/version'));
 
 // Serve React frontend in production
 const frontendDist = path.join(__dirname, '../../frontend/dist');

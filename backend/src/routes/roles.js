@@ -2,6 +2,7 @@ const router     = require('express').Router();
 const db         = require('../db');
 const requireRole = require('../middleware/roles');
 const { PERMISSIONS, ALL_KEYS } = require('../permissions');
+const { auditLog } = require('../utils/audit');
 
 const getRole  = (id) => db.prepare('SELECT * FROM roles WHERE id = ?').get(id);
 const allRoles = ()   => db.prepare('SELECT id, name, label, is_system, is_admin, restrict_agents, created_at FROM roles ORDER BY is_admin DESC, is_system DESC, label').all();
@@ -44,6 +45,7 @@ router.put('/:id/permissions', requireRole('admin'), (req, res) => {
     for (const key of valid) ins.run(role.id, key);
   })();
 
+  auditLog(req, 'role.permissions_changed', 'role', role.label || role.name, { count: valid.length });
   res.json({ success: true, count: valid.length });
 });
 
@@ -105,7 +107,8 @@ router.post('/', requireRole('admin'), (req, res) => {
     const ins = db.prepare('INSERT INTO role_permissions (role_id, permission_key) VALUES (?, ?)');
     for (const key of valid) ins.run(result.lastInsertRowid, key);
 
-    res.status(201).json({ id: result.lastInsertRowid, name: finalName, label: label.trim(), is_system: 0, is_admin: 0 });
+    auditLog(req, 'role.create', 'role', label.trim());
+  res.status(201).json({ id: result.lastInsertRowid, name: finalName, label: label.trim(), is_system: 0, is_admin: 0 });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -133,6 +136,7 @@ router.delete('/:id', requireRole('admin'), (req, res) => {
   // Benutzer mit dieser Rolle auf 'guest' zurücksetzen
   db.prepare("UPDATE users SET role = 'guest' WHERE role = ?").run(role.name);
   db.prepare('DELETE FROM roles WHERE id = ?').run(role.id);
+  auditLog(req, 'role.delete', 'role', role.label || role.name);
   res.json({ success: true });
 });
 

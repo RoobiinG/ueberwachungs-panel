@@ -6,6 +6,7 @@ const rateLimit = require('express-rate-limit');
 const db        = require('../db');
 const authMiddleware = require('../middleware/auth');
 const { getPermissions } = require('../middleware/requirePermission');
+const { auditLog } = require('../utils/audit');
 
 // ─── Rate-Limiting ────────────────────────────────────────────────────────────
 
@@ -65,6 +66,7 @@ router.post('/login', loginLimiter, (req, res) => {
   const permissions = getPermissions(user.role);
   const roleRow = db.prepare('SELECT hide_local, is_admin FROM roles WHERE name = ?').get(user.role);
   const hideLocal = roleRow?.is_admin ? false : !!roleRow?.hide_local;
+  auditLog(req, 'login', 'user', user.username);
   res.json({ token, user: { id: user.id, username: user.username, role: user.role }, permissions, hideLocal });
 });
 
@@ -140,6 +142,7 @@ router.put('/password', authMiddleware, (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
   if (!bcrypt.compareSync(currentPassword, user.password)) return res.status(401).json({ error: 'Aktuelles Passwort falsch' });
   db.prepare('UPDATE users SET password = ? WHERE id = ?').run(bcrypt.hashSync(newPassword, 10), req.user.id);
+  auditLog(req, 'password.change', 'user', req.user.username);
   res.json({ success: true });
 });
 

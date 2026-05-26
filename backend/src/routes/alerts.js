@@ -2,6 +2,7 @@ const router      = require('express').Router();
 const db          = require('../db');
 const requireRole = require('../middleware/roles');
 const { sendWebhook } = require('../utils/sendWebhook');
+const { auditLog } = require('../utils/audit');
 
 // ─── Regel-CRUD (nur Admin) ───────────────────────────────────────────────────
 
@@ -46,6 +47,7 @@ router.post('/rules', requireRole('admin'), (req, res) => {
     'INSERT INTO alert_rules (name, metric, condition, threshold, duration_seconds, cooldown_minutes, webhook_id, agent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(name.trim(), metric, condition, threshold, duration_seconds, cooldown_minutes, webhook_id, agent_id ?? null);
 
+  auditLog(req, 'alert.create', 'alert_rule', name, { metric, condition, threshold });
   res.status(201).json({ id: result.lastInsertRowid, name, metric, condition, threshold, duration_seconds, cooldown_minutes, webhook_id, agent_id, enabled: 1 });
 });
 
@@ -81,7 +83,9 @@ router.put('/rules/:id', requireRole('admin'), (req, res) => {
 });
 
 router.delete('/rules/:id', requireRole('admin'), (req, res) => {
+  const rule = db.prepare('SELECT name FROM alert_rules WHERE id = ?').get(req.params.id);
   db.prepare('DELETE FROM alert_rules WHERE id = ?').run(req.params.id);
+  auditLog(req, 'alert.delete', 'alert_rule', rule?.name || req.params.id);
   res.json({ success: true });
 });
 

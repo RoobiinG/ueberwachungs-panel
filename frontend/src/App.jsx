@@ -20,6 +20,7 @@ import UptimeKuma from './pages/UptimeKuma';
 import Settings from './pages/Settings';
 import Alerts from './pages/Alerts';
 import Roles from './pages/Roles';
+import AuditLog from './pages/AuditLog';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 
@@ -63,6 +64,7 @@ const AppRoutes = () => {
         <Route path="/mchost" element={<MCHost />} />
         <Route path="/users"     element={<ProtectedRoute adminOnly><Users /></ProtectedRoute>} />
         <Route path="/roles"     element={<ProtectedRoute adminOnly><Roles /></ProtectedRoute>} />
+        <Route path="/audit"     element={<ProtectedRoute adminOnly><AuditLog /></ProtectedRoute>} />
         <Route path="/settings"  element={<ProtectedRoute adminOnly><Settings /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

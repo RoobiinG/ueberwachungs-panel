@@ -19,6 +19,7 @@ const pageTitles = {
   '/uptime-kuma': 'Uptime Kuma',
   '/users': 'Benutzerverwaltung',
   '/roles': 'Rollen & Rechte',
+  '/audit': 'Audit-Protokoll',
   '/settings': 'Einstellungen',
 };
 

@@ -3,6 +3,7 @@ const { exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
 const requireRole = require('../middleware/roles');
+const { auditLog } = require('../utils/audit');
 
 const host = (cmd) => execAsync(`nsenter --target 1 --mount --uts --ipc --net --pid -- ${cmd}`);
 
@@ -45,6 +46,7 @@ router.post('/allow', requireRole('admin'), async (req, res) => {
       ? `ufw allow from ${fr} to any port ${p}${pr ? ' proto ' + pr : ''}`
       : `ufw allow ${p}${pr ? '/' + pr : ''}`;
     const { stdout } = await host(cmd);
+    auditLog(req, 'firewall.allow', 'rule', `${p}${pr ? '/' + pr : ''}`, { from: fr || 'any' });
     res.json({ success: true, output: stdout });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -55,6 +57,7 @@ router.post('/deny', requireRole('admin'), async (req, res) => {
   try {
     const p = validPort(String(port)), pr = validProto(proto);
     const { stdout } = await host(`ufw deny ${p}${pr ? '/' + pr : ''}`);
+    auditLog(req, 'firewall.deny', 'rule', `${p}${pr ? '/' + pr : ''}`);
     res.json({ success: true, output: stdout });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -64,6 +67,7 @@ router.delete('/rules/:num', requireRole('admin'), async (req, res) => {
   if (!/^\d+$/.test(num)) return res.status(400).json({ error: 'Ungültige Regel-Nummer' });
   try {
     const { stdout } = await host(`sh -c 'echo y | ufw delete ${num}'`);
+    auditLog(req, 'firewall.delete', 'rule', `Regel #${num}`);
     res.json({ success: true, output: stdout });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
