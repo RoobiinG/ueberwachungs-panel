@@ -135,6 +135,95 @@ function MetricPanel({ panel, data, spanSeconds, loading }) {
   );
 }
 
+/* ── Netzwerk-Verlauf-Panel ────────────────────────────────────── */
+function NetworkHistoryPanel({ data, spanSeconds, loading }) {
+  const last    = data.length > 0 ? data[data.length - 1] : null;
+  const fmtKBs  = (v) => v == null ? '—' : v >= 1024
+    ? `${(v / 1024).toFixed(1)} MB/s`
+    : `${v.toFixed(1)} KB/s`;
+
+  return (
+    <div className="bg-panel-surface border border-panel-border rounded-lg overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-panel-border">
+        <span className="text-xs font-semibold uppercase tracking-wider text-panel-muted">
+          Netzwerk-Traffic
+        </span>
+        <div className="flex items-center gap-4 text-xs font-semibold tabular-nums">
+          <span style={{ color: '#3fb950' }}>↓ {fmtKBs(last?.net_rx)}</span>
+          <span style={{ color: '#388bfd' }}>↑ {fmtKBs(last?.net_tx)}</span>
+        </div>
+      </div>
+
+      <div className="px-1 pt-3 pb-1">
+        {loading ? (
+          <div className="flex items-center justify-center" style={{ height: 200 }}>
+            <RefreshCw size={16} className="text-panel-muted animate-spin" />
+          </div>
+        ) : data.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-1" style={{ height: 200 }}>
+            <span className="text-panel-muted text-sm">Keine Daten</span>
+            <span className="text-panel-muted/60 text-xs">Noch keine Messungen für diesen Zeitraum</span>
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+              <defs>
+                <linearGradient id="gradNetRx" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%"  stopColor="#3fb950" stopOpacity={0.25} />
+                  <stop offset="95%" stopColor="#3fb950" stopOpacity={0.02} />
+                </linearGradient>
+                <linearGradient id="gradNetTx" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%"  stopColor="#388bfd" stopOpacity={0.25} />
+                  <stop offset="95%" stopColor="#388bfd" stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+              <XAxis
+                dataKey="t"
+                tickFormatter={(v) => formatTs(v, spanSeconds)}
+                tick={{ fontSize: 10, fill: '#6b7280' }}
+                axisLine={false} tickLine={false}
+                interval="preserveStartEnd" minTickGap={60}
+              />
+              <YAxis
+                tick={{ fontSize: 10, fill: '#6b7280' }}
+                axisLine={false} tickLine={false}
+                tickFormatter={(v) => v >= 1024 ? `${(v / 1024).toFixed(0)}M` : `${v}K`}
+                unit="/s" width={44} tickCount={5}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: '#0f1117',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '6px', fontSize: '12px', padding: '8px 12px',
+                }}
+                labelStyle={{ color: '#9ca3af', marginBottom: '4px', fontSize: '11px' }}
+                labelFormatter={(v) => formatTooltipTs(v)}
+                formatter={(v, name) => [fmtKBs(v), name]}
+                cursor={{ stroke: 'rgba(255,255,255,0.1)', strokeWidth: 1 }}
+              />
+              <Area
+                type="monotone" dataKey="net_rx" name="Download"
+                stroke="#3fb950" strokeWidth={1.5}
+                fill="url(#gradNetRx)"
+                dot={false} activeDot={{ r: 3, fill: '#3fb950', strokeWidth: 0 }}
+                connectNulls isAnimationActive={false}
+              />
+              <Area
+                type="monotone" dataKey="net_tx" name="Upload"
+                stroke="#388bfd" strokeWidth={1.5}
+                fill="url(#gradNetTx)"
+                dot={false} activeDot={{ r: 3, fill: '#388bfd', strokeWidth: 0 }}
+                connectNulls isAnimationActive={false}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ── Hauptkomponente ───────────────────────────────────────────── */
 export default function Monitoring({ liveStats }) {
   const { hasPermission, isAdmin } = useAuth();
@@ -402,10 +491,15 @@ export default function Monitoring({ liveStats }) {
       <div>
         <p className="text-xs font-semibold uppercase tracking-wider text-panel-muted mb-2">Verlauf</p>
         {canViewMetrics ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {METRIC_PANELS.map(p => (
-              <MetricPanel key={p.key} panel={p} data={metricData} spanSeconds={spanSeconds} loading={loading} />
-            ))}
+          <div className="space-y-3">
+            {/* Netzwerk-Traffic — volle Breite */}
+            <NetworkHistoryPanel data={metricData} spanSeconds={spanSeconds} loading={loading} />
+            {/* CPU / RAM / Disk — 3 Spalten */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {METRIC_PANELS.map(p => (
+                <MetricPanel key={p.key} panel={p} data={metricData} spanSeconds={spanSeconds} loading={loading} />
+              ))}
+            </div>
           </div>
         ) : (
           <div className="bg-panel-orange/10 border border-panel-orange/30 text-panel-orange text-sm rounded-md px-4 py-3">

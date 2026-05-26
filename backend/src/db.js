@@ -160,6 +160,9 @@ try { db.exec('ALTER TABLE alert_rules ADD COLUMN agent_id INTEGER REFERENCES re
 try { db.exec("ALTER TABLE alert_history ADD COLUMN type TEXT NOT NULL DEFAULT 'fired'"); } catch {}
 // Rollen: Lokalen Server für diese Rolle ausblenden
 try { db.exec('ALTER TABLE roles ADD COLUMN hide_local INTEGER NOT NULL DEFAULT 0'); } catch {}
+// Metrics: Netzwerk-Durchsatz-Spalten (Bytes/Sek)
+try { db.exec('ALTER TABLE metrics ADD COLUMN net_rx_sec INTEGER NOT NULL DEFAULT 0'); } catch {}
+try { db.exec('ALTER TABLE metrics ADD COLUMN net_tx_sec INTEGER NOT NULL DEFAULT 0'); } catch {}
 // Metrics: server_id-Spalte für Multi-Server-Langzeit-Monitoring
 try {
   const has = db.prepare("SELECT COUNT(*) AS c FROM pragma_table_info('metrics') WHERE name='server_id'").get().c > 0;
