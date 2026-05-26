@@ -1,6 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import {
-  LayoutDashboard, Container, Wrench, Shield, Activity,
+  LayoutDashboard, Container, Wrench, Shield,
   Terminal, Webhook, Users, Cloud, Gamepad2, ChevronLeft, ChevronRight,
   Server, Settings, ServerCog, MonitorCheck, Bell, ShieldCheck, ClipboardList,
   BarChart2,
@@ -14,8 +14,7 @@ const navItems = [
   { to: '/docker', icon: Container, label: 'Docker' },
   { to: '/services', icon: Wrench, label: 'Services' },
   { to: '/firewall', icon: Shield, label: 'Firewall' },
-  { to: '/network',     icon: Activity,   label: 'Netzwerk' },
-  { to: '/monitoring',  icon: BarChart2,  label: 'Monitoring', permission: 'metrics.view' },
+  { to: '/monitoring',  icon: BarChart2,  label: 'Monitoring' },
   { to: '/ssh', icon: Terminal, label: 'SSH / SFTP' },
   { to: '/agents',      icon: ServerCog,    label: 'Server' },
   { to: '/uptime-kuma', icon: MonitorCheck, label: 'Uptime Kuma' },
