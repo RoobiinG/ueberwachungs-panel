@@ -153,6 +153,16 @@ try { db.exec('ALTER TABLE alert_rules ADD COLUMN agent_id INTEGER REFERENCES re
 try { db.exec("ALTER TABLE alert_history ADD COLUMN type TEXT NOT NULL DEFAULT 'fired'"); } catch {}
 // Rollen: Lokalen Server für diese Rolle ausblenden
 try { db.exec('ALTER TABLE roles ADD COLUMN hide_local INTEGER NOT NULL DEFAULT 0'); } catch {}
+// Container-Spitznamen (panel-seitig, kein Agent nötig)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS container_labels (
+    server       TEXT NOT NULL,
+    container_id TEXT NOT NULL,
+    nickname     TEXT NOT NULL DEFAULT '',
+    tag          TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (server, container_id)
+  );
+`);
 // Audit-Log: Standort-Spalte (Stadt, Land via GeoIP)
 try { db.exec('ALTER TABLE audit_log ADD COLUMN location TEXT'); } catch {}
 
