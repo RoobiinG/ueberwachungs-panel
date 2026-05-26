@@ -3,7 +3,7 @@ import axios from 'axios';
 import {
   Shield, Search, Trash2, ChevronLeft, ChevronRight,
   RefreshCw, Filter, Monitor, User, Container, Webhook,
-  Bell, Server, Settings, Lock, Flame,
+  Bell, Server, Settings, Lock, Flame, MapPin,
 } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -253,8 +253,16 @@ export default function AuditLog() {
                       {row.ip || '—'}
                     </span>
 
+                    {/* Standort */}
+                    {row.location && (
+                      <span className="text-[11px] text-panel-muted flex-shrink-0 hidden lg:flex items-center gap-0.5">
+                        <MapPin size={10} className="flex-shrink-0" />
+                        {row.location}
+                      </span>
+                    )}
+
                     {/* Browser */}
-                    <span className="text-[11px] text-panel-muted flex-shrink-0 hidden lg:block">
+                    <span className="text-[11px] text-panel-muted flex-shrink-0 hidden xl:block">
                       {parseBrowser(row.user_agent)}
                       {parseOS(row.user_agent) && ` · ${parseOS(row.user_agent)}`}
                     </span>
@@ -266,6 +274,11 @@ export default function AuditLog() {
                       <div className="grid grid-cols-2 gap-x-6 gap-y-1">
                         <div><span className="text-panel-text font-medium">Benutzer:</span> {row.username} (ID: {row.user_id ?? '—'})</div>
                         <div><span className="text-panel-text font-medium">IP-Adresse:</span> {row.ip || '—'}</div>
+                        <div><span className="text-panel-text font-medium">Standort:</span>{' '}
+                          {row.location
+                            ? <span className="inline-flex items-center gap-1"><MapPin size={10} />{row.location}</span>
+                            : '—'}
+                        </div>
                         <div><span className="text-panel-text font-medium">Aktion:</span> <code className="text-panel-accent">{row.action}</code></div>
                         <div><span className="text-panel-text font-medium">Ziel-Typ:</span> {row.target_type || '—'}</div>
                         <div><span className="text-panel-text font-medium">Ziel-Name:</span> {row.target_name || '—'}</div>

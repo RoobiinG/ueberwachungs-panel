@@ -153,6 +153,8 @@ try { db.exec('ALTER TABLE alert_rules ADD COLUMN agent_id INTEGER REFERENCES re
 try { db.exec("ALTER TABLE alert_history ADD COLUMN type TEXT NOT NULL DEFAULT 'fired'"); } catch {}
 // Rollen: Lokalen Server für diese Rolle ausblenden
 try { db.exec('ALTER TABLE roles ADD COLUMN hide_local INTEGER NOT NULL DEFAULT 0'); } catch {}
+// Audit-Log: Standort-Spalte (Stadt, Land via GeoIP)
+try { db.exec('ALTER TABLE audit_log ADD COLUMN location TEXT'); } catch {}
 
 // Audit-Log: alle sicherheitsrelevanten Aktionen protokollieren
 db.exec(`
