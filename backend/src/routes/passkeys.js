@@ -71,8 +71,9 @@ router.get('/register/start', async (req, res) => {
       transports: ['internal', 'hybrid'],
     })),
     authenticatorSelection: {
-      residentKey:     'preferred',
-      userVerification: 'preferred',
+      authenticatorAttachment: 'cross-platform',
+      residentKey:             'preferred',
+      userVerification:        'preferred',
     },
   });
 
