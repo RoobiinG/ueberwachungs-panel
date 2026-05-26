@@ -239,6 +239,7 @@ router.get('/:id/version', requirePermission('agents.view'), async (req, res) =>
 router.post('/:id/update', requirePermission('agents.update'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   try {
     const { data } = await agentApi(agent).post('/update', {}, { timeout: 30000 });
     // Versions-Cache invalidieren damit nächste Abfrage aktuell ist
