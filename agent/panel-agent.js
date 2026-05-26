@@ -67,7 +67,20 @@ async function getDisk() {
     return stdout.trim().split('\n').map(line => {
       const [fs, size, used, pcent, mount] = line.trim().split(/\s+/);
       return { fs, size: +size, used: +used, usedPercent: parseFloat(pcent), mount };
-    }).filter(d => d.mount && !['/sys', '/proc', '/dev/', '/run/'].some(p => d.mount.startsWith(p)));
+    }).filter(d => {
+      if (!d.mount || !d.fs) return false;
+      // Virtuelle Mount-Points ausschließen (exakt oder als Präfix mit Slash)
+      const skipMounts = ['/sys', '/proc', '/dev', '/run'];
+      if (skipMounts.some(p => d.mount === p || d.mount.startsWith(p + '/'))) return false;
+      // Nur echte Block-Geräte — kein tmpfs, overlay, squashfs, devtmpfs, udev etc.
+      if (!d.fs.startsWith('/dev/')) return false;
+      return true;
+    }).sort((a, b) => {
+      // Wurzel-Partition immer an erster Stelle
+      if (a.mount === '/') return -1;
+      if (b.mount === '/') return 1;
+      return a.mount.localeCompare(b.mount);
+    });
   } catch { return []; }
 }
 
