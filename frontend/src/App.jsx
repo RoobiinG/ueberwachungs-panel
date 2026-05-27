@@ -52,7 +52,7 @@ const AppRoutes = () => {
     <Layout connected={connected}>
       <Routes>
         <Route path="/" element={<Dashboard liveStats={liveStats} />} />
-        <Route path="/docker" element={<Docker liveStats={liveStats} />} />
+        <Route path="/docker" element={<Docker />} />
         <Route path="/services" element={<Services />} />
         <Route path="/firewall" element={<Firewall />} />
         <Route path="/network"    element={<Navigate to="/monitoring" replace />} />

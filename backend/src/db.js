@@ -208,6 +208,8 @@ db.exec(`
 `);
 // Audit-Log: Standort-Spalte (Stadt, Land via GeoIP)
 try { db.exec('ALTER TABLE audit_log ADD COLUMN location TEXT'); } catch {}
+// Dockhand-Integration: Environment-ID pro Remote-Agent
+try { db.exec('ALTER TABLE remote_agents ADD COLUMN dockhand_env_id INTEGER'); } catch {}
 
 // Audit-Log: alle sicherheitsrelevanten Aktionen protokollieren
 db.exec(`

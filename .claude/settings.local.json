@@ -17,7 +17,15 @@
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\gRobi\\\\Nextcloud2\\\\Coding\\\\Überwachungs-Panel\\\\backend\\\\src\" -Recurse -File)",
       "Bash(Select-Object FullName)",
       "Bash(find \"C:\\\\\\\\Users\\\\\\\\gRobi\\\\\\\\Nextcloud2\\\\\\\\Coding\\\\\\\\Überwachungs-Panel\\\\\\\\backend\\\\\\\\src\" -type f -name \"*.js\")",
-      "Bash(npm list *)"
+      "Bash(npm list *)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\gRobi\\\\Nextcloud2\\\\Coding\\\\Überwachungs-Panel\" -Recurse -Filter \"*docker*\" -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "WebFetch(domain:dockhand.pro)",
+      "WebSearch",
+      "WebFetch(domain:finsys-dockhand.mintlify.app)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:mintlify.com)",
+      "WebFetch(domain:mcpmarket.com)"
     ]
   }
 }

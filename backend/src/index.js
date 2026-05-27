@@ -57,7 +57,7 @@ app.use('/api/metrics',    auth, require('./routes/metrics'));    // Kein requir
 app.use('/api/dashboard',  auth, require('./routes/dashboard'));
 app.use('/api/uptime-kuma', auth, require('./routes/uptimeKuma'));
 app.use('/api/alerts',      auth, require('./routes/alerts'));
-app.use('/api/docker/metrics', auth, requireLocalAccess, require('./routes/containerMetrics'));
+app.use('/api/dockhand',    auth, require('./routes/dockhand'));
 app.use('/api/audit',       auth, require('./routes/audit'));
 app.use('/api/version',          require('./routes/version'));
 
@@ -71,7 +71,7 @@ app.get(/^(?!\/api).*/, (req, res) => {
 setupWS(server);
 require('./metricsRecorder').start();
 require('./alertEvaluator').start();
-try { require('./dockerMetricsRecorder').start(); } catch (e) { console.warn('Docker-Metriken deaktiviert:', e.message); }
+// dockerMetricsRecorder entfernt — Docker-Stats kommen jetzt von Dockhand API
 try { require('./remoteMetricsRecorder').start(); } catch (e) { console.warn('Remote-Metriken deaktiviert:', e.message); }
 
 const PORT = process.env.PORT || 3001;

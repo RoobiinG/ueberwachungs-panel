@@ -1,20 +1,21 @@
-import { useEffect, useState, useRef } from 'react';
+// Docker-Seite — nutzt Dockhand API für alle Server (lokal + remote via Hawser)
+// Container-Format ist jetzt einheitlich für alle Server:
+// { id, name, image, state, status, cpu, memUsed, memLimit, netRx, netTx, stack, ports }
+
+import { useEffect, useState, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { ServerSelector } from '../components/ui/ServerSelector';
-import { RefreshCw, Play, Square, RotateCcw, ChevronDown, ChevronUp, Tag, Check, X } from 'lucide-react';
+import { RefreshCw, Play, Square, RotateCcw, Tag, Check, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import {
-  LineChart, Line, AreaChart, Area,
-  XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid,
-} from 'recharts';
 
-// Farbe anhand Status-String (lokal: "Up 2 hours" / "Exited…"; remote: "running" / "exited")
+// ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
+
 const statusColor = (s) =>
-  s?.includes('Up') || s === 'running'   ? 'green' :
-  s?.includes('Exited') || s === 'exited' ? 'red'  : 'gray';
+  s === 'running'                          ? 'green' :
+  s === 'exited' || s === 'stopped'        ? 'red'   : 'gray';
 
 const fmtBytes = (b) => {
   if (b == null || b === 0) return '0 B';
@@ -23,131 +24,30 @@ const fmtBytes = (b) => {
   return `${(b / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 };
 
-const fmtTs = (ts) =>
-  ts ? new Date(ts * 1000).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) : '';
+// ─── Haupt-Komponente ─────────────────────────────────────────────────────────
 
-// Mini-Sparkline für CPU % pro Container (letzte 20 Werte) — nur lokal
-function Sparkline({ data }) {
-  if (!data || data.length < 2) return null;
-  return (
-    <div style={{ width: 64, height: 28 }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data.map((v, i) => ({ i, v }))}>
-          <Line type="monotone" dataKey="v" stroke="#388bfd" strokeWidth={1.5} dot={false} />
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
-// Detail-Chart für einen lokalen Container
-function ContainerChart({ containerId, containerName }) {
-  const [range, setRange]     = useState('1h');
-  const [data, setData]       = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setLoading(true);
-    axios.get(`/api/docker/metrics/${containerId}?range=${range}`)
-      .then(r => setData(r.data.rows || []))
-      .catch(() => setData([]))
-      .finally(() => setLoading(false));
-  }, [containerId, range]);
-
-  return (
-    <div className="mt-3 border-t border-panel-border pt-3">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs text-panel-muted font-medium">{containerName} — Verlauf</span>
-        <div className="flex gap-1">
-          {['1h', '24h'].map(r => (
-            <button key={r} onClick={() => setRange(r)}
-              className={`px-2 py-0.5 rounded text-xs transition-colors ${range === r ? 'bg-panel-accent text-white' : 'text-panel-muted hover:text-panel-text'}`}>
-              {r}
-            </button>
-          ))}
-        </div>
-      </div>
-      {loading ? (
-        <div className="text-panel-muted text-xs py-3 text-center">Lade...</div>
-      ) : data.length < 2 ? (
-        <div className="text-panel-muted text-xs py-3 text-center">Noch keine Verlaufsdaten</div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div>
-            <div className="text-xs text-panel-muted mb-1">CPU %</div>
-            <ResponsiveContainer width="100%" height={90}>
-              <AreaChart data={data} margin={{ top: 2, right: 4, bottom: 0, left: -10 }}>
-                <defs>
-                  <linearGradient id="dcpu" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#388bfd" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#388bfd" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#30363d" />
-                <XAxis dataKey="ts" tickFormatter={fmtTs} tick={{ fill: '#8b949e', fontSize: 9 }} interval="preserveStartEnd" />
-                <YAxis domain={[0, 100]} tick={{ fill: '#8b949e', fontSize: 9 }} unit="%" />
-                <Tooltip contentStyle={{ background: '#21262d', border: '1px solid #30363d', borderRadius: '6px', fontSize: '11px' }}
-                  labelFormatter={fmtTs} formatter={v => [`${v?.toFixed(1)}%`, 'CPU']} />
-                <Area type="monotone" dataKey="cpu" stroke="#388bfd" fill="url(#dcpu)" strokeWidth={1.5} dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-          <div>
-            <div className="text-xs text-panel-muted mb-1">RAM</div>
-            <ResponsiveContainer width="100%" height={90}>
-              <AreaChart
-                data={data.map(d => ({ ...d, memPct: d.mem_limit > 0 ? Math.round(d.mem_used / d.mem_limit * 100) : 0 }))}
-                margin={{ top: 2, right: 4, bottom: 0, left: -10 }}>
-                <defs>
-                  <linearGradient id="dmem" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3fb950" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#3fb950" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#30363d" />
-                <XAxis dataKey="ts" tickFormatter={fmtTs} tick={{ fill: '#8b949e', fontSize: 9 }} interval="preserveStartEnd" />
-                <YAxis domain={[0, 100]} tick={{ fill: '#8b949e', fontSize: 9 }} unit="%" />
-                <Tooltip contentStyle={{ background: '#21262d', border: '1px solid #30363d', borderRadius: '6px', fontSize: '11px' }}
-                  labelFormatter={fmtTs} formatter={v => [`${v}%`, 'RAM']} />
-                <Area type="monotone" dataKey="memPct" stroke="#3fb950" fill="url(#dmem)" strokeWidth={1.5} dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-export default function Docker({ liveStats }) {
+export default function Docker() {
   const { canWrite, hideLocal, hasPermission } = useAuth();
   const canLabel = hasPermission('docker.label');
 
   const [selectedServer, setSelectedServer] = useState(null); // null = lokal
-  const [containers, setContainers] = useState([]);
-  const [loading, setLoading]       = useState(true);
-  const [busy, setBusy]             = useState({});
-  const [error, setError]           = useState('');
-  const [expanded, setExpanded]     = useState(null);
+  const [containers, setContainers]         = useState([]);
+  const [loading, setLoading]               = useState(true);
+  const [busy, setBusy]                     = useState({});
+  const [error, setError]                   = useState('');
 
-  // Spitznamen: { containerId: { nickname, tag } }
-  const [labels,      setLabels]      = useState({});
-  const [editingLabel, setEditingLabel] = useState(null); // containerId
-  const [labelDraft,  setLabelDraft]  = useState({ nickname: '', tag: '' });
+  // Live-Stats: { containerId: { cpu, memUsed, memLimit, netRx, netTx } }
+  const [statsMap, setStatsMap]   = useState({});
+  const statsIntervalRef          = useRef(null);
 
-  // Sparkline-Historie: letzten 20 CPU%-Werte pro Container-ID (nur lokal)
-  const sparkRef = useRef({});
-  const [sparkData, setSparkData] = useState({});
+  // Labels (Spitznamen / Tags)
+  const [labels,       setLabels]       = useState({});
+  const [editingLabel, setEditingLabel] = useState(null);
+  const [labelDraft,   setLabelDraft]   = useState({ nickname: '', tag: '' });
 
-  const loadLabels = async (srv) => {
-    const server = srv ?? (selectedServer ? String(selectedServer) : 'local');
-    try {
-      const { data } = await axios.get(`/api/docker/labels?server=${encodeURIComponent(server)}`);
-      setLabels(data);
-    } catch {}
-  };
+  // ── Container laden ────────────────────────────────────────────────────────
 
-  const load = async () => {
+  const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
@@ -160,19 +60,68 @@ export default function Docker({ liveStats }) {
       setError(err.response?.data?.error || 'Docker nicht erreichbar');
     }
     setLoading(false);
-  };
+  }, [selectedServer]);
+
+  const loadLabels = useCallback(async () => {
+    const srv = selectedServer ? String(selectedServer) : 'local';
+    try {
+      const { data } = await axios.get(`/api/docker/labels?server=${encodeURIComponent(srv)}`);
+      setLabels(data);
+    } catch {}
+  }, [selectedServer]);
 
   useEffect(() => {
-    // Warte auf Auto-Select wenn lokaler Zugriff ausgeblendet ist
     if (hideLocal && selectedServer === null) return;
     setContainers([]);
-    setExpanded(null);
+    setStatsMap({});
     setEditingLabel(null);
-    const srv = selectedServer ? String(selectedServer) : 'local';
     load();
-    loadLabels(srv);
+    loadLabels();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedServer, hideLocal]);
+
+  // ── Live-Stats Polling (alle 8 s für laufende Container) ──────────────────
+
+  const pollStats = useCallback(async (clist) => {
+    const running = clist.filter(c => c.state === 'running');
+    if (!running.length) return;
+
+    const results = await Promise.allSettled(
+      running.map(c => {
+        const url = selectedServer
+          ? `/api/agents/${selectedServer}/docker/containers/${c.id}/stats`
+          : `/api/docker/containers/${c.id}/stats`;
+        return axios.get(url).then(r => ({ id: c.id, stats: r.data }));
+      })
+    );
+
+    const newMap = {};
+    for (const r of results) {
+      if (r.status === 'fulfilled') {
+        const { id, stats } = r.value;
+        newMap[id] = {
+          cpu:        stats.cpuPercent  ?? stats.cpu        ?? null,
+          memUsed:    stats.memUsage    ?? stats.memUsed    ?? null,
+          memLimit:   stats.memLimit                        ?? null,
+          netRx:      stats.netRx                          ?? null,
+          netTx:      stats.netTx                          ?? null,
+        };
+      }
+    }
+    setStatsMap(newMap);
+  }, [selectedServer]);
+
+  // Polling starten sobald Container geladen sind
+  useEffect(() => {
+    if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
+    if (containers.length === 0) return;
+    pollStats(containers); // sofort
+    statsIntervalRef.current = setInterval(() => pollStats(containers), 8000);
+    return () => clearInterval(statsIntervalRef.current);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [containers]);
+
+  // ── Labels ─────────────────────────────────────────────────────────────────
 
   const openLabelEdit = (cid, currentNickname, currentTag) => {
     setEditingLabel(cid);
@@ -185,10 +134,10 @@ export default function Docker({ liveStats }) {
       await axios.put('/api/docker/labels', {
         server,
         containerId: cid,
-        nickname: labelDraft.nickname,
-        tag:      labelDraft.tag,
+        nickname:    labelDraft.nickname,
+        tag:         labelDraft.tag,
       });
-      await loadLabels(server);
+      await loadLabels();
       setEditingLabel(null);
     } catch (err) {
       setError(err.response?.data?.error || 'Label konnte nicht gespeichert werden');
@@ -196,19 +145,7 @@ export default function Docker({ liveStats }) {
     }
   };
 
-  // Sparklines nur für lokalen Docker via WebSocket-Broadcast
-  useEffect(() => {
-    if (selectedServer) return;
-    const cs = liveStats?.containers;
-    if (!cs) return;
-    const updated = { ...sparkRef.current };
-    for (const [id, stat] of Object.entries(cs)) {
-      const prev = updated[id] || [];
-      updated[id] = [...prev.slice(-19), stat.cpuPercent ?? 0];
-    }
-    sparkRef.current = updated;
-    setSparkData({ ...updated });
-  }, [liveStats?.containers, selectedServer]);
+  // ── Aktionen (Start/Stop/Restart) ─────────────────────────────────────────
 
   const act = async (cid, action) => {
     setBusy(b => ({ ...b, [cid]: action }));
@@ -222,22 +159,15 @@ export default function Docker({ liveStats }) {
     setBusy(b => ({ ...b, [cid]: null }));
   };
 
-  const toggle = (id) => setExpanded(e => e === id ? null : id);
-
-  // Accessor-Helfer: lokal nutzt dockerode-Format, remote nutzt normalisierten Agent-Output
-  const getId     = (c) => selectedServer ? c.id    : c.Id;
-  const getName   = (c) => selectedServer ? c.name  : (c.Names?.[0]?.replace('/', '') || c.Id?.slice(0, 12));
-  const getState  = (c) => selectedServer ? c.state : c.State;
-  const getStatus = (c) => selectedServer ? c.status : c.Status;
-  const getImage  = (c) => selectedServer ? c.image : c.Image;
-  // Live-WS-Stats (nur lokal)
-  const getLiveStat = (c) => !selectedServer ? liveStats?.containers?.[c.Id] : null;
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <ServerSelector selected={selectedServer} onChange={setSelectedServer} />
-        <Button variant="ghost" size="sm" onClick={load}><RefreshCw size={14} className="mr-1" />Aktualisieren</Button>
+        <Button variant="ghost" size="sm" onClick={load}>
+          <RefreshCw size={14} className="mr-1" />Aktualisieren
+        </Button>
       </div>
 
       {error && (
@@ -248,130 +178,106 @@ export default function Docker({ liveStats }) {
 
       <Card title={`Docker Container (${containers.length})`}>
         {loading ? (
-          <div className="text-panel-muted text-sm py-4 text-center">Lade...</div>
+          <div className="text-panel-muted text-sm py-4 text-center">Lade…</div>
         ) : containers.length === 0 ? (
           <div className="text-panel-muted text-sm py-4 text-center">Keine Container gefunden</div>
         ) : (
           <div className="divide-y divide-panel-border -mx-4 -mb-4">
             {containers.map(c => {
-              const cid      = getId(c);
-              const name     = getName(c);
-              const state    = getState(c);
-              const status   = getStatus(c);
-              const image    = getImage(c);
-              const liveStat = getLiveStat(c);
-              const isOpen   = expanded === cid;
-              const isRun    = state === 'running';
-
-              // CPU / RAM: remote → aus API; lokal → aus WS
-              const cpuPct  = selectedServer ? c.cpu         : liveStat?.cpuPercent;
-              const memUsed = selectedServer ? c.memUsed     : liveStat?.memUsed;
-              const rxSec   = selectedServer ? null          : liveStat?.rxSec;
-              const txSec   = selectedServer ? null          : liveStat?.txSec;
+              const isRun   = c.state === 'running';
+              const live    = statsMap[c.id];
+              const cpuPct  = live?.cpu      ?? c.cpu      ?? null;
+              const memUsed = live?.memUsed  ?? c.memUsed  ?? null;
+              const netRx   = live?.netRx    ?? c.netRx    ?? null;
+              const netTx   = live?.netTx    ?? c.netTx    ?? null;
 
               return (
-                <div key={cid}>
-                  <div className="flex items-center justify-between px-4 py-3">
-                    {/* Name & Status */}
-                    <div className="flex-1 min-w-0 mr-3">
-                      {editingLabel === cid && canLabel ? (
-                        /* ── Inline-Edit für Nickname + Tag ── */
-                        <div className="flex items-center gap-1 flex-wrap">
-                          <input
-                            autoFocus
-                            value={labelDraft.nickname}
-                            onChange={e => setLabelDraft(d => ({ ...d, nickname: e.target.value }))}
-                            placeholder="Spitzname…"
-                            className="bg-panel-surface border border-panel-accent rounded px-2 py-0.5 text-xs text-panel-text focus:outline-none w-28"
-                            onKeyDown={e => { if (e.key === 'Enter') saveLabel(cid); if (e.key === 'Escape') setEditingLabel(null); }}
-                          />
-                          <input
-                            value={labelDraft.tag}
-                            onChange={e => setLabelDraft(d => ({ ...d, tag: e.target.value }))}
-                            placeholder="Tag…"
-                            className="bg-panel-surface border border-panel-border rounded px-2 py-0.5 text-xs text-panel-text focus:outline-none w-20"
-                            onKeyDown={e => { if (e.key === 'Enter') saveLabel(cid); if (e.key === 'Escape') setEditingLabel(null); }}
-                          />
-                          <button onClick={() => saveLabel(cid)}
-                            className="p-0.5 text-panel-green hover:text-panel-green/80"><Check size={13} /></button>
-                          <button onClick={() => setEditingLabel(null)}
-                            className="p-0.5 text-panel-muted hover:text-panel-red"><X size={13} /></button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <Badge color={statusColor(status || state)}>{state}</Badge>
-                          {labels[cid]?.nickname
-                            ? <span className="text-sm text-panel-text font-medium truncate">{labels[cid].nickname}</span>
-                            : <span className="text-sm text-panel-text font-medium truncate">{name}</span>
-                          }
-                          {labels[cid]?.nickname && (
-                            <span className="text-xs text-panel-muted truncate">({name})</span>
-                          )}
-                          {labels[cid]?.tag && (
-                            <span className="px-1.5 py-0.5 bg-panel-accent/20 text-panel-accent text-[10px] rounded font-mono">
-                              {labels[cid].tag}
-                            </span>
-                          )}
-                          {selectedServer && c.stack && !labels[cid]?.tag && (
-                            <span className="text-xs text-panel-muted bg-panel-surface px-1.5 py-0.5 rounded">{c.stack}</span>
-                          )}
-                          {canLabel && (
-                            <button onClick={() => openLabelEdit(cid, labels[cid]?.nickname, labels[cid]?.tag)}
-                              className="p-0.5 text-panel-muted hover:text-panel-text opacity-40 hover:opacity-100 transition-opacity"
-                              title="Spitzname / Tag bearbeiten">
-                              <Tag size={11} />
-                            </button>
-                          )}
-                        </div>
-                      )}
-                      <div className="text-xs text-panel-muted mt-0.5 truncate">{image}</div>
-                      {/* Live-Werte */}
-                      {isRun && (cpuPct != null || memUsed != null) && (
-                        <div className="flex items-center gap-3 mt-1 text-xs text-panel-muted">
-                          {cpuPct  != null && <span className="text-blue-400  font-mono">{Number(cpuPct).toFixed(1)}% CPU</span>}
-                          {memUsed != null && <span className="text-green-400 font-mono">{fmtBytes(memUsed)} RAM</span>}
-                          {!selectedServer && rxSec != null && (rxSec > 0 || txSec > 0) && (
-                            <span className="font-mono">↑{fmtBytes(txSec)}/s ↓{fmtBytes(rxSec)}/s</span>
-                          )}
-                          {selectedServer && c.ports?.length > 0 && (
-                            <span className="text-panel-muted/70">{c.ports.slice(0, 3).join(' · ')}</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Sparkline (nur lokal) */}
-                    {!selectedServer && sparkData[c.Id]?.length >= 2 && isRun && (
-                      <Sparkline data={sparkData[c.Id]} />
+                <div key={c.id} className="flex items-center justify-between px-4 py-3">
+                  {/* Name & Status */}
+                  <div className="flex-1 min-w-0 mr-3">
+                    {editingLabel === c.id && canLabel ? (
+                      <div className="flex items-center gap-1 flex-wrap">
+                        <input
+                          autoFocus
+                          value={labelDraft.nickname}
+                          onChange={e => setLabelDraft(d => ({ ...d, nickname: e.target.value }))}
+                          placeholder="Spitzname…"
+                          className="bg-panel-surface border border-panel-accent rounded px-2 py-0.5 text-xs text-panel-text focus:outline-none w-28"
+                          onKeyDown={e => { if (e.key === 'Enter') saveLabel(c.id); if (e.key === 'Escape') setEditingLabel(null); }}
+                        />
+                        <input
+                          value={labelDraft.tag}
+                          onChange={e => setLabelDraft(d => ({ ...d, tag: e.target.value }))}
+                          placeholder="Tag…"
+                          className="bg-panel-surface border border-panel-border rounded px-2 py-0.5 text-xs text-panel-text focus:outline-none w-20"
+                          onKeyDown={e => { if (e.key === 'Enter') saveLabel(c.id); if (e.key === 'Escape') setEditingLabel(null); }}
+                        />
+                        <button onClick={() => saveLabel(c.id)}
+                          className="p-0.5 text-panel-green hover:text-panel-green/80"><Check size={13} /></button>
+                        <button onClick={() => setEditingLabel(null)}
+                          className="p-0.5 text-panel-muted hover:text-panel-red"><X size={13} /></button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Badge color={statusColor(c.state)}>{c.state}</Badge>
+                        {labels[c.id]?.nickname
+                          ? <span className="text-sm text-panel-text font-medium truncate">{labels[c.id].nickname}</span>
+                          : <span className="text-sm text-panel-text font-medium truncate">{c.name}</span>
+                        }
+                        {labels[c.id]?.nickname && (
+                          <span className="text-xs text-panel-muted truncate">({c.name})</span>
+                        )}
+                        {labels[c.id]?.tag && (
+                          <span className="px-1.5 py-0.5 bg-panel-accent/20 text-panel-accent text-[10px] rounded font-mono">
+                            {labels[c.id].tag}
+                          </span>
+                        )}
+                        {c.stack && !labels[c.id]?.tag && (
+                          <span className="text-xs text-panel-muted bg-panel-surface px-1.5 py-0.5 rounded">{c.stack}</span>
+                        )}
+                        {canLabel && (
+                          <button onClick={() => openLabelEdit(c.id, labels[c.id]?.nickname, labels[c.id]?.tag)}
+                            className="p-0.5 text-panel-muted hover:text-panel-text opacity-40 hover:opacity-100 transition-opacity"
+                            title="Spitzname / Tag bearbeiten">
+                            <Tag size={11} />
+                          </button>
+                        )}
+                      </div>
                     )}
 
-                    {/* Aktionen */}
-                    <div className="flex items-center gap-1 ml-2">
-                      {canWrite && (
-                        <>
-                          {!isRun
-                            ? <Button size="sm" variant="success" onClick={() => act(cid, 'start')}  disabled={!!busy[cid]}><Play size={12} /></Button>
-                            : <Button size="sm" variant="danger"  onClick={() => act(cid, 'stop')}   disabled={!!busy[cid]}><Square size={12} /></Button>
-                          }
-                          <Button size="sm" variant="ghost" onClick={() => act(cid, 'restart')} disabled={!!busy[cid]}><RotateCcw size={12} /></Button>
-                        </>
-                      )}
-                      {/* Detail-Chart nur lokal */}
-                      {!selectedServer && (
-                        <button onClick={() => toggle(cid)}
-                          className="p-1.5 rounded hover:bg-panel-card text-panel-muted hover:text-panel-text transition-colors">
-                          {isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                        </button>
-                      )}
-                    </div>
+                    <div className="text-xs text-panel-muted mt-0.5 truncate">{c.image}</div>
+
+                    {/* Live-Stats */}
+                    {isRun && (cpuPct != null || memUsed != null) && (
+                      <div className="flex items-center gap-3 mt-1 text-xs text-panel-muted flex-wrap">
+                        {cpuPct  != null && (
+                          <span className="text-blue-400 font-mono">{Number(cpuPct).toFixed(1)}% CPU</span>
+                        )}
+                        {memUsed != null && (
+                          <span className="text-green-400 font-mono">{fmtBytes(memUsed)} RAM</span>
+                        )}
+                        {(netRx != null || netTx != null) && (netRx > 0 || netTx > 0) && (
+                          <span className="font-mono">↑{fmtBytes(netTx)}/s ↓{fmtBytes(netRx)}/s</span>
+                        )}
+                        {c.ports?.length > 0 && (
+                          <span className="text-panel-muted/70">{c.ports.slice(0, 3).join(' · ')}</span>
+                        )}
+                      </div>
+                    )}
                   </div>
 
-                  {/* Ausklappbarer Detail-Chart (nur lokal) */}
-                  {!selectedServer && isOpen && (
-                    <div className="px-4 pb-3">
-                      <ContainerChart containerId={c.Id} containerName={name} />
-                    </div>
-                  )}
+                  {/* Aktionen */}
+                  <div className="flex items-center gap-1 ml-2">
+                    {canWrite && (
+                      <>
+                        {!isRun
+                          ? <Button size="sm" variant="success" onClick={() => act(c.id, 'start')}   disabled={!!busy[c.id]}><Play size={12} /></Button>
+                          : <Button size="sm" variant="danger"  onClick={() => act(c.id, 'stop')}    disabled={!!busy[c.id]}><Square size={12} /></Button>
+                        }
+                        <Button size="sm" variant="ghost" onClick={() => act(c.id, 'restart')} disabled={!!busy[c.id]}><RotateCcw size={12} /></Button>
+                      </>
+                    )}
+                  </div>
                 </div>
               );
             })}

@@ -250,18 +250,33 @@ router.post('/:id/update', requirePermission('agents.update'), async (req, res) 
   }
 });
 
-// ── Docker Proxy ────────────────────────────────────────────────────────────
+// ── Docker via Dockhand Hawser ────────────────────────────────────────────────
+// Remote-Container werden jetzt über Dockhand Environments abgefragt,
+// nicht mehr direkt über den panel-agent.
+
+const dockhand = require('../utils/dockhandClient');
+
+const requireDockhandEnv = (agent, res) => {
+  if (!agent.dockhand_env_id) {
+    res.status(400).json({
+      error: `Kein Dockhand-Environment für "${agent.name}" konfiguriert. Bitte unter Einstellungen → Dockhand zuweisen.`,
+    });
+    return false;
+  }
+  return true;
+};
 
 router.get('/:id/docker', requirePermission('docker.view'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  if (!requireDockhandEnv(agent, res)) return;
   try {
-    const { data } = await agentApi(agent).get('/docker');
-    res.json(data);
+    const { data } = await dockhand.getEnvironments();
+    const env = (Array.isArray(data) ? data : []).find(e => String(e.id) === String(agent.dockhand_env_id)) ?? {};
+    res.json(env);
   } catch (err) {
-    const status = err.response?.status || 502;
-    res.status(status).json({ error: err.response?.data?.error || err.message });
+    res.status(502).json({ error: err.message });
   }
 });
 
@@ -269,12 +284,25 @@ router.get('/:id/docker/containers', requirePermission('docker.view'), async (re
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  if (!requireDockhandEnv(agent, res)) return;
   try {
-    const { data } = await agentApi(agent).get('/docker/containers');
-    res.json(data);
+    const { data } = await dockhand.getContainers(agent.dockhand_env_id);
+    res.json((Array.isArray(data) ? data : []).map(dockhand.normalizeContainer));
   } catch (err) {
-    const status = err.response?.status || 502;
-    res.status(status).json({ error: err.response?.data?.error || err.message });
+    res.status(502).json({ error: err.message });
+  }
+});
+
+router.get('/:id/docker/containers/:containerId/stats', requirePermission('docker.view'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  if (!requireDockhandEnv(agent, res)) return;
+  try {
+    const { data } = await dockhand.getContainerStats(agent.dockhand_env_id, req.params.containerId);
+    res.json(data ?? {});
+  } catch (err) {
+    res.status(502).json({ error: err.message });
   }
 });
 
@@ -282,15 +310,16 @@ router.post('/:id/docker/containers/:containerId/:action', requirePermission('do
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  if (!requireDockhandEnv(agent, res)) return;
   const { containerId, action } = req.params;
   const valid = ['start', 'stop', 'restart', 'pause', 'unpause', 'kill'];
   if (!valid.includes(action)) return res.status(400).json({ error: 'Ungültige Aktion' });
-  if (!/^[a-fA-F0-9]{12,64}$/.test(containerId)) return res.status(400).json({ error: 'Ungültige Container-ID' });
   try {
-    const { data } = await agentApi(agent).post(`/docker/containers/${containerId}/${action}`);
-    res.json(data);
+    await dockhand.containerAction(agent.dockhand_env_id, containerId, action);
+    auditLog(req, `docker.${action}`, 'container', containerId.slice(0, 12), { agentId: req.params.id });
+    res.json({ success: true });
   } catch (err) {
-    res.status(502).json({ error: err.response?.data?.error || err.message });
+    res.status(502).json({ error: err.message });
   }
 });
 
