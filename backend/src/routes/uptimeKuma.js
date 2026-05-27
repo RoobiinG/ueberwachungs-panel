@@ -90,16 +90,19 @@ function fetchViaSocket(url, apiKey) {
   if (cached && Date.now() - cached.ts < TTL) return Promise.resolve(cached.data);
 
   return new Promise((resolve, reject) => {
-    const socket = io(url.replace(/\/+$/, ''), {
-      transports:   ['polling', 'websocket'],  // Polling zuerst (Proxy-kompatibel)
+    const base = url.replace(/\/+$/, '');
+
+    const socket = io(base, {
+      transports:   ['polling', 'websocket'],
       reconnection: false,
-      timeout:      10000,
+      timeout:      12000,
+      // Uptime Kuma v1.23+ und v2.x: API-Key im auth-Objekt
       auth: { apiKey },
     });
 
-    const monitors  = {};
+    const monitors   = {};
     const heartbeats = {};
-    const uptime    = {};
+    const uptime     = {};
     let done = false;
     let timeoutId;
 
@@ -111,12 +114,15 @@ function fetchViaSocket(url, apiKey) {
       if (err) return reject(err);
       const result = buildResult(monitors, heartbeats, uptime);
       if (result.monitors.length === 0) {
-        return reject(new Error('Keine Monitore empfangen — API-Key gültig? (Uptime Kuma v1.23+ erforderlich)'));
+        return reject(new Error(
+          'Socket.IO: 0 Monitore empfangen — API-Key ungültig oder Uptime Kuma v1.23+ erforderlich'
+        ));
       }
       CACHE.set(key, { data: result, ts: Date.now() });
       resolve(result);
     };
 
+    // Uptime Kuma v1.x / v2.x Events
     socket.on('monitorList',   (list)            => { Object.assign(monitors, list); });
     socket.on('heartbeatList', (id, list)        => { heartbeats[id] = list; });
     socket.on('uptime',        (id, period, val) => {
@@ -125,19 +131,28 @@ function fetchViaSocket(url, apiKey) {
     });
 
     socket.on('connect', () => {
+      // Explizit Monitore anfordern (Callback + Event-Variante)
       socket.emit('getMonitorList', (res) => {
         if (res?.ok && res.monitors) Object.assign(monitors, res.monitors);
       });
+    });
+
+    // Authentifizierungsfehler abfangen (manche Uptime-Kuma-Versionen)
+    socket.on('disconnect', (reason) => {
+      if (!done && reason !== 'io client disconnect') {
+        finish(new Error(`Socket getrennt: ${reason}`));
+      }
     });
 
     socket.on('connect_error', (err) =>
       finish(new Error(`Verbindung fehlgeschlagen: ${err.message}`))
     );
     socket.on('error', (err) =>
-      finish(new Error(err.message || 'Socket-Fehler'))
+      finish(new Error(err?.message || 'Socket-Fehler'))
     );
 
-    timeoutId = setTimeout(() => finish(null), 9000);
+    // 12 s warten, dann mit gesammelten Daten auswerten
+    timeoutId = setTimeout(() => finish(null), 12000);
   });
 }
 
@@ -210,16 +225,32 @@ router.get('/monitors', async (req, res) => {
   if (!url) return res.status(400).json({ error: 'Uptime Kuma URL nicht konfiguriert.' });
 
   if (apiKey) {
-    // Zuerst REST API versuchen (Uptime Kuma v2+)
+    // ── REST API (Uptime Kuma v2+) ──────────────────────────────────────────
+    let restDiag = '';
     try {
       return res.json(await fetchViaRest(url, apiKey));
     } catch (restErr) {
-      // Fallback: Socket.IO (Uptime Kuma v1.x)
-      try {
-        return res.json(await fetchViaSocket(url, apiKey));
-      } catch (sockErr) {
-        return res.status(502).json({ error: sockErr.message });
+      // Diagnosemeldung für den Fallback-Fehler sammeln (HTTP-Status + Meldung)
+      const status = restErr?.response?.status;
+      const msg    = restErr?.response?.data?.message ?? restErr?.message ?? 'unbekannt';
+      if (status === 401) {
+        restDiag = 'REST HTTP 401 (API-Key abgelehnt)';
+      } else if (status === 404) {
+        restDiag = 'REST HTTP 404 (Endpunkt nicht gefunden)';
+      } else if (status) {
+        restDiag = `REST HTTP ${status}: ${msg}`;
+      } else {
+        restDiag = `REST-Fehler: ${msg}`;
       }
+    }
+
+    // ── Socket.IO Fallback (Uptime Kuma v1.x / v2.x) ───────────────────────
+    try {
+      return res.json(await fetchViaSocket(url, apiKey));
+    } catch (sockErr) {
+      return res.status(502).json({
+        error: `${sockErr.message} · ${restDiag}`,
+      });
     }
   }
 
