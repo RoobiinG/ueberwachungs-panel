@@ -7,7 +7,7 @@ import { useWS, useWSMessage } from '../context/WSContext';
 import SftpBrowser from '../components/SftpBrowser';
 import {
   Terminal as TerminalIcon, Plus, Trash2, Key, Unplug,
-  Copy, CheckCircle, Upload, Pencil, FolderOpen,
+  Copy, CheckCircle, Upload, Pencil, FolderOpen, FileKey,
 } from 'lucide-react';
 
 const inputCls = 'w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:border-panel-accent transition-colors';
@@ -54,6 +54,10 @@ export default function SSH() {
   // Generierter Public Key
   const [generatedPub, setGeneratedPub] = useState(null);
   const [copied,        setCopied]       = useState(false);
+
+  // Key-Datei-Upload
+  const keyFileRef  = useRef(null);
+  const [keyFileDrag, setKeyFileDrag] = useState(false);
 
   // xterm Refs
   const termDivRef = useRef(null);   // DOM-Element
@@ -328,6 +332,21 @@ export default function SSH() {
     } catch (err) {
       setFormError(err.response?.data?.error || 'Fehler beim Import');
     }
+  };
+
+  const readKeyFile = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const content = e.target.result.trim();
+      setImportForm(f => ({
+        ...f,
+        privateKey: content,
+        // Label aus Dateiname ableiten wenn noch leer (ohne Erweiterung)
+        label: f.label.trim() ? f.label : file.name.replace(/\.(pem|ppk|key|txt)$/i, ''),
+      }));
+    };
+    reader.readAsText(file);
   };
 
   const deleteKey = async (id) => {
@@ -645,7 +664,7 @@ export default function SSH() {
       {/* ════ Modal: Key importieren ════ */}
       <Modal
         open={showImportKey}
-        onClose={() => setShowImportKey(false)}
+        onClose={() => { setShowImportKey(false); setKeyFileDrag(false); }}
         title="SSH Key importieren"
         footer={<>
           <Button variant="ghost" size="sm" onClick={() => setShowImportKey(false)}>Abbrechen</Button>
@@ -656,28 +675,78 @@ export default function SSH() {
       >
         <div className="space-y-3">
           {formError && <p className="text-xs text-panel-red">{formError}</p>}
+
+          {/* Label */}
           <div>
             <label className="block text-xs text-panel-muted mb-1">Label</label>
             <input
               value={importForm.label}
               onChange={e => setImportForm(f => ({ ...f, label: e.target.value }))}
-              placeholder="z.B. Mein privater Key"
+              placeholder="z.B. Mailserver Key"
               className={inputCls}
             />
           </div>
+
+          {/* Drop-Zone */}
+          <div
+            onClick={() => keyFileRef.current?.click()}
+            onDragOver={e => { e.preventDefault(); setKeyFileDrag(true); }}
+            onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget)) setKeyFileDrag(false); }}
+            onDrop={e => {
+              e.preventDefault();
+              setKeyFileDrag(false);
+              readKeyFile(e.dataTransfer.files[0]);
+            }}
+            className={`flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-5 cursor-pointer transition-colors select-none ${
+              keyFileDrag
+                ? 'border-panel-accent bg-panel-accent/10 text-panel-accent'
+                : 'border-panel-border hover:border-panel-accent/50 hover:bg-panel-surface/50 text-panel-muted'
+            }`}
+          >
+            <FileKey size={22} className={keyFileDrag ? 'text-panel-accent' : 'text-panel-muted/50'} />
+            <p className="text-xs text-center">
+              {keyFileDrag
+                ? 'Datei loslassen…'
+                : <><span className="text-panel-text font-medium">Datei auswählen</span> oder hierher ziehen</>
+              }
+            </p>
+            <p className="text-[10px] opacity-60">.ppk · .pem · .key · alle Textdateien</p>
+          </div>
+          <input
+            ref={keyFileRef}
+            type="file"
+            accept=".ppk,.pem,.key,.txt,text/*"
+            className="hidden"
+            onChange={e => { readKeyFile(e.target.files[0]); e.target.value = ''; }}
+          />
+
+          {/* Textarea — zum manuellen Einfügen / Korrigieren */}
           <div>
-            <label className="block text-xs text-panel-muted mb-1">Private Key (PEM-Format)</label>
+            <label className="block text-xs text-panel-muted mb-1">
+              oder direkt einfügen
+              {importForm.privateKey && (
+                <button
+                  onClick={() => setImportForm(f => ({ ...f, privateKey: '' }))}
+                  className="ml-2 text-panel-red hover:opacity-80 transition-opacity"
+                  title="Leeren"
+                >
+                  ×
+                </button>
+              )}
+            </label>
             <textarea
               value={importForm.privateKey}
               onChange={e => setImportForm(f => ({ ...f, privateKey: e.target.value }))}
-              rows={8}
+              rows={5}
               spellCheck={false}
-              placeholder={`OpenSSH PEM:\n-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----\n\nOder PuTTY PPK:\nPuTTY-User-Key-File-2: ssh-rsa\n...`}
+              placeholder={`PuTTY PPK:\nPuTTY-User-Key-File-2: ssh-rsa\n...\n\nOpenSSH PEM:\n-----BEGIN OPENSSH PRIVATE KEY-----\n...`}
               className={`${inputCls} font-mono text-xs resize-none`}
             />
           </div>
+
           <p className="text-xs text-panel-muted">
-            Unterstützt: OpenSSH PEM und PuTTY PPK (v2 &amp; v3, ohne Passwort). Wird AES-256-GCM-verschlüsselt gespeichert.
+            Unterstützt: OpenSSH PEM und PuTTY PPK (v2 &amp; v3, ohne Passwort).
+            Wird AES-256-GCM-verschlüsselt gespeichert.
           </p>
         </div>
       </Modal>
