@@ -19,8 +19,8 @@ export default function Services() {
   const [actError, setActError] = useState('');
   const [actBusy,  setActBusy]  = useState({});
 
-  const load = async () => {
-    setLoading(true);
+  const load = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const url = selectedServer
         ? `/api/agents/${selectedServer}/services`
@@ -28,9 +28,9 @@ export default function Services() {
       const { data } = await axios.get(url);
       setServices(data);
     } catch {
-      setServices([]);
+      if (!silent) setServices([]);
     }
-    setLoading(false);
+    if (!silent) setLoading(false);
   };
 
   useEffect(() => {
@@ -50,7 +50,7 @@ export default function Services() {
         ? `/api/agents/${selectedServer}/services/${encodeURIComponent(name)}/${action}`
         : `/api/services/${encodeURIComponent(name)}/${action}`;
       await axios.post(url);
-      await load();
+      await load(true);
     } catch (err) {
       setActError(err.response?.data?.error || `Aktion "${action}" fehlgeschlagen`);
     }
