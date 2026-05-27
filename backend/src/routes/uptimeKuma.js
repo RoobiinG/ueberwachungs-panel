@@ -40,13 +40,32 @@ async function fetchViaRest(url, apiKey) {
     throw new Error(`Uptime-Kuma: ${errMsg}`);
   }
 
-  // monitors kann Array (v1) oder Objekt { id: {...} } (v2) sein
-  if (data.monitors == null) {
-    throw new Error('Unerwartetes Antwortformat — monitors fehlt in der API-Antwort');
+  // monitors kann sein:
+  //   (a) Direkt ein Array  → data ist selbst das Array (manche Versionen)
+  //   (b) data.monitors     → Array oder Objekt { id: {...} }  (v2 standard)
+  //   (c) data.monitorList  → Objekt { id: {...} }             (v1.x partial REST)
+  let monitorArr;
+  if (Array.isArray(data)) {
+    // (a) Antwort-Body ist direkt das Array
+    monitorArr = data;
+  } else if (data.monitors != null) {
+    // (b) Standard-Feld
+    monitorArr = Array.isArray(data.monitors)
+      ? data.monitors
+      : Object.values(data.monitors);
+  } else if (data.monitorList != null) {
+    // (c) Alternatives Feld in manchen v1-Versionen
+    monitorArr = Array.isArray(data.monitorList)
+      ? data.monitorList
+      : Object.values(data.monitorList);
+  } else {
+    // Unbekanntes Format — nützliche Diagnose ausgeben
+    const keys = Object.keys(data).slice(0, 6).join(', ') || '(leer)';
+    throw new Error(
+      `Unerwartetes Antwortformat — vorhandene Felder: ${keys}. ` +
+      'Bitte Uptime-Kuma-Version und API-Key prüfen.'
+    );
   }
-  const monitorArr = Array.isArray(data.monitors)
-    ? data.monitors
-    : Object.values(data.monitors);
 
   // Uptime kann als Bruch (0–1) oder als Prozentwert (0–100) kommen
   const toPercent = (v) => {
@@ -135,7 +154,14 @@ function fetchViaSocket(url, apiKey) {
     socket.on('connect', () => {
       // Explizit Monitore anfordern (Callback + Event-Variante)
       socket.emit('getMonitorList', (res) => {
-        if (res?.ok && res.monitors) Object.assign(monitors, res.monitors);
+        if (res?.ok && res.monitors) {
+          Object.assign(monitors, res.monitors);
+        } else if (res?.ok === false) {
+          // Server hat explizit abgelehnt → sofort abbrechen statt 12s warten
+          finish(new Error(
+            `Socket.IO: Keine Berechtigung — ${res.msg || 'API-Key ungültig oder unzureichende Rechte'}`
+          ));
+        }
       });
     });
 
