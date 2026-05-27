@@ -50,18 +50,42 @@ router.post('/keys/import', requirePermission('ssh.manage'), (req, res) => {
   if (!privateKey) return res.status(400).json({ error: 'privateKey erforderlich' });
   if (!sshUtils) return res.status(503).json({ error: 'ssh2 nicht verfügbar' });
 
-  // Key-Format validieren
-  const parsed = sshUtils.parseKey(privateKey);
-  if (parsed instanceof Error) return res.status(400).json({ error: `Ungültiger SSH-Key: ${parsed.message}` });
+  try {
+    // Key-Format validieren — parseKey kann Error, null, Objekt oder Array zurückgeben
+    let parsed = sshUtils.parseKey(privateKey.trim());
 
-  const pubKey = parsed.getPublicSSH ? (parsed.getPublicSSH().toString('base64')) : '';
-  const pubKeyStr = pubKey ? `${parsed.type} ${pubKey}` : '';
+    // Mehrere Keys in einer Datei → ersten nehmen
+    if (Array.isArray(parsed)) parsed = parsed[0] ?? null;
 
-  const privateKeyEnc = encrypt(privateKey.trim());
-  const result = db.prepare(
-    'INSERT INTO ssh_keys (user_id, label, public_key, private_key) VALUES (?, ?, ?, ?)'
-  ).run(req.user.id, label.trim(), pubKeyStr, privateKeyEnc);
-  res.status(201).json({ id: result.lastInsertRowid, label: label.trim(), public_key: pubKeyStr });
+    if (!parsed) {
+      return res.status(400).json({ error: 'Key-Format nicht erkannt' });
+    }
+    if (parsed instanceof Error) {
+      // Verschlüsselter Key: sprechende Fehlermeldung
+      const msg = parsed.message || '';
+      if (/passphrase|encrypt/i.test(msg)) {
+        return res.status(400).json({ error: 'Der Key ist passwortgeschützt. Bitte erst mit ssh-keygen entschlüsseln: ssh-keygen -p -f <keyfile>' });
+      }
+      return res.status(400).json({ error: `Ungültiger SSH-Key: ${msg}` });
+    }
+
+    // Public Key ableiten (optional — kein Fehler wenn nicht möglich)
+    let pubKeyStr = '';
+    try {
+      if (typeof parsed.getPublicSSH === 'function') {
+        const pub = parsed.getPublicSSH().toString('base64');
+        if (pub) pubKeyStr = `${parsed.type} ${pub}`;
+      }
+    } catch {}
+
+    const privateKeyEnc = encrypt(privateKey.trim());
+    const result = db.prepare(
+      'INSERT INTO ssh_keys (user_id, label, public_key, private_key) VALUES (?, ?, ?, ?)'
+    ).run(req.user.id, label.trim(), pubKeyStr, privateKeyEnc);
+    res.status(201).json({ id: result.lastInsertRowid, label: label.trim(), public_key: pubKeyStr });
+  } catch (err) {
+    res.status(500).json({ error: `Import fehlgeschlagen: ${err.message}` });
+  }
 });
 
 router.delete('/keys/:id', requirePermission('ssh.manage'), (req, res) => {
