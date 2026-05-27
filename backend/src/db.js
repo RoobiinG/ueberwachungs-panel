@@ -163,6 +163,15 @@ try { db.exec('ALTER TABLE roles ADD COLUMN hide_local INTEGER NOT NULL DEFAULT 
 // Metrics: Netzwerk-Durchsatz-Spalten (Bytes/Sek)
 try { db.exec('ALTER TABLE metrics ADD COLUMN net_rx_sec INTEGER NOT NULL DEFAULT 0'); } catch {}
 try { db.exec('ALTER TABLE metrics ADD COLUMN net_tx_sec INTEGER NOT NULL DEFAULT 0'); } catch {}
+// Dashboard-Layouts pro User
+db.exec(`
+  CREATE TABLE IF NOT EXISTS dashboard_layouts (
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    layout     TEXT    NOT NULL DEFAULT '[]',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id)
+  );
+`);
 // Metrics: server_id-Spalte für Multi-Server-Langzeit-Monitoring
 try {
   const has = db.prepare("SELECT COUNT(*) AS c FROM pragma_table_info('metrics') WHERE name='server_id'").get().c > 0;
