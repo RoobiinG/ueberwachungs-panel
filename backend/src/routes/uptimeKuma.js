@@ -44,9 +44,11 @@ async function fetchViaRest(url, apiKey) {
   //   (a) Direkt ein Array  → data ist selbst das Array (manche Versionen)
   //   (b) data.monitors     → Array oder Objekt { id: {...} }  (v2 standard)
   //   (c) data.monitorList  → Objekt { id: {...} }             (v1.x partial REST)
+  //   (d) Objekt mit Zahl-Schlüsseln { "0": {...}, "1": {...} }
+  //       Das Ganze ist der Monitor-Dict (kein Wrapper-Key)
   let monitorArr;
   if (Array.isArray(data)) {
-    // (a) Antwort-Body ist direkt das Array
+    // (a) Antwort-Body ist direkt ein Array
     monitorArr = data;
   } else if (data.monitors != null) {
     // (b) Standard-Feld
@@ -59,12 +61,22 @@ async function fetchViaRest(url, apiKey) {
       ? data.monitorList
       : Object.values(data.monitorList);
   } else {
-    // Unbekanntes Format — nützliche Diagnose ausgeben
-    const keys = Object.keys(data).slice(0, 6).join(', ') || '(leer)';
-    throw new Error(
-      `Unerwartetes Antwortformat — vorhandene Felder: ${keys}. ` +
-      'Bitte Uptime-Kuma-Version und API-Key prüfen.'
-    );
+    // (d) Top-Level-Objekt mit Monitor-artigen Werten (z. B. { "0":{...}, "1":{...} })
+    const vals = Object.values(data);
+    if (
+      vals.length > 0 &&
+      typeof vals[0] === 'object' && vals[0] !== null &&
+      ('name' in vals[0] || 'id' in vals[0] || 'url' in vals[0])
+    ) {
+      monitorArr = vals;
+    } else {
+      // Wirklich unbekanntes Format — aussagekräftige Diagnose
+      const keys = Object.keys(data).slice(0, 8).join(', ') || '(leer)';
+      throw new Error(
+        `Unerwartetes Antwortformat — vorhandene Felder: ${keys}. ` +
+        'Bitte Uptime-Kuma-Version und API-Key prüfen.'
+      );
+    }
   }
 
   // Uptime kann als Bruch (0–1) oder als Prozentwert (0–100) kommen
@@ -76,7 +88,7 @@ async function fetchViaRest(url, apiKey) {
   };
 
   const monitors = monitorArr
-    .filter(m => m.active)
+    .filter(m => m.active !== false)  // undefined/null → einschließen; nur explizit false ausschließen
     .map(m => {
       const hb = m.lastHeartBeat ?? m.heartbeat ?? {};
       return {
