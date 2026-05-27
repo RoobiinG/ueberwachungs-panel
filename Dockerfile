@@ -24,6 +24,8 @@ RUN apk add --no-cache sqlite-libs util-linux
 
 COPY --from=backend-builder /app/backend ./
 COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
+# version.json liegt im Repo-Root und muss explizit kopiert werden
+COPY version.json /app/version.json
 
 ENV DB_PATH=/app/data/data.db
 RUN mkdir -p /app/data

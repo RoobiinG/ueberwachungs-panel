@@ -33,9 +33,18 @@ async function fetchViaRest(url, apiKey) {
     timeout: 10000,
   });
 
-  if (!data.ok || !Array.isArray(data.monitors)) {
+  if (!data.ok) {
+    throw new Error('Uptime-Kuma-API antwortete mit ok=false');
+  }
+
+  // Uptime Kuma v2 liefert monitors als Objekt { "id": {...} },
+  // v1 als Array — beide Formate werden unterstützt
+  if (data.monitors == null) {
     throw new Error('Unerwartetes Antwortformat der Uptime-Kuma-API');
   }
+  const monitorArr = Array.isArray(data.monitors)
+    ? data.monitors
+    : Object.values(data.monitors);
 
   // Uptime kann als Bruch (0–1) oder als Prozentwert (0–100) kommen
   const toPercent = (v) => {
@@ -45,7 +54,7 @@ async function fetchViaRest(url, apiKey) {
     return Math.round((n <= 1 ? n * 100 : n) * 10) / 10;
   };
 
-  const monitors = data.monitors
+  const monitors = monitorArr
     .filter(m => m.active)
     .map(m => {
       const hb = m.lastHeartBeat ?? m.heartbeat ?? {};
