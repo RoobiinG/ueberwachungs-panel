@@ -1,58 +1,106 @@
-const router = require('express').Router();
-const { requirePermission } = require('../middleware/requirePermission');
-const { auditLog } = require('../utils/audit');
-const db = require('../db');
-let Docker;
-try { Docker = require('dockerode'); } catch { Docker = null; }
+// ─── Docker via Dockhand API ──────────────────────────────────────────────────
+// Ersetzt die direkte dockerode-Verbindung.
+// Alle Container-Daten kommen jetzt von der Dockhand REST-API.
 
-const getDocker = () => {
-  if (!Docker) throw new Error('dockerode not available');
-  return new Docker({ socketPath: '/var/run/docker.sock' });
+const router    = require('express').Router();
+const { requirePermission } = require('../middleware/requirePermission');
+const { auditLog }          = require('../utils/audit');
+const db                    = require('../db');
+const dockhand              = require('../utils/dockhandClient');
+
+const localEnvId = () =>
+  db.prepare("SELECT value FROM settings WHERE key = 'dockhandLocalEnvId'").get()?.value ?? null;
+
+const requireEnv = (res) => {
+  const envId = localEnvId();
+  if (!envId) {
+    res.status(400).json({
+      error: 'Dockhand Local-Environment nicht konfiguriert. Bitte unter Einstellungen → Dockhand zuweisen.',
+    });
+    return null;
+  }
+  return envId;
 };
 
+// ── GET /api/docker/containers ────────────────────────────────────────────────
 router.get('/containers', requirePermission('docker.view'), async (req, res) => {
+  const envId = requireEnv(res);
+  if (!envId) return;
   try {
-    const containers = await getDocker().listContainers({ all: true });
-    res.json(containers);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    const { data } = await dockhand.getContainers(envId);
+    res.json((Array.isArray(data) ? data : []).map(dockhand.normalizeContainer));
+  } catch (err) { res.status(502).json({ error: err.message }); }
 });
 
+// ── GET /api/docker/containers/:id ───────────────────────────────────────────
 router.get('/containers/:id', requirePermission('docker.view'), async (req, res) => {
+  const envId = requireEnv(res);
+  if (!envId) return;
   try {
-    const info = await getDocker().getContainer(req.params.id).inspect();
-    res.json(info);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    const { data } = await dockhand.getContainer(envId, req.params.id);
+    res.json(dockhand.normalizeContainer(data));
+  } catch (err) { res.status(502).json({ error: err.message }); }
 });
 
+// ── GET /api/docker/containers/:id/stats  (Live-Monitoring) ──────────────────
+router.get('/containers/:id/stats', requirePermission('docker.view'), async (req, res) => {
+  const envId = requireEnv(res);
+  if (!envId) return;
+  try {
+    const { data } = await dockhand.getContainerStats(envId, req.params.id);
+    res.json(data ?? {});
+  } catch (err) { res.status(502).json({ error: err.message }); }
+});
+
+// ── GET /api/docker/containers/:id/logs ──────────────────────────────────────
+router.get('/containers/:id/logs', requirePermission('docker.view'), async (req, res) => {
+  const envId = requireEnv(res);
+  if (!envId) return;
+  try {
+    const { data } = await dockhand.getContainerLogs(envId, req.params.id, req.query.tail);
+    res.json(data ?? []);
+  } catch (err) { res.status(502).json({ error: err.message }); }
+});
+
+// ── POST /api/docker/containers/:id/:action ───────────────────────────────────
 router.post('/containers/:id/:action', requirePermission('docker.control'), async (req, res) => {
   const { id, action } = req.params;
   const valid = ['start', 'stop', 'restart', 'kill', 'pause', 'unpause'];
-  if (!valid.includes(action)) return res.status(400).json({ error: 'Invalid action' });
+  if (!valid.includes(action)) return res.status(400).json({ error: 'Ungültige Aktion' });
+  const envId = requireEnv(res);
+  if (!envId) return;
   try {
-    // Containernamen für Log ermitteln
-    let containerName = id;
-    try {
-      const info = await getDocker().getContainer(id).inspect();
-      containerName = (info.Name || info.Names?.[0] || id).replace(/^\//, '');
-    } catch {}
-    await getDocker().getContainer(id)[action]();
-    auditLog(req, `docker.${action}`, 'container', containerName, { containerId: id.slice(0, 12) });
+    await dockhand.containerAction(envId, id, action);
+    auditLog(req, `docker.${action}`, 'container', id.slice(0, 12), { containerId: id.slice(0, 12) });
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(502).json({ error: err.message }); }
 });
 
+// ── GET /api/docker/images ────────────────────────────────────────────────────
 router.get('/images', requirePermission('docker.view'), async (req, res) => {
+  const envId = requireEnv(res);
+  if (!envId) return;
   try {
-    const images = await getDocker().listImages({ all: true });
-    res.json(images);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    const { data } = await dockhand.getImages(envId);
+    res.json(data || []);
+  } catch (err) { res.status(502).json({ error: err.message }); }
 });
 
+// ── GET /api/docker/info  (Dashboard-Stats) ───────────────────────────────────
 router.get('/info', requirePermission('docker.view'), async (req, res) => {
   try {
-    const info = await getDocker().info();
-    res.json(info);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    const { data } = await dockhand.getDashboardStats();
+    res.json(data ?? {});
+  } catch (err) { res.status(502).json({ error: err.message }); }
+});
+
+// ── GET /api/docker/activity ──────────────────────────────────────────────────
+router.get('/activity', requirePermission('docker.view'), async (req, res) => {
+  const envId = localEnvId(); // Optional — auch ohne Env verfügbar
+  try {
+    const { data } = await dockhand.getActivity(envId);
+    res.json(data ?? []);
+  } catch (err) { res.status(502).json({ error: err.message }); }
 });
 
 // Hinweis: Container-Labels werden in routes/dockerLabels.js verwaltet

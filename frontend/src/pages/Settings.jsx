@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   Cloud, Server, Eye, EyeOff, CheckCircle, XCircle,
   RefreshCw, Trash2, Lock, Mail, Key, ShieldCheck, Send,
-  User, Settings2,
+  User, Settings2, Layers,
 } from 'lucide-react';
 
 const inputCls = 'w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:border-panel-accent transition-colors';
@@ -53,6 +53,14 @@ export default function Settings() {
   const [passkeys,     setPasskeys]     = useState([]);
   const [passkeyName,  setPasskeyName]  = useState('');
 
+  // Dockhand
+  const [dockhandUrl,      setDockhandUrl]      = useState('');
+  const [dockhandToken,    setDockhandToken]    = useState('');
+  const [dockhandEnvId,    setDockhandEnvId]    = useState('');
+  const [dockhandEnvs,     setDockhandEnvs]     = useState([]); // [{id,name}] aus Dockhand
+  const [dockhandAgents,   setDockhandAgents]   = useState([]); // remote_agents mit dockhand_env_id
+  const [showDockhandToken, setShowDockhandToken] = useState(false);
+
   // ── Laden ─────────────────────────────────────────────────────────────────
 
   const loadAdmin = async () => {
@@ -66,6 +74,25 @@ export default function Settings() {
       if (data.smtp_user)  setSmtp(s => ({ ...s, user:   data.smtp_user  || '' }));
       if (data.smtp_from)  setSmtp(s => ({ ...s, from:   data.smtp_from  || '' }));
       if (data.smtp_secure !== undefined) setSmtp(s => ({ ...s, secure: !!data.smtp_secure }));
+    } catch {}
+  };
+
+  const loadDockhand = async () => {
+    if (!isAdmin) return;
+    try {
+      const { data } = await axios.get('/api/dockhand/config');
+      setDockhandUrl(data.url || '');
+      setDockhandEnvId(data.localEnvId || '');
+    } catch {}
+    // Agents mit dockhand_env_id laden
+    try {
+      const { data } = await axios.get('/api/agents');
+      setDockhandAgents(data);
+    } catch {}
+    // Environments laden (nur wenn konfiguriert)
+    try {
+      const { data } = await axios.get('/api/dockhand/environments');
+      if (Array.isArray(data)) setDockhandEnvs(data);
     } catch {}
   };
 
@@ -87,6 +114,7 @@ export default function Settings() {
     loadAdmin();
     loadPasskeys();
     loadEmail();
+    loadDockhand();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin]);
 
@@ -243,6 +271,52 @@ export default function Settings() {
   };
 
   const fmtDate = (s) => s ? new Date(s).toLocaleString('de-DE') : '—';
+
+  // ── Dockhand-Aktionen ─────────────────────────────────────────────────────
+
+  const testDockhand = async () => {
+    busy('dockhand', true);
+    try {
+      const { data } = await axios.post('/api/dockhand/test', {
+        url:      dockhandUrl,
+        apiToken: dockhandToken || undefined,
+      });
+      setDockhandEnvs(data.environments > 0
+        ? (await axios.get('/api/dockhand/environments')).data
+        : []);
+      feedback('dockhand', 'ok', `Verbunden — ${data.environments} Environment(s) gefunden`);
+    } catch (err) {
+      feedback('dockhand', 'err', err.response?.data?.error || 'Verbindung fehlgeschlagen');
+    }
+    busy('dockhand', false);
+  };
+
+  const saveDockhand = async () => {
+    busy('dockhand_save', true);
+    try {
+      await axios.post('/api/dockhand/config', {
+        url:        dockhandUrl,
+        ...(dockhandToken ? { apiToken: dockhandToken } : {}),
+        localEnvId: dockhandEnvId,
+      });
+      setDockhandToken('');
+      feedback('dockhand', 'ok', 'Dockhand-Einstellungen gespeichert');
+    } catch (err) {
+      feedback('dockhand', 'err', err.response?.data?.error || 'Fehler');
+    }
+    busy('dockhand_save', false);
+  };
+
+  const saveAgentEnv = async (agentId, envId) => {
+    try {
+      await axios.put('/api/dockhand/agent-env', { agentId, envId: envId || null });
+      setDockhandAgents(prev => prev.map(a =>
+        String(a.id) === String(agentId) ? { ...a, dockhand_env_id: envId || null } : a
+      ));
+    } catch (err) {
+      feedback('dockhand', 'err', err.response?.data?.error || 'Fehler beim Speichern');
+    }
+  };
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -482,6 +556,98 @@ export default function Settings() {
             </div>
             <Button onClick={saveHetzner} disabled={!hetznerToken.trim() || loading.hetzner} size="sm">Speichern</Button>
             <Msg msg={msgs.hetzner} />
+          </div>
+        </Card>
+
+        {/* ── Dockhand ── */}
+        <Card title={<span className="flex items-center gap-2"><Layers size={14} />Dockhand Docker-Management</span>}>
+          <div className="space-y-3">
+            <p className="text-xs text-panel-muted">
+              Verbindet das Panel mit einer laufenden Dockhand-Instanz. Der API-Token wird unter
+              Dockhand → Settings → Authentication → API Tokens generiert.
+            </p>
+
+            {/* URL */}
+            <div>
+              <label className="block text-xs text-panel-muted mb-1">Dockhand URL</label>
+              <input
+                value={dockhandUrl}
+                onChange={e => setDockhandUrl(e.target.value)}
+                placeholder="http://localhost:3000"
+                className={inputCls}
+              />
+            </div>
+
+            {/* Token */}
+            <div>
+              <label className="block text-xs text-panel-muted mb-1">
+                API-Token {status.dockhandHasToken && <span className="text-panel-green">(gesetzt)</span>}
+              </label>
+              <div className="relative">
+                <input
+                  type={showDockhandToken ? 'text' : 'password'}
+                  value={dockhandToken}
+                  onChange={e => setDockhandToken(e.target.value)}
+                  placeholder={status.dockhandHasToken ? '(gesetzt — leer lassen = behalten)' : 'dh_xxxxxxxx…'}
+                  className={inputCls + ' pr-9'}
+                />
+                <button type="button" onClick={() => setShowDockhandToken(v => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
+                  {showDockhandToken ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <Button onClick={testDockhand} disabled={!dockhandUrl || loading.dockhand} size="sm" variant="ghost">
+                <RefreshCw size={12} className="mr-1" />Verbindung testen
+              </Button>
+              <Button onClick={saveDockhand} disabled={!dockhandUrl || loading.dockhand_save} size="sm">
+                Speichern
+              </Button>
+            </div>
+
+            {/* Environment-Mapping — erscheint sobald Envs geladen */}
+            {dockhandEnvs.length > 0 && (
+              <div className="border border-panel-border rounded-md overflow-hidden mt-1">
+                <div className="bg-panel-surface px-3 py-1.5 text-xs font-medium text-panel-muted border-b border-panel-border">
+                  Environment-Zuweisung
+                </div>
+                <div className="divide-y divide-panel-border">
+                  {/* Lokaler Server */}
+                  <div className="flex items-center justify-between px-3 py-2">
+                    <span className="text-xs text-panel-text">Lokaler Panel-Server</span>
+                    <select
+                      value={dockhandEnvId}
+                      onChange={e => setDockhandEnvId(e.target.value)}
+                      onBlur={() => axios.post('/api/dockhand/config', { localEnvId: dockhandEnvId }).catch(() => {})}
+                      className="bg-panel-surface border border-panel-border rounded px-2 py-1 text-xs text-panel-text focus:outline-none focus:border-panel-accent">
+                      <option value="">— nicht zugewiesen —</option>
+                      {dockhandEnvs.map(e => (
+                        <option key={e.id} value={e.id}>{e.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {/* Remote-Agents */}
+                  {dockhandAgents.map(agent => (
+                    <div key={agent.id} className="flex items-center justify-between px-3 py-2">
+                      <span className="text-xs text-panel-text">{agent.name}</span>
+                      <select
+                        value={agent.dockhand_env_id ?? ''}
+                        onChange={e => saveAgentEnv(agent.id, e.target.value)}
+                        className="bg-panel-surface border border-panel-border rounded px-2 py-1 text-xs text-panel-text focus:outline-none focus:border-panel-accent">
+                        <option value="">— nicht zugewiesen —</option>
+                        {dockhandEnvs.map(e => (
+                          <option key={e.id} value={e.id}>{e.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <Msg msg={msgs.dockhand} />
           </div>
         </Card>
 
