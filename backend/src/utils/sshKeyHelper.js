@@ -33,6 +33,9 @@ function resolveKeyForSsh2(raw) {
         if (/passphrase|encrypt/i.test(msg)) {
           return { key: null, error: 'PPK-Key ist passwortgeschützt — bitte in PuTTYgen entfernen' };
         }
+        if (/unsupported key format/i.test(msg)) {
+          return { key: null, error: 'PPK v3 wird von ssh2 nicht unterstützt. Bitte in PuTTYgen exportieren: Conversions → Export OpenSSH key → als .pem-Datei importieren.' };
+        }
         return { key: null, error: `PPK-Parse-Fehler: ${msg}` };
       }
       return { key: parsed, error: null };

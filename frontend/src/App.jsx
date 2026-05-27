@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { WSProvider } from './context/WSContext';
+import { ErrorProvider } from './context/ErrorContext';
 import { useWebSocket } from './hooks/useWebSocket';
 import { Layout } from './components/Layout/Layout';
 import Login from './pages/Login';
@@ -84,9 +85,11 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <WSWrapper>
-          <AppRoutes />
-        </WSWrapper>
+        <ErrorProvider>
+          <WSWrapper>
+            <AppRoutes />
+          </WSWrapper>
+        </ErrorProvider>
       </AuthProvider>
     </BrowserRouter>
   );
