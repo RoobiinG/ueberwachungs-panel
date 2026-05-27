@@ -33,14 +33,16 @@ async function fetchViaRest(url, apiKey) {
     timeout: 10000,
   });
 
-  if (!data.ok) {
-    throw new Error('Uptime-Kuma-API antwortete mit ok=false');
+  // Nur bei explizitem ok=false ablehnen (nicht bei fehlendem ok-Feld!).
+  // Uptime Kuma v2.x sendet teils keinen ok-Wrapper → !undefined wäre false-positive.
+  if (data.ok === false) {
+    const errMsg = data.msg || data.message || data.error || 'API-Key ungültig oder keine Berechtigung';
+    throw new Error(`Uptime-Kuma: ${errMsg}`);
   }
 
-  // Uptime Kuma v2 liefert monitors als Objekt { "id": {...} },
-  // v1 als Array — beide Formate werden unterstützt
+  // monitors kann Array (v1) oder Objekt { id: {...} } (v2) sein
   if (data.monitors == null) {
-    throw new Error('Unerwartetes Antwortformat der Uptime-Kuma-API');
+    throw new Error('Unerwartetes Antwortformat — monitors fehlt in der API-Antwort');
   }
   const monitorArr = Array.isArray(data.monitors)
     ? data.monitors
