@@ -57,7 +57,8 @@ router.get('/containers/:id/logs', requirePermission('docker.view'), async (req,
   const envId = requireEnv(res);
   if (!envId) return;
   try {
-    const { data } = await dockhand.getContainerLogs(envId, req.params.id, req.query.tail);
+    const tail = Math.max(1, Math.min(10000, parseInt(req.query.tail) || 100));
+    const { data } = await dockhand.getContainerLogs(envId, req.params.id, tail);
     res.json(data ?? []);
   } catch (err) { res.status(502).json({ error: err.message }); }
 });

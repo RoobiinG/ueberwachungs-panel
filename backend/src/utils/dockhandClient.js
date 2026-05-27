@@ -25,8 +25,7 @@ function client() {
 // ─── Zentraler Aufruf mit sprechenden Fehlermeldungen ────────────────────────
 
 async function call(method, path, opts = {}) {
-  let inst;
-  try { inst = client(); } catch (e) { throw e; }
+  const inst = client(); // wirft direkt wenn nicht konfiguriert
   try {
     return await inst({ method, url: path, ...opts });
   } catch (err) {
@@ -79,12 +78,12 @@ module.exports = {
   normalizeContainer,
 
   getEnvironments:   ()             => call('GET', '/api/environments'),
-  getContainers:     (envId)        => call('GET', `/api/containers?env=${envId}`),
-  getContainer:      (envId, id)    => call('GET', `/api/containers/${id}?env=${envId}`),
-  getContainerStats: (envId, id)    => call('GET', `/api/containers/${id}/stats?env=${envId}`),
-  getContainerLogs:  (envId, id, n) => call('GET', `/api/containers/${id}/logs?env=${envId}&tail=${n || 100}`),
-  containerAction:   (envId, id, a) => call('POST', `/api/containers/${id}/${a}?env=${envId}`),
-  getImages:         (envId)        => call('GET', `/api/images?env=${envId}`),
+  getContainers:     (envId)        => call('GET', `/api/containers?env=${encodeURIComponent(envId)}`),
+  getContainer:      (envId, id)    => call('GET', `/api/containers/${encodeURIComponent(id)}?env=${encodeURIComponent(envId)}`),
+  getContainerStats: (envId, id)    => call('GET', `/api/containers/${encodeURIComponent(id)}/stats?env=${encodeURIComponent(envId)}`),
+  getContainerLogs:  (envId, id, n) => call('GET', `/api/containers/${encodeURIComponent(id)}/logs?env=${encodeURIComponent(envId)}&tail=${n || 100}`),
+  containerAction:   (envId, id, a) => call('POST', `/api/containers/${encodeURIComponent(id)}/${encodeURIComponent(a)}?env=${encodeURIComponent(envId)}`),
+  getImages:         (envId)        => call('GET', `/api/images?env=${encodeURIComponent(envId)}`),
   getDashboardStats: ()             => call('GET', '/api/dashboard/stats'),
-  getActivity:       (envId)        => call('GET', `/api/activity${envId ? `?environmentId=${envId}` : ''}`),
+  getActivity:       (envId)        => call('GET', `/api/activity${envId ? `?environmentId=${encodeURIComponent(envId)}` : ''}`),
 };

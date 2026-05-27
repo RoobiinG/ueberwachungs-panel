@@ -82,13 +82,13 @@ router.get('/', requirePermission('agents.view'), (req, res) => {
 
   if (!role || role.is_admin || !role.restrict_agents) {
     return res.json(db.prepare(
-      'SELECT id, name, url, fingerprint, created_at FROM remote_agents ORDER BY name'
+      'SELECT id, name, url, fingerprint, dockhand_env_id, created_at FROM remote_agents ORDER BY name'
     ).all());
   }
 
   // Eingeschränkte Rolle: nur gewährte Server
   return res.json(db.prepare(`
-    SELECT ra.id, ra.name, ra.url, ra.fingerprint, ra.created_at
+    SELECT ra.id, ra.name, ra.url, ra.fingerprint, ra.dockhand_env_id, ra.created_at
     FROM remote_agents ra
     INNER JOIN agent_grants ag ON ag.agent_id = ra.id
     WHERE ag.role_id = ?

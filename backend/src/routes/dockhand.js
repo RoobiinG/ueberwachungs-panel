@@ -45,8 +45,13 @@ router.get('/environments', requireRole('admin'), async (req, res) => {
 
 // ── POST /api/dockhand/test ───────────────────────────────────────────────────
 router.post('/test', requireRole('admin'), async (req, res) => {
-  // Temporäre Werte aus Request nutzen, falls noch nicht gespeichert
   const { url, apiToken } = req.body;
+
+  // Alte Werte merken — bei Fehler wird zurückgerollt damit funktionierende
+  // Credentials nicht durch fehlerhafte überschrieben werden
+  const oldUrl   = url      ? getSetting('dockhandUrl')      : null;
+  const oldToken = apiToken ? getSetting('dockhandApiToken') : null;
+
   if (url)      setSetting('dockhandUrl',      url.trim());
   if (apiToken) setSetting('dockhandApiToken', apiToken.trim());
 
@@ -55,6 +60,9 @@ router.post('/test', requireRole('admin'), async (req, res) => {
     const envs = Array.isArray(data) ? data : [];
     res.json({ ok: true, environments: envs.length, names: envs.map(e => e.name) });
   } catch (err) {
+    // Rollback: funktionierende Credentials nicht durch fehlerhafte ersetzen
+    if (url)      setSetting('dockhandUrl',      oldUrl   ?? '');
+    if (apiToken) setSetting('dockhandApiToken', oldToken ?? '');
     res.status(502).json({ error: err.message });
   }
 });
