@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 import { Card } from '../components/ui/Card';
+import { useErrors } from '../context/ErrorContext';
 
 // Status-Definitionen (Uptime Kuma: 0=DOWN, 1=UP, 2=PENDING, 3=MAINTENANCE)
 const STATUS = {
@@ -50,6 +51,8 @@ export default function UptimeKuma() {
   const [saving,     setSaving]     = useState(false);
   const [showKey,    setShowKey]    = useState(false);
 
+  const { addError } = useErrors();
+
   // Konfiguration laden
   useEffect(() => {
     axios.get('/api/uptime-kuma/config').then(r => {
@@ -70,10 +73,12 @@ export default function UptimeKuma() {
       setIncident(data.incident);
       setLastUpdate(new Date());
     } catch (e) {
-      setError(e.response?.data?.error || 'Verbindung zu Uptime Kuma fehlgeschlagen.');
+      const msg = e.response?.data?.error || 'Verbindung zu Uptime Kuma fehlgeschlagen.';
+      setError(msg);
+      addError('Uptime Kuma', msg);
     }
     setLoading(false);
-  }, [config.url]);
+  }, [config.url, addError]);
 
   useEffect(() => {
     load();

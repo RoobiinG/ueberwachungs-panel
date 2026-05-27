@@ -4,6 +4,7 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { useWS, useWSMessage } from '../context/WSContext';
+import { useErrors } from '../context/ErrorContext';
 import SftpBrowser from '../components/SftpBrowser';
 import {
   Terminal as TerminalIcon, Plus, Trash2, Key, Unplug,
@@ -25,6 +26,7 @@ const STATUS_COLOR = {
 
 export default function SSH() {
   const { sendMessage } = useWS();
+  const { addError }    = useErrors();
 
   // Daten
   const [hosts, setHosts]   = useState([]);
@@ -185,6 +187,8 @@ export default function SSH() {
     xtermRef.current?.write(`\r\n\x1b[31m[Fehler: ${msg.message}]\x1b[0m\r\n`);
     activeHostRef.current = null;
     setActiveHost(null);
+    // Fehler global ins Panel-Log eintragen
+    addError('SSH', msg.message);
   });
 
   useWSMessage('ssh_closed', () => {
