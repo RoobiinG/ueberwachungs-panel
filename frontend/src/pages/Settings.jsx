@@ -619,8 +619,11 @@ export default function Settings() {
                     <span className="text-xs text-panel-text">Lokaler Panel-Server</span>
                     <select
                       value={dockhandEnvId}
-                      onChange={e => setDockhandEnvId(e.target.value)}
-                      onBlur={() => axios.post('/api/dockhand/config', { localEnvId: dockhandEnvId }).catch(() => {})}
+                      onChange={e => {
+                        const v = e.target.value;
+                        setDockhandEnvId(v);
+                        axios.post('/api/dockhand/config', { localEnvId: v }).catch(() => {});
+                      }}
                       className="bg-panel-surface border border-panel-border rounded px-2 py-1 text-xs text-panel-text focus:outline-none focus:border-panel-accent">
                       <option value="">— nicht zugewiesen —</option>
                       {dockhandEnvs.map(e => (

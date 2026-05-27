@@ -140,9 +140,9 @@ router.post('/hosts', requirePermission('ssh.manage'), (req, res) => {
   if (!label || !hostname || !username) return res.status(400).json({ error: 'label, hostname, username erforderlich' });
   if (port < 1 || port > 65535) return res.status(400).json({ error: 'Ungültiger Port' });
 
-  // SSRF-Schutz: hostname validieren (nicht localhost, private IPs etc.)
-  try { validatePublicUrl(`ssh://${hostname}`); } catch {
-    // ssh:// wird abgelehnt, nur IP/Hostname-Check manuell
+  // SSRF-Schutz: hostname auf private IPs / localhost prüfen
+  try { validatePublicUrl(`http://${hostname}`); } catch (e) {
+    return res.status(400).json({ error: `Ungültiger Hostname: ${e.message}` });
   }
 
   if (ssh_key_id) {
@@ -160,6 +160,14 @@ router.put('/hosts/:id', requirePermission('ssh.manage'), (req, res) => {
   const host = ownHost(req.params.id, req.user.id);
   if (!host) return res.status(404).json({ error: 'Host nicht gefunden' });
   const { label, hostname, port, username, auth_type, ssh_key_id } = req.body;
+
+  // SSRF-Schutz auch bei Updates
+  if (hostname) {
+    try { validatePublicUrl(`http://${hostname}`); } catch (e) {
+      return res.status(400).json({ error: `Ungültiger Hostname: ${e.message}` });
+    }
+  }
+
   db.prepare(`
     UPDATE ssh_hosts SET
       label     = COALESCE(?, label),
