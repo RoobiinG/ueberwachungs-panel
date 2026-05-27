@@ -4,9 +4,10 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { useWS, useWSMessage } from '../context/WSContext';
+import SftpBrowser from '../components/SftpBrowser';
 import {
   Terminal as TerminalIcon, Plus, Trash2, Key, Unplug,
-  Copy, CheckCircle, Upload, Pencil,
+  Copy, CheckCircle, Upload, Pencil, FolderOpen,
 } from 'lucide-react';
 
 const inputCls = 'w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:border-panel-accent transition-colors';
@@ -34,6 +35,9 @@ export default function SSH() {
   const [sshError,  setSshError]    = useState('');
   const [activeHost, setActiveHost] = useState(null);
   const activeHostRef = useRef(null);
+
+  // Aktiver Tab
+  const [activeTab, setActiveTab] = useState('terminal');
 
   // Modal-Flags
   const [showAddHost,    setShowAddHost]    = useState(false);
@@ -189,14 +193,21 @@ export default function SSH() {
   // ── SSH-Verbinden / Trennen ──────────────────────────────────────────────
 
   const connectHost = (host) => {
-    if (activeHostRef.current?.id === host.id && sshStatus === 'connected') {
+    // Vorherigen Zustand prüfen BEVOR der Ref überschrieben wird
+    const alreadyConnected = activeHostRef.current?.id === host.id && sshStatus === 'connected';
+
+    activeHostRef.current = host;
+    setActiveHost(host);
+
+    // SFTP-Tab: nur Host setzen, kein SSH-Terminal starten
+    if (activeTab === 'sftp') return;
+
+    if (alreadyConnected) {
       xtermRef.current?.focus();
       return;
     }
     if (sshStatus === 'connected') sendMessage({ type: 'ssh_disconnect' });
 
-    activeHostRef.current = host;
-    setActiveHost(host);
     setSshStatus('connecting');
     setSshError('');
 
@@ -214,6 +225,19 @@ export default function SSH() {
     activeHostRef.current = null;
     setActiveHost(null);
   };
+
+  // Wenn Terminal-Tab wieder aktiv: xterm neu skalieren
+  useEffect(() => {
+    if (activeTab !== 'terminal') return;
+    const t = setTimeout(() => {
+      fitRef.current?.fit();
+      if (xtermRef.current) {
+        const { cols, rows } = xtermRef.current;
+        sendMessage({ type: 'ssh_resize', cols, rows });
+      }
+    }, 30);
+    return () => clearTimeout(t);
+  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Host-Formular ────────────────────────────────────────────────────────
 
@@ -428,24 +452,64 @@ export default function SSH() {
         </Card>
       </div>
 
-      {/* ── Terminal-Panel ── */}
-      <div className="flex-1 flex flex-col min-w-0 rounded-lg border border-panel-border overflow-hidden bg-[#0d1117]">
+      {/* ── Haupt-Panel (Terminal + SFTP) ── */}
+      <div className="flex-1 flex flex-col min-w-0 rounded-lg border border-panel-border overflow-hidden bg-panel-card">
 
-        {/* Titelzeile */}
-        <div className="flex items-center justify-between px-3 py-2 bg-panel-surface border-b border-panel-border flex-shrink-0">
-          <div className="flex items-center gap-2">
-            <TerminalIcon size={14} className="text-panel-muted" />
-            <span className={`text-xs font-medium ${statusTextCls}`}>{statusLabel}</span>
-          </div>
-          {sshStatus === 'connected' && (
-            <Button size="sm" variant="ghost" onClick={disconnect}>
-              <Unplug size={13} className="mr-1" />Trennen
-            </Button>
+        {/* ── Tab-Leiste ── */}
+        <div className="flex items-center bg-panel-surface border-b border-panel-border flex-shrink-0">
+          {/* Tabs */}
+          <button
+            onClick={() => setActiveTab('terminal')}
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-xs border-r border-panel-border transition-colors ${
+              activeTab === 'terminal'
+                ? 'bg-[#0d1117] text-panel-text'
+                : 'text-panel-muted hover:text-panel-text hover:bg-panel-surface/80'
+            }`}
+          >
+            <TerminalIcon size={13} />
+            Terminal
+          </button>
+          <button
+            onClick={() => setActiveTab('sftp')}
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-xs border-r border-panel-border transition-colors ${
+              activeTab === 'sftp'
+                ? 'bg-panel-card text-panel-text'
+                : 'text-panel-muted hover:text-panel-text hover:bg-panel-surface/80'
+            }`}
+          >
+            <FolderOpen size={13} />
+            SFTP
+          </button>
+
+          <div className="flex-1" />
+
+          {/* Rechte Seite: Status / Info */}
+          {activeTab === 'terminal' && (
+            <div className="flex items-center gap-2 pr-2">
+              <span className={`text-xs ${statusTextCls}`}>{statusLabel}</span>
+              {sshStatus === 'connected' && (
+                <Button size="sm" variant="ghost" onClick={disconnect}>
+                  <Unplug size={13} className="mr-1" />Trennen
+                </Button>
+              )}
+            </div>
+          )}
+          {activeTab === 'sftp' && activeHost && (
+            <span className="text-xs text-panel-muted pr-3 font-mono">
+              {activeHost.username}@{activeHost.hostname}:{activeHost.port || 22}
+            </span>
           )}
         </div>
 
-        {/* xterm Container */}
-        <div ref={termDivRef} className="flex-1 overflow-hidden p-1" style={{ minHeight: 0 }} />
+        {/* xterm Container — immer im DOM, nur versteckt wenn SFTP aktiv */}
+        <div
+          ref={termDivRef}
+          className="flex-1 overflow-hidden p-1"
+          style={{ minHeight: 0, display: activeTab === 'terminal' ? undefined : 'none', background: '#0d1117' }}
+        />
+
+        {/* SFTP Browser */}
+        {activeTab === 'sftp' && <SftpBrowser host={activeHost} />}
       </div>
 
       {/* ════ Modal: Host hinzufügen / bearbeiten ════ */}

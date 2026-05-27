@@ -1,17 +1,8 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  Cpu, HardDrive, MemoryStick, WifiOff, Container,
-  ChevronRight, Server, Activity,
-} from 'lucide-react';
+import { Cpu, WifiOff, Container, ChevronRight, Server, Activity } from 'lucide-react';
 import axios from 'axios';
-import { Card } from '../components/ui/Card';
 import { useAuth } from '../context/AuthContext';
-import {
-  ComposedChart, Area,
-  XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Legend, Brush, ReferenceLine,
-} from 'recharts';
 
 // ── Hilfsfunktionen ──────────────────────────────────────────────────────────
 const fmtBytes = (b, d = 1) => {
@@ -29,22 +20,6 @@ const fmtUptime = (s) => {
   if (d > 0) return `${d}d ${h}h`;
   return `${h}h ${m}m`;
 };
-
-const fmtTs = (ts, range) => {
-  const d = new Date(ts * 1000);
-  if (range === '1h')
-    return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  if (range === '24h')
-    return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
-  return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
-};
-
-const RANGES = [
-  { key: '1h',  label: '1 Std' },
-  { key: '24h', label: '24 Std' },
-  { key: '7d',  label: '7 Tage' },
-  { key: '30d', label: '30 Tage' },
-];
 
 // ── Mini Progress Bar ────────────────────────────────────────────────────────
 function MiniBar({ label, value, sub, warn = 80, crit = 90 }) {
@@ -179,35 +154,13 @@ function ServerCard({ name, stats, online, isLocal, docker, onNavigate }) {
   );
 }
 
-// ── Custom Tooltip ───────────────────────────────────────────────────────────
-const CustomTooltip = ({ active, payload, label, range }) => {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="bg-[#21262d] border border-[#30363d] rounded-md p-2 text-xs shadow-lg">
-      <p className="text-panel-muted mb-1">{fmtTs(label, range)}</p>
-      {payload.map(p => (
-        <p key={p.dataKey} style={{ color: p.color }} className="leading-5">
-          {p.name}: <span className="font-medium">{p.value?.toFixed(1)}%</span>
-        </p>
-      ))}
-    </div>
-  );
-};
-
 // ── Haupt-Komponente ─────────────────────────────────────────────────────────
 export default function Dashboard({ liveStats }) {
   const navigate = useNavigate();
   const { hideLocal } = useAuth();
 
   // Lokaler Server
-  const [localInfo,   setLocalInfo]   = useState(null);
-  const [ltRange,     setLtRange]     = useState('24h');
-  const [ltData,      setLtData]      = useState([]);
-  const [ltLoading,   setLtLoading]   = useState(false);
-  const [liveHistory, setLiveHistory] = useState([]);
-  const [alertThresholds, setAlertThresholds] = useState([]);
-  const ltRangeRef = useRef(ltRange);
-  ltRangeRef.current = ltRange;
+  const [localInfo, setLocalInfo] = useState(null);
 
   // Remote Agents
   const [agents,      setAgents]      = useState([]);
@@ -218,7 +171,6 @@ export default function Dashboard({ liveStats }) {
   // ── Initial-Daten ────────────────────────────────────────────────────────
   useEffect(() => {
     axios.get('/api/system/stats').then(r => setLocalInfo(r.data)).catch(() => {});
-    axios.get('/api/alerts/rules').then(r => setAlertThresholds(r.data || [])).catch(() => {});
     axios.get('/api/agents').then(r => setAgents(r.data)).catch(() => {});
   }, []);
 
@@ -245,47 +197,6 @@ export default function Dashboard({ liveStats }) {
     return () => clearInterval(t);
   }, [agents, pollAgents]);
 
-  // ── Live-History für lokalen Server (WS) ────────────────────────────────
-  useEffect(() => {
-    if (!liveStats) return;
-    setLiveHistory(h => [...h.slice(-29), {
-      t:   new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-      cpu: liveStats.cpu,
-      mem: liveStats.memory?.usedPercent,
-    }]);
-    // 1h-Langzeit live aktualisieren
-    if (ltRangeRef.current === '1h') {
-      const now = Math.floor(Date.now() / 1000);
-      setLtData(prev => {
-        if (prev.at(-1)?.t === now) return prev;
-        return [...prev.slice(-359), {
-          t:    now,
-          cpu:  liveStats.cpu,
-          mem:  liveStats.memory?.usedPercent ?? 0,
-          disk: prev.at(-1)?.disk ?? null,
-        }];
-      });
-    }
-  }, [liveStats]);
-
-  // ── Langzeit-Daten laden ─────────────────────────────────────────────────
-  const loadLongterm = useCallback(async (range) => {
-    setLtLoading(true);
-    try {
-      const { data } = await axios.get(`/api/metrics?range=${range}`);
-      setLtData(data.rows || []);
-    } catch {}
-    setLtLoading(false);
-  }, []);
-
-  useEffect(() => { loadLongterm(ltRange); }, [ltRange, loadLongterm]);
-
-  useEffect(() => {
-    if (ltRange === '1h') return;
-    const t = setInterval(() => loadLongterm(ltRangeRef.current), 10_000);
-    return () => clearInterval(t);
-  }, [ltRange, loadLongterm]);
-
   // ── Lokaler Server: kombinierte Stats ───────────────────────────────────
   const localCpu    = liveStats?.cpu ?? localInfo?.cpu?.usage ?? 0;
   const localMemPct = liveStats?.memory?.usedPercent ?? localInfo?.memory?.usedPercent ?? 0;
@@ -296,20 +207,6 @@ export default function Dashboard({ liveStats }) {
         memory: { ...localInfo.memory, usedPercent: localMemPct },
       }
     : null;
-
-  // ── Schwellenwert-Linien ─────────────────────────────────────────────────
-  const thresholdLines = alertThresholds
-    .filter(r => r.enabled && r.condition === 'gt')
-    .map(r => ({
-      metric: r.metric,
-      value:  r.threshold,
-      name:   r.name,
-      color:  r.threshold >= 90 ? '#f85149' : r.threshold >= 75 ? '#e3b341' : '#388bfd',
-    }));
-  const cpuThresholds  = thresholdLines.filter(t => t.metric === 'cpu');
-  const memThresholds  = thresholdLines.filter(t => t.metric === 'memory');
-  const diskThresholds = thresholdLines.filter(t => t.metric === 'disk');
-  const showDefaultLine = thresholdLines.length === 0;
 
   // ── Zusammenfassung ──────────────────────────────────────────────────────
   const totalServers  = (hideLocal ? 0 : 1) + agents.length;
@@ -372,82 +269,6 @@ export default function Dashboard({ liveStats }) {
           />
         ))}
       </div>
-
-      {/* ── Langzeit-Monitoring (Lokaler Server, nur wenn sichtbar) ────── */}
-      {!hideLocal && <Card title={
-        <div className="flex items-center justify-between w-full gap-3">
-          <div>
-            <span>Langzeit-Monitoring</span>
-            <span className="ml-2 text-xs font-normal text-panel-muted">Panel-Server</span>
-          </div>
-          <div className="flex gap-1">
-            {RANGES.map(r => (
-              <button key={r.key} onClick={() => setLtRange(r.key)}
-                className={`px-2 py-0.5 rounded text-xs transition-colors ${
-                  ltRange === r.key
-                    ? 'bg-panel-accent text-white'
-                    : 'text-panel-muted hover:text-panel-text'
-                }`}>
-                {r.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      }>
-        {ltLoading && ltData.length === 0 ? (
-          <div className="text-panel-muted text-xs text-center py-8">Lade...</div>
-        ) : ltData.length < 2 ? (
-          <div className="text-panel-muted text-xs text-center py-8">
-            Noch zu wenig Daten — Aufzeichnung läuft alle 10 Sekunden
-          </div>
-        ) : (
-          <ResponsiveContainer width="100%" height={220}>
-            <ComposedChart data={ltData} margin={{ top: 8, right: 4, bottom: 0, left: -10 }}>
-              <defs>
-                <linearGradient id="ltcpu" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%"  stopColor="#388bfd" stopOpacity={0.25} />
-                  <stop offset="95%" stopColor="#388bfd" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="ltmem" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%"  stopColor="#3fb950" stopOpacity={0.25} />
-                  <stop offset="95%" stopColor="#3fb950" stopOpacity={0} />
-                </linearGradient>
-                <linearGradient id="ltdisk" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%"  stopColor="#e3b341" stopOpacity={0.2} />
-                  <stop offset="95%" stopColor="#e3b341" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#30363d" />
-              <XAxis dataKey="t" tickFormatter={t => fmtTs(t, ltRange)}
-                tick={{ fill: '#8b949e', fontSize: 10 }} interval="preserveStartEnd" />
-              <YAxis domain={[0, 100]} tick={{ fill: '#8b949e', fontSize: 10 }} unit="%" />
-              <Tooltip content={<CustomTooltip range={ltRange} />} />
-              <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '4px' }} />
-
-              {showDefaultLine && (
-                <ReferenceLine y={80} stroke="#f85149" strokeDasharray="4 4" strokeWidth={1}
-                  label={{ value: '80%', position: 'insideTopRight', fill: '#f85149', fontSize: 10 }} />
-              )}
-              {[...cpuThresholds, ...memThresholds, ...diskThresholds].map(t => (
-                <ReferenceLine key={`${t.metric}-${t.value}`} y={t.value}
-                  stroke={t.color} strokeDasharray="4 4" strokeWidth={1}
-                  label={{ value: `${t.name} (${t.value}%)`, position: 'insideTopLeft', fill: t.color, fontSize: 9 }} />
-              ))}
-
-              <Area type="monotone" dataKey="cpu"  name="CPU"  stroke="#388bfd" fill="url(#ltcpu)"  strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} />
-              <Area type="monotone" dataKey="mem"  name="RAM"  stroke="#3fb950" fill="url(#ltmem)"  strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} />
-              <Area type="monotone" dataKey="disk" name="Disk" stroke="#e3b341" fill="url(#ltdisk)" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} />
-
-              <Brush
-                dataKey="t" height={20} travellerWidth={6}
-                tickFormatter={t => fmtTs(t, ltRange)}
-                stroke="#30363d" fill="#161b22"
-                travellerStyle={{ fill: '#388bfd', stroke: '#388bfd' }}
-              />
-            </ComposedChart>
-          </ResponsiveContainer>
-        )}
-      </Card>}
 
     </div>
   );
