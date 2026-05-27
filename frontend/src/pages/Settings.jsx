@@ -137,7 +137,13 @@ export default function Settings() {
       await loadPasskeys();
       feedback('passkey', 'ok', `Passkey "${name}" erfolgreich registriert`);
     } catch (err) {
-      feedback('passkey', 'err', err.response?.data?.error || err.message || 'Registrierung fehlgeschlagen');
+      const raw = err?.response?.data?.error || err?.message || '';
+      // NotAllowedError = User hat den Dialog geschlossen / Windows-Dialog erschien
+      const isNotAllowed = /not allowed|timed out|NotAllowedError/i.test(raw);
+      const msg = isNotAllowed
+        ? 'Dialog geschlossen oder Windows-Dialog erschienen. Enpass muss in Chrome als Passkey-Anbieter aktiv sein: chrome://settings/passkeys'
+        : (raw || 'Registrierung fehlgeschlagen');
+      feedback('passkey', 'err', msg);
     }
     busy('passkey', false);
   };
@@ -327,19 +333,20 @@ export default function Settings() {
             </p>
 
             {/* Hinweis für externe Passwort-Manager */}
-            <div className="rounded-md border border-panel-border/60 bg-panel-surface px-3 py-2.5 space-y-1">
-              <p className="text-[11px] font-medium text-panel-text">Externer Passwort-Manager (Enpass, Bitwarden, …)</p>
-              <p className="text-[11px] text-panel-muted leading-snug">
-                Damit Enpass o.ä. im Browser-Dialog erscheint, muss er als Standard-Passkey-Anbieter
-                in Chrome konfiguriert sein:
+            <div className="rounded-md border border-panel-accent/30 bg-panel-accent/5 px-3 py-2.5 space-y-1.5">
+              <p className="text-[11px] font-semibold text-panel-accent">
+                Enpass / Bitwarden als Passkey-Anbieter aktivieren
               </p>
-              <p className="text-[11px] font-mono bg-panel-card border border-panel-border rounded px-2 py-1 text-panel-accent select-all">
-                chrome://settings/passkeys
-              </p>
-              <p className="text-[11px] text-panel-muted leading-snug">
-                Dort unter <span className="text-panel-text">„Passwort-Manager"</span> den gewünschten Anbieter auswählen.
-                Anschließend erscheint er beim nächsten Registrierungsversuch im Browser-Dialog.
-              </p>
+              <ol className="text-[11px] text-panel-muted leading-relaxed list-none space-y-1">
+                <li><span className="text-panel-text font-medium">1.</span> In Chrome diese Adresse öffnen:</li>
+                <li>
+                  <span className="font-mono bg-panel-card border border-panel-border rounded px-2 py-0.5 text-panel-accent select-all">
+                    chrome://settings/passkeys
+                  </span>
+                </li>
+                <li><span className="text-panel-text font-medium">2.</span> Unter <span className="text-panel-text">„Passwort-Manager"</span> → <span className="text-panel-text">Enpass</span> auswählen</li>
+                <li><span className="text-panel-text font-medium">3.</span> Dann hier auf <span className="text-panel-text">„Registrieren"</span> klicken → Chrome zeigt seinen eigenen Dialog (nicht Windows)</li>
+              </ol>
             </div>
 
             {/* Registrierte Passkeys */}
