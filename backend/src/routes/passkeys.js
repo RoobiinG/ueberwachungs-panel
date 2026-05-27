@@ -71,9 +71,10 @@ router.get('/register/start', async (req, res) => {
       transports: ['internal', 'hybrid'],
     })),
     authenticatorSelection: {
-      authenticatorAttachment: 'cross-platform',
-      residentKey:             'preferred',
-      userVerification:        'preferred',
+      // Kein authenticatorAttachment-Zwang → Browser zeigt alle verfügbaren
+      // Provider (Windows Hello, Enpass, Bitwarden, Hardware-Key, …)
+      residentKey:      'preferred',
+      userVerification: 'preferred',
     },
   });
 

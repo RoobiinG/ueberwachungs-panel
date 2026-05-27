@@ -50,7 +50,8 @@ export default function Settings() {
   const [showSmtpPw, setShowSmtpPw] = useState(false);
 
   // Passkeys
-  const [passkeys, setPasskeys] = useState([]);
+  const [passkeys,     setPasskeys]     = useState([]);
+  const [passkeyName,  setPasskeyName]  = useState('');
 
   // ── Laden ─────────────────────────────────────────────────────────────────
 
@@ -130,9 +131,11 @@ export default function Settings() {
       const { startRegistration } = await import('@simplewebauthn/browser');
       const optRes   = await axios.get('/api/passkeys/register/start');
       const attResp  = await startRegistration({ optionsJSON: optRes.data });
-      await axios.post('/api/passkeys/register/finish', { registration: attResp, name: 'Passkey' });
+      const name     = passkeyName.trim() || 'Passkey';
+      await axios.post('/api/passkeys/register/finish', { registration: attResp, name });
+      setPasskeyName('');
       await loadPasskeys();
-      feedback('passkey', 'ok', 'Passkey erfolgreich registriert');
+      feedback('passkey', 'ok', `Passkey "${name}" erfolgreich registriert`);
     } catch (err) {
       feedback('passkey', 'err', err.response?.data?.error || err.message || 'Registrierung fehlgeschlagen');
     }
@@ -320,8 +323,26 @@ export default function Settings() {
         <Card title={<span className="flex items-center gap-2"><ShieldCheck size={14} />Passkeys (WebAuthn)</span>}>
           <div className="space-y-3">
             <p className="text-xs text-panel-muted">
-              Passkeys ermöglichen passwortlosen Login per Fingerabdruck, Face ID oder Hardware-Key.
+              Passkeys ermöglichen passwortlosen Login per Fingerabdruck, Face ID, Hardware-Key oder Passwort-Manager.
             </p>
+
+            {/* Hinweis für externe Passwort-Manager */}
+            <div className="rounded-md border border-panel-border/60 bg-panel-surface px-3 py-2.5 space-y-1">
+              <p className="text-[11px] font-medium text-panel-text">Externer Passwort-Manager (Enpass, Bitwarden, …)</p>
+              <p className="text-[11px] text-panel-muted leading-snug">
+                Damit Enpass o.ä. im Browser-Dialog erscheint, muss er als Standard-Passkey-Anbieter
+                in Chrome konfiguriert sein:
+              </p>
+              <p className="text-[11px] font-mono bg-panel-card border border-panel-border rounded px-2 py-1 text-panel-accent select-all">
+                chrome://settings/passkeys
+              </p>
+              <p className="text-[11px] text-panel-muted leading-snug">
+                Dort unter <span className="text-panel-text">„Passwort-Manager"</span> den gewünschten Anbieter auswählen.
+                Anschließend erscheint er beim nächsten Registrierungsversuch im Browser-Dialog.
+              </p>
+            </div>
+
+            {/* Registrierte Passkeys */}
             {passkeys.length > 0 ? (
               <div className="divide-y divide-panel-border -mx-4">
                 {passkeys.map(pk => (
@@ -339,10 +360,22 @@ export default function Settings() {
             ) : (
               <p className="text-xs text-panel-muted">Keine Passkeys registriert</p>
             )}
-            <Button onClick={registerPasskey} disabled={loading.passkey} size="sm">
-              <Key size={13} className="mr-1" />
-              {loading.passkey ? 'Warte auf Gerät…' : 'Passkey registrieren'}
-            </Button>
+
+            {/* Name + Button */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={passkeyName}
+                onChange={e => setPasskeyName(e.target.value)}
+                placeholder="Name (z. B. Enpass, YubiKey …)"
+                maxLength={60}
+                className="flex-1 bg-panel-surface border border-panel-border rounded-md px-3 py-1.5 text-sm text-panel-text placeholder:text-panel-muted/40 focus:outline-none focus:border-panel-accent transition-colors"
+              />
+              <Button onClick={registerPasskey} disabled={loading.passkey} size="sm">
+                <Key size={13} className="mr-1" />
+                {loading.passkey ? 'Warte…' : 'Registrieren'}
+              </Button>
+            </div>
             <Msg msg={msgs.passkey} />
           </div>
         </Card>
