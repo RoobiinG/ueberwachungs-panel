@@ -56,32 +56,25 @@ router.post('/keys/import', requirePermission('ssh.manage'), (req, res) => {
     // ── PuTTY PPK-Format (v2 & v3) ────────────────────────────────────────
     if (trimmed.startsWith('PuTTY-User-Key-File-')) {
       // Verschlüsselten PPK ablehnen
-      const encLine = trimmed.split(/\r?\n/).find(l => l.startsWith('Encryption:'));
-      const encryption = encLine?.split(':')[1]?.trim();
-      if (encryption && encryption !== 'none') {
+      const lines = trimmed.split(/\r?\n/);
+      const encLine = lines.find(l => l.startsWith('Encryption:'));
+      const encryption = encLine ? encLine.slice('Encryption:'.length).trim() : 'none';
+      if (encryption !== 'none') {
         return res.status(400).json({
-          error: 'Der PPK-Key ist passwortgeschützt. Bitte in PuTTYgen den Key laden, ' +
-                 'das Passwort entfernen (Key → Change passphrase) und erneut speichern.',
+          error: 'Der PPK-Key ist passwortgeschützt. Bitte in PuTTYgen: Key → Change passphrase → leer lassen → OK.',
         });
       }
 
-      // Public Key aus PPK ableiten (für Anzeige) — ssh2 kann PPK nativ parsen
-      let pubKeyStr = '';
-      try {
-        let parsed = sshUtils.parseKey(trimmed);
-        if (Array.isArray(parsed)) parsed = parsed[0];
-        if (parsed && !(parsed instanceof Error) && typeof parsed.getPublicSSH === 'function') {
-          const pub = parsed.getPublicSSH().toString('base64');
-          if (pub) pubKeyStr = `${parsed.type} ${pub}`;
-        }
-      } catch {}
+      // Algorithmus aus erster Zeile lesen (für Anzeige in der Key-Liste)
+      const algoMatch = lines[0].match(/^PuTTY-User-Key-File-\d+:\s*(.+)$/);
+      const algo = algoMatch ? algoMatch[1].trim() : 'ssh-key';
 
-      // PPK-Inhalt verschlüsselt speichern — ssh2 kann ihn direkt beim Verbinden nutzen
+      // PPK direkt verschlüsselt speichern — kein parseKey, ssh2 nutzt ihn nativ beim Verbinden
       const enc = encrypt(trimmed);
       const result = db.prepare(
         'INSERT INTO ssh_keys (user_id, label, public_key, private_key) VALUES (?, ?, ?, ?)'
-      ).run(req.user.id, label.trim(), pubKeyStr, enc);
-      return res.status(201).json({ id: result.lastInsertRowid, label: label.trim(), public_key: pubKeyStr });
+      ).run(req.user.id, label.trim(), `ppk:${algo}`, enc);
+      return res.status(201).json({ id: result.lastInsertRowid, label: label.trim(), public_key: `ppk:${algo}` });
     }
 
     // ── OpenSSH / PEM-Format ──────────────────────────────────────────────
