@@ -12,7 +12,7 @@ const { promisify } = require('util');
 const fs = require('fs');
 
 const execAsync = promisify(exec);
-const VERSION = '2.2.0';
+const VERSION = '2.3.0';
 const REPO_RAW = 'https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master/agent/panel-agent.js';
 const PORT  = parseInt(process.env.PANEL_AGENT_PORT || '7331');
 const TOKEN = process.env.PANEL_AGENT_TOKEN || '';
@@ -94,6 +94,45 @@ function getOsInfo() {
   return info;
 }
 
+// ─── Netzwerk-Cache (Hintergrund-Messung alle 5 s) ───────────────────────────
+
+let _netCache = [];
+
+function readProcNet() {
+  const lines = fs.readFileSync('/proc/net/dev', 'utf8').split('\n').slice(2);
+  const out = {};
+  for (const line of lines) {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length < 10) continue;
+    const iface = parts[0].replace(':', '');
+    out[iface] = { rx: parseInt(parts[1]) || 0, tx: parseInt(parts[9]) || 0 };
+  }
+  return out;
+}
+
+async function updateNetCache() {
+  try {
+    const s1 = readProcNet();
+    await sleep(1000);
+    const s2 = readProcNet();
+    _netCache = Object.entries(s2)
+      .filter(([iface]) => iface !== 'lo')
+      .map(([iface, v]) => ({
+        iface,
+        rxSec:    Math.max(0, v.rx - (s1[iface]?.rx || 0)),
+        txSec:    Math.max(0, v.tx - (s1[iface]?.tx || 0)),
+        rxBytes:  v.rx,
+        txBytes:  v.tx,
+      }));
+  } catch { _netCache = []; }
+}
+
+// Sofort starten, dann alle 5 Sekunden wiederholen
+updateNetCache();
+setInterval(updateNetCache, 5000);
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 async function getStats() {
   const [cpu, disk] = await Promise.all([cpuUsage(), getDisk()]);
   const total = os.totalmem(), free = os.freemem(), used = total - free;
@@ -102,7 +141,7 @@ async function getStats() {
     memory: { total, used, free, usedPercent: Math.round(used / total * 100) },
     disk,
     os: getOsInfo(),
-    network: [],
+    network: _netCache,
   };
 }
 
@@ -312,23 +351,12 @@ function getNetworkInterfaces() {
   return result;
 }
 
-// Netzwerk-Traffic aus /proc/net/dev (2× lesen, Rate berechnen)
+// Netzwerk-Traffic — Live-Messung (für /network/stats, 1s Messfenster)
 async function getNetworkStats() {
   try {
-    const readNet = () => {
-      const lines = fs.readFileSync('/proc/net/dev', 'utf8').split('\n').slice(2);
-      const out = {};
-      for (const line of lines) {
-        const parts = line.trim().split(/\s+/);
-        if (parts.length < 10) continue;
-        const iface = parts[0].replace(':', '');
-        out[iface] = { rx: parseInt(parts[1]) || 0, tx: parseInt(parts[9]) || 0 };
-      }
-      return out;
-    };
-    const s1 = readNet();
+    const s1 = readProcNet();
     await sleep(1000);
-    const s2 = readNet();
+    const s2 = readProcNet();
     return Object.entries(s2)
       .filter(([iface]) => iface !== 'lo')
       .map(([iface, v]) => ({
