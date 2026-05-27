@@ -1,7 +1,8 @@
 const express = require('express');
 const router  = express.Router();
 const db      = require('../db');
-const { decrypt } = require('../utils/keyEncryption');
+const { decrypt }           = require('../utils/keyEncryption');
+const { resolveKeyForSsh2 } = require('../utils/sshKeyHelper');
 const { requirePermission } = require('../middleware/requirePermission');
 
 // ─── SSH2-Client (optional – falls nicht installiert kein Crash) ──────────────
@@ -33,7 +34,15 @@ async function getHostConfig(hostId, userId) {
     const keyRow = db.prepare('SELECT private_key FROM ssh_keys WHERE id = ? AND user_id = ?')
       .get(host.ssh_key_id, userId);
     if (keyRow) {
-      try { cfg.privateKey = decrypt(keyRow.private_key); } catch {}
+      try {
+        const raw = decrypt(keyRow.private_key);
+        // PPK (PuTTY) muss geparst werden — roher PPK-String wird von ssh2 abgelehnt
+        const { key, error } = resolveKeyForSsh2(raw);
+        if (error) throw Object.assign(new Error(error), { status: 400 });
+        cfg.privateKey = key;
+      } catch (err) {
+        throw Object.assign(new Error(`SSH-Key Fehler: ${err.message}`), { status: err.status || 500 });
+      }
     }
   }
 

@@ -2,7 +2,8 @@ let Client;
 try { Client = require('ssh2').Client; } catch {}
 
 const db      = require('./db');
-const { decrypt } = require('./utils/keyEncryption');
+const { decrypt }           = require('./utils/keyEncryption');
+const { resolveKeyForSsh2 } = require('./utils/sshKeyHelper');
 
 // Map<ws, { conn: ssh2.Client, stream: ssh2.Channel }>
 const sessions = new Map();
@@ -25,8 +26,13 @@ async function connect(ws, hostId, userId) {
   if (host.auth_type === 'key' && host.ssh_key_id) {
     const keyRow = db.prepare('SELECT private_key FROM ssh_keys WHERE id = ? AND user_id = ?').get(host.ssh_key_id, userId);
     if (!keyRow) return sendToClient(ws, 'ssh_error', { message: 'SSH-Key nicht gefunden' });
-    try { privateKey = decrypt(keyRow.private_key); }
+    let raw;
+    try { raw = decrypt(keyRow.private_key); }
     catch { return sendToClient(ws, 'ssh_error', { message: 'SSH-Key konnte nicht entschlüsselt werden' }); }
+    // PPK (PuTTY) muss geparst werden — roher PPK-String wird von ssh2 abgelehnt
+    const { key, error } = resolveKeyForSsh2(raw);
+    if (error) return sendToClient(ws, 'ssh_error', { message: error });
+    privateKey = key;
   }
 
   const conn = new Client();
