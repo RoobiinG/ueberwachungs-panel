@@ -672,12 +672,12 @@ export default function SSH() {
               onChange={e => setImportForm(f => ({ ...f, privateKey: e.target.value }))}
               rows={8}
               spellCheck={false}
-              placeholder={`-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----`}
+              placeholder={`OpenSSH PEM:\n-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----\n\nOder PuTTY PPK:\nPuTTY-User-Key-File-2: ssh-rsa\n...`}
               className={`${inputCls} font-mono text-xs resize-none`}
             />
           </div>
           <p className="text-xs text-panel-muted">
-            Der Private Key wird AES-256-GCM-verschlüsselt gespeichert.
+            Unterstützt: OpenSSH PEM und PuTTY PPK (v2 &amp; v3, ohne Passwort). Wird AES-256-GCM-verschlüsselt gespeichert.
           </p>
         </div>
       </Modal>

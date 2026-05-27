@@ -44,32 +44,65 @@ router.post('/keys/generate', requirePermission('ssh.manage'), async (req, res) 
   }
 });
 
-// Eigenen Private Key importieren
+// Eigenen Private Key importieren — unterstützt OpenSSH PEM und PuTTY PPK (v2 & v3)
 router.post('/keys/import', requirePermission('ssh.manage'), (req, res) => {
   const { label = 'Importierter Key', privateKey } = req.body;
   if (!privateKey) return res.status(400).json({ error: 'privateKey erforderlich' });
   if (!sshUtils) return res.status(503).json({ error: 'ssh2 nicht verfügbar' });
 
   try {
-    // Key-Format validieren — parseKey kann Error, null, Objekt oder Array zurückgeben
-    let parsed = sshUtils.parseKey(privateKey.trim());
+    const trimmed = privateKey.trim();
+
+    // ── PuTTY PPK-Format (v2 & v3) ────────────────────────────────────────
+    if (trimmed.startsWith('PuTTY-User-Key-File-')) {
+      // Verschlüsselten PPK ablehnen
+      const encLine = trimmed.split(/\r?\n/).find(l => l.startsWith('Encryption:'));
+      const encryption = encLine?.split(':')[1]?.trim();
+      if (encryption && encryption !== 'none') {
+        return res.status(400).json({
+          error: 'Der PPK-Key ist passwortgeschützt. Bitte in PuTTYgen den Key laden, ' +
+                 'das Passwort entfernen (Key → Change passphrase) und erneut speichern.',
+        });
+      }
+
+      // Public Key aus PPK ableiten (für Anzeige) — ssh2 kann PPK nativ parsen
+      let pubKeyStr = '';
+      try {
+        let parsed = sshUtils.parseKey(trimmed);
+        if (Array.isArray(parsed)) parsed = parsed[0];
+        if (parsed && !(parsed instanceof Error) && typeof parsed.getPublicSSH === 'function') {
+          const pub = parsed.getPublicSSH().toString('base64');
+          if (pub) pubKeyStr = `${parsed.type} ${pub}`;
+        }
+      } catch {}
+
+      // PPK-Inhalt verschlüsselt speichern — ssh2 kann ihn direkt beim Verbinden nutzen
+      const enc = encrypt(trimmed);
+      const result = db.prepare(
+        'INSERT INTO ssh_keys (user_id, label, public_key, private_key) VALUES (?, ?, ?, ?)'
+      ).run(req.user.id, label.trim(), pubKeyStr, enc);
+      return res.status(201).json({ id: result.lastInsertRowid, label: label.trim(), public_key: pubKeyStr });
+    }
+
+    // ── OpenSSH / PEM-Format ──────────────────────────────────────────────
+    let parsed = sshUtils.parseKey(trimmed);
 
     // Mehrere Keys in einer Datei → ersten nehmen
     if (Array.isArray(parsed)) parsed = parsed[0] ?? null;
 
     if (!parsed) {
-      return res.status(400).json({ error: 'Key-Format nicht erkannt' });
+      return res.status(400).json({ error: 'Key-Format nicht erkannt. Unterstützt: OpenSSH PEM und PuTTY PPK.' });
     }
     if (parsed instanceof Error) {
-      // Verschlüsselter Key: sprechende Fehlermeldung
       const msg = parsed.message || '';
       if (/passphrase|encrypt/i.test(msg)) {
-        return res.status(400).json({ error: 'Der Key ist passwortgeschützt. Bitte erst mit ssh-keygen entschlüsseln: ssh-keygen -p -f <keyfile>' });
+        return res.status(400).json({
+          error: 'Der Key ist passwortgeschützt. Bitte erst entschlüsseln: ssh-keygen -p -f <keyfile>',
+        });
       }
       return res.status(400).json({ error: `Ungültiger SSH-Key: ${msg}` });
     }
 
-    // Public Key ableiten (optional — kein Fehler wenn nicht möglich)
     let pubKeyStr = '';
     try {
       if (typeof parsed.getPublicSSH === 'function') {
@@ -78,10 +111,10 @@ router.post('/keys/import', requirePermission('ssh.manage'), (req, res) => {
       }
     } catch {}
 
-    const privateKeyEnc = encrypt(privateKey.trim());
+    const enc = encrypt(trimmed);
     const result = db.prepare(
       'INSERT INTO ssh_keys (user_id, label, public_key, private_key) VALUES (?, ?, ?, ?)'
-    ).run(req.user.id, label.trim(), pubKeyStr, privateKeyEnc);
+    ).run(req.user.id, label.trim(), pubKeyStr, enc);
     res.status(201).json({ id: result.lastInsertRowid, label: label.trim(), public_key: pubKeyStr });
   } catch (err) {
     res.status(500).json({ error: `Import fehlgeschlagen: ${err.message}` });
