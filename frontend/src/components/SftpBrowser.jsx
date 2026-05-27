@@ -110,7 +110,17 @@ export default function SftpBrowser({ host }) {
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
-      setError(err.response?.data?.error || 'Download fehlgeschlagen');
+      // Fix #8: Bei responseType:'blob' ist err.response.data ein Blob, kein Objekt
+      let msg = 'Download fehlgeschlagen';
+      try {
+        if (err.response?.data instanceof Blob) {
+          const text = await err.response.data.text();
+          msg = JSON.parse(text).error || msg;
+        } else {
+          msg = err.response?.data?.error || err.message || msg;
+        }
+      } catch {}
+      setError(msg);
     }
   };
 
@@ -138,8 +148,10 @@ export default function SftpBrowser({ host }) {
 
   // ── Drag & Drop ────────────────────────────────────────────────────────────
 
-  const handleDragOver = (e) => { e.preventDefault(); setDragOver(true); };
-  const handleDragLeave = ()  => setDragOver(false);
+  const handleDragOver  = (e) => { e.preventDefault(); if (!dragOver) setDragOver(true); };
+  // Fix #10: dragLeave nur auslösen wenn der Cursor wirklich das Element verlässt
+  //          (nicht bei Kind-Elementen, die sonst fälschlich leave auslösen)
+  const handleDragLeave = (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(false); };
   const handleDrop = (e) => {
     e.preventDefault();
     setDragOver(false);
@@ -152,6 +164,11 @@ export default function SftpBrowser({ host }) {
   const commitMkdir = async () => {
     const name = mkdirValue.trim();
     if (!name) { setMkdirMode(false); return; }
+    // Fix #9: Pfad-Traversal und Slash im Namen verhindern
+    if (name === '.' || name === '..' || name.includes('/')) {
+      setError('Ungültiger Ordnername (kein ".", ".." oder "/" erlaubt)');
+      return;
+    }
     setError('');
     try {
       await axios.post('/api/sftp/mkdir', { hostId: host.id, path: joinPath(path, name) });
@@ -190,6 +207,11 @@ export default function SftpBrowser({ host }) {
     const newName = renameValue.trim();
     setRenamingName(null);
     if (!newName || newName === entry.name) return;
+    // Fix #9: Pfad-Traversal und Slash im Namen verhindern
+    if (newName === '.' || newName === '..' || newName.includes('/')) {
+      setError('Ungültiger Name (kein ".", ".." oder "/" erlaubt)');
+      return;
+    }
     setError('');
     try {
       await axios.post('/api/sftp/rename', {
