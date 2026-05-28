@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+import { useLiveInterval } from '../hooks/useLiveInterval';
 
 // ── Hilfsfunktionen ──────────────────────────────────────────────────────────
 
@@ -245,6 +246,7 @@ function ServerCard({ name, stats, online, isLocal, docker, onNavigate }) {
 export default function Dashboard({ liveStats }) {
   const navigate  = useNavigate();
   const { hideLocal } = useAuth();
+  const liveInterval = useLiveInterval();
 
   const [localInfo,   setLocalInfo]   = useState(null);
   const [agents,      setAgents]      = useState([]);
@@ -276,9 +278,9 @@ export default function Dashboard({ liveStats }) {
   useEffect(() => {
     if (!agents.length) return;
     pollAgents(agents);
-    const t = setInterval(() => pollAgents(agents), 15_000);
+    const t = setInterval(() => pollAgents(agents), liveInterval);
     return () => clearInterval(t);
-  }, [agents, pollAgents]);
+  }, [agents, pollAgents, liveInterval]);
 
   // ── Lokaler Server: Live-Stats einmischen ──────────────────────────────────
   const localCpu    = liveStats?.cpu ?? localInfo?.cpu?.usage ?? 0;

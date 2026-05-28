@@ -6,8 +6,9 @@ import { useAuth } from '../context/AuthContext';
 import {
   Cloud, Server, Eye, EyeOff, CheckCircle, XCircle,
   RefreshCw, Trash2, Lock, Mail, Key, ShieldCheck, Send,
-  User, Settings2, Layers,
+  User, Settings2, Layers, Timer,
 } from 'lucide-react';
+import { invalidateLiveIntervalCache } from '../hooks/useLiveInterval';
 
 const inputCls = 'w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:border-panel-accent transition-colors';
 
@@ -53,6 +54,9 @@ export default function Settings() {
   const [passkeys,     setPasskeys]     = useState([]);
   const [passkeyName,  setPasskeyName]  = useState('');
 
+  // Live-Refresh-Interval
+  const [liveInterval,    setLiveInterval]    = useState(15);
+
   // Dockhand
   const [dockhandUrl,      setDockhandUrl]      = useState('');
   const [dockhandToken,    setDockhandToken]    = useState('');
@@ -68,6 +72,11 @@ export default function Settings() {
     try {
       const { data } = await axios.get('/api/settings');
       setStatus(data);
+      // Live-Interval laden
+      try {
+        const { data: g } = await axios.get('/api/settings/general');
+        setLiveInterval(Math.round((g.liveRefreshInterval || 15000) / 1000));
+      } catch {}
       if (data.mchost_username) setMcUsername(data.mchost_username);
       if (data.smtp_host)  setSmtp(s => ({ ...s, host:   data.smtp_host  || '' }));
       if (data.smtp_port)  setSmtp(s => ({ ...s, port:   data.smtp_port  || 587 }));
@@ -305,6 +314,20 @@ export default function Settings() {
       feedback('dockhand', 'err', err.response?.data?.error || 'Fehler');
     }
     busy('dockhand_save', false);
+  };
+
+  const saveLiveInterval = async () => {
+    const secs = Math.max(5, Math.min(300, parseInt(liveInterval, 10) || 15));
+    setLiveInterval(secs);
+    busy('liveInterval', true);
+    try {
+      await axios.put('/api/settings/general', { liveRefreshInterval: secs });
+      invalidateLiveIntervalCache(); // Hook-Cache leeren → nächste Seite lädt neuen Wert
+      feedback('liveInterval', 'ok', `Interval gespeichert: alle ${secs} Sekunden`);
+    } catch (err) {
+      feedback('liveInterval', 'err', err.response?.data?.error || 'Fehler');
+    }
+    busy('liveInterval', false);
   };
 
   const saveAgentEnv = async (agentId, envId) => {
@@ -651,6 +674,31 @@ export default function Settings() {
             )}
 
             <Msg msg={msgs.dockhand} />
+          </div>
+        </Card>
+
+        {/* ── Live-Refresh-Intervall ── */}
+        <Card title={<span className="flex items-center gap-2"><Timer size={14} />Live-Refresh-Intervall</span>}>
+          <div className="space-y-3">
+            <p className="text-xs text-panel-muted">
+              Wie oft Agent-Detail- und Dashboard-Seiten automatisch aktualisieren (5–300 Sekunden).
+            </p>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                min={5}
+                max={300}
+                value={liveInterval}
+                onChange={e => setLiveInterval(e.target.value)}
+                onBlur={() => setLiveInterval(v => Math.max(5, Math.min(300, parseInt(v, 10) || 15)))}
+                className={inputCls + ' w-28'}
+              />
+              <span className="text-sm text-panel-muted">Sekunden</span>
+            </div>
+            <Button onClick={saveLiveInterval} disabled={loading.liveInterval} size="sm">
+              Speichern
+            </Button>
+            <Msg msg={msgs.liveInterval} />
           </div>
         </Card>
 

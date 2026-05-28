@@ -149,4 +149,23 @@ router.post('/smtp/test', requireRole('admin'), async (req, res) => {
   }
 });
 
+// ─── Öffentliche Einstellungen (alle eingeloggten User) ──────────────────────
+
+// Gibt allgemeine, nicht-sensible Panel-Einstellungen zurück
+router.get('/general', (req, res) => {
+  const raw = parseInt(get('liveRefreshInterval') || '15', 10);
+  const secs = Math.max(5, Math.min(300, isNaN(raw) ? 15 : raw));
+  res.json({ liveRefreshInterval: secs * 1000 });
+});
+
+router.put('/general', requireRole('admin'), (req, res) => {
+  const { liveRefreshInterval } = req.body;
+  if (liveRefreshInterval !== undefined) {
+    const secs = Math.max(5, Math.min(300, parseInt(liveRefreshInterval, 10) || 15));
+    set('liveRefreshInterval', String(secs));
+    auditLog(req, 'settings.general_save', 'settings', 'liveRefreshInterval', { value: secs });
+  }
+  res.json({ success: true });
+});
+
 module.exports = (req, res, next) => router(req, res, next);

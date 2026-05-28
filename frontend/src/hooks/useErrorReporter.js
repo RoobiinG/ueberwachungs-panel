@@ -47,7 +47,6 @@ export function useErrorReporter() {
 
     // ── JS-Runtime-Fehler ────────────────────────────────────────────────────
     const onError = (event) => {
-      // Chrome/Firefox/Edge geben das Error-Objekt mit
       const msg   = event.message || 'Unbekannter JavaScript-Fehler';
       const stack = event.error?.stack ?? '';
       const src   = event.filename ? event.filename.replace(window.location.origin, '') : window.location.pathname;
@@ -62,12 +61,34 @@ export function useErrorReporter() {
     // ── Unbehandelte Promise-Rejections ──────────────────────────────────────
     const onUnhandledRejection = (event) => {
       const reason = event.reason;
-      // Axios-Fehler haben eigene Behandlung via Interceptor → überspringen
-      if (reason?.isAxiosError) return;
+      if (reason?.isAxiosError) return; // wird vom axios-Interceptor erfasst
       const msg   = reason?.message || String(reason) || 'Unhandled Promise Rejection';
       const stack = reason?.stack ?? '';
       report('Promise', msg, stack, window.location.pathname);
     };
+
+    // ── Axios-Interceptor für unerwartete API-Fehler ─────────────────────────
+    const interceptorId = axios.interceptors.response.use(
+      response => response,
+      error => {
+        const status = error.response?.status;
+        // Auth-Flows (401/403) und fehlende Ressourcen (404) sind erwartet → ignorieren
+        if (status !== 401 && status !== 403 && status !== 404) {
+          const method  = (error.config?.method || 'GET').toUpperCase();
+          const url     = error.config?.url || '';
+          const errMsg  = error.response?.data?.error
+                       ?? error.response?.data?.message
+                       ?? error.message;
+          report(
+            'API',
+            `${method} ${url} → ${status ? `HTTP ${status}` : 'Netzwerkfehler'}: ${errMsg}`,
+            null,
+            url,
+          );
+        }
+        return Promise.reject(error);
+      },
+    );
 
     window.addEventListener('error', onError);
     window.addEventListener('unhandledrejection', onUnhandledRejection);
@@ -75,6 +96,7 @@ export function useErrorReporter() {
     return () => {
       window.removeEventListener('error', onError);
       window.removeEventListener('unhandledrejection', onUnhandledRejection);
+      axios.interceptors.response.eject(interceptorId);
     };
   }, [user]);
 }

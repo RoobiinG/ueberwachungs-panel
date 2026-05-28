@@ -185,12 +185,21 @@ export default function SSH() {
 
   useWSMessage('ssh_error', (msg) => {
     setSshStatus('error');
-    setSshError(msg.message);
-    xtermRef.current?.write(`\r\n\x1b[31m[Fehler: ${msg.message}]\x1b[0m\r\n`);
+    // Sprechendere Fehlermeldung bei Authentifizierungsfehlern
+    const rawMsg = msg.message || '';
+    const isAuthFail = /all configured authentication|authentication methods failed|publickey/i.test(rawMsg);
+    const displayMsg = isAuthFail
+      ? `Schlüssel nicht autorisiert — öffentlichen Schlüssel auf dem Server in ~/.ssh/authorized_keys eintragen (Schlüssel-Kopieren-Button nutzen)`
+      : rawMsg;
+    setSshError(displayMsg);
+    xtermRef.current?.write(`\r\n\x1b[31m[Fehler: ${rawMsg}]\x1b[0m\r\n`);
+    if (isAuthFail) {
+      xtermRef.current?.write(`\x1b[33m[Tipp: Öffentlichen Schlüssel mit dem Kopieren-Button kopieren und in ~/.ssh/authorized_keys auf dem Server eintragen]\x1b[0m\r\n`);
+    }
     activeHostRef.current = null;
     setActiveHost(null);
     // Fehler global ins Panel-Log eintragen
-    addError('SSH', msg.message);
+    addError('SSH', rawMsg);
   });
 
   useWSMessage('ssh_closed', () => {
