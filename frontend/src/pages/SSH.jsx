@@ -54,8 +54,10 @@ export default function SSH() {
   const [formError,   setFormError]   = useState('');
 
   // Generierter Public Key
-  const [generatedPub, setGeneratedPub] = useState(null);
-  const [copied,        setCopied]       = useState(false);
+  const [generatedPub,   setGeneratedPub]   = useState(null);
+  const [copied,          setCopied]         = useState(false);
+  const [showPubKeyModal, setShowPubKeyModal] = useState(null); // { label, public_key }
+  const [pubKeyCopied,    setPubKeyCopied]   = useState(false);
 
   // Key-Datei-Upload
   const keyFileRef  = useRef(null);
@@ -450,10 +452,28 @@ export default function SSH() {
                   <p className="text-xs text-panel-text truncate">{key.label}</p>
                   {key.public_key && (
                     <p className="text-xs text-panel-muted font-mono truncate">
-                      {key.public_key.split(' ')[0]} ···
+                      {key.public_key.startsWith('ppk:') ? key.public_key : key.public_key.split(' ')[0] + ' ···'}
                     </p>
                   )}
                 </div>
+                <button
+                  onClick={async () => {
+                    // Public Key laden (on-the-fly extrahieren falls PPK-Platzhalter)
+                    try {
+                      const { data } = await axios.get(`/api/ssh/keys/${key.id}/public`);
+                      setShowPubKeyModal({ label: key.label, public_key: data.public_key });
+                      setPubKeyCopied(false);
+                      // Lokalen State aktualisieren
+                      setKeys(ks => ks.map(k => k.id === key.id ? { ...k, public_key: data.public_key } : k));
+                    } catch (e) {
+                      alert(e.response?.data?.error || 'Fehler beim Laden des Public Keys');
+                    }
+                  }}
+                  className="p-1 text-panel-muted hover:text-panel-accent rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Public Key anzeigen"
+                >
+                  <Copy size={11} />
+                </button>
                 <button
                   onClick={() => deleteKey(key.id)}
                   className="p-1 text-panel-muted hover:text-panel-red rounded opacity-0 group-hover:opacity-100 transition-opacity"
@@ -751,6 +771,38 @@ export default function SSH() {
           <p className="text-xs text-panel-muted">
             Unterstützt: OpenSSH PEM und PuTTY PPK (v2 &amp; v3, ohne Passwort).
             Wird AES-256-GCM-verschlüsselt gespeichert.
+          </p>
+        </div>
+      </Modal>
+
+      {/* ════ Modal: Public Key anzeigen ════ */}
+      <Modal
+        open={!!showPubKeyModal}
+        onClose={() => setShowPubKeyModal(null)}
+        title={`Public Key — ${showPubKeyModal?.label ?? ''}`}
+        footer={
+          <Button size="sm" onClick={() => {
+            navigator.clipboard.writeText(showPubKeyModal?.public_key ?? '');
+            setPubKeyCopied(true);
+            setTimeout(() => setPubKeyCopied(false), 2500);
+          }}>
+            {pubKeyCopied ? <><CheckCircle size={13} className="mr-1 text-panel-green" />Kopiert!</> : <><Copy size={13} className="mr-1" />Kopieren</>}
+          </Button>
+        }
+      >
+        <div className="space-y-3">
+          <p className="text-xs text-panel-muted">
+            Diesen Public Key in <code className="text-panel-text">~/.ssh/authorized_keys</code> auf dem Ziel-Server eintragen:
+          </p>
+          <textarea
+            readOnly
+            value={showPubKeyModal?.public_key ?? ''}
+            rows={4}
+            className={`${inputCls} font-mono text-xs resize-none`}
+          />
+          <p className="text-xs text-panel-muted">
+            Auf dem Server ausführen:{' '}
+            <code className="text-panel-text text-xs">echo "KEY" &gt;&gt; ~/.ssh/authorized_keys</code>
           </p>
         </div>
       </Modal>

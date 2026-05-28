@@ -71,6 +71,11 @@ async function connect(ws, hostId, userId) {
     port:     host.port || 22,
     username: host.username,
     readyTimeout: 10_000,
+    // Moderne RSA-Signaturen explizit aktivieren (OpenSSH deaktiviert ssh-rsa/SHA-1 standardmäßig)
+    algorithms: {
+      serverHostKey: ['ssh-ed25519', 'rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa'],
+      publicKey:     ['ssh-ed25519', 'rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa'],
+    },
   };
 
   if (privateKey) {

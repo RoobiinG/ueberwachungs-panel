@@ -65,16 +65,26 @@ router.post('/keys/import', requirePermission('ssh.manage'), (req, res) => {
         });
       }
 
-      // Algorithmus aus erster Zeile lesen (für Anzeige in der Key-Liste)
+      // Algorithmus aus erster Zeile lesen (für Anzeige als Fallback)
       const algoMatch = lines[0].match(/^PuTTY-User-Key-File-\d+:\s*(.+)$/);
       const algo = algoMatch ? algoMatch[1].trim() : 'ssh-key';
 
-      // PPK direkt verschlüsselt speichern — kein parseKey, ssh2 nutzt ihn nativ beim Verbinden
+      // PPK öffentlichen Key extrahieren (damit User ihn in authorized_keys eintragen kann)
+      const { resolveKeyForSsh2 } = require('../utils/sshKeyHelper');
+      let pubKeyStr = `ppk:${algo}`;
+      try {
+        const { key: parsed } = resolveKeyForSsh2(trimmed);
+        if (parsed && typeof parsed.getPublicSSH === 'function') {
+          const pub = parsed.getPublicSSH().toString('base64');
+          if (pub) pubKeyStr = `${parsed.type} ${pub}`;
+        }
+      } catch {}
+
       const enc = encrypt(trimmed);
       const result = db.prepare(
         'INSERT INTO ssh_keys (user_id, label, public_key, private_key) VALUES (?, ?, ?, ?)'
-      ).run(req.user.id, label.trim(), `ppk:${algo}`, enc);
-      return res.status(201).json({ id: result.lastInsertRowid, label: label.trim(), public_key: `ppk:${algo}` });
+      ).run(req.user.id, label.trim(), pubKeyStr, enc);
+      return res.status(201).json({ id: result.lastInsertRowid, label: label.trim(), public_key: pubKeyStr });
     }
 
     // ── OpenSSH / PEM-Format ──────────────────────────────────────────────
@@ -111,6 +121,36 @@ router.post('/keys/import', requirePermission('ssh.manage'), (req, res) => {
     res.status(201).json({ id: result.lastInsertRowid, label: label.trim(), public_key: pubKeyStr });
   } catch (err) {
     res.status(500).json({ error: `Import fehlgeschlagen: ${err.message}` });
+  }
+});
+
+// Öffentlichen Key abrufen (extrahiert falls PPK ohne echten public_key gespeichert)
+router.get('/keys/:id/public', requirePermission('ssh.view'), (req, res) => {
+  const key = ownKey(req.params.id, req.user.id);
+  if (!key) return res.status(404).json({ error: 'Key nicht gefunden' });
+
+  // Falls echte public_key vorhanden → direkt zurückgeben
+  if (key.public_key && !key.public_key.startsWith('ppk:')) {
+    return res.json({ public_key: key.public_key });
+  }
+
+  // Bei PPK-Platzhalter: Private Key entschlüsseln und Public Key on-the-fly extrahieren
+  try {
+    const { decrypt } = require('../utils/keyEncryption');
+    const { resolveKeyForSsh2 } = require('../utils/sshKeyHelper');
+    const raw = decrypt(key.private_key);
+    const { key: parsed, error } = resolveKeyForSsh2(raw);
+    if (error) return res.status(422).json({ error });
+    if (!parsed || typeof parsed.getPublicSSH !== 'function') {
+      return res.status(422).json({ error: 'Public Key konnte nicht extrahiert werden' });
+    }
+    const pub = parsed.getPublicSSH().toString('base64');
+    const pubKeyStr = `${parsed.type} ${pub}`;
+    // Datenbank für die Zukunft aktualisieren
+    db.prepare('UPDATE ssh_keys SET public_key = ? WHERE id = ?').run(pubKeyStr, key.id);
+    res.json({ public_key: pubKeyStr });
+  } catch (err) {
+    res.status(500).json({ error: `Fehler beim Extrahieren: ${err.message}` });
   }
 });
 
