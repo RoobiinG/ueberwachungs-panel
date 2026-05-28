@@ -12,7 +12,7 @@ const { promisify } = require('util');
 const fs = require('fs');
 
 const execAsync = promisify(exec);
-const VERSION = '2.4.0';
+const VERSION = '2.4.1';
 const REPO_RAW = 'https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master/agent/panel-agent.js';
 const PORT  = parseInt(process.env.PANEL_AGENT_PORT || '7331');
 const TOKEN = process.env.PANEL_AGENT_TOKEN || '';
@@ -385,8 +385,19 @@ const server = useTLS
   ? https.createServer({ cert: fs.readFileSync(certPath), key: fs.readFileSync(keyPath) }, handler)
   : http.createServer(handler);
 
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`FEHLER: Port ${PORT} ist bereits belegt. Läuft der Agent schon? (${err.message})`);
+  } else if (err.code === 'EACCES') {
+    console.error(`FEHLER: Keine Berechtigung für Port ${PORT}. Port < 1024 benötigt root. (${err.message})`);
+  } else {
+    console.error(`FEHLER beim Starten des Servers: ${err.message}`);
+  }
+  process.exit(1);
+});
+
 server.listen(PORT, '0.0.0.0', () => {
   const proto = useTLS ? 'HTTPS' : 'HTTP (kein Zertifikat gefunden — unsicher!)';
-  console.log(`Panel Agent [${proto}] läuft auf Port ${PORT}`);
+  console.log(`Panel Agent v${VERSION} [${proto}] läuft auf Port ${PORT}`);
   if (!TOKEN) console.warn('WARNUNG: Kein PANEL_AGENT_TOKEN gesetzt!');
 });

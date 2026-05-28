@@ -5,6 +5,7 @@ import { ErrorProvider } from './context/ErrorContext';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useErrorReporter } from './hooks/useErrorReporter';
 import { Layout } from './components/Layout/Layout';
+import ErrorBoundary from './components/ErrorBoundary';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Docker from './pages/Docker';
@@ -66,28 +67,30 @@ const AppRoutes = () => {
 
   return (
     <Layout connected={connected}>
-      <Routes>
-        <Route path="/" element={<Dashboard liveStats={liveStats} />} />
-        <Route path="/docker" element={<Docker />} />
-        <Route path="/services" element={<Services />} />
-        <Route path="/firewall" element={<Firewall />} />
-        <Route path="/network"    element={<Navigate to="/monitoring" replace />} />
-        <Route path="/monitoring" element={<Monitoring liveStats={liveStats} />} />
-        <Route path="/ssh" element={<SSH />} />
-        <Route path="/agents" element={<Agents />} />
-        <Route path="/agents/:id" element={<AgentDetail />} />
-        <Route path="/uptime-kuma" element={<UptimeKuma />} />
-        <Route path="/alerts" element={<Alerts />} />
-        <Route path="/webhooks" element={<Webhooks />} />
-        <Route path="/hetzner" element={<Hetzner />} />
-        <Route path="/mchost" element={<MCHost />} />
-        <Route path="/users"     element={<ProtectedRoute adminOnly><Users /></ProtectedRoute>} />
-        <Route path="/roles"     element={<ProtectedRoute adminOnly><Roles /></ProtectedRoute>} />
-        <Route path="/audit"     element={<ProtectedRoute permission="audit.view"><AuditLog /></ProtectedRoute>} />
-        <Route path="/panel-logs" element={<ProtectedRoute adminOnly><PanelLogs /></ProtectedRoute>} />
-        <Route path="/settings"  element={<Settings />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <ErrorBoundary>
+        <Routes>
+          <Route path="/" element={<Dashboard liveStats={liveStats} />} />
+          <Route path="/docker" element={<Docker />} />
+          <Route path="/services" element={<Services />} />
+          <Route path="/firewall" element={<Firewall />} />
+          <Route path="/network"    element={<Navigate to="/monitoring" replace />} />
+          <Route path="/monitoring" element={<Monitoring liveStats={liveStats} />} />
+          <Route path="/ssh" element={<SSH />} />
+          <Route path="/agents" element={<Agents />} />
+          <Route path="/agents/:id" element={<AgentDetail />} />
+          <Route path="/uptime-kuma" element={<UptimeKuma />} />
+          <Route path="/alerts" element={<Alerts />} />
+          <Route path="/webhooks" element={<Webhooks />} />
+          <Route path="/hetzner" element={<Hetzner />} />
+          <Route path="/mchost" element={<MCHost />} />
+          <Route path="/users"     element={<ProtectedRoute adminOnly><Users /></ProtectedRoute>} />
+          <Route path="/roles"     element={<ProtectedRoute adminOnly><Roles /></ProtectedRoute>} />
+          <Route path="/audit"     element={<ProtectedRoute permission="audit.view"><AuditLog /></ProtectedRoute>} />
+          <Route path="/panel-logs" element={<ProtectedRoute adminOnly><PanelLogs /></ProtectedRoute>} />
+          <Route path="/settings"  element={<Settings />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </ErrorBoundary>
     </Layout>
   );
 };
