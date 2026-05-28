@@ -237,6 +237,34 @@ export default function PanelLogs() {
     loadSources();
   };
 
+  // Ausgewählte Logs als Text kopieren
+  const [bulkCopied, setBulkCopied] = useState(null); // 'text' | 'link' | null
+
+  const copySelectedText = () => {
+    const selectedLogs = logs.filter(l => selected.has(l.id));
+    const text = selectedLogs.map(log => [
+      `[${log.level.toUpperCase()}] ${fmtDate(log.created_at)}`,
+      `Quelle: ${log.source}${log.url ? `  —  ${log.url}` : ''}`,
+      '',
+      log.message,
+      ...(log.stack ? ['', log.stack] : []),
+    ].join('\n')).join('\n\n─────────────────────────\n\n');
+    navigator.clipboard.writeText(text).then(() => {
+      setBulkCopied('text');
+      setTimeout(() => setBulkCopied(null), 2000);
+    });
+  };
+
+  // Direktlinks für alle ausgewählten Logs kopieren
+  const copySelectedLinks = () => {
+    const selectedLogs = logs.filter(l => selected.has(l.id));
+    const links = selectedLogs.map(l => `${window.location.origin}/panel-logs?id=${l.id}`).join('\n');
+    navigator.clipboard.writeText(links).then(() => {
+      setBulkCopied('link');
+      setTimeout(() => setBulkCopied(null), 2000);
+    });
+  };
+
   // ── Alle löschen ────────────────────────────────────────────────────────────
 
   const clearAll = async () => {
@@ -301,7 +329,29 @@ export default function PanelLogs() {
           </button>
           <span className="text-panel-muted/60">|</span>
           <span className="font-medium tabular-nums">{selected.size} ausgewählt</span>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            {/* Text kopieren */}
+            <button
+              onClick={copySelectedText}
+              title="Ausgewählte Fehler als Text kopieren"
+              className="flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-panel-accent/30 hover:bg-panel-accent/20 transition-colors"
+            >
+              {bulkCopied === 'text'
+                ? <><Check size={11} className="text-panel-green" /><span className="text-panel-green">Kopiert!</span></>
+                : <><Copy  size={11} /><span>Kopieren</span></>
+              }
+            </button>
+            {/* Links kopieren */}
+            <button
+              onClick={copySelectedLinks}
+              title="Direktlinks für ausgewählte Einträge kopieren"
+              className="flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-panel-accent/30 hover:bg-panel-accent/20 transition-colors"
+            >
+              {bulkCopied === 'link'
+                ? <><Check size={11} className="text-panel-green" /><span className="text-panel-green">Kopiert!</span></>
+                : <><Link2 size={11} /><span>Links erstellen</span></>
+              }
+            </button>
             <Button variant="danger" size="sm" onClick={deleteSelected}>
               <Trash2 size={12} className="mr-1" />Auswahl löschen
             </Button>
