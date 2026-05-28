@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { WSProvider } from './context/WSContext';
 import { ErrorProvider } from './context/ErrorContext';
@@ -26,6 +26,7 @@ import Monitoring from './pages/Monitoring';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import PanelLogs from './pages/PanelLogs';
+import PanelLogsShare from './pages/PanelLogsShare';
 
 const ProtectedRoute = ({ children, adminOnly, permission }) => {
   const { user, hasPermission } = useAuth();
@@ -38,9 +39,19 @@ const ProtectedRoute = ({ children, adminOnly, permission }) => {
 const AppRoutes = () => {
   const { user } = useAuth();
   const { data: liveStats, connected } = useWebSocket();
+  const location = useLocation();
 
   // Globaler Frontend-Fehler-Reporter (aktiviert sich nur wenn eingeloggt)
   useErrorReporter();
+
+  // Öffentliche Share-Seite — kein Login nötig
+  if (location.pathname.startsWith('/s/')) {
+    return (
+      <Routes>
+        <Route path="/s/:token" element={<PanelLogsShare />} />
+      </Routes>
+    );
+  }
 
   if (!user) {
     return (

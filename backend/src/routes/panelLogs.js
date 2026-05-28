@@ -7,6 +7,7 @@
 // DELETE /api/logs        → Admin löscht alle Logs
 
 const router      = require('express').Router();
+const crypto      = require('crypto');
 const db          = require('../db');
 const requireRole = require('../middleware/roles');
 
@@ -93,6 +94,33 @@ router.delete('/bulk', requireRole('admin'), (req, res) => {
 router.get('/sources', requireRole('admin'), (req, res) => {
   const rows = db.prepare('SELECT DISTINCT source FROM panel_logs ORDER BY source').all();
   res.json(rows.map(r => r.source));
+});
+
+// ── POST /api/logs/share  (Admin → Share-Token erstellen) ─────────────────────
+router.post('/share', requireRole('admin'), (req, res) => {
+  const { ids, label } = req.body;
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids fehlt' });
+  const safeIds = ids.map(Number).filter(n => Number.isFinite(n) && n > 0);
+  if (!safeIds.length) return res.status(400).json({ error: 'Keine gültigen IDs' });
+  const token = crypto.randomBytes(20).toString('hex');
+  db.prepare(
+    'INSERT INTO panel_log_shares (token, log_ids, label) VALUES (?, ?, ?)'
+  ).run(token, JSON.stringify(safeIds), label ? String(label).slice(0, 100) : null);
+  res.json({ token });
+});
+
+// ── GET /api/logs/shares  (Admin → alle Share-Links) ─────────────────────────
+router.get('/shares', requireRole('admin'), (req, res) => {
+  const shares = db.prepare(
+    'SELECT id, token, log_ids, label, created_at, accessed_at, access_count FROM panel_log_shares ORDER BY created_at DESC'
+  ).all();
+  res.json(shares);
+});
+
+// ── DELETE /api/logs/shares/:id  (Admin → Link widerrufen) ───────────────────
+router.delete('/shares/:id', requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM panel_log_shares WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
 });
 
 module.exports = router;

@@ -222,6 +222,16 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
   CREATE INDEX IF NOT EXISTS idx_panel_logs_ts ON panel_logs(created_at DESC);
+
+  CREATE TABLE IF NOT EXISTS panel_log_shares (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    token        TEXT NOT NULL UNIQUE,
+    log_ids      TEXT NOT NULL,
+    label        TEXT,
+    created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+    accessed_at  DATETIME,
+    access_count INTEGER NOT NULL DEFAULT 0
+  );
 `);
 
 // Audit-Log: alle sicherheitsrelevanten Aktionen protokollieren
