@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dunkles Theme (ähnlich GitHub Dark) -->
+    <color name="bg_primary">#0d1117</color>
+    <color name="bg_card">#161b22</color>
+    <color name="bg_surface">#21262d</color>
+
+    <color name="text_primary">#e6edf3</color>
+    <color name="text_secondary">#8b949e</color>
+
+    <color name="accent_blue">#58a6ff</color>
+    <color name="accent_green">#3fb950</color>
+    <color name="accent_orange">#e3b341</color>
+    <color name="accent_red">#f85149</color>
+
+    <color name="status_online">#3fb950</color>
+    <color name="status_offline">#f85149</color>
+
+    <!-- Material primär -->
+    <color name="colorPrimary">#58a6ff</color>
+    <color name="colorPrimaryVariant">#1f6feb</color>
+    <color name="colorOnPrimary">#ffffff</color>
+    <color name="colorSecondary">#3fb950</color>
+    <color name="colorOnSecondary">#ffffff</color>
+    <color name="colorSurface">#161b22</color>
+    <color name="colorOnSurface">#e6edf3</color>
+    <color name="colorBackground">#0d1117</color>
+    <color name="colorOnBackground">#e6edf3</color>
+    <color name="colorError">#f85149</color>
+    <color name="colorOnError">#ffffff</color>
+</resources>
