@@ -169,11 +169,21 @@ export const Sidebar = () => {
 
           {/* Fehler-Liste */}
           {errOpen && (
-            <div className="max-h-40 overflow-y-auto px-2 pb-2 space-y-1">
+            <div className="max-h-40 overflow-y-auto px-2 space-y-1">
               {errors.slice(0, 15).map(err => (
                 <ErrorEntry key={err.id} err={err} onDismiss={() => dismissError(err.id)} />
               ))}
             </div>
+          )}
+
+          {/* Link zu Panel-Logs */}
+          {errOpen && isAdmin && (
+            <NavLink
+              to="/panel-logs"
+              className="flex items-center justify-center gap-1 px-3 py-1.5 text-[10px] text-panel-muted hover:text-panel-accent transition-colors border-t border-panel-border/40"
+            >
+              Alle Logs anzeigen →
+            </NavLink>
           )}
         </div>
       )}
