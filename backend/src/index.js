@@ -31,6 +31,39 @@ app.use(compression());   // gzip für API-Responses + statische Assets
 app.use(express.json());
 
 app.use('/api/auth', require('./routes/auth'));
+
+// ─── Öffentliche Agent-Downloads (kein Login nötig) ──────────────────────────
+const fs   = require('fs');
+const path = require('path');
+// install.sh: Panel-URL wird beim Ausliefern dynamisch injiziert
+app.get('/api/agents/install-script', (req, res) => {
+  try {
+    const installPath = path.resolve(__dirname, '../../agent/install.sh');
+    let content = fs.readFileSync(installPath, 'utf8');
+    // Panel-URL eintragen, damit das Script agent-script von hier lädt
+    const panelUrl = `${req.protocol}://${req.get('host')}`;
+    content = content.replace(
+      /^(PANEL_SOURCE=).*$/m,
+      `$1"${panelUrl}"`,
+    );
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', 'inline; filename="install.sh"');
+    res.send(content);
+  } catch (err) {
+    res.status(500).send(`# FEHLER: install.sh nicht gefunden (${err.message})\nexit 1\n`);
+  }
+});
+// panel-agent.js: direkt öffentlich auslieferbar (kein Geheimnis enthalten)
+app.get('/api/agents/agent-script', (req, res) => {
+  try {
+    const agentPath = path.resolve(__dirname, '../../agent/panel-agent.js');
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', 'inline; filename="panel-agent.js"');
+    res.sendFile(agentPath);
+  } catch (err) {
+    res.status(500).send(`# FEHLER: panel-agent.js nicht gefunden\nexit 1\n`);
+  }
+});
 try {
   const { router: passkeyRouter } = require('./routes/passkeys');
   app.use('/api/passkeys', auth, passkeyRouter);

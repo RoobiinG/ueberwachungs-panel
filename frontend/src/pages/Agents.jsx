@@ -223,22 +223,36 @@ export default function Agents() {
       )}
 
       {/* Install-Anleitung */}
-      <Card title={<span className="flex items-center gap-2"><Terminal size={14} />Agent installieren</span>}>
-        <p className="text-xs text-panel-muted mb-2">
-          Diesen Befehl auf dem Remote-Server als root ausführen — installiert Agent mit HTTPS-Zertifikat:
-        </p>
-        <pre className="bg-panel-surface rounded-md px-3 py-2 text-xs text-panel-green font-mono select-all overflow-x-auto">
-          curl -sL https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master/agent/install.sh | bash
-        </pre>
-        <p className="text-xs text-panel-muted mt-2">
-          Das Skript gibt am Ende URL, Token und TLS-Fingerprint aus. Der Panel speichert den Fingerprint automatisch beim Hinzufügen.
-        </p>
-        <p className="text-xs text-panel-muted mt-3 pt-3 border-t border-panel-border">
-          <span className="text-panel-text font-medium">Deinstallieren:</span>{' '}
-          Über den <PackageX size={11} className="inline mx-0.5 text-panel-red" />-Button in der Serverkarte (Agent muss online sein) —
-          oder manuell: <code className="text-panel-text">systemctl disable panel-agent --now && rm -rf /opt/panel-agent</code>
-        </p>
-      </Card>
+      {(() => {
+        const installCmd = `curl -sL ${window.location.origin}/api/agents/install-script | bash`;
+        return (
+          <Card title={<span className="flex items-center gap-2"><Terminal size={14} />Agent installieren</span>}>
+            <p className="text-xs text-panel-muted mb-2">
+              Diesen Befehl auf dem Remote-Server als root ausführen — installiert Agent mit HTTPS-Zertifikat:
+            </p>
+            <div className="relative group">
+              <pre className="bg-panel-surface rounded-md px-3 py-2 text-xs text-panel-green font-mono select-all overflow-x-auto pr-10">
+                {installCmd}
+              </pre>
+              <button
+                onClick={() => navigator.clipboard.writeText(installCmd)}
+                className="absolute top-1.5 right-2 p-1.5 rounded border border-panel-border text-panel-muted hover:text-panel-text opacity-0 group-hover:opacity-100 transition-opacity bg-panel-bg/80"
+                title="Kopieren"
+              >
+                <Copy size={11} />
+              </button>
+            </div>
+            <p className="text-xs text-panel-muted mt-2">
+              Das Skript wird direkt vom Panel geliefert. Am Ende gibt es URL, Token und TLS-Fingerprint aus.
+            </p>
+            <p className="text-xs text-panel-muted mt-3 pt-3 border-t border-panel-border">
+              <span className="text-panel-text font-medium">Deinstallieren:</span>{' '}
+              Über den <PackageX size={11} className="inline mx-0.5 text-panel-red" />-Button in der Serverkarte (Agent muss online sein) —
+              oder manuell: <code className="text-panel-text">systemctl disable panel-agent --now && rm -rf /opt/panel-agent</code>
+            </p>
+          </Card>
+        );
+      })()}
 
       {/* Manuelle Wiederherstellung */}
       {isAdmin && (() => {

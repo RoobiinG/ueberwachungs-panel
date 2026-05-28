@@ -1,7 +1,9 @@
 #!/bin/bash
 set -e
 
-REPO="https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master"
+# PANEL_SOURCE wird vom Panel-Backend beim Ausliefern injiziert.
+# Fallback: GitHub (nur wenn direkt von GitHub heruntergeladen)
+PANEL_SOURCE="${PANEL_SOURCE:-https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master}"
 AGENT_PORT="${PANEL_AGENT_PORT:-7331}"
 AGENT_TOKEN="${PANEL_AGENT_TOKEN:-$(openssl rand -hex 32 2>/dev/null || tr -dc 'a-f0-9' < /dev/urandom | head -c 64)}"
 INSTALL_DIR="/opt/panel-agent"
@@ -31,7 +33,22 @@ fi
 echo "Node.js $(node -v) gefunden"
 
 mkdir -p "$INSTALL_DIR"
-curl -sL "$REPO/agent/panel-agent.js" -o "$INSTALL_DIR/panel-agent.js"
+
+# Agent-Script vom Panel laden (oder GitHub als Fallback)
+if echo "$PANEL_SOURCE" | grep -qv 'githubusercontent'; then
+  echo "Lade Agent-Script vom Panel (${PANEL_SOURCE})..."
+  curl -sL "${PANEL_SOURCE}/api/agents/agent-script" -o "$INSTALL_DIR/panel-agent.js"
+else
+  echo "Lade Agent-Script von GitHub..."
+  curl -sL "${PANEL_SOURCE}/agent/panel-agent.js" -o "$INSTALL_DIR/panel-agent.js"
+fi
+
+# Prüfen ob Download erfolgreich war
+if ! head -1 "$INSTALL_DIR/panel-agent.js" | grep -q '^#'; then
+  echo "FEHLER: Download fehlgeschlagen (kein gültiges Script erhalten)" >&2
+  cat "$INSTALL_DIR/panel-agent.js" >&2
+  exit 1
+fi
 chmod 755 "$INSTALL_DIR/panel-agent.js"
 
 # TLS-Zertifikat erzeugen (falls noch keines vorhanden)
