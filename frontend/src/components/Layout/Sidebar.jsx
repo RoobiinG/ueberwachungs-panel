@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Container, Wrench, Shield,
   Terminal, Webhook, Users, Cloud, Gamepad2, ChevronLeft, ChevronRight,
   Server, Settings, ServerCog, MonitorCheck, Bell, ShieldCheck, ClipboardList,
-  BarChart2, AlertCircle, X, ChevronDown, ChevronUp, Trash2,
+  BarChart2, AlertCircle, X, ChevronDown, ChevronUp, Trash2, ScrollText,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
@@ -25,10 +25,11 @@ const navItems = [
   { to: '/hetzner', icon: Cloud,    label: 'Hetzner',   permission: 'hetzner.view' },
   { to: '/mchost',  icon: Gamepad2, label: 'MC-Host24', permission: 'mchost.view'  },
   { divider: true },
-  { to: '/users',    icon: Users,          label: 'Benutzer',        adminOnly: true },
-  { to: '/roles',    icon: ShieldCheck,    label: 'Rollen & Rechte', adminOnly: true },
-  { to: '/audit',    icon: ClipboardList,  label: 'Audit-Log',       permission: 'audit.view' },
-  { to: '/settings', icon: Settings,       label: 'Einstellungen' },
+  { to: '/users',      icon: Users,          label: 'Benutzer',        adminOnly: true },
+  { to: '/roles',      icon: ShieldCheck,    label: 'Rollen & Rechte', adminOnly: true },
+  { to: '/audit',      icon: ClipboardList,  label: 'Audit-Log',       permission: 'audit.view' },
+  { to: '/panel-logs', icon: ScrollText,     label: 'Panel-Logs',      adminOnly: true },
+  { to: '/settings',   icon: Settings,       label: 'Einstellungen' },
 ];
 
 // ── Quell-Farben für Fehlereinträge ──────────────────────────────────────────

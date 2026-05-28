@@ -210,6 +210,19 @@ db.exec(`
 try { db.exec('ALTER TABLE audit_log ADD COLUMN location TEXT'); } catch {}
 // Dockhand-Integration: Environment-ID pro Remote-Agent
 try { db.exec('ALTER TABLE remote_agents ADD COLUMN dockhand_env_id INTEGER'); } catch {}
+// Panel-Logs: Frontend-Fehler + API-Fehler persistent speichern
+db.exec(`
+  CREATE TABLE IF NOT EXISTS panel_logs (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    level      TEXT NOT NULL DEFAULT 'error',
+    source     TEXT NOT NULL,
+    message    TEXT NOT NULL,
+    stack      TEXT,
+    url        TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_panel_logs_ts ON panel_logs(created_at DESC);
+`);
 
 // Audit-Log: alle sicherheitsrelevanten Aktionen protokollieren
 db.exec(`

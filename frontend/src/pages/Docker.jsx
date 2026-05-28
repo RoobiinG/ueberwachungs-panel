@@ -247,21 +247,57 @@ export default function Docker() {
 
                     <div className="text-xs text-panel-muted mt-0.5 truncate">{c.image}</div>
 
-                    {/* Live-Stats */}
+                    {/* Live-Stats mit Monitoring-Bars */}
                     {isRun && (cpuPct != null || memUsed != null) && (
-                      <div className="flex items-center gap-3 mt-1 text-xs text-panel-muted flex-wrap">
-                        {cpuPct  != null && (
-                          <span className="text-blue-400 font-mono">{Number(cpuPct).toFixed(1)}% CPU</span>
-                        )}
-                        {memUsed != null && (
-                          <span className="text-green-400 font-mono">{fmtBytes(memUsed)} RAM</span>
-                        )}
-                        {(netRx != null || netTx != null) && (netRx > 0 || netTx > 0) && (
-                          <span className="font-mono">↑{fmtBytes(netTx)}/s ↓{fmtBytes(netRx)}/s</span>
-                        )}
-                        {c.ports?.length > 0 && (
-                          <span className="text-panel-muted/70">{c.ports.slice(0, 3).join(' · ')}</span>
-                        )}
+                      <div className="mt-1.5 space-y-1">
+                        {/* CPU-Bar */}
+                        {cpuPct != null && (() => {
+                          const pct = Math.min(100, Math.max(0, Number(cpuPct)));
+                          const barCol = pct > 80 ? 'bg-panel-red' : pct > 50 ? 'bg-panel-orange' : 'bg-blue-500';
+                          return (
+                            <div>
+                              <div className="flex justify-between text-[10px] text-panel-muted mb-0.5">
+                                <span>CPU</span>
+                                <span className="font-mono text-blue-400">{pct.toFixed(1)}%</span>
+                              </div>
+                              <div className="h-1 bg-panel-border rounded-full overflow-hidden">
+                                <div className={`h-full rounded-full transition-all duration-700 ${barCol}`} style={{ width: `${pct}%` }} />
+                              </div>
+                            </div>
+                          );
+                        })()}
+                        {/* RAM-Bar */}
+                        {memUsed != null && (() => {
+                          const liveMemLimit = live?.memLimit ?? c.memLimit ?? null;
+                          const memPct = liveMemLimit ? Math.min(100, (memUsed / liveMemLimit) * 100) : null;
+                          const barCol = memPct != null
+                            ? (memPct > 85 ? 'bg-panel-red' : memPct > 60 ? 'bg-panel-orange' : 'bg-green-500')
+                            : 'bg-green-500';
+                          return (
+                            <div>
+                              <div className="flex justify-between text-[10px] text-panel-muted mb-0.5">
+                                <span>RAM</span>
+                                <span className="font-mono text-green-400">
+                                  {fmtBytes(memUsed)}{liveMemLimit ? ` / ${fmtBytes(liveMemLimit)}` : ''}
+                                </span>
+                              </div>
+                              {memPct != null && (
+                                <div className="h-1 bg-panel-border rounded-full overflow-hidden">
+                                  <div className={`h-full rounded-full transition-all duration-700 ${barCol}`} style={{ width: `${memPct}%` }} />
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                        {/* Netzwerk + Ports */}
+                        <div className="flex items-center gap-3 text-[10px] text-panel-muted flex-wrap">
+                          {(netRx != null || netTx != null) && (netRx > 0 || netTx > 0) && (
+                            <span className="font-mono">↑{fmtBytes(netTx)}/s ↓{fmtBytes(netRx)}/s</span>
+                          )}
+                          {c.ports?.length > 0 && (
+                            <span className="text-panel-muted/60">{c.ports.slice(0, 3).join(' · ')}</span>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>

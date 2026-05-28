@@ -25,7 +25,12 @@
       "WebFetch(domain:finsys-dockhand.mintlify.app)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "WebFetch(domain:mintlify.com)",
-      "WebFetch(domain:mcpmarket.com)"
+      "WebFetch(domain:mcpmarket.com)",
+      "Bash(node -e \"console.log\\(require\\('ssh2/package.json'\\).version\\)\")",
+      "Bash(Get-Content \"C:\\\\Users\\\\gRobi\\\\Nextcloud2\\\\Coding\\\\Überwachungs-Panel\\\\backend\\\\node_modules\\\\ssh2\\\\package.json\")",
+      "Bash(Select-String '\"version\"')",
+      "Bash(Select-Object -First 1)",
+      "Bash(dir \"C:/Users/gRobi/Nextcloud2/Coding/Überwachungs-Panel/backend/\")"
     ]
   }
 }

@@ -59,6 +59,7 @@ app.use('/api/uptime-kuma', auth, require('./routes/uptimeKuma'));
 app.use('/api/alerts',      auth, require('./routes/alerts'));
 app.use('/api/dockhand',    auth, require('./routes/dockhand'));
 app.use('/api/audit',       auth, require('./routes/audit'));
+app.use('/api/logs',        auth, require('./routes/panelLogs'));
 app.use('/api/version',          require('./routes/version'));
 
 // Serve React frontend in production

@@ -41,36 +41,44 @@ async function fetchViaRest(url, apiKey) {
   }
 
   // monitors kann sein:
-  //   (a) Direkt ein Array  → data ist selbst das Array (manche Versionen)
-  //   (b) data.monitors     → Array oder Objekt { id: {...} }  (v2 standard)
-  //   (c) data.monitorList  → Objekt { id: {...} }             (v1.x partial REST)
-  //   (d) Objekt mit Zahl-Schlüsseln { "0": {...}, "1": {...} }
-  //       Das Ganze ist der Monitor-Dict (kein Wrapper-Key)
+  //   (a) Direkt ein Array
+  //   (b) data.monitors     → Array oder Objekt { id: {...} }  (v1/v2)
+  //   (c) data.data         → Array oder Objekt { id: {...} }  (v2.x REST-API)
+  //   (d) data.monitorList  → Objekt { id: {...} }             (v1.x)
+  //   (e) Top-Level Objekt  → Werte sind Monitor-Objekte (dict-Format)
   let monitorArr;
   if (Array.isArray(data)) {
-    // (a) Antwort-Body ist direkt ein Array
+    // (a) Body ist direkt ein Array
     monitorArr = data;
   } else if (data.monitors != null) {
     // (b) Standard-Feld
     monitorArr = Array.isArray(data.monitors)
       ? data.monitors
       : Object.values(data.monitors);
+  } else if (data.data != null && (Array.isArray(data.data) || typeof data.data === 'object')) {
+    // (c) Uptime Kuma v2.x: { ok: true, data: { "1": {...}, "2": {...} } }
+    monitorArr = Array.isArray(data.data)
+      ? data.data
+      : Object.values(data.data);
   } else if (data.monitorList != null) {
-    // (c) Alternatives Feld in manchen v1-Versionen
+    // (d) Alternatives Feld in manchen v1-Versionen
     monitorArr = Array.isArray(data.monitorList)
       ? data.monitorList
       : Object.values(data.monitorList);
   } else {
-    // (d) Top-Level-Objekt mit Monitor-artigen Werten (z. B. { "0":{...}, "1":{...} })
-    const vals = Object.values(data);
-    if (
-      vals.length > 0 &&
-      typeof vals[0] === 'object' && vals[0] !== null &&
-      ('name' in vals[0] || 'id' in vals[0] || 'url' in vals[0])
-    ) {
-      monitorArr = vals;
+    // (e) Top-Level-Objekt — alle Objekt-Werte als Monitor-Liste behandeln
+    // (entfernt die harte name/id/url Prüfung um mit v2-Feldnamen kompatibel zu sein)
+    const allVals   = Object.values(data);
+    const objVals   = allVals.filter(v => v != null && typeof v === 'object' && !Array.isArray(v));
+    const innerVals = objVals.flatMap(v => {
+      // Falls ein Wert selbst ein Dict mit Monitor-Ids als Keys ist, aufflachen
+      const inner = Object.values(v);
+      if (inner.length > 0 && inner.every(x => x != null && typeof x === 'object' && !Array.isArray(x))) return inner;
+      return [v];
+    });
+    if (innerVals.length > 0) {
+      monitorArr = innerVals;
     } else {
-      // Wirklich unbekanntes Format — aussagekräftige Diagnose
       const keys = Object.keys(data).slice(0, 8).join(', ') || '(leer)';
       throw new Error(
         `Unerwartetes Antwortformat — vorhandene Felder: ${keys}. ` +
@@ -129,8 +137,8 @@ function fetchViaSocket(url, apiKey) {
       transports:   ['polling', 'websocket'],
       reconnection: false,
       timeout:      12000,
-      // Uptime Kuma v1.23+ und v2.x: API-Key im auth-Objekt
-      auth: { apiKey },
+      // Uptime Kuma v1.23+: apiKey; v2.x-Variante: token (beide senden)
+      auth: { apiKey, token: apiKey },
     });
 
     const monitors   = {};
