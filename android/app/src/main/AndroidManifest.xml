@@ -33,6 +33,12 @@
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
 
+        <activity
+            android:name=".ui.lock.LockActivity"
+            android:exported="false"
+            android:showOnLockScreen="false"
+            android:windowSoftInputMode="adjustResize" />
+
         <service
             android:name=".service.MonitoringService"
             android:exported="false"

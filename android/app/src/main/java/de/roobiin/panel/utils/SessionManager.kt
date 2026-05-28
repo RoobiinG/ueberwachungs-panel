@@ -52,6 +52,17 @@ class SessionManager(context: Context) {
     fun isNotificationsEnabled(): Boolean = settingsPrefs.getBoolean(KEY_NOTIFICATIONS, true)
     fun setNotificationsEnabled(enabled: Boolean) = settingsPrefs.edit().putBoolean(KEY_NOTIFICATIONS, enabled).apply()
 
+    // App-Sperre
+    fun isAppLockEnabled(): Boolean = settingsPrefs.getBoolean(KEY_APP_LOCK, false)
+    fun setAppLockEnabled(enabled: Boolean) = settingsPrefs.edit().putBoolean(KEY_APP_LOCK, enabled).apply()
+
+    fun getPinHash(): String? = prefs.getString(KEY_PIN_HASH, null)
+    fun setPinHash(hash: String) = prefs.edit().putString(KEY_PIN_HASH, hash).apply()
+    fun clearPin() = prefs.edit().remove(KEY_PIN_HASH).apply()
+
+    fun getLockTimeoutSeconds(): Int = settingsPrefs.getInt(KEY_LOCK_TIMEOUT, 30)
+    fun setLockTimeoutSeconds(seconds: Int) = settingsPrefs.edit().putInt(KEY_LOCK_TIMEOUT, seconds).apply()
+
     companion object {
         private const val KEY_TOKEN = "token"
         private const val KEY_USERNAME = "username"
@@ -59,5 +70,8 @@ class SessionManager(context: Context) {
         private const val KEY_INTERVAL = "monitoring_interval"
         private const val KEY_MONITORING = "monitoring_enabled"
         private const val KEY_NOTIFICATIONS = "notifications_enabled"
+        private const val KEY_APP_LOCK = "app_lock_enabled"
+        private const val KEY_PIN_HASH = "pin_hash"
+        private const val KEY_LOCK_TIMEOUT = "lock_timeout_seconds"
     }
 }

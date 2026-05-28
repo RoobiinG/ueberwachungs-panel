@@ -105,6 +105,82 @@
             </LinearLayout>
         </androidx.cardview.widget.CardView>
 
+        <!-- App-Sperre -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            app:cardBackgroundColor="@color/bg_card"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="0dp">
+
+            <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:orientation="vertical" android:padding="16dp">
+
+                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                    android:text="App-Sperre" android:textColor="@color/text_secondary"
+                    android:textSize="12sp" android:layout_marginBottom="8dp"
+                    android:textAllCaps="true" />
+
+                <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                    android:orientation="horizontal" android:gravity="center_vertical"
+                    android:layout_marginBottom="8dp">
+
+                    <LinearLayout android:layout_width="0dp" android:layout_height="wrap_content"
+                        android:layout_weight="1" android:orientation="vertical">
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:text="App-Sperre aktivieren"
+                            android:textColor="@color/text_primary" android:textSize="14sp" />
+                        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                            android:text="Fingerabdruck, Gesicht oder PIN"
+                            android:textColor="@color/text_secondary" android:textSize="12sp" />
+                    </LinearLayout>
+
+                    <com.google.android.material.switchmaterial.SwitchMaterial
+                        android:id="@+id/switchAppLock"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content" />
+                </LinearLayout>
+
+                <!-- Sichtbar wenn Sperre aktiv -->
+                <LinearLayout
+                    android:id="@+id/lockOptionsGroup"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:visibility="gone">
+
+                    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                        android:text="Sperr-Verzögerung"
+                        android:textColor="@color/text_primary" android:textSize="14sp"
+                        android:layout_marginBottom="4dp" android:layout_marginTop="8dp" />
+
+                    <Spinner android:id="@+id/spinnerLockTimeout"
+                        android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:entries="@array/lock_timeout_options"
+                        android:background="@drawable/bg_spinner"
+                        android:layout_marginBottom="8dp" />
+
+                    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <Button android:id="@+id/btnSaveLockTimeout"
+                            android:layout_width="0dp" android:layout_height="wrap_content"
+                            android:layout_weight="1" android:layout_marginEnd="8dp"
+                            android:text="Speichern"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+
+                        <Button android:id="@+id/btnChangePin"
+                            android:layout_width="0dp" android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="PIN ändern"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+                    </LinearLayout>
+                </LinearLayout>
+
+            </LinearLayout>
+        </androidx.cardview.widget.CardView>
+
         <!-- Logout -->
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnLogout"
