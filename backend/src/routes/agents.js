@@ -72,10 +72,31 @@ const agentApi = (agent) => {
   return axios.create(cfg);
 };
 
-// Neueste verfügbare Agent-Version von GitHub
-router.get('/latest-version', requirePermission('agents.view'), async (req, res) => {
-  const version = await fetchLatestVersion();
-  res.json({ version });
+// Neueste verfügbare Agent-Version — aus lokalem Script (kein GitHub nötig)
+router.get('/latest-version', requirePermission('agents.view'), (req, res) => {
+  try {
+    const scriptPath = path.resolve(__dirname, '../../../agent/panel-agent.js');
+    const content    = fs.readFileSync(scriptPath, 'utf8');
+    const m          = content.match(/^const VERSION\s*=\s*['"]([^'"]+)['"]/m);
+    const version    = m?.[1] || null;
+    res.json({ version });
+  } catch {
+    res.json({ version: null });
+  }
+});
+
+// Agent-Script zum Herunterladen (für manuelle Recovery)
+// curl -H "Authorization: Bearer TOKEN" PANEL_URL/api/agents/download-script -o panel-agent.js
+router.get('/download-script', requirePermission('agents.update'), (req, res) => {
+  try {
+    const scriptPath = path.resolve(__dirname, '../../../agent/panel-agent.js');
+    const content    = fs.readFileSync(scriptPath, 'utf8');
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="panel-agent.js"');
+    res.send(content);
+  } catch {
+    res.status(500).json({ error: 'Agent-Script nicht gefunden (lokal).' });
+  }
 });
 
 router.get('/', requirePermission('agents.view'), (req, res) => {
