@@ -449,17 +449,21 @@ export default function AgentDetail() {
                         </div>
                         <p className="text-xs text-panel-muted truncate">{c.image}</p>
                       </div>
-                      {/* Quick Stats (nur wenn running) */}
-                      {isRunning && (
+                      {/* Quick Stats (nur wenn running + Daten vorhanden) */}
+                      {isRunning && (c.cpu != null || c.memUsed != null) && (
                         <div className="hidden sm:flex items-center gap-4 flex-shrink-0">
-                          <div className="text-right">
-                            <p className="text-xs font-medium text-panel-text">{c.cpu.toFixed(1)}%</p>
-                            <p className="text-xs text-panel-muted">CPU</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-xs font-medium text-panel-text">{fmtBytes(c.memUsed)}</p>
-                            <p className="text-xs text-panel-muted">RAM</p>
-                          </div>
+                          {c.cpu != null && (
+                            <div className="text-right">
+                              <p className="text-xs font-medium text-panel-text">{(c.cpu).toFixed(1)}%</p>
+                              <p className="text-xs text-panel-muted">CPU</p>
+                            </div>
+                          )}
+                          {c.memUsed != null && (
+                            <div className="text-right">
+                              <p className="text-xs font-medium text-panel-text">{fmtBytes(c.memUsed)}</p>
+                              <p className="text-xs text-panel-muted">RAM</p>
+                            </div>
+                          )}
                         </div>
                       )}
                       {/* Actions */}
