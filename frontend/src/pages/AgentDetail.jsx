@@ -317,22 +317,27 @@ export default function AgentDetail() {
       {currentTab === 'docker' && dockerAvailable && (
         <div className="space-y-4">
           {/* Docker Overview Bar */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <OverviewBox icon={Container} label="Container"
-              value={`${docker.containers.running}`}
-              sub={`${docker.containers.stopped} gestoppt · ${docker.containers.paused} pausiert`}
-              color="text-panel-green" />
-            <OverviewBox icon={Layers} label="Images"
-              value={docker.images}
-              color="text-panel-accent" />
-            <OverviewBox icon={Database} label="Volumes"
-              value={docker.volumes}
-              color="text-panel-purple" />
-            <OverviewBox icon={Network} label="Networks"
-              value={docker.networks}
-              sub={docker.serverVersion ? `Docker ${docker.serverVersion}` : undefined}
-              color="text-panel-orange" />
-          </div>
+          {(() => {
+            const pausedCount = containers?.filter(c => c.state === 'paused').length ?? 0;
+            return (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <OverviewBox icon={Container} label="Container"
+                  value={`${runningCount}`}
+                  sub={`${stoppedCount} gestoppt · ${pausedCount} pausiert`}
+                  color="text-panel-green" />
+                <OverviewBox icon={Layers} label="Images"
+                  value={docker?.images ?? '—'}
+                  color="text-panel-accent" />
+                <OverviewBox icon={Database} label="Volumes"
+                  value={docker?.volumes ?? '—'}
+                  color="text-panel-purple" />
+                <OverviewBox icon={Network} label="Networks"
+                  value={docker?.networks ?? '—'}
+                  sub={docker?.serverVersion ? `Docker ${docker.serverVersion}` : undefined}
+                  color="text-panel-orange" />
+              </div>
+            );
+          })()}
 
           {/* Health Badge */}
           {containers.length > 0 && (

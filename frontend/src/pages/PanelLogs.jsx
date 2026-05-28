@@ -167,7 +167,10 @@ function LogEntry({ log, highlighted, selected, onToggle }) {
 
 export default function PanelLogs() {
   const [searchParams] = useSearchParams();
-  const highlightId    = searchParams.get('id') ? Number(searchParams.get('id')) : null;
+  const highlightId  = searchParams.get('id')  ? Number(searchParams.get('id')) : null;
+  const highlightIds = searchParams.get('ids')
+    ? new Set(searchParams.get('ids').split(',').map(Number).filter(Boolean))
+    : null;
 
   const [logs,    setLogs]    = useState([]);
   const [total,   setTotal]   = useState(0);
@@ -255,11 +258,11 @@ export default function PanelLogs() {
     });
   };
 
-  // Direktlinks für alle ausgewählten Logs kopieren
+  // Einen gemeinsamen Direktlink für alle ausgewählten Logs kopieren
   const copySelectedLinks = () => {
-    const selectedLogs = logs.filter(l => selected.has(l.id));
-    const links = selectedLogs.map(l => `${window.location.origin}/panel-logs?id=${l.id}`).join('\n');
-    navigator.clipboard.writeText(links).then(() => {
+    const ids   = [...selected].sort((a, b) => a - b).join(',');
+    const link  = `${window.location.origin}/panel-logs?ids=${ids}`;
+    navigator.clipboard.writeText(link).then(() => {
       setBulkCopied('link');
       setTimeout(() => setBulkCopied(null), 2000);
     });
@@ -384,7 +387,7 @@ export default function PanelLogs() {
               <LogEntry
                 key={log.id}
                 log={log}
-                highlighted={log.id === highlightId}
+                highlighted={log.id === highlightId || (highlightIds?.has(log.id) ?? false)}
                 selected={selected.has(log.id)}
                 onToggle={() => toggleOne(log.id)}
               />
