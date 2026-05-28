@@ -50,7 +50,11 @@ object ApiClient {
                 } else {
                     chain.request()
                 }
-                chain.proceed(request)
+                val response = chain.proceed(request)
+                if (response.code == 401) {
+                    de.roobiin.panel.utils.AuthState.sessionExpired.postValue(true)
+                }
+                response
             }
             .build()
 
