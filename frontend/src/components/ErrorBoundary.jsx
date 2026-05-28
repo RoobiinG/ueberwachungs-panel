@@ -17,8 +17,21 @@ export default class ErrorBoundary extends Component {
 
   componentDidCatch(error, errorInfo) {
     this.setState({ errorInfo });
-    // Fehler auch in die Konsole schreiben (wird vom useErrorReporter ggf. erfasst)
     console.error('[ErrorBoundary]', error, errorInfo?.componentStack);
+    // Direkt ans Backend melden (fetch statt axios, um Zirkelabhängigkeiten zu vermeiden)
+    try {
+      fetch('/api/logs', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          level:   'error',
+          source:  'React-ErrorBoundary',
+          message: (error?.message || String(error)).slice(0, 2000),
+          stack:   errorInfo?.componentStack?.slice(0, 5000),
+          url:     window.location.pathname,
+        }),
+      }).catch(() => {});
+    } catch { /* nie crashen */ }
   }
 
   handleReset = () => {

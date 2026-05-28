@@ -67,13 +67,17 @@ const api = async () => {
 
 // ─── Error-Handler ───────────────────────────────────────────────────────────
 
-const handle = async (res, fn) => {
+const handle = async (res, fn, _retried = false) => {
   try {
     res.json((await fn()).data);
   } catch (err) {
-    // 401/403 → Token abgelaufen, beim nächsten Call neu holen
-    if (err.response?.status === 401 || err.response?.status === 403) {
+    if ((err.response?.status === 401 || err.response?.status === 403) && !_retried) {
+      // Token abgelaufen → löschen und einmalig automatisch neu einloggen + wiederholen
       db.prepare("DELETE FROM settings WHERE key = 'mchost_api_token'").run();
+      try {
+        await getToken(); // wirft, falls keine Credentials hinterlegt
+        return handle(res, fn, true);
+      } catch { /* fällt durch zum Fehler unten */ }
     }
     const msg = err.response?.data?.messages
       ? Object.values(err.response.data.messages).flat().join(', ')

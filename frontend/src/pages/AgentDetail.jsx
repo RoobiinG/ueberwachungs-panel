@@ -12,6 +12,7 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { useAuth } from '../context/AuthContext';
+import { useLiveInterval } from '../hooks/useLiveInterval';
 
 // ── Hilfsfunktionen ────────────────────────────────────────────────────────
 const fmtBytes = (b, d = 1) => {
@@ -152,6 +153,7 @@ export default function AgentDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { canWrite, token } = useAuth();
+  const liveInterval = useLiveInterval();
 
   const [agentName, setAgentName]         = useState('');
   const [stats,     setStats]             = useState(null);
@@ -207,11 +209,11 @@ export default function AgentDetail() {
     axios.get('/api/agents/latest-version').then(r => setLatestVersion(r.data.version)).catch(() => {});
   }, [id]);
 
-  // Auto-refresh alle 15s
+  // Auto-refresh (konfigurierbares Intervall)
   useEffect(() => {
-    const t = setInterval(() => load(true), 15000);
+    const t = setInterval(() => load(true), liveInterval);
     return () => clearInterval(t);
-  }, [load]);
+  }, [load, liveInterval]);
 
   const serviceAction = async (name, action) => {
     setActionLoading(l => ({ ...l, [name]: action }));
