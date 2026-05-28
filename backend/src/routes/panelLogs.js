@@ -78,6 +78,17 @@ router.delete('/', requireRole('admin'), (req, res) => {
   res.json({ ok: true });
 });
 
+// ── DELETE /api/logs/bulk  (Admin → ausgewählte löschen) ──────────────────────
+router.delete('/bulk', requireRole('admin'), (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids fehlt' });
+  const safeIds = ids.map(Number).filter(n => Number.isFinite(n) && n > 0);
+  if (!safeIds.length) return res.status(400).json({ error: 'Keine gültigen IDs' });
+  const placeholders = safeIds.map(() => '?').join(',');
+  db.prepare(`DELETE FROM panel_logs WHERE id IN (${placeholders})`).run(...safeIds);
+  res.json({ ok: true, deleted: safeIds.length });
+});
+
 // ── GET /api/logs/sources  (Admin → distincte Quellen für Filter) ─────────────
 router.get('/sources', requireRole('admin'), (req, res) => {
   const rows = db.prepare('SELECT DISTINCT source FROM panel_logs ORDER BY source').all();

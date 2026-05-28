@@ -6,21 +6,25 @@ import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { RefreshCw, Trash2, ChevronDown, ChevronUp, AlertCircle, Info, TriangleAlert, Copy, Check, Link } from 'lucide-react';
+import {
+  RefreshCw, Trash2, ChevronDown, ChevronUp,
+  AlertCircle, Info, TriangleAlert,
+  Copy, Check, Link2, Square, CheckSquare,
+} from 'lucide-react';
 
 // ─── Hilfsfunktionen ──────────────────────────────────────────────────────────
 
 const LEVEL_STYLE = {
-  error: { cls: 'bg-panel-red/15 text-panel-red border-panel-red/30',   icon: AlertCircle,    label: 'Error' },
-  warn:  { cls: 'bg-panel-orange/15 text-panel-orange border-panel-orange/30', icon: TriangleAlert, label: 'Warn' },
-  info:  { cls: 'bg-panel-accent/15 text-panel-accent border-panel-accent/30', icon: Info,          label: 'Info' },
+  error: { cls: 'bg-panel-red/15 text-panel-red border-panel-red/30',         icon: AlertCircle,    label: 'Error' },
+  warn:  { cls: 'bg-panel-orange/15 text-panel-orange border-panel-orange/30', icon: TriangleAlert,  label: 'Warn'  },
+  info:  { cls: 'bg-panel-accent/15 text-panel-accent border-panel-accent/30', icon: Info,           label: 'Info'  },
 };
 
 const SOURCE_CHIP = {
-  JavaScript:  'bg-yellow-500/15 text-yellow-400',
-  Promise:     'bg-orange-500/15 text-orange-400',
-  'API-Fehler':'bg-red-500/15 text-red-400',
-  React:       'bg-blue-500/15 text-blue-400',
+  JavaScript:   'bg-yellow-500/15 text-yellow-400',
+  Promise:      'bg-orange-500/15 text-orange-400',
+  'API-Fehler': 'bg-red-500/15 text-red-400',
+  React:        'bg-blue-500/15 text-blue-400',
 };
 
 function fmtDate(s) {
@@ -28,12 +32,45 @@ function fmtDate(s) {
   return d.toLocaleDateString('de-DE') + ' ' + d.toLocaleTimeString('de-DE');
 }
 
+// ─── Icon-Button mit kurzem Feedback ─────────────────────────────────────────
+
+function IconAction({ icon: Icon, doneIcon: DoneIcon, title, onClick, doneColor = 'text-panel-green' }) {
+  const [done, setDone] = useState(false);
+  const handle = () => {
+    onClick();
+    setDone(true);
+    setTimeout(() => setDone(false), 2000);
+  };
+  return (
+    <button
+      onClick={handle}
+      title={title}
+      className="p-1 rounded text-panel-muted/50 hover:text-panel-muted transition-colors"
+    >
+      {done
+        ? <DoneIcon size={12} className={doneColor} />
+        : <Icon     size={12} />
+      }
+    </button>
+  );
+}
+
 // ─── Log-Eintrag-Karte ────────────────────────────────────────────────────────
 
-function CopyButton({ log }) {
-  const [copied, setCopied] = useState(false);
+function LogEntry({ log, highlighted, selected, onToggle }) {
+  const [expanded, setExpanded] = useState(false);
+  const ref     = useRef(null);
+  const style   = LEVEL_STYLE[log.level] ?? LEVEL_STYLE.error;
+  const Icon    = style.icon;
+  const chipCls = SOURCE_CHIP[log.source] ?? 'bg-panel-muted/15 text-panel-muted';
 
-  const copy = () => {
+  useEffect(() => {
+    if (highlighted && ref.current) {
+      ref.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [highlighted]);
+
+  const copyText = () => {
     const lines = [
       `[${log.level.toUpperCase()}] ${fmtDate(log.created_at)}`,
       `Quelle: ${log.source}${log.url ? `  —  ${log.url}` : ''}`,
@@ -41,91 +78,71 @@ function CopyButton({ log }) {
       log.message,
     ];
     if (log.stack) lines.push('', log.stack);
-    navigator.clipboard.writeText(lines.join('\n')).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+    navigator.clipboard.writeText(lines.join('\n'));
   };
 
-  return (
-    <button
-      onClick={copy}
-      title="In Zwischenablage kopieren"
-      className="flex-shrink-0 p-1 rounded text-panel-muted/50 hover:text-panel-muted transition-colors"
-    >
-      {copied ? <Check size={12} className="text-panel-green" /> : <Copy size={12} />}
-    </button>
-  );
-}
-
-function LinkCopyButton({ log }) {
-  const [copied, setCopied] = useState(false);
-
-  const copy = () => {
-    const url = `${window.location.origin}/panel-logs?id=${log.id}`;
-    navigator.clipboard.writeText(url).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+  const copyLink = () => {
+    navigator.clipboard.writeText(`${window.location.origin}/panel-logs?id=${log.id}`);
   };
-
-  return (
-    <button
-      onClick={copy}
-      title="Direktlink kopieren"
-      className="flex items-center gap-1 text-[10px] text-panel-muted/60 hover:text-panel-accent transition-colors px-1.5 py-0.5 rounded border border-panel-border/40 hover:border-panel-accent/40"
-    >
-      {copied
-        ? <><Check size={10} className="text-panel-green" /><span className="text-panel-green">Kopiert!</span></>
-        : <><Link size={10} /><span>Link erstellen</span></>
-      }
-    </button>
-  );
-}
-
-function LogEntry({ log, highlighted }) {
-  const [expanded, setExpanded] = useState(false);
-  const ref     = useRef(null);
-  const style   = LEVEL_STYLE[log.level] ?? LEVEL_STYLE.error;
-  const Icon    = style.icon;
-  const chipCls = SOURCE_CHIP[log.source] ?? 'bg-panel-muted/15 text-panel-muted';
-
-  // Scrollen & kurz aufleuchten wenn dieser Eintrag per Link geöffnet wurde
-  useEffect(() => {
-    if (highlighted && ref.current) {
-      ref.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-  }, [highlighted]);
 
   return (
     <div
       ref={ref}
       id={`log-${log.id}`}
-      className={`border rounded-md px-3 py-2 text-xs transition-all duration-700 ${style.cls} ${
+      className={`border rounded-md px-3 py-2 text-xs transition-all duration-500 ${style.cls} ${
+        selected    ? 'ring-2 ring-panel-accent/60'    : ''
+      } ${
         highlighted ? 'ring-2 ring-panel-accent ring-offset-1 ring-offset-panel-card' : ''
       }`}
     >
       <div className="flex items-start gap-2">
+
+        {/* Checkbox */}
+        <button
+          onClick={onToggle}
+          className="flex-shrink-0 mt-0.5 text-panel-muted/40 hover:text-panel-accent transition-colors"
+          title={selected ? 'Auswahl aufheben' : 'Auswählen'}
+        >
+          {selected
+            ? <CheckSquare size={13} className="text-panel-accent" />
+            : <Square      size={13} />
+          }
+        </button>
+
         <Icon size={12} className="flex-shrink-0 mt-0.5" />
+
         <div className="flex-1 min-w-0">
-          {/* Zeile 1: Source + Zeit + Copy-Button */}
+          {/* Zeile 1: Source + Zeit + Aktions-Buttons */}
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium ${chipCls}`}>
               {log.source}
             </span>
             <span className="text-[10px] text-panel-muted/60 tabular-nums">{fmtDate(log.created_at)}</span>
             {log.url && (
-              <span className="text-[10px] text-panel-muted/50 truncate max-w-[200px]" title={log.url}>
+              <span className="text-[10px] text-panel-muted/50 truncate max-w-[180px]" title={log.url}>
                 {log.url}
               </span>
             )}
-            <div className="ml-auto">
-              <CopyButton log={log} />
+
+            {/* Aktions-Icons rechts */}
+            <div className="ml-auto flex items-center gap-0.5">
+              <IconAction
+                icon={Copy}  doneIcon={Check}
+                title="Fehlertext kopieren"
+                onClick={copyText}
+              />
+              <IconAction
+                icon={Link2} doneIcon={Check}
+                title="Direktlink kopieren"
+                onClick={copyLink}
+              />
             </div>
           </div>
+
           {/* Nachricht */}
           <p className="break-words leading-snug font-mono text-[11px]">{log.message}</p>
-          {/* Stack Trace (aufklappbar) */}
+
+          {/* Stack Trace */}
           {log.stack && (
             <button
               onClick={() => setExpanded(e => !e)}
@@ -140,10 +157,6 @@ function LogEntry({ log, highlighted }) {
               {log.stack}
             </pre>
           )}
-          {/* Footer: Link erstellen */}
-          <div className="mt-2 pt-1.5 border-t border-current/10 flex items-center">
-            <LinkCopyButton log={log} />
-          </div>
         </div>
       </div>
     </div>
@@ -161,6 +174,9 @@ export default function PanelLogs() {
   const [loading, setLoading] = useState(false);
   const [sources, setSources] = useState([]);
 
+  // Auswahl
+  const [selected, setSelected] = useState(new Set());
+
   // Filter
   const [filterLevel,  setFilterLevel]  = useState('');
   const [filterSource, setFilterSource] = useState('');
@@ -169,6 +185,7 @@ export default function PanelLogs() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setSelected(new Set());
     try {
       const params = { limit: PAGE_SIZE, offset: page * PAGE_SIZE };
       if (filterLevel)  params.level  = filterLevel;
@@ -193,21 +210,51 @@ export default function PanelLogs() {
   // Filter-Änderung → zurück zu Seite 0
   const changeFilter = (setter) => (e) => { setter(e.target.value); setPage(0); };
 
+  // ── Auswahl-Aktionen ────────────────────────────────────────────────────────
+
+  const toggleOne = (id) => setSelected(s => {
+    const next = new Set(s);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
+  const allIds      = logs.map(l => l.id);
+  const allSelected = allIds.length > 0 && allIds.every(id => selected.has(id));
+
+  const toggleAll = () => {
+    if (allSelected) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(allIds));
+    }
+  };
+
+  const deleteSelected = async () => {
+    if (!selected.size) return;
+    if (!confirm(`${selected.size} Eintrag(e) wirklich löschen?`)) return;
+    await axios.delete('/api/logs/bulk', { data: { ids: [...selected] } }).catch(() => {});
+    await load();
+    loadSources();
+  };
+
+  // ── Alle löschen ────────────────────────────────────────────────────────────
+
   const clearAll = async () => {
     if (!confirm('Alle Panel-Logs wirklich löschen?')) return;
     await axios.delete('/api/logs').catch(() => {});
     setLogs([]);
     setTotal(0);
     setSources([]);
+    setSelected(new Set());
   };
 
-  const selectCls = 'bg-panel-surface border border-panel-border rounded px-2 py-1 text-xs text-panel-text focus:outline-none focus:border-panel-accent';
-
-  const totalPages = Math.ceil(total / PAGE_SIZE);
+  const selectCls   = 'bg-panel-surface border border-panel-border rounded px-2 py-1 text-xs text-panel-text focus:outline-none focus:border-panel-accent';
+  const totalPages  = Math.ceil(total / PAGE_SIZE);
 
   return (
     <div className="space-y-3">
-      {/* Header */}
+
+      {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2">
           <h1 className="text-sm font-semibold text-panel-text">Panel-Logs</h1>
@@ -218,14 +265,12 @@ export default function PanelLogs() {
           )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Filter: Level */}
-          <select value={filterLevel} onChange={changeFilter(setFilterLevel)} className={selectCls}>
+          <select value={filterLevel}  onChange={changeFilter(setFilterLevel)}  className={selectCls}>
             <option value="">Alle Level</option>
             <option value="error">Error</option>
             <option value="warn">Warn</option>
             <option value="info">Info</option>
           </select>
-          {/* Filter: Source */}
           <select value={filterSource} onChange={changeFilter(setFilterSource)} className={selectCls}>
             <option value="">Alle Quellen</option>
             {sources.map(s => <option key={s} value={s}>{s}</option>)}
@@ -241,6 +286,41 @@ export default function PanelLogs() {
         </div>
       </div>
 
+      {/* ── Auswahl-Toolbar (erscheint wenn mind. 1 gewählt) ────────────────── */}
+      {selected.size > 0 && (
+        <div className="flex items-center gap-3 px-3 py-2 bg-panel-accent/10 border border-panel-accent/30 rounded-md text-xs text-panel-accent">
+          <button
+            onClick={toggleAll}
+            className="flex items-center gap-1.5 hover:text-panel-text transition-colors"
+          >
+            {allSelected
+              ? <CheckSquare size={13} />
+              : <Square      size={13} />
+            }
+            <span>{allSelected ? 'Alle abwählen' : 'Alle auswählen'}</span>
+          </button>
+          <span className="text-panel-muted/60">|</span>
+          <span className="font-medium tabular-nums">{selected.size} ausgewählt</span>
+          <div className="ml-auto">
+            <Button variant="danger" size="sm" onClick={deleteSelected}>
+              <Trash2 size={12} className="mr-1" />Auswahl löschen
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Alle auswählen (wenn noch nichts selektiert, aber Logs da) ───────── */}
+      {selected.size === 0 && logs.length > 0 && (
+        <button
+          onClick={toggleAll}
+          className="flex items-center gap-1.5 text-[11px] text-panel-muted/50 hover:text-panel-muted transition-colors"
+        >
+          <Square size={12} />
+          Alle auswählen
+        </button>
+      )}
+
+      {/* ── Log-Liste ───────────────────────────────────────────────────────── */}
       <Card>
         {loading && logs.length === 0 ? (
           <div className="text-panel-muted text-sm text-center py-8">Lade…</div>
@@ -250,12 +330,20 @@ export default function PanelLogs() {
           </div>
         ) : (
           <div className="space-y-2">
-            {logs.map(log => <LogEntry key={log.id} log={log} highlighted={log.id === highlightId} />)}
+            {logs.map(log => (
+              <LogEntry
+                key={log.id}
+                log={log}
+                highlighted={log.id === highlightId}
+                selected={selected.has(log.id)}
+                onToggle={() => toggleOne(log.id)}
+              />
+            ))}
           </div>
         )}
       </Card>
 
-      {/* Paginierung */}
+      {/* ── Paginierung ─────────────────────────────────────────────────────── */}
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-2 text-xs text-panel-muted">
           <Button variant="ghost" size="sm" disabled={page === 0} onClick={() => setPage(p => p - 1)}>
@@ -268,7 +356,7 @@ export default function PanelLogs() {
         </div>
       )}
 
-      {/* Hinweis */}
+      {/* ── Hinweis ─────────────────────────────────────────────────────────── */}
       <p className="text-[10px] text-panel-muted/50 text-center">
         JavaScript-Fehler, unhandled Promises und API-Fehler werden automatisch erfasst. Max. 500 Einträge.
       </p>
