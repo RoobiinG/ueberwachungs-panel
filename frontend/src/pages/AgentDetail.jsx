@@ -448,13 +448,17 @@ export default function AgentDetail() {
                     {expanded && (
                       <div className="border-t border-panel-border px-3 py-3 bg-panel-surface/30 space-y-3">
                         {/* CPU + RAM Bars */}
-                        {isRunning && (
+                        {isRunning && (c.cpu != null || c.memUsed != null) && (
                           <div className="space-y-2">
-                            <PctBar label="CPU" value={c.cpu} max={100}
-                              sub={`${c.cpu.toFixed(1)}%`} />
-                            <PctBar label="RAM"
-                              value={c.memUsed} max={c.memLimit || c.memUsed * 1.2}
-                              sub={`${fmtBytes(c.memUsed)} / ${c.memLimit ? fmtBytes(c.memLimit) : '—'}`} />
+                            {c.cpu != null && (
+                              <PctBar label="CPU" value={c.cpu} max={100}
+                                sub={`${(c.cpu ?? 0).toFixed(1)}%`} />
+                            )}
+                            {c.memUsed != null && (
+                              <PctBar label="RAM"
+                                value={c.memUsed} max={c.memLimit || c.memUsed * 1.2 || 1}
+                                sub={`${fmtBytes(c.memUsed)} / ${c.memLimit ? fmtBytes(c.memLimit) : '—'}`} />
+                            )}
                           </div>
                         )}
                         {/* Netzwerk & Ports */}
