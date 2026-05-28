@@ -33,8 +33,7 @@ app.use(express.json());
 app.use('/api/auth', require('./routes/auth'));
 
 // ─── Öffentliche Agent-Downloads (kein Login nötig) ──────────────────────────
-const fs   = require('fs');
-const path = require('path');
+const fs = require('fs');
 // install.sh: Panel-URL wird beim Ausliefern dynamisch injiziert
 app.get('/api/agents/install-script', (req, res) => {
   try {
