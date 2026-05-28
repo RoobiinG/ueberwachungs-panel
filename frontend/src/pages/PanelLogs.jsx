@@ -1,11 +1,12 @@
 // Panel-Logs: Frontend-Fehler, API-Fehler, JS-Exceptions — persistent in SQLite
 // Alle eingeloggten User schreiben; nur Admins lesen.
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { RefreshCw, Trash2, ChevronDown, ChevronUp, AlertCircle, Info, TriangleAlert, Copy, Check } from 'lucide-react';
+import { RefreshCw, Trash2, ChevronDown, ChevronUp, AlertCircle, Info, TriangleAlert, Copy, Check, Link } from 'lucide-react';
 
 // ─── Hilfsfunktionen ──────────────────────────────────────────────────────────
 
@@ -57,14 +58,53 @@ function CopyButton({ log }) {
   );
 }
 
-function LogEntry({ log }) {
+function LinkCopyButton({ log }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = () => {
+    const url = `${window.location.origin}/panel-logs?id=${log.id}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <button
+      onClick={copy}
+      title="Direktlink kopieren"
+      className="flex items-center gap-1 text-[10px] text-panel-muted/60 hover:text-panel-accent transition-colors px-1.5 py-0.5 rounded border border-panel-border/40 hover:border-panel-accent/40"
+    >
+      {copied
+        ? <><Check size={10} className="text-panel-green" /><span className="text-panel-green">Kopiert!</span></>
+        : <><Link size={10} /><span>Link erstellen</span></>
+      }
+    </button>
+  );
+}
+
+function LogEntry({ log, highlighted }) {
   const [expanded, setExpanded] = useState(false);
+  const ref     = useRef(null);
   const style   = LEVEL_STYLE[log.level] ?? LEVEL_STYLE.error;
   const Icon    = style.icon;
   const chipCls = SOURCE_CHIP[log.source] ?? 'bg-panel-muted/15 text-panel-muted';
 
+  // Scrollen & kurz aufleuchten wenn dieser Eintrag per Link geöffnet wurde
+  useEffect(() => {
+    if (highlighted && ref.current) {
+      ref.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [highlighted]);
+
   return (
-    <div className={`border rounded-md px-3 py-2 text-xs ${style.cls}`}>
+    <div
+      ref={ref}
+      id={`log-${log.id}`}
+      className={`border rounded-md px-3 py-2 text-xs transition-all duration-700 ${style.cls} ${
+        highlighted ? 'ring-2 ring-panel-accent ring-offset-1 ring-offset-panel-card' : ''
+      }`}
+    >
       <div className="flex items-start gap-2">
         <Icon size={12} className="flex-shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
@@ -100,6 +140,10 @@ function LogEntry({ log }) {
               {log.stack}
             </pre>
           )}
+          {/* Footer: Link erstellen */}
+          <div className="mt-2 pt-1.5 border-t border-current/10 flex items-center">
+            <LinkCopyButton log={log} />
+          </div>
         </div>
       </div>
     </div>
@@ -109,6 +153,9 @@ function LogEntry({ log }) {
 // ─── Haupt-Seite ──────────────────────────────────────────────────────────────
 
 export default function PanelLogs() {
+  const [searchParams] = useSearchParams();
+  const highlightId    = searchParams.get('id') ? Number(searchParams.get('id')) : null;
+
   const [logs,    setLogs]    = useState([]);
   const [total,   setTotal]   = useState(0);
   const [loading, setLoading] = useState(false);
@@ -203,7 +250,7 @@ export default function PanelLogs() {
           </div>
         ) : (
           <div className="space-y-2">
-            {logs.map(log => <LogEntry key={log.id} log={log} />)}
+            {logs.map(log => <LogEntry key={log.id} log={log} highlighted={log.id === highlightId} />)}
           </div>
         )}
       </Card>
