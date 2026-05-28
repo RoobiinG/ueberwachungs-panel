@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { WSProvider } from './context/WSContext';
 import { ErrorProvider } from './context/ErrorContext';
 import { useWebSocket } from './hooks/useWebSocket';
+import { useErrorReporter } from './hooks/useErrorReporter';
 import { Layout } from './components/Layout/Layout';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -24,6 +25,7 @@ import AuditLog from './pages/AuditLog';
 import Monitoring from './pages/Monitoring';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
+import PanelLogs from './pages/PanelLogs';
 
 const ProtectedRoute = ({ children, adminOnly, permission }) => {
   const { user, hasPermission } = useAuth();
@@ -36,6 +38,9 @@ const ProtectedRoute = ({ children, adminOnly, permission }) => {
 const AppRoutes = () => {
   const { user } = useAuth();
   const { data: liveStats, connected } = useWebSocket();
+
+  // Globaler Frontend-Fehler-Reporter (aktiviert sich nur wenn eingeloggt)
+  useErrorReporter();
 
   if (!user) {
     return (
@@ -68,6 +73,7 @@ const AppRoutes = () => {
         <Route path="/users"     element={<ProtectedRoute adminOnly><Users /></ProtectedRoute>} />
         <Route path="/roles"     element={<ProtectedRoute adminOnly><Roles /></ProtectedRoute>} />
         <Route path="/audit"     element={<ProtectedRoute permission="audit.view"><AuditLog /></ProtectedRoute>} />
+        <Route path="/panel-logs" element={<ProtectedRoute adminOnly><PanelLogs /></ProtectedRoute>} />
         <Route path="/settings"  element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
