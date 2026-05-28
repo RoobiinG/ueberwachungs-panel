@@ -7,7 +7,7 @@ import { Modal } from '../components/ui/Modal';
 import {
   ServerCog, Plus, Trash2, Wifi, WifiOff, Eye, EyeOff,
   ChevronRight, Terminal, Lock, LockOpen, ShieldAlert, RefreshCw, Pencil, Container,
-  ArrowUpCircle, PackageX
+  ArrowUpCircle, PackageX, Copy, Check, ChevronDown, ChevronUp, Wrench
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -31,7 +31,9 @@ export default function Agents() {
   const [latestVersion, setLatestVersion] = useState(null);
   const [updating,     setUpdating]     = useState({});
   const [uninstalling, setUninstalling] = useState({});
-  const { isAdmin, hasPermission } = useAuth();
+  const { isAdmin, hasPermission, token: authToken } = useAuth();
+  const [showRecovery, setShowRecovery] = useState(false);
+  const [copiedStep,   setCopiedStep]   = useState(null);
   const [editAgent,    setEditAgent]    = useState(null);
   const [editName,     setEditName]     = useState('');
   const [editUrl,      setEditUrl]      = useState('');
@@ -237,6 +239,77 @@ export default function Agents() {
           oder manuell: <code className="text-panel-text">systemctl disable panel-agent --now && rm -rf /opt/panel-agent</code>
         </p>
       </Card>
+
+      {/* Manuelle Wiederherstellung */}
+      {isAdmin && (() => {
+        const panelUrl = window.location.origin;
+        const steps = [
+          {
+            label: '1. Panel Docker neu bauen',
+            note:  'Auf dem Panel-Server',
+            cmd:   'docker compose up -d --build',
+          },
+          {
+            label: '2. Korrektes Script herunterladen',
+            note:  'Auf dem Remote-Server (SSH)',
+            cmd:   `systemctl stop panel-agent\n\ncurl -o /opt/panel-agent/panel-agent.js \\\n  -H "Authorization: Bearer ${authToken}" \\\n  ${panelUrl}/api/agents/download-script\n\nhead -2 /opt/panel-agent/panel-agent.js\n# Erwartete Ausgabe: #!/usr/bin/env node\n\nsystemctl start panel-agent`,
+          },
+        ];
+        const copy = (text, i) => {
+          navigator.clipboard.writeText(text).then(() => {
+            setCopiedStep(i);
+            setTimeout(() => setCopiedStep(null), 2000);
+          });
+        };
+        return (
+          <div className="border border-panel-border/50 rounded-lg overflow-hidden">
+            <button
+              onClick={() => setShowRecovery(r => !r)}
+              className="w-full flex items-center justify-between px-4 py-2.5 text-xs text-panel-muted hover:text-panel-text hover:bg-panel-surface/50 transition-colors"
+            >
+              <span className="flex items-center gap-2">
+                <Wrench size={13} />
+                Manuelle Wiederherstellung / Agent reparieren
+              </span>
+              {showRecovery ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+            </button>
+            {showRecovery && (
+              <div className="px-4 pb-4 space-y-3 bg-panel-bg/20">
+                <p className="text-xs text-panel-muted pt-2">
+                  Wenn der Agent-Service nach einem manuellen <code className="text-panel-text">curl</code>-Update kaputt ist
+                  (GitHub 404, falscher Dateiinhalt), diese Schritte ausführen:
+                </p>
+                {steps.map((step, i) => (
+                  <div key={i} className="bg-panel-surface border border-panel-border rounded-lg overflow-hidden">
+                    <div className="flex items-center justify-between px-3 py-2 border-b border-panel-border/50">
+                      <span className="text-xs font-medium text-panel-text">{step.label}</span>
+                      <span className="text-[10px] text-panel-muted">{step.note}</span>
+                    </div>
+                    <div className="relative group">
+                      <pre className="text-[11px] font-mono text-panel-text px-3 py-2.5 overflow-x-auto leading-relaxed whitespace-pre">
+                        {step.cmd}
+                      </pre>
+                      <button
+                        onClick={() => copy(step.cmd, i)}
+                        className="absolute top-2 right-2 p-1.5 rounded bg-panel-bg/80 border border-panel-border text-panel-muted hover:text-panel-text opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="Kopieren"
+                      >
+                        {copiedStep === i
+                          ? <Check size={11} className="text-panel-green" />
+                          : <Copy size={11} />}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                <p className="text-[10px] text-panel-muted">
+                  Token und URL sind bereits eingetragen. Für zukünftige Updates immer den{' '}
+                  <span className="text-panel-text font-medium">Update-Button</span> in der Serverkarte nutzen — kein manuelles Eingreifen nötig.
+                </p>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {agents.length === 0 && !showForm && (
         <div className="text-center py-12 text-panel-muted text-sm">
