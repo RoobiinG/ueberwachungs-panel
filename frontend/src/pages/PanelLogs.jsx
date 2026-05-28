@@ -5,7 +5,7 @@ import { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { RefreshCw, Trash2, ChevronDown, ChevronUp, AlertCircle, Info, TriangleAlert } from 'lucide-react';
+import { RefreshCw, Trash2, ChevronDown, ChevronUp, AlertCircle, Info, TriangleAlert, Copy, Check } from 'lucide-react';
 
 // ─── Hilfsfunktionen ──────────────────────────────────────────────────────────
 
@@ -29,6 +29,34 @@ function fmtDate(s) {
 
 // ─── Log-Eintrag-Karte ────────────────────────────────────────────────────────
 
+function CopyButton({ log }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = () => {
+    const lines = [
+      `[${log.level.toUpperCase()}] ${fmtDate(log.created_at)}`,
+      `Quelle: ${log.source}${log.url ? `  —  ${log.url}` : ''}`,
+      '',
+      log.message,
+    ];
+    if (log.stack) lines.push('', log.stack);
+    navigator.clipboard.writeText(lines.join('\n')).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <button
+      onClick={copy}
+      title="In Zwischenablage kopieren"
+      className="flex-shrink-0 p-1 rounded text-panel-muted/50 hover:text-panel-muted transition-colors"
+    >
+      {copied ? <Check size={12} className="text-panel-green" /> : <Copy size={12} />}
+    </button>
+  );
+}
+
 function LogEntry({ log }) {
   const [expanded, setExpanded] = useState(false);
   const style   = LEVEL_STYLE[log.level] ?? LEVEL_STYLE.error;
@@ -40,7 +68,7 @@ function LogEntry({ log }) {
       <div className="flex items-start gap-2">
         <Icon size={12} className="flex-shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
-          {/* Zeile 1: Source + Zeit */}
+          {/* Zeile 1: Source + Zeit + Copy-Button */}
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-medium ${chipCls}`}>
               {log.source}
@@ -51,6 +79,9 @@ function LogEntry({ log }) {
                 {log.url}
               </span>
             )}
+            <div className="ml-auto">
+              <CopyButton log={log} />
+            </div>
           </div>
           {/* Nachricht */}
           <p className="break-words leading-snug font-mono text-[11px]">{log.message}</p>
