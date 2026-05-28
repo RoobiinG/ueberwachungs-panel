@@ -305,9 +305,23 @@ router.get('/:id/docker', requirePermission('docker.view'), async (req, res) => 
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   if (!requireDockhandEnv(agent, res)) return;
   try {
-    const { data } = await dockhand.getEnvironments();
-    const env = (Array.isArray(data) ? data : []).find(e => String(e.id) === String(agent.dockhand_env_id)) ?? {};
-    res.json(env);
+    const envId = agent.dockhand_env_id;
+    // Environments + Images parallel laden
+    const [envRes, imagesRes] = await Promise.allSettled([
+      dockhand.getEnvironments(),
+      dockhand.getImages(envId),
+    ]);
+    const envList = envRes.status === 'fulfilled' ? (Array.isArray(envRes.value.data) ? envRes.value.data : []) : [];
+    const env     = envList.find(e => String(e.id) === String(envId)) ?? {};
+    const images  = imagesRes.status === 'fulfilled' ? (Array.isArray(imagesRes.value.data) ? imagesRes.value.data : []) : [];
+    res.json({
+      images:        images.length,
+      volumes:       null,   // Dockhand liefert keine Volume-Statistik pro Environment
+      networks:      null,
+      serverVersion: env.dockerVersion || env.version || null,
+      envName:       env.name || null,
+      envStatus:     env.status || null,
+    });
   } catch (err) {
     res.status(502).json({ error: err.message });
   }

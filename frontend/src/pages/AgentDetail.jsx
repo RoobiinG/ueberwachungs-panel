@@ -395,11 +395,11 @@ export default function AgentDetail() {
                   value={docker?.images ?? '—'}
                   color="text-panel-accent" />
                 <OverviewBox icon={Database} label="Volumes"
-                  value={docker?.volumes ?? '—'}
+                  value={docker?.volumes != null ? docker.volumes : '—'}
                   color="text-panel-purple" />
                 <OverviewBox icon={Network} label="Networks"
-                  value={docker?.networks ?? '—'}
-                  sub={docker?.serverVersion ? `Docker ${docker.serverVersion}` : undefined}
+                  value={docker?.networks != null ? docker.networks : '—'}
+                  sub={docker?.serverVersion ? `Docker ${docker.serverVersion}` : docker?.envName ?? undefined}
                   color="text-panel-orange" />
               </div>
             );
