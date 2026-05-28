@@ -26,6 +26,8 @@ COPY --from=backend-builder /app/backend ./
 COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
 # version.json liegt im Repo-Root und muss explizit kopiert werden
 COPY version.json /app/version.json
+# Agent-Script für Self-Update-Mechanismus (Panel pusht es direkt an Remote-Agents)
+COPY agent/panel-agent.js /app/agent/panel-agent.js
 
 ENV DB_PATH=/app/data/data.db
 RUN mkdir -p /app/data
