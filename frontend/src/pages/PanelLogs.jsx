@@ -10,6 +10,7 @@ import {
   RefreshCw, Trash2, ChevronDown, ChevronUp,
   AlertCircle, Info, TriangleAlert,
   Copy, Check, Link2, Square, CheckSquare,
+  ExternalLink, Shield, XCircle,
 } from 'lucide-react';
 
 // ─── Hilfsfunktionen ──────────────────────────────────────────────────────────
@@ -81,8 +82,11 @@ function LogEntry({ log, highlighted, selected, onToggle }) {
     navigator.clipboard.writeText(lines.join('\n'));
   };
 
-  const copyLink = () => {
-    navigator.clipboard.writeText(`${window.location.origin}/panel-logs?id=${log.id}`);
+  const copyLink = async () => {
+    try {
+      const { data } = await axios.post('/api/logs/share', { ids: [log.id] });
+      await navigator.clipboard.writeText(`${window.location.origin}/s/${data.token}`);
+    } catch {}
   };
 
   return (
@@ -258,14 +262,36 @@ export default function PanelLogs() {
     });
   };
 
-  // Einen gemeinsamen Direktlink für alle ausgewählten Logs kopieren
-  const copySelectedLinks = () => {
-    const ids   = [...selected].sort((a, b) => a - b).join(',');
-    const link  = `${window.location.origin}/panel-logs?ids=${ids}`;
-    navigator.clipboard.writeText(link).then(() => {
+  // Server-seitigen Share-Token erstellen → /s/<token>
+  const [sharesOpen, setSharesOpen] = useState(false);
+  const [shares,     setShares]     = useState([]);
+
+  const loadShares = useCallback(async () => {
+    try {
+      const { data } = await axios.get('/api/logs/shares');
+      setShares(data);
+    } catch {}
+  }, []);
+
+  useEffect(() => { loadShares(); }, [loadShares]);
+
+  const createShare = async () => {
+    if (!selected.size) return;
+    try {
+      const { data } = await axios.post('/api/logs/share', { ids: [...selected] });
+      const link = `${window.location.origin}/s/${data.token}`;
+      await navigator.clipboard.writeText(link);
       setBulkCopied('link');
-      setTimeout(() => setBulkCopied(null), 2000);
-    });
+      setTimeout(() => setBulkCopied(null), 2500);
+      loadShares(); // Liste aktualisieren
+    } catch {
+      setBulkCopied(null);
+    }
+  };
+
+  const revokeShare = async (id) => {
+    await axios.delete(`/api/logs/shares/${id}`).catch(() => {});
+    setShares(s => s.filter(x => x.id !== id));
   };
 
   // ── Alle löschen ────────────────────────────────────────────────────────────
@@ -344,15 +370,15 @@ export default function PanelLogs() {
                 : <><Copy  size={11} /><span>Kopieren</span></>
               }
             </button>
-            {/* Links kopieren */}
+            {/* Sicheren Share-Link erstellen */}
             <button
-              onClick={copySelectedLinks}
-              title="Direktlinks für ausgewählte Einträge kopieren"
+              onClick={createShare}
+              title="Verschlüsselten Link erstellen & kopieren (kein Login nötig)"
               className="flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-panel-accent/30 hover:bg-panel-accent/20 transition-colors"
             >
               {bulkCopied === 'link'
-                ? <><Check size={11} className="text-panel-green" /><span className="text-panel-green">Kopiert!</span></>
-                : <><Link2 size={11} /><span>Links erstellen</span></>
+                ? <><Check size={11} className="text-panel-green" /><span className="text-panel-green">Link kopiert!</span></>
+                : <><Shield size={11} /><span>Link erstellen</span></>
               }
             </button>
             <Button variant="danger" size="sm" onClick={deleteSelected}>
@@ -406,6 +432,70 @@ export default function PanelLogs() {
           <Button variant="ghost" size="sm" disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)}>
             Weiter →
           </Button>
+        </div>
+      )}
+
+      {/* ── Geteilte Links Verwaltung ────────────────────────────────────── */}
+      {shares.length > 0 && (
+        <div className="border border-panel-border rounded-md overflow-hidden">
+          <button
+            onClick={() => setSharesOpen(o => !o)}
+            className="w-full flex items-center justify-between px-3 py-2 bg-panel-surface hover:bg-panel-card transition-colors text-xs"
+          >
+            <div className="flex items-center gap-2">
+              <Shield size={12} className="text-panel-accent" />
+              <span className="font-medium text-panel-text">Geteilte Links</span>
+              <span className="px-1.5 py-0.5 bg-panel-accent/20 text-panel-accent text-[10px] rounded-full tabular-nums">
+                {shares.length}
+              </span>
+            </div>
+            {sharesOpen ? <ChevronUp size={13} className="text-panel-muted" /> : <ChevronDown size={13} className="text-panel-muted" />}
+          </button>
+
+          {sharesOpen && (
+            <div className="divide-y divide-panel-border/50">
+              {shares.map(s => {
+                const ids      = JSON.parse(s.log_ids);
+                const shortTok = s.token.slice(0, 8) + '…';
+                const shareUrl = `${window.location.origin}/s/${s.token}`;
+                return (
+                  <div key={s.id} className="flex items-center gap-3 px-3 py-2 text-xs bg-panel-card hover:bg-panel-surface transition-colors">
+                    <code className="text-panel-muted font-mono text-[10px] flex-shrink-0">{shortTok}</code>
+                    <div className="flex-1 min-w-0">
+                      {s.label && <p className="text-panel-text truncate">{s.label}</p>}
+                      <p className="text-panel-muted/60 text-[10px]">
+                        {ids.length} Eintrag{ids.length !== 1 ? 'e' : ''} · erstellt {new Date(s.created_at).toLocaleDateString('de-DE')}
+                        {s.access_count > 0 && ` · ${s.access_count}× abgerufen`}
+                      </p>
+                    </div>
+                    <a
+                      href={shareUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title="Link öffnen"
+                      className="p-1 text-panel-muted/50 hover:text-panel-accent transition-colors"
+                    >
+                      <ExternalLink size={12} />
+                    </a>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(shareUrl)}
+                      title="Link kopieren"
+                      className="p-1 text-panel-muted/50 hover:text-panel-muted transition-colors"
+                    >
+                      <Copy size={12} />
+                    </button>
+                    <button
+                      onClick={() => revokeShare(s.id)}
+                      title="Link widerrufen"
+                      className="p-1 text-panel-muted/50 hover:text-panel-red transition-colors"
+                    >
+                      <XCircle size={12} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
