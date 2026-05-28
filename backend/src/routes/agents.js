@@ -2,6 +2,8 @@ const router      = require('express').Router();
 const axios       = require('axios');
 const https       = require('https');
 const tls         = require('tls');
+const fs          = require('fs');
+const path        = require('path');
 const db          = require('../db');
 const { requirePermission } = require('../middleware/requirePermission');
 const { validatePublicUrl } = require('../utils/validateUrl');
@@ -240,8 +242,18 @@ router.post('/:id/update', requirePermission('agents.update'), async (req, res) 
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+
+  // Aktuelles Agent-Script vom lokalen Dateisystem lesen und direkt pushen
+  const scriptPath = path.resolve(__dirname, '../../../agent/panel-agent.js');
+  let script;
   try {
-    const { data } = await agentApi(agent).post('/update', {}, { timeout: 30000 });
+    script = fs.readFileSync(scriptPath, 'utf8');
+  } catch {
+    return res.status(500).json({ error: 'Agent-Script nicht gefunden (lokal). Bitte manuell aktualisieren.' });
+  }
+
+  try {
+    const { data } = await agentApi(agent).post('/update', { script }, { timeout: 30000 });
     // Versions-Cache invalidieren damit nächste Abfrage aktuell ist
     _latestCache.ts = 0;
     res.json(data);

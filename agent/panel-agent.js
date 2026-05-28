@@ -274,10 +274,26 @@ async function handler(req, res) {
     } else if (url === '/update' && req.method === 'POST') {
       const tmpPath  = path.join(DIR, '_panel-agent.new.js');
       const selfPath = path.join(DIR, 'panel-agent.js');
+
+      // Body lesen (Panel schickt { script: "..." } direkt)
+      const body = await new Promise((resolve) => {
+        let d = '';
+        req.on('data', c => { d += c; });
+        req.on('end', () => { try { resolve(JSON.parse(d || '{}')); } catch { resolve({}); } });
+      });
+
       try {
-        await downloadFile(REPO_RAW, tmpPath);
-        const content    = fs.readFileSync(tmpPath, 'utf8');
+        let content;
+        if (body.script && typeof body.script === 'string' && body.script.length > 100) {
+          // Vom Panel direkt übermittelt → kein GitHub-Download nötig
+          content = body.script;
+        } else {
+          // Fallback: von GitHub laden
+          await downloadFile(REPO_RAW, tmpPath);
+          content = fs.readFileSync(tmpPath, 'utf8');
+        }
         const newVersion = (content.match(/^const VERSION\s*=\s*['"]([^'"]+)['"]/m) || [])[1] || 'unbekannt';
+        fs.writeFileSync(tmpPath, content, 'utf8');
         fs.renameSync(tmpPath, selfPath);
         respond(res, 200, { success: true, oldVersion: VERSION, newVersion, message: 'Agent wird neu gestartet…' });
         setTimeout(() => exec('systemctl restart panel-agent', () => {}), 1500);
