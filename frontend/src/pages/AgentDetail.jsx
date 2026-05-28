@@ -5,7 +5,8 @@ import {
   Cpu, HardDrive, Server, MemoryStick, ArrowLeft, RefreshCw,
   Play, Square, RotateCcw, Layers, Network, Database, Zap,
   Package, CircleAlert, ChevronDown, ChevronUp,
-  Container, Activity, Pause, CheckCircle2, ArrowUpCircle
+  Container, Activity, Pause, CheckCircle2, ArrowUpCircle,
+  Terminal, Copy, Check
 } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -85,11 +86,72 @@ function OverviewBox({ icon: Icon, label, value, sub, color = 'text-panel-accent
   );
 }
 
+// ── Recovery Guide ─────────────────────────────────────────────────────────
+function RecoveryGuide({ token }) {
+  const [copied, setCopied] = useState(null);
+  const panelUrl = window.location.origin;
+
+  const steps = [
+    {
+      label: 'Panel Docker neu bauen',
+      cmd: 'docker compose up -d --build',
+      note: 'Auf dem Panel-Server ausführen',
+    },
+    {
+      label: 'Korrektes Agent-Script herunterladen',
+      cmd: `systemctl stop panel-agent\n\ncurl -o /opt/panel-agent/panel-agent.js \\\n  -H "Authorization: Bearer ${token}" \\\n  ${panelUrl}/api/agents/download-script\n\nhead -2 /opt/panel-agent/panel-agent.js\n# Erwartete Ausgabe: #!/usr/bin/env node\n\nsystemctl start panel-agent`,
+      note: 'Auf dem Remote-Server (SSH) ausführen',
+    },
+  ];
+
+  const copy = (text, key) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(key);
+      setTimeout(() => setCopied(null), 2000);
+    });
+  };
+
+  return (
+    <div className="mt-4 space-y-3">
+      <div className="flex items-center gap-2 text-xs text-panel-muted font-medium">
+        <Terminal size={13} />
+        Manuelle Wiederherstellung
+      </div>
+      {steps.map((step, i) => (
+        <div key={i} className="bg-panel-surface border border-panel-border rounded-lg overflow-hidden">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-panel-border/50">
+            <span className="text-xs font-medium text-panel-text">
+              <span className="text-panel-accent font-bold mr-2">{i + 1}.</span>
+              {step.label}
+            </span>
+            <span className="text-[10px] text-panel-muted">{step.note}</span>
+          </div>
+          <div className="relative group">
+            <pre className="text-[11px] font-mono text-panel-text px-3 py-2.5 overflow-x-auto leading-relaxed whitespace-pre">
+              {step.cmd}
+            </pre>
+            <button
+              onClick={() => copy(step.cmd, i)}
+              className="absolute top-2 right-2 p-1.5 rounded bg-panel-bg/80 border border-panel-border text-panel-muted hover:text-panel-text opacity-0 group-hover:opacity-100 transition-opacity"
+              title="Kopieren"
+            >
+              {copied === i ? <Check size={11} className="text-green-400" /> : <Copy size={11} />}
+            </button>
+          </div>
+        </div>
+      ))}
+      <p className="text-[10px] text-panel-muted">
+        Token und URL sind bereits eingetragen. Tipp: Für zukünftige Updates den <strong className="text-panel-text">Update-Button</strong> im Panel nutzen — kein manuelles Eingreifen nötig.
+      </p>
+    </div>
+  );
+}
+
 // ── Main Component ─────────────────────────────────────────────────────────
 export default function AgentDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { canWrite } = useAuth();
+  const { canWrite, token } = useAuth();
 
   const [agentName, setAgentName]         = useState('');
   const [stats,     setStats]             = useState(null);
@@ -106,6 +168,7 @@ export default function AgentDetail() {
   const [agentVersion, setAgentVersion]   = useState(null);
   const [latestVersion, setLatestVersion] = useState(null);
   const [updating, setUpdating]           = useState(false);
+  const [showRecovery, setShowRecovery]   = useState(false);
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -206,11 +269,14 @@ export default function AgentDetail() {
       <Button size="sm" variant="ghost" onClick={() => navigate('/agents')}>
         <ArrowLeft size={13} className="mr-1" />Zurück
       </Button>
-      <div className="text-center py-16">
+      <div className="text-center py-8">
         <CircleAlert size={32} className="mx-auto mb-3 text-panel-red opacity-60" />
         <p className="text-panel-red text-sm">{error}</p>
         <Button size="sm" className="mt-4" onClick={() => load()}>Erneut versuchen</Button>
       </div>
+      <Card>
+        <RecoveryGuide token={token} />
+      </Card>
     </div>
   );
 
@@ -615,6 +681,27 @@ export default function AgentDetail() {
       {/* ══════════════════════════════════════════════════════════════════
           TAB: SERVICES
       ═══════════════════════════════════════════════════════════════════ */}
+      {/* ── Manuelle Wiederherstellung (aufklappbar) ───────────────────── */}
+      {canWrite && (
+        <div className="border border-panel-border/50 rounded-lg overflow-hidden">
+          <button
+            onClick={() => setShowRecovery(r => !r)}
+            className="w-full flex items-center justify-between px-4 py-2.5 text-xs text-panel-muted hover:text-panel-text hover:bg-panel-surface/50 transition-colors"
+          >
+            <span className="flex items-center gap-2">
+              <Terminal size={13} />
+              Manuelle Wiederherstellung
+            </span>
+            {showRecovery ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+          </button>
+          {showRecovery && (
+            <div className="px-4 pb-4 bg-panel-bg/30">
+              <RecoveryGuide token={token} />
+            </div>
+          )}
+        </div>
+      )}
+
       {currentTab === 'services' && (
         <Card title={`Systemd Services (${filteredServices.length})`}>
           <div className="mb-3">
