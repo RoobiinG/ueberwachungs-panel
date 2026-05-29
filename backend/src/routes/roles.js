@@ -5,7 +5,7 @@ const { PERMISSIONS, ALL_KEYS } = require('../permissions');
 const { auditLog } = require('../utils/audit');
 
 const getRole  = (id) => db.prepare('SELECT * FROM roles WHERE id = ?').get(id);
-const allRoles = ()   => db.prepare('SELECT id, name, label, is_system, is_admin, restrict_agents, created_at FROM roles ORDER BY is_admin DESC, is_system DESC, label').all();
+const allRoles = ()   => db.prepare('SELECT id, name, label, is_system, is_admin, restrict_agents, restrict_mchost, hide_local, created_at FROM roles ORDER BY is_admin DESC, is_system DESC, label').all();
 
 // ─── Alle Rollen listen (für Dropdown in Benutzerverwaltung) ──────────────────
 router.get('/', requireRole('admin'), (req, res) => {
@@ -76,6 +76,34 @@ router.put('/:id/agents', requireRole('admin'), (req, res) => {
     db.prepare('DELETE FROM agent_grants WHERE role_id = ?').run(role.id);
     const ins = db.prepare('INSERT OR IGNORE INTO agent_grants (role_id, agent_id) VALUES (?, ?)');
     for (const agentId of agentIds) ins.run(role.id, parseInt(agentId));
+  })();
+
+  res.json({ success: true });
+});
+
+// ─── MC-Host24 VServer-Einschränkung einer Rolle ──────────────────────────────
+router.get('/:id/mchost', requireRole('admin'), (req, res) => {
+  const role = getRole(req.params.id);
+  if (!role) return res.status(404).json({ error: 'Rolle nicht gefunden' });
+  const vserverIds = db.prepare('SELECT vserver_id FROM mchost_vserver_access WHERE role_id = ?')
+    .all(role.id).map(r => r.vserver_id);
+  res.json({ restrictMchost: !!role.restrict_mchost, vserverIds });
+});
+
+router.put('/:id/mchost', requireRole('admin'), (req, res) => {
+  const role = getRole(req.params.id);
+  if (!role) return res.status(404).json({ error: 'Rolle nicht gefunden' });
+  if (role.is_admin) return res.status(403).json({ error: 'Admin-Rolle kann nicht eingeschränkt werden' });
+
+  const { restrictMchost, vserverIds = [] } = req.body;
+
+  db.transaction(() => {
+    if (restrictMchost !== undefined) {
+      db.prepare('UPDATE roles SET restrict_mchost = ? WHERE id = ?').run(restrictMchost ? 1 : 0, role.id);
+    }
+    db.prepare('DELETE FROM mchost_vserver_access WHERE role_id = ?').run(role.id);
+    const ins = db.prepare('INSERT OR IGNORE INTO mchost_vserver_access (role_id, vserver_id) VALUES (?, ?)');
+    for (const vsId of vserverIds) ins.run(role.id, String(vsId));
   })();
 
   res.json({ success: true });
