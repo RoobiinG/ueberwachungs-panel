@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import {
   Lock, Plus, Trash2, Pencil, Check, X, ShieldCheck,
-  ChevronDown, ChevronRight, Users, Save, Server, Globe, Monitor,
+  ChevronDown, ChevronRight, Users, Save, Server, Globe, Monitor, Gamepad2,
 } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -111,6 +111,14 @@ export default function Roles() {
   const [agentsSaving,   setAgentsSaving]   = useState(false);
   const [agentsSaveMsg,  setAgentsSaveMsg]  = useState('');
 
+  // MC-Host24 VServer-Zugriff
+  const [allVServers,      setAllVServers]      = useState([]);
+  const [mchostRestrict,   setMchostRestrict]   = useState(false);
+  const [grantedVServers,  setGrantedVServers]  = useState(new Set());
+  const [mchostDirty,      setMchostDirty]      = useState(false);
+  const [mchostSaving,     setMchostSaving]     = useState(false);
+  const [mchostSaveMsg,    setMchostSaveMsg]    = useState('');
+
   // Rename-Modal
   const [renaming,    setRenaming]    = useState(false);
   const [renameLabel, setRenameLabel] = useState('');
@@ -124,14 +132,16 @@ export default function Roles() {
 
   // ── Laden ──────────────────────────────────────────────────────────────────
   const loadRoles = useCallback(async () => {
-    const [rolesRes, permRes, agentsRes] = await Promise.all([
+    const [rolesRes, permRes, agentsRes, vserverRes] = await Promise.all([
       axios.get('/api/roles'),
       axios.get('/api/roles/permissions'),
       axios.get('/api/agents'),
+      axios.get('/api/mchost/vserver').catch(() => ({ data: [] })),
     ]);
     setRoles(rolesRes.data);
     setPermDefs(permRes.data);
     setAllAgents(agentsRes.data);
+    setAllVServers(Array.isArray(vserverRes.data) ? vserverRes.data : []);
   }, []);
 
   useEffect(() => { loadRoles(); }, [loadRoles]);
@@ -143,21 +153,28 @@ export default function Roles() {
     setSaveMsg('');
     setAgentsDirty(false);
     setAgentsSaveMsg('');
+    setMchostDirty(false);
+    setMchostSaveMsg('');
     if (role.is_admin) {
       setSelPerms(new Set(permDefs.map(p => p.key)));
       setAgentRestrict(false);
       setGrantedAgents(new Set());
       setHideLocal(false);
+      setMchostRestrict(false);
+      setGrantedVServers(new Set());
       return;
     }
-    const [permRes, agentRes] = await Promise.all([
+    const [permRes, agentRes, mchostRes] = await Promise.all([
       axios.get(`/api/roles/${role.id}/permissions`),
       axios.get(`/api/roles/${role.id}/agents`),
+      axios.get(`/api/roles/${role.id}/mchost`).catch(() => ({ data: { restrictMchost: false, vserverIds: [] } })),
     ]);
     setSelPerms(new Set(permRes.data));
     setAgentRestrict(agentRes.data.restrictAgents);
     setGrantedAgents(new Set(agentRes.data.agentIds));
     setHideLocal(!!agentRes.data.hideLocal);
+    setMchostRestrict(!!mchostRes.data.restrictMchost);
+    setGrantedVServers(new Set(mchostRes.data.vserverIds?.map(String) ?? []));
   };
 
   const handlePermChange = (next) => {
@@ -198,6 +215,23 @@ export default function Roles() {
       setAgentsSaveMsg(err.response?.data?.error || 'Fehler');
     }
     setAgentsSaving(false);
+  };
+
+  // ── MC-Host24 VServer-Zugriff speichern ──────────────────────────────────
+  const saveMchostAccess = async () => {
+    if (!selected || selected.is_admin) return;
+    setMchostSaving(true); setMchostSaveMsg('');
+    try {
+      await axios.put(`/api/roles/${selected.id}/mchost`, {
+        restrictMchost: mchostRestrict,
+        vserverIds: [...grantedVServers],
+      });
+      setMchostSaveMsg('✓ Gespeichert');
+      setMchostDirty(false);
+    } catch (err) {
+      setMchostSaveMsg(err.response?.data?.error || 'Fehler');
+    }
+    setMchostSaving(false);
   };
 
   // ── Umbenennen ────────────────────────────────────────────────────────────
@@ -370,6 +404,86 @@ export default function Roles() {
                   locked={!!selected.is_admin}
                 />
               ))}
+
+              {/* ── MC-Host24 VServer-Zugriff ─────────────────────────────── */}
+              {!selected.is_admin && (
+                <div className="border border-panel-border rounded-lg overflow-hidden">
+                  <div className="flex items-center gap-3 px-3 py-2.5 bg-panel-surface select-none">
+                    <Gamepad2 size={13} className="text-panel-muted flex-shrink-0" />
+                    <span className="text-xs font-semibold text-panel-text flex-1">MC-Host24 VServer-Zugriff</span>
+                    <span className="text-xs text-panel-muted">
+                      {mchostRestrict ? `${grantedVServers.size} / ${allVServers.length}` : 'Alle'}
+                    </span>
+                    <button
+                      onClick={() => { setMchostRestrict(r => !r); setMchostDirty(true); setMchostSaveMsg(''); }}
+                      className={`text-xs px-2 py-0.5 rounded transition-colors ml-2 ${
+                        mchostRestrict
+                          ? 'bg-panel-orange/20 text-panel-orange hover:bg-panel-orange/30'
+                          : 'bg-panel-surface text-panel-muted hover:bg-panel-card border border-panel-border'
+                      }`}>
+                      {mchostRestrict ? 'Einschränkung: AN' : 'Alle VServer'}
+                    </button>
+                  </div>
+
+                  {mchostRestrict && allVServers.length === 0 && (
+                    <p className="px-3 py-3 text-xs text-panel-muted">
+                      Keine VServer verfügbar (MC-Host24 nicht konfiguriert?).
+                    </p>
+                  )}
+                  {mchostRestrict && allVServers.length > 0 && (
+                    <div className="divide-y divide-panel-border/50">
+                      {allVServers.map(vs => {
+                        const vsId = String(vs.id);
+                        const checked = grantedVServers.has(vsId);
+                        return (
+                          <label key={vsId}
+                            className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-panel-surface/50 transition-colors">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {
+                                const next = new Set(grantedVServers);
+                                if (checked) next.delete(vsId); else next.add(vsId);
+                                setGrantedVServers(next);
+                                setMchostDirty(true);
+                                setMchostSaveMsg('');
+                              }}
+                              className="accent-panel-accent w-3.5 h-3.5 flex-shrink-0"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-medium text-panel-text">{vs.name || vs.hostname || `VServer ${vs.id}`}</p>
+                              <p className="text-xs text-panel-muted">{vs.ip || ''}</p>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {!mchostRestrict && (
+                    <div className="flex items-center gap-2 px-3 py-2.5 text-xs text-panel-muted">
+                      <Globe size={12} />
+                      Diese Rolle sieht alle MC-Host24 VServer.
+                    </div>
+                  )}
+
+                  {(mchostDirty || mchostSaveMsg) && (
+                    <div className="px-3 py-2 border-t border-panel-border flex items-center gap-2">
+                      {mchostSaveMsg && (
+                        <span className={`text-xs ${mchostSaveMsg.startsWith('✓') ? 'text-panel-green' : 'text-panel-red'}`}>
+                          {mchostSaveMsg}
+                        </span>
+                      )}
+                      {mchostDirty && (
+                        <Button size="sm" className="ml-auto" onClick={saveMchostAccess} disabled={mchostSaving}>
+                          <Save size={12} className="mr-1" />
+                          {mchostSaving ? 'Speichere…' : 'VServer-Zugriff speichern'}
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* ── Server-Zugriff ─────────────────────────────────────────── */}
               {!selected.is_admin && (

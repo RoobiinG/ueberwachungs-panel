@@ -238,6 +238,24 @@ db.exec(`
     PRIMARY KEY (role_id, agent_id)
   );
 `);
+// MC-Host24: VServer-Zugriffskontrolle pro Rolle
+try { db.exec('ALTER TABLE roles ADD COLUMN restrict_mchost INTEGER NOT NULL DEFAULT 0'); } catch {}
+db.exec(`
+  CREATE TABLE IF NOT EXISTS mchost_vserver_access (
+    role_id    INTEGER NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    vserver_id TEXT    NOT NULL,
+    PRIMARY KEY (role_id, vserver_id)
+  );
+  CREATE TABLE IF NOT EXISTS mchost_vserver_tags (
+    vserver_id TEXT NOT NULL,
+    tag        TEXT NOT NULL,
+    color      TEXT NOT NULL DEFAULT 'blue',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (vserver_id, tag)
+  );
+`);
+// Aktions-Benachrichtigungen
+db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('action_notifications', '0')").run();
 
 // ─── Standard-Rollen seeden ───────────────────────────────────────────────────
 const seedRole = db.transaction((name, label, isSystem, isAdmin, permissions) => {

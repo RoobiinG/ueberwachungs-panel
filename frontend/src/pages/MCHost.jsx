@@ -3,7 +3,10 @@ import axios from 'axios';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
-import { RefreshCw, Play, Square, PowerOff, RotateCcw, HardDrive, ChevronDown, ChevronUp, Plus } from 'lucide-react';
+import {
+  RefreshCw, Play, Square, PowerOff, RotateCcw, HardDrive,
+  ChevronDown, ChevronUp, Plus, Tag, X,
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const statusColor = (s) => {
@@ -14,6 +17,83 @@ const statusColor = (s) => {
   return 'orange';
 };
 
+const TAG_COLORS = {
+  blue:   'bg-blue-500/15 text-blue-400 border-blue-500/30',
+  green:  'bg-green-500/15 text-green-400 border-green-500/30',
+  red:    'bg-red-500/15 text-red-400 border-red-500/30',
+  orange: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
+  purple: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
+  gray:   'bg-panel-card text-panel-muted border-panel-border',
+};
+
+// ─── Tag-Chip ──────────────────────────────────────────────────────────────────
+function TagChip({ tag, color, onRemove }) {
+  return (
+    <span className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border font-medium ${TAG_COLORS[color] ?? TAG_COLORS.gray}`}>
+      {tag}
+      {onRemove && (
+        <button onClick={onRemove} className="opacity-60 hover:opacity-100 transition-opacity leading-none">
+          <X size={9} />
+        </button>
+      )}
+    </span>
+  );
+}
+
+// ─── Tag-Hinzufügen-Popup ─────────────────────────────────────────────────────
+function AddTagPopup({ serverId, onAdded, onClose }) {
+  const [tag, setTag] = useState('');
+  const [color, setColor] = useState('blue');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+
+  const save = async () => {
+    if (!tag.trim()) return;
+    setSaving(true);
+    setErr('');
+    try {
+      await axios.post(`/api/mchost/vserver/${serverId}/tags`, { tag: tag.trim(), color });
+      onAdded();
+      onClose();
+    } catch (e) {
+      setErr(e.response?.data?.error || 'Fehler');
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="mt-1 p-2 bg-panel-card border border-panel-border rounded-md space-y-2 w-56 shadow-lg">
+      <input
+        autoFocus
+        value={tag}
+        onChange={e => setTag(e.target.value)}
+        onKeyDown={e => e.key === 'Enter' && save()}
+        placeholder="Tag-Name"
+        maxLength={32}
+        className="w-full bg-panel-surface border border-panel-border rounded px-2 py-1 text-xs text-panel-text focus:border-panel-accent outline-none"
+      />
+      <div className="flex gap-1">
+        {Object.keys(TAG_COLORS).map(c => (
+          <button
+            key={c}
+            onClick={() => setColor(c)}
+            className={`w-4 h-4 rounded-full border-2 transition-all ${
+              c === 'blue' ? 'bg-blue-500' : c === 'green' ? 'bg-green-500' : c === 'red' ? 'bg-red-500' :
+              c === 'orange' ? 'bg-orange-500' : c === 'purple' ? 'bg-purple-500' : 'bg-panel-muted'
+            } ${color === c ? 'border-white scale-110' : 'border-transparent'}`}
+          />
+        ))}
+      </div>
+      {err && <p className="text-[10px] text-panel-red">{err}</p>}
+      <div className="flex gap-1">
+        <Button size="sm" variant="primary" onClick={save} disabled={saving || !tag.trim()} className="flex-1">Hinzufügen</Button>
+        <Button size="sm" variant="ghost" onClick={onClose}>Abbrechen</Button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Haupt-Komponente ─────────────────────────────────────────────────────────
 export default function MCHost() {
   const { hasPermission, isAdmin } = useAuth();
   const canView    = isAdmin || hasPermission('mchost.view');
@@ -22,14 +102,15 @@ export default function MCHost() {
   const canRestart = isAdmin || hasPermission('mchost.restart');
   const canBackup  = isAdmin || hasPermission('mchost.backup');
 
-  const [servers, setServers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [actError, setActError] = useState('');
-  const [busy, setBusy] = useState({});
-  const [expanded, setExpanded] = useState({});
-  const [backups, setBackups] = useState({});
+  const [servers, setServers]           = useState([]);
+  const [loading, setLoading]           = useState(true);
+  const [error, setError]               = useState('');
+  const [actError, setActError]         = useState('');
+  const [busy, setBusy]                 = useState({});
+  const [expanded, setExpanded]         = useState({});
+  const [backups, setBackups]           = useState({});
   const [backupLoading, setBackupLoading] = useState({});
+  const [addTagFor, setAddTagFor]       = useState(null);  // VServer-ID
 
   const load = async () => {
     if (!canView) { setLoading(false); return; }
@@ -60,7 +141,8 @@ export default function MCHost() {
     if (!isOpen && !backups[id]) {
       try {
         const { data } = await axios.get(`/api/mchost/vserver/${id}/backups`);
-        setBackups(b => ({ ...b, [id]: Array.isArray(data) ? data : [] }));
+        const list = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
+        setBackups(b => ({ ...b, [id]: list }));
       } catch { setBackups(b => ({ ...b, [id]: [] })); }
     }
   };
@@ -72,11 +154,23 @@ export default function MCHost() {
     try {
       await axios.post(`/api/mchost/vserver/${id}/backups`);
       const { data } = await axios.get(`/api/mchost/vserver/${id}/backups`);
-      setBackups(b => ({ ...b, [id]: Array.isArray(data) ? data : [] }));
+      const list = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
+      setBackups(b => ({ ...b, [id]: list }));
     } catch (err) {
       setActError(err.response?.data?.error || 'Backup-Erstellung fehlgeschlagen');
     }
     setBackupLoading(b => ({ ...b, [id]: false }));
+  };
+
+  const removeTag = async (serverId, tag) => {
+    try {
+      await axios.delete(`/api/mchost/vserver/${serverId}/tags/${encodeURIComponent(tag)}`);
+      setServers(prev => prev.map(s =>
+        String(s.id) === String(serverId)
+          ? { ...s, tags: (s.tags || []).filter(t => t.tag !== tag) }
+          : s
+      ));
+    } catch { /* ignorieren */ }
   };
 
   if (!canView) {
@@ -117,9 +211,38 @@ export default function MCHost() {
                 {/* Server-Zeile */}
                 <div className="flex items-center justify-between px-4 py-3">
                   <div className="flex-1 min-w-0 mr-3">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <Badge color={statusColor(s.status || s.state)}>{s.status || s.state || '—'}</Badge>
                       <span className="text-sm text-panel-text font-medium">{s.name || s.hostname || `VServer ${s.id}`}</span>
+                      {/* Tags */}
+                      {(s.tags || []).map(t => (
+                        <TagChip
+                          key={t.tag}
+                          tag={t.tag}
+                          color={t.color}
+                          onRemove={isAdmin ? () => removeTag(s.id, t.tag) : undefined}
+                        />
+                      ))}
+                      {isAdmin && (
+                        <div className="relative">
+                          <button
+                            onClick={() => setAddTagFor(addTagFor === String(s.id) ? null : String(s.id))}
+                            className="text-panel-muted hover:text-panel-accent transition-colors"
+                            title="Tag hinzufügen"
+                          >
+                            <Tag size={11} />
+                          </button>
+                          {addTagFor === String(s.id) && (
+                            <div className="absolute left-0 top-6 z-20">
+                              <AddTagPopup
+                                serverId={s.id}
+                                onAdded={load}
+                                onClose={() => setAddTagFor(null)}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <div className="text-xs text-panel-muted mt-0.5">
                       {[s.ip, s.os].filter(Boolean).join(' · ')}
