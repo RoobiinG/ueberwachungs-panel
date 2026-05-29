@@ -81,10 +81,12 @@ async function connect(ws, hostId, userId) {
     port:     host.port || 22,
     username: host.username,
     readyTimeout: 10_000,
-    // Moderne RSA-Signaturen explizit aktivieren (OpenSSH deaktiviert ssh-rsa/SHA-1 standardmäßig)
+    // serverHostKey: akzeptierte Host-Key-Formate vom Server
+    // KEIN algorithms.publicKey — dieses Feld ist in ssh2 v1.x ungültig und verhindert
+    // dass publickey-Auth überhaupt versucht wird (ssh2 findet keinen passenden Algorithmus).
+    // ssh2 v1.16 wählt RSA-Signaturen (rsa-sha2-256 → rsa-sha2-512 → ssh-rsa) automatisch.
     algorithms: {
       serverHostKey: ['ssh-ed25519', 'rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa'],
-      publicKey:     ['ssh-ed25519', 'rsa-sha2-512', 'rsa-sha2-256', 'ssh-rsa'],
     },
   };
 
