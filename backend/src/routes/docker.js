@@ -7,21 +7,7 @@ const { requirePermission } = require('../middleware/requirePermission');
 const { auditLog }          = require('../utils/audit');
 const db                    = require('../db');
 const dockhand              = require('../utils/dockhandClient');
-const { broadcast } = require('../websocket');
-
-const notifyAction = (req, action, containerName, platform = 'docker') => {
-  if (db.prepare("SELECT value FROM settings WHERE key='action_notifications'").get()?.value !== '1') return;
-  broadcast({
-    type: 'action_notify',
-    payload: {
-      actor:      req.user?.username || 'Unbekannt',
-      action,
-      serverName: containerName,
-      platform,
-      timestamp:  Date.now(),
-    },
-  });
-};
+const { notifyAction } = require('../utils/actionNotify');
 
 const localEnvId = () =>
   db.prepare("SELECT value FROM settings WHERE key = 'dockhandLocalEnvId'").get()?.value ?? null;
@@ -88,7 +74,7 @@ router.post('/containers/:id/:action', requirePermission('docker.control'), asyn
   try {
     await dockhand.containerAction(envId, id, action);
     auditLog(req, `docker.${action}`, 'container', id.slice(0, 12), { containerId: id.slice(0, 12) });
-    notifyAction(req, action, req.body?.containerName || id.slice(0, 12));
+    notifyAction(req, action, req.body?.containerName || id.slice(0, 12), 'docker');
     res.json({ success: true });
   } catch (err) { res.status(502).json({ error: err.message }); }
 });

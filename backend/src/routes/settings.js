@@ -170,12 +170,19 @@ router.put('/general', requireRole('admin'), (req, res) => {
 
 // ── Aktions-Benachrichtigungen ────────────────────────────────────────────────
 router.get('/notifications', requireRole('admin'), (req, res) => {
-  res.json({ actionNotifications: get('action_notifications') === '1' });
+  const wid = get('action_webhook_id');
+  res.json({
+    actionNotifications: get('action_notifications') === '1',
+    actionWebhookId:     wid ? parseInt(wid) : null,
+  });
 });
 
 router.put('/notifications', requireRole('admin'), (req, res) => {
-  const { actionNotifications } = req.body;
-  set('action_notifications', actionNotifications ? '1' : '0');
+  const { actionNotifications, actionWebhookId } = req.body;
+  if (actionNotifications !== undefined)
+    set('action_notifications', actionNotifications ? '1' : '0');
+  if (actionWebhookId !== undefined)
+    set('action_webhook_id', actionWebhookId ? String(actionWebhookId) : '');
   res.json({ success: true });
 });
 
