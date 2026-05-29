@@ -134,7 +134,11 @@ export const Header = ({ connected }) => {
         <div className="flex items-center gap-3">
           {/* Live-Indikator */}
           <div className={`flex items-center gap-1.5 text-xs ${connected ? 'text-panel-green' : 'text-panel-red'}`}>
-            {connected ? <Wifi size={13} /> : <WifiOff size={13} />}
+            {connected ? (
+              <span className="status-dot-live" />
+            ) : (
+              <WifiOff size={13} />
+            )}
             <span className="hidden sm:inline">{connected ? 'Live' : 'Getrennt'}</span>
           </div>
 

@@ -92,31 +92,51 @@ export default function Firewall() {
         </div>
       )}
 
-      <Card title="UFW Status">
-        <pre className="text-xs font-mono text-panel-muted whitespace-pre-wrap bg-panel-surface rounded-md p-3 max-h-40 overflow-y-auto">
-          {status || (loading ? 'Lade...' : error ? 'UFW nicht erreichbar' : 'UFW nicht installiert')}
-        </pre>
-      </Card>
+      {/* UFW Status */}
+      {status && (
+        <div className="bg-panel-card border border-panel-border rounded-lg p-3">
+          <div className="flex items-center gap-2 mb-2">
+            <span className={`w-2 h-2 rounded-full ${status.includes('active') ? 'bg-panel-green' : 'bg-panel-red'}`} />
+            <span className="text-xs font-semibold text-panel-text">
+              {status.includes('active') ? 'UFW aktiv' : 'UFW inaktiv'}
+            </span>
+          </div>
+          <details>
+            <summary className="text-xs text-panel-muted cursor-pointer hover:text-panel-text transition-colors select-none">
+              Vollständige Ausgabe anzeigen
+            </summary>
+            <pre className="text-xs font-mono text-panel-muted whitespace-pre-wrap bg-panel-surface rounded-md p-3 mt-2 max-h-40 overflow-y-auto">
+              {status}
+            </pre>
+          </details>
+        </div>
+      )}
 
-      <Card title="Firewall Regeln">
+      <Card title={`Firewall-Regeln (${rules.length})`}>
         {rules.length === 0 ? (
           <div className="text-panel-muted text-sm py-4 text-center">
-            {loading ? 'Lade...' : 'Keine Regeln gefunden'}
+            {loading ? 'Lade…' : 'Keine Regeln gefunden'}
           </div>
         ) : (
-          <div className="divide-y divide-panel-border -mx-4 -mb-4">
+          <div className="-mx-4 -mb-4">
+            <div className="grid grid-cols-[2rem_1fr_6rem_1fr_2.5rem] gap-2 px-4 py-2 border-b border-panel-border text-[10px] font-semibold text-panel-muted uppercase tracking-wide">
+              <span>#</span>
+              <span>Ziel</span>
+              <span>Aktion</span>
+              <span>Von</span>
+              {canWrite && <span />}
+            </div>
             {rules.map((r, i) => (
-              <div key={i} className="flex items-center justify-between px-4 py-2.5">
-                <div className="grid grid-cols-4 gap-2 text-xs flex-1">
-                  <span className="text-panel-muted">[{r.num}]</span>
-                  <span className="text-panel-text truncate">{r.to}</span>
-                  <span className={r.action?.includes('ALLOW') ? 'text-panel-green font-medium' : 'text-panel-red font-medium'}>
-                    {r.action}
-                  </span>
-                  <span className="text-panel-muted truncate">{r.from}</span>
-                </div>
+              <div key={i} className="grid grid-cols-[2rem_1fr_6rem_1fr_2.5rem] gap-2 items-center px-4 py-2.5 table-row">
+                <span className="text-[11px] text-panel-muted tabular-nums">{r.num}</span>
+                <span className="text-xs text-panel-text truncate font-mono">{r.to}</span>
+                <span className={`text-xs font-semibold ${r.action?.includes('ALLOW') ? 'text-panel-green' : 'text-panel-red'}`}>
+                  {r.action}
+                </span>
+                <span className="text-xs text-panel-muted truncate">{r.from}</span>
                 {canWrite && (
-                  <Button size="sm" variant="danger" onClick={() => deleteRule(r.num)} className="ml-2 flex-shrink-0">
+                  <Button size="sm" variant="ghost" onClick={() => deleteRule(r.num)}
+                    className="text-panel-red hover:bg-panel-red/10 border-0 p-1">
                     <Trash2 size={12} />
                   </Button>
                 )}

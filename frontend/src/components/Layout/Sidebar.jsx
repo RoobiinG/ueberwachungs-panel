@@ -11,34 +11,35 @@ import { useAuth } from '../../context/AuthContext';
 import { useErrors } from '../../context/ErrorContext';
 
 const navItems = [
+  { section: 'Übersicht' },
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/docker', icon: Container, label: 'Docker' },
-  { to: '/services', icon: Wrench, label: 'Services' },
-  { to: '/firewall', icon: Shield, label: 'Firewall' },
-  { to: '/monitoring',  icon: BarChart2,  label: 'Monitoring' },
+
+  { section: 'Infrastruktur' },
+  { to: '/docker',      icon: Container,    label: 'Docker' },
+  { to: '/services',    icon: Wrench,       label: 'Services' },
+  { to: '/firewall',    icon: Shield,       label: 'Firewall' },
+  { to: '/monitoring',  icon: BarChart2,    label: 'Monitoring' },
   { to: '/agents',      icon: ServerCog,    label: 'Server' },
+
+  { section: 'Dienste' },
   { to: '/uptime-kuma', icon: MonitorCheck, label: 'Uptime Kuma' },
-  { to: '/alerts', icon: Bell, label: 'Benachrichtigungen' },
-  { divider: true },
-  { to: '/webhooks', icon: Webhook, label: 'Webhooks', permission: 'webhooks.view' },
-  { to: '/hetzner', icon: Cloud,    label: 'Hetzner',   permission: 'hetzner.view' },
-  { to: '/mchost',  icon: Gamepad2, label: 'MC-Host24', permission: 'mchost.view'  },
-  { divider: true },
-  { to: '/users',      icon: Users,          label: 'Benutzer',        adminOnly: true },
-  { to: '/roles',      icon: ShieldCheck,    label: 'Rollen & Rechte', adminOnly: true },
-  { to: '/audit',      icon: ClipboardList,  label: 'Audit-Log',       permission: 'audit.view' },
-  { to: '/panel-logs', icon: ScrollText,     label: 'Panel-Logs',      adminOnly: true },
-  { to: '/settings',   icon: Settings,       label: 'Einstellungen' },
+  { to: '/alerts',      icon: Bell,         label: 'Benachrichtigungen' },
+  { to: '/webhooks',    icon: Webhook,      label: 'Webhooks',   permission: 'webhooks.view' },
+  { to: '/hetzner',     icon: Cloud,        label: 'Hetzner',    permission: 'hetzner.view' },
+  { to: '/mchost',      icon: Gamepad2,     label: 'MC-Host24',  permission: 'mchost.view'  },
+
+  { section: 'Verwaltung' },
+  { to: '/users',      icon: Users,         label: 'Benutzer',        adminOnly: true },
+  { to: '/roles',      icon: ShieldCheck,   label: 'Rollen & Rechte', adminOnly: true },
+  { to: '/audit',      icon: ClipboardList, label: 'Audit-Log',       permission: 'audit.view' },
+  { to: '/panel-logs', icon: ScrollText,    label: 'Panel-Logs',      adminOnly: true },
+  { to: '/settings',   icon: Settings,      label: 'Einstellungen' },
 ];
-
-// ── Quell-Farben für Fehlereinträge ──────────────────────────────────────────
-
-// ── Sidebar ───────────────────────────────────────────────────────────────────
 
 export const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
   const { user, isAdmin, hasPermission } = useAuth();
-  const [version,  setVersion]  = useState(null);
+  const [version, setVersion] = useState(null);
   const { errors, clearErrors } = useErrors();
 
   useEffect(() => {
@@ -52,22 +53,25 @@ export const Sidebar = () => {
       <div className="flex items-center justify-between px-3 py-4 border-b border-panel-border min-h-[57px]">
         {!collapsed && (
           <div className="flex items-center gap-2 min-w-0">
-            <Server size={16} className="text-panel-accent flex-shrink-0" />
-            <span className="text-sm font-bold text-panel-text truncate">Überwachungs-Panel</span>
+            <Server size={15} className="text-panel-accent flex-shrink-0" />
+            <span className="text-xs font-bold text-panel-text truncate tracking-wide">Überwachungs-Panel</span>
           </div>
         )}
         <button
           onClick={() => setCollapsed(c => !c)}
-          className="ml-auto text-panel-muted hover:text-panel-text transition-colors"
+          className="ml-auto text-panel-muted hover:text-panel-text transition-colors p-1 rounded hover:bg-panel-card"
         >
-          {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+          {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
         </button>
       </div>
 
       {/* ── Navigation ───────────────────────────────────────────────────── */}
-      <nav className="flex-1 py-2 overflow-y-auto">
+      <nav className="flex-1 py-1 overflow-y-auto">
         {navItems.map((item, i) => {
-          if (item.divider) return <div key={i} className="my-1 mx-3 border-t border-panel-border" />;
+          if (item.section) {
+            if (collapsed) return null;
+            return <span key={i} className="section-label">{item.section}</span>;
+          }
           if (item.adminOnly && !isAdmin) return null;
           if (item.permission && !hasPermission(item.permission)) return null;
           return (
@@ -77,14 +81,14 @@ export const Sidebar = () => {
               end={item.to === '/'}
               title={collapsed ? item.label : undefined}
               className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2 mx-1 my-0.5 rounded-md text-sm transition-colors ${
+                `flex items-center gap-2.5 py-2 mx-1 my-0.5 rounded-md text-xs font-medium transition-all duration-150 border-l-2 ${
                   isActive
-                    ? 'bg-panel-accent/15 text-panel-accent'
-                    : 'text-panel-muted hover:text-panel-text hover:bg-panel-card'
+                    ? 'bg-panel-accent/10 text-panel-accent border-panel-accent px-2.5'
+                    : 'text-panel-muted hover:text-panel-text hover:bg-panel-card border-transparent px-2.5'
                 }`
               }
             >
-              <item.icon size={16} className="flex-shrink-0" />
+              <item.icon size={15} className="flex-shrink-0" />
               {!collapsed && <span className="truncate">{item.label}</span>}
             </NavLink>
           );
@@ -101,23 +105,17 @@ export const Sidebar = () => {
               {errors.length}
             </span>
           </div>
-          <button
-            onClick={clearErrors}
-            title="Alle löschen"
-            className="text-panel-muted hover:text-panel-red transition-colors p-0.5 rounded"
-          >
+          <button onClick={clearErrors} title="Alle löschen"
+            className="text-panel-muted hover:text-panel-red transition-colors p-0.5 rounded">
             <Trash2 size={10} />
           </button>
         </div>
       )}
 
-      {/* ── Panel-Fehler (eingeklappt) ────────────────────────────────────── */}
       {errors.length > 0 && collapsed && (
         <div className="flex justify-center py-2 border-t border-panel-border/60">
-          <span
-            title={`${errors.length} Panel-Fehler`}
-            className="relative inline-flex items-center justify-center w-6 h-6 rounded-full bg-panel-red/15"
-          >
+          <span title={`${errors.length} Panel-Fehler`}
+            className="relative inline-flex items-center justify-center w-6 h-6 rounded-full bg-panel-red/15">
             <AlertCircle size={13} className="text-panel-red" />
             {errors.length > 1 && (
               <span className="absolute -top-1 -right-1 text-[8px] bg-panel-red text-white rounded-full w-3.5 h-3.5 flex items-center justify-center tabular-nums font-bold leading-none">
@@ -132,12 +130,12 @@ export const Sidebar = () => {
       <div className="px-3 py-3 border-t border-panel-border">
         {!collapsed && user && (
           <div className="text-xs text-panel-muted truncate">
-            <span className="text-panel-text">{user.username}</span>
-            <span className="ml-1">({user.roleLabel || user.role})</span>
+            <span className="text-panel-text font-medium">{user.username}</span>
+            <span className="ml-1 opacity-60">({user.roleLabel || user.role})</span>
           </div>
         )}
         {version && (
-          <div className={`mt-1 text-[10px] text-panel-muted/60 ${collapsed ? 'text-center' : ''}`}
+          <div className={`mt-1 text-[10px] text-panel-muted/50 ${collapsed ? 'text-center' : ''}`}
             title={`Build ${version.build} · ${version.date}`}>
             {collapsed ? `v${version.version}` : `v${version.version} · Build ${version.build}`}
           </div>

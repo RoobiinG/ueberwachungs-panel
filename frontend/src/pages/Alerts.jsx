@@ -248,32 +248,42 @@ export default function Alerts() {
           <div className="space-y-2">
             {rules.map(rule => (
               <div key={rule.id}
-                className={`flex items-center gap-3 p-3 rounded-lg border transition-colors
+                className={`p-3 rounded-lg border transition-colors
                   ${rule.enabled ? 'border-panel-border bg-panel-surface' : 'border-panel-border/40 bg-panel-bg opacity-60'}`}>
-                <AlertTriangle size={16} className={METRIC_COLORS[rule.metric]} />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-medium text-panel-text">{rule.name}</span>
-                    <span className="text-xs text-panel-muted">
-                      {METRIC_LABELS[rule.metric]} {CONDITION_LABELS[rule.condition]}{' '}
-                      <span className="text-panel-accent font-semibold">{rule.threshold}%</span>
-                    </span>
-                    {rule.duration_seconds > 0 && (
-                      <span className="text-xs text-panel-muted flex items-center gap-1">
-                        <Clock size={11} />für {rule.duration_seconds}s
+                <div className="flex items-center gap-3">
+                  <AlertTriangle size={15} className={`flex-shrink-0 ${METRIC_COLORS[rule.metric]}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-semibold text-panel-text">{rule.name}</span>
+                      <span className="text-xs text-panel-muted">
+                        {METRIC_LABELS[rule.metric]} {CONDITION_LABELS[rule.condition]}{' '}
+                        <span className="font-semibold text-panel-accent">{rule.threshold}%</span>
                       </span>
-                    )}
-                    {/* Server-Badge */}
-                    <span className="flex items-center gap-1 text-xs text-panel-muted bg-panel-bg px-1.5 py-0.5 rounded">
-                      {rule.agent_id
-                        ? <><Server size={10} />{rule.agent_name}</>
-                        : <><Monitor size={10} />Lokal</>
-                      }
-                    </span>
-                    <span className="text-xs text-panel-muted">→ {rule.webhook_name}</span>
+                      {rule.duration_seconds > 0 && (
+                        <span className="text-xs text-panel-muted flex items-center gap-1">
+                          <Clock size={11} />für {rule.duration_seconds}s
+                        </span>
+                      )}
+                      <span className="flex items-center gap-1 text-xs text-panel-muted bg-panel-card px-1.5 py-0.5 rounded border border-panel-border/50">
+                        {rule.agent_id ? <><Server size={10} />{rule.agent_name}</> : <><Monitor size={10} />Lokal</>}
+                      </span>
+                      <span className="text-xs text-panel-muted">→ {rule.webhook_name}</span>
+                    </div>
+                    {/* Threshold-Balken */}
+                    <div className="mt-2 flex items-center gap-2">
+                      <div className="flex-1 h-1 bg-panel-bg rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${
+                            rule.threshold >= 80 ? 'bg-panel-red' :
+                            rule.threshold >= 60 ? 'bg-panel-orange' : 'bg-panel-accent'
+                          }`}
+                          style={{ width: `${rule.threshold}%` }}
+                        />
+                      </div>
+                      <span className="text-[10px] text-panel-muted tabular-nums w-8 text-right">{rule.threshold}%</span>
+                      <span className="text-[10px] text-panel-muted">Cooldown: {rule.cooldown_minutes} Min.</span>
+                    </div>
                   </div>
-                  <div className="text-xs text-panel-muted mt-0.5">Cooldown: {rule.cooldown_minutes} Min.</div>
-                </div>
                 {isAdmin && (
                   <div className="flex items-center gap-1 flex-shrink-0">
                     {/* Test */}
@@ -303,6 +313,7 @@ export default function Alerts() {
                     </button>
                   </div>
                 )}
+                </div>
               </div>
             ))}
           </div>
