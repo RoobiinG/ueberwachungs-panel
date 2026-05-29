@@ -33,9 +33,13 @@ async function fetchViaRest(url, apiKey) {
     timeout: 10000,
   });
 
-  // Nur bei explizitem ok=false ablehnen (nicht bei fehlendem ok-Feld!).
-  // Uptime Kuma v2.x sendet teils keinen ok-Wrapper → !undefined wäre false-positive.
-  if (data.ok === false) {
+  // Plain-Text-Antwort (z. B. "You are not logged in.") → sauberer Fehler statt Format-Fehler
+  if (typeof data === 'string') {
+    throw new Error(`Uptime-Kuma: ${data.slice(0, 200)}`);
+  }
+
+  // ok=false oder msg enthält Auth-Fehler → sofort abbrechen
+  if (data.ok === false || (data.ok == null && data.msg && /not logged in|unauthorized|api.?key/i.test(data.msg))) {
     const errMsg = data.msg || data.message || data.error || 'API-Key ungültig oder keine Berechtigung';
     throw new Error(`Uptime-Kuma: ${errMsg}`);
   }
@@ -137,8 +141,8 @@ function fetchViaSocket(url, apiKey) {
       transports:   ['polling', 'websocket'],
       reconnection: false,
       timeout:      12000,
-      // Uptime Kuma v1.23+: apiKey; v2.x-Variante: token (beide senden)
-      auth: { apiKey, token: apiKey },
+      // Alle bekannten Varianten senden: v1.x (api_key), v1.23+ (apiKey), v2.x (token)
+      auth: { apiKey, api_key: apiKey, token: apiKey },
     });
 
     const monitors   = {};
