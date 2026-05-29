@@ -105,29 +105,6 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_passkeys_user ON passkeys(user_id);
 
-  CREATE TABLE IF NOT EXISTS ssh_keys (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    label       TEXT NOT NULL,
-    public_key  TEXT NOT NULL,
-    private_key TEXT NOT NULL,
-    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-  CREATE INDEX IF NOT EXISTS idx_ssh_keys_user ON ssh_keys(user_id);
-
-  CREATE TABLE IF NOT EXISTS ssh_hosts (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    label      TEXT NOT NULL,
-    hostname   TEXT NOT NULL,
-    port       INTEGER NOT NULL DEFAULT 22,
-    username   TEXT NOT NULL,
-    auth_type  TEXT NOT NULL DEFAULT 'key' CHECK(auth_type IN ('key','password')),
-    ssh_key_id INTEGER REFERENCES ssh_keys(id) ON DELETE SET NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-  CREATE INDEX IF NOT EXISTS idx_ssh_hosts_user ON ssh_hosts(user_id);
-
   CREATE TABLE IF NOT EXISTS roles (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     name       TEXT NOT NULL UNIQUE,

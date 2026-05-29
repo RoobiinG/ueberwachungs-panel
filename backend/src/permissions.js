@@ -35,11 +35,6 @@ const PERMISSIONS = [
   { key: 'alerts.view',         category: 'Alerts',             label: 'Alerts anzeigen',                 description: 'Alert-Regeln und History einsehen' },
   { key: 'alerts.manage',       category: 'Alerts',             label: 'Alerts verwalten',                description: 'Alert-Regeln anlegen, bearbeiten, löschen' },
 
-  // ─── SSH ──────────────────────────────────────────────────────────────────
-  { key: 'ssh.view',            category: 'SSH',                label: 'SSH-Hosts anzeigen',              description: 'Gespeicherte SSH-Verbindungen einsehen' },
-  { key: 'ssh.connect',         category: 'SSH',                label: 'SSH verbinden',                   description: 'SSH-Terminal-Sitzungen starten' },
-  { key: 'ssh.manage',          category: 'SSH',                label: 'Hosts & Keys verwalten',          description: 'SSH-Hosts und Keys anlegen und löschen' },
-
   // ─── Monitoring ───────────────────────────────────────────────────────────
   { key: 'metrics.view',        category: 'Monitoring',         label: 'Metriken anzeigen',               description: 'System-Metriken, Charts und Zeitreihen abrufen' },
 
@@ -85,7 +80,6 @@ const OPERATOR_PERMISSIONS = [
   'firewall.view',
   'webhooks.view', 'webhooks.test',
   'alerts.view',
-  'ssh.view', 'ssh.connect', 'ssh.manage',
   'metrics.view',
   'hetzner.view', 'hetzner.start', 'hetzner.stop', 'hetzner.restart', 'hetzner.backup',
   'mchost.view', 'mchost.start', 'mchost.stop', 'mchost.restart', 'mchost.backup',

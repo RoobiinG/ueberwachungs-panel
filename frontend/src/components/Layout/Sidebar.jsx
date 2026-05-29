@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Container, Wrench, Shield,
-  Terminal, Webhook, Users, Cloud, Gamepad2, ChevronLeft, ChevronRight,
+  Webhook, Users, Cloud, Gamepad2, ChevronLeft, ChevronRight,
   Server, Settings, ServerCog, MonitorCheck, Bell, ShieldCheck, ClipboardList,
   BarChart2, AlertCircle, X, ChevronDown, ChevronUp, Trash2, ScrollText,
 } from 'lucide-react';
@@ -16,7 +16,6 @@ const navItems = [
   { to: '/services', icon: Wrench, label: 'Services' },
   { to: '/firewall', icon: Shield, label: 'Firewall' },
   { to: '/monitoring',  icon: BarChart2,  label: 'Monitoring' },
-  { to: '/ssh', icon: Terminal, label: 'SSH / SFTP' },
   { to: '/agents',      icon: ServerCog,    label: 'Server' },
   { to: '/uptime-kuma', icon: MonitorCheck, label: 'Uptime Kuma' },
   { to: '/alerts', icon: Bell, label: 'Benachrichtigungen' },
@@ -35,8 +34,6 @@ const navItems = [
 // ── Quell-Farben für Fehlereinträge ──────────────────────────────────────────
 
 const SOURCE_CHIP = {
-  SSH:           'bg-red-500/15 text-red-400',
-  SFTP:          'bg-purple-500/15 text-purple-400',
   'Uptime Kuma': 'bg-panel-orange/15 text-panel-orange',
   System:        'bg-panel-muted/15 text-panel-muted',
 };
