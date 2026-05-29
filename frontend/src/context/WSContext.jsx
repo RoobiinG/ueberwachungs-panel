@@ -15,24 +15,39 @@ export function WSProvider({ token, children }) {
   useEffect(() => {
     if (!token) { setConnected(false); return; }
 
-    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws    = new WebSocket(`${proto}//${window.location.host}/ws`);
-    wsRef.current = ws;
+    let active = true;   // false sobald cleanup läuft → kein Reconnect mehr
+    let timer  = null;
 
-    ws.onopen    = () => ws.send(JSON.stringify({ type: 'auth', token }));
-    ws.onclose   = () => setConnected(false);
-    ws.onerror   = () => setConnected(false);
-    ws.onmessage = (e) => {
-      try {
-        const msg = JSON.parse(e.data);
-        if (msg.type === 'connected') setConnected(true);
-        const handlers = handlersRef.current.get(msg.type);
-        if (handlers) handlers.forEach(h => h(msg));
-      } catch {}
+    const connect = () => {
+      if (!active) return;
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws    = new WebSocket(`${proto}//${window.location.host}/ws`);
+      wsRef.current = ws;
+
+      ws.onopen    = () => ws.send(JSON.stringify({ type: 'auth', token }));
+      ws.onerror   = () => {};    // onclose feuert danach, dort reagieren
+      ws.onclose   = () => {
+        wsRef.current = null;
+        setConnected(false);
+        // Auto-Reconnect nach 3 s (solange noch aktiv)
+        if (active) timer = setTimeout(connect, 3000);
+      };
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          if (msg.type === 'connected') setConnected(true);
+          const handlers = handlersRef.current.get(msg.type);
+          if (handlers) handlers.forEach(h => h(msg));
+        } catch {}
+      };
     };
 
+    connect();
+
     return () => {
-      ws.close();
+      active = false;
+      clearTimeout(timer);
+      wsRef.current?.close();
       wsRef.current = null;
       setConnected(false);
     };
