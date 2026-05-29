@@ -481,13 +481,28 @@ export default function Monitoring({ liveStats }) {
 
       {/* ── Toolbar ──────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <select
-          value={server}
-          onChange={e => setServer(e.target.value)}
-          className="bg-panel-card border border-panel-border text-panel-text text-sm rounded-md px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-panel-accent min-w-[180px]"
-        >
-          {servers.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-        </select>
+        {/* Server-Auswahl — Button-Gruppe, nur 1 Server → statisches Label */}
+        {servers.length <= 1 ? (
+          <span className="text-xs text-panel-muted px-3 py-1.5 bg-panel-card border border-panel-border rounded-md">
+            {servers[0]?.label ?? 'Panel (lokal)'}
+          </span>
+        ) : (
+          <div className="flex items-center bg-panel-card border border-panel-border rounded-md overflow-hidden flex-shrink-0">
+            {servers.map(s => (
+              <button
+                key={s.id}
+                onClick={() => setServer(s.id)}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors border-r border-panel-border last:border-r-0 whitespace-nowrap ${
+                  server === s.id
+                    ? 'bg-panel-accent text-white'
+                    : 'text-panel-muted hover:text-panel-text hover:bg-panel-surface'
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="flex items-center gap-2 flex-wrap">
           {canViewMetrics && (
