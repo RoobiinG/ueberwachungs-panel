@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Container, Wrench, Shield,
   Webhook, Users, Cloud, Gamepad2, ChevronLeft, ChevronRight,
   Server, Settings, ServerCog, MonitorCheck, Bell, ShieldCheck, ClipboardList,
-  BarChart2, AlertCircle, X, ChevronDown, ChevronUp, Trash2, ScrollText,
+  BarChart2, AlertCircle, Trash2, ScrollText,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
@@ -33,55 +33,13 @@ const navItems = [
 
 // ── Quell-Farben für Fehlereinträge ──────────────────────────────────────────
 
-const SOURCE_CHIP = {
-  'Uptime Kuma': 'bg-panel-orange/15 text-panel-orange',
-  System:        'bg-panel-muted/15 text-panel-muted',
-};
-
-// ── Fehler-Eintrag ────────────────────────────────────────────────────────────
-
-function ErrorEntry({ err, onDismiss }) {
-  const chipCls = SOURCE_CHIP[err.source] ?? 'bg-panel-muted/15 text-panel-muted';
-  const timeStr = new Date(err.time).toLocaleTimeString('de-DE', {
-    hour:   '2-digit',
-    minute: '2-digit',
-  });
-
-  return (
-    <div className="flex items-start gap-1.5 rounded-md bg-panel-surface px-2 py-1.5 group">
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1 mb-0.5 flex-wrap">
-          <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap ${chipCls}`}>
-            {err.source}
-          </span>
-          <span className="text-[9px] text-panel-muted/50 ml-auto whitespace-nowrap tabular-nums">
-            {timeStr}
-          </span>
-        </div>
-        <p className="text-[10px] text-panel-muted leading-snug line-clamp-2 break-words">
-          {err.message}
-        </p>
-      </div>
-      <button
-        onClick={onDismiss}
-        title="Entfernen"
-        className="flex-shrink-0 mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity text-panel-muted/60 hover:text-panel-red p-0.5 rounded"
-      >
-        <X size={9} />
-      </button>
-    </div>
-  );
-}
-
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
 export const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
   const { user, isAdmin, hasPermission } = useAuth();
   const [version,  setVersion]  = useState(null);
-  const [errOpen,  setErrOpen]  = useState(true);
-
-  const { errors, dismissError, clearErrors } = useErrors();
+  const { errors, clearErrors } = useErrors();
 
   useEffect(() => {
     axios.get('/api/version').then(r => setVersion(r.data)).catch(() => {});
@@ -133,55 +91,23 @@ export const Sidebar = () => {
         })}
       </nav>
 
-      {/* ── Panel-Fehler (ausgeklappt) ────────────────────────────────────── */}
+      {/* ── Panel-Fehler ─────────────────────────────────────────────────── */}
       {errors.length > 0 && !collapsed && (
-        <div className="border-t border-panel-border/60">
-
-          {/* Header */}
-          <div
-            className="flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-panel-card transition-colors select-none"
-            onClick={() => setErrOpen(o => !o)}
-          >
-            <div className="flex items-center gap-1.5">
-              <AlertCircle size={11} className="text-panel-red flex-shrink-0" />
-              <span className="text-[11px] font-medium text-panel-red">Panel-Fehler</span>
-              <span className="text-[9px] bg-panel-red/20 text-panel-red rounded-full px-1.5 leading-[1.6] tabular-nums">
-                {errors.length}
-              </span>
-            </div>
-            <div className="flex items-center gap-1 text-panel-muted">
-              <button
-                onClick={(e) => { e.stopPropagation(); clearErrors(); }}
-                title="Alle löschen"
-                className="hover:text-panel-red transition-colors p-0.5 rounded"
-              >
-                <Trash2 size={10} />
-              </button>
-              {errOpen
-                ? <ChevronUp   size={11} />
-                : <ChevronDown size={11} />
-              }
-            </div>
+        <div className="flex items-center justify-between px-3 py-2 border-t border-panel-border/60">
+          <div className="flex items-center gap-1.5">
+            <AlertCircle size={11} className="text-panel-red flex-shrink-0" />
+            <span className="text-[11px] font-medium text-panel-red">Panel-Fehler</span>
+            <span className="text-[9px] bg-panel-red/20 text-panel-red rounded-full px-1.5 leading-[1.6] tabular-nums">
+              {errors.length}
+            </span>
           </div>
-
-          {/* Fehler-Liste */}
-          {errOpen && (
-            <div className="max-h-40 overflow-y-auto px-2 space-y-1">
-              {errors.slice(0, 15).map(err => (
-                <ErrorEntry key={err.id} err={err} onDismiss={() => dismissError(err.id)} />
-              ))}
-            </div>
-          )}
-
-          {/* Link zu Panel-Logs */}
-          {errOpen && isAdmin && (
-            <NavLink
-              to="/panel-logs"
-              className="flex items-center justify-center gap-1 px-3 py-1.5 text-[10px] text-panel-muted hover:text-panel-accent transition-colors border-t border-panel-border/40"
-            >
-              Alle Logs anzeigen →
-            </NavLink>
-          )}
+          <button
+            onClick={clearErrors}
+            title="Alle löschen"
+            className="text-panel-muted hover:text-panel-red transition-colors p-0.5 rounded"
+          >
+            <Trash2 size={10} />
+          </button>
         </div>
       )}
 
