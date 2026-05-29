@@ -35,7 +35,8 @@ export default function Login() {
       // WebAuthn-Browser-Paket dynamisch importieren
       const { startAuthentication } = await import('@simplewebauthn/browser');
       const optRes  = await axios.post('/api/auth/passkey/login/start');
-      const assertion = await startAuthentication(optRes.data);
+      // v12 API: { optionsJSON: ... }
+      const assertion = await startAuthentication({ optionsJSON: optRes.data });
       const finRes  = await axios.post('/api/auth/passkey/login/finish', assertion);
       saveSession(finRes.data.user, finRes.data.token);
       navigate('/');

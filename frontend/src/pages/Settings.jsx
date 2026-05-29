@@ -286,7 +286,7 @@ export default function Settings() {
       // NotAllowedError = User hat den Dialog geschlossen / Windows-Dialog erschien
       const isNotAllowed = /not allowed|timed out|NotAllowedError/i.test(raw);
       const msg = isNotAllowed
-        ? 'Dialog geschlossen oder Windows-Dialog erschienen. Enpass muss in Chrome als Passkey-Anbieter aktiv sein: chrome://settings/passkeys'
+        ? 'Dialog abgebrochen. Enpass als Passkey-Anbieter: Brave → brave://settings/passkeys oder Einstellungen → Datenschutz → Passkeys → Enpass auswählen'
         : (raw || 'Registrierung fehlgeschlagen');
       feedback('passkey', 'err', msg);
     }
