@@ -1,6 +1,7 @@
 const db          = require('../db');
 const { broadcast }   = require('../websocket');
 const { sendWebhook } = require('./sendWebhook');
+const { getPermissions } = require('../middleware/requirePermission');
 
 const ACTION_LABELS = {
   start:    'gestartet',
@@ -19,6 +20,10 @@ const ACTION_LABELS = {
  */
 async function notifyAction(req, action, serverName, platform = 'server') {
   if (db.prepare("SELECT value FROM settings WHERE key='action_notifications'").get()?.value !== '1') return;
+
+  // Benutzer mit actions.silent-Recht: nur Audit-Log, keine Benachrichtigung
+  const perms = getPermissions(req.user?.role);
+  if (perms.includes('actions.silent')) return;
 
   const actor = req.user?.username || 'Unbekannt';
   const payload = { actor, action, serverName, platform, timestamp: Date.now() };
