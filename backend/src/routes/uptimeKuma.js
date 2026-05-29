@@ -127,7 +127,10 @@ async function fetchViaRest(url, apiKey) {
 }
 
 // ─── Socket.IO (Uptime Kuma v1.x Fallback) ───────────────────────────────────
-// Uptime Kuma v1.23+ unterstützt API-Keys über socket.handshake.auth.apiKey
+// Uptime Kuma v1.23+ unterstützt API-Keys über socket.handshake.auth.apiKey.
+// Ältere Versionen nutzen ggf. socket.handshake.query.api_key.
+// Die handshake.auth-Verarbeitung ist async → getMonitorList-Callback kann
+// "not logged in" liefern, auch wenn monitorList-Events kurz danach gepusht werden.
 
 function fetchViaSocket(url, apiKey) {
   const key    = `${url}|${apiKey.slice(0, 8)}`;
@@ -141,14 +144,16 @@ function fetchViaSocket(url, apiKey) {
       transports:   ['polling', 'websocket'],
       reconnection: false,
       timeout:      12000,
-      // Alle bekannten Varianten senden: v1.x (api_key), v1.23+ (apiKey), v2.x (token)
-      auth: { apiKey, api_key: apiKey, token: apiKey },
+      // handshake.auth für v1.23+ / v2.x; query für ältere Versionen (EIO3/Socket.IO v2)
+      auth:  { apiKey, api_key: apiKey, token: apiKey },
+      query: { api_key: apiKey },
     });
 
     const monitors   = {};
     const heartbeats = {};
     const uptime     = {};
-    let done = false;
+    let done       = false;
+    let authErrMsg = null;   // "not logged in" Meldung für bessere Fehlermeldung
     let timeoutId;
 
     const finish = (err) => {
@@ -159,8 +164,9 @@ function fetchViaSocket(url, apiKey) {
       if (err) return reject(err);
       const result = buildResult(monitors, heartbeats, uptime);
       if (result.monitors.length === 0) {
+        const hint = authErrMsg ? ` (getMonitorList: ${authErrMsg})` : '';
         return reject(new Error(
-          'Socket.IO: 0 Monitore empfangen — API-Key ungültig oder Uptime Kuma v1.23+ erforderlich'
+          `Socket.IO: 0 Monitore empfangen — API-Key ungültig oder Uptime Kuma v1.23+ erforderlich${hint}`
         ));
       }
       CACHE.set(key, { data: result, ts: Date.now() });
@@ -176,15 +182,16 @@ function fetchViaSocket(url, apiKey) {
     });
 
     socket.on('connect', () => {
-      // Explizit Monitore anfordern (Callback + Event-Variante)
+      // getMonitorList anfordern — manche Uptime-Kuma-Versionen liefern Daten
+      // als Callback, andere senden monitorList als Server-Push-Event.
+      // Bei "not logged in" im Callback NICHT sofort abbrechen: die handshake.auth-
+      // Verarbeitung ist async — der Server könnte Daten kurz danach pushen.
       socket.emit('getMonitorList', (res) => {
         if (res?.ok && res.monitors) {
           Object.assign(monitors, res.monitors);
         } else if (res?.ok === false) {
-          // Server hat explizit abgelehnt → sofort abbrechen statt 12s warten
-          finish(new Error(
-            `Socket.IO: Keine Berechtigung — ${res.msg || 'API-Key ungültig oder unzureichende Rechte'}`
-          ));
+          // Fehler merken, aber auf 12-s-Timeout warten — Server-Pushes auswerten
+          authErrMsg = res.msg || 'nicht eingeloggt';
         }
       });
     });
