@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { LogOut, Wifi, WifiOff, Bell, BellOff, AlertTriangle, CheckCircle, X } from 'lucide-react';
+import { LogOut, Wifi, WifiOff, Bell, BellOff, AlertTriangle, CheckCircle, X, User } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useLocation } from 'react-router-dom';
 import { useWSMessage } from '../../context/WSContext';
@@ -25,15 +25,18 @@ const pageTitles = {
 const METRIC_LABELS  = { cpu: 'CPU', memory: 'RAM', disk: 'Disk' };
 const METRIC_COLORS  = { cpu: 'text-blue-400', memory: 'text-green-400', disk: 'text-yellow-400' };
 
-// ── Toast-Komponente ───────────────────────────────────────────────────────────
-function Toast({ n, onDismiss }) {
+const ACTION_LABELS  = {
+  start: 'gestartet', stop: 'gestoppt', restart: 'neugestartet',
+  shutdown: 'heruntergefahren', kill: 'beendet', pause: 'pausiert', unpause: 'fortgesetzt',
+};
+
+// ── Alert-Toast ────────────────────────────────────────────────────────────────
+function AlertToast({ n, onDismiss }) {
   const isFired = n.alertType === 'fired';
   return (
     <div className={`flex items-start gap-3 px-4 py-3 rounded-lg shadow-xl border text-sm max-w-sm w-full
-      ${isFired
-        ? 'bg-panel-surface border-panel-orange/40'
-        : 'bg-panel-surface border-panel-green/40'
-      } animate-in slide-in-from-right-5 duration-300`}
+      ${isFired ? 'bg-panel-surface border-panel-orange/40' : 'bg-panel-surface border-panel-green/40'}
+      animate-in slide-in-from-right-5 duration-300`}
     >
       {isFired
         ? <AlertTriangle size={16} className="text-panel-orange flex-shrink-0 mt-0.5" />
@@ -52,28 +55,52 @@ function Toast({ n, onDismiss }) {
   );
 }
 
+// ── Aktions-Toast ──────────────────────────────────────────────────────────────
+function ActionToast({ n, onDismiss }) {
+  return (
+    <div className="flex items-start gap-3 px-4 py-3 rounded-lg shadow-xl border text-sm max-w-sm w-full
+      bg-panel-surface border-panel-accent/40 animate-in slide-in-from-right-5 duration-300">
+      <User size={16} className="text-panel-accent flex-shrink-0 mt-0.5" />
+      <div className="flex-1 min-w-0">
+        <p className="font-medium text-panel-text truncate">
+          {n.actor} hat {n.serverName} {ACTION_LABELS[n.action] || n.action}
+        </p>
+        <p className="text-xs text-panel-muted mt-0.5">{n.platform}</p>
+      </div>
+      <button onClick={() => onDismiss(n.id)} className="text-panel-muted hover:text-panel-text flex-shrink-0">
+        <X size={13} />
+      </button>
+    </div>
+  );
+}
+
 // ── Haupt-Header ───────────────────────────────────────────────────────────────
 export const Header = ({ connected }) => {
   const { logout } = useAuth();
   const location   = useLocation();
   const title      = pageTitles[location.pathname] || 'Panel';
 
-  // Benachrichtigungen
-  const [notifications, setNotifications] = useState([]);  // { id, alertType, ruleName, metric, value, threshold, serverName, timestamp }
-  const [unread, setUnread]   = useState(0);
+  const [notifications, setNotifications] = useState([]);
+  const [unread, setUnread]     = useState(0);
   const [bellOpen, setBellOpen] = useState(false);
-  const [toasts, setToasts]   = useState([]);              // aktive Toasts
+  const [toasts, setToasts]     = useState([]);
   const bellRef = useRef(null);
 
-  // WS: Alert-Ereignisse empfangen
-  useWSMessage('alert', (msg) => {
-    const n = { ...msg.payload, id: Date.now() + Math.random(), timestamp: Date.now() };
-    setNotifications(prev => [n, ...prev].slice(0, 30));
+  const addNotification = (n, toastDuration = 5000) => {
+    setNotifications(prev => [n, ...prev].slice(0, 50));
     setUnread(u => u + 1);
-
-    // Toast anzeigen (5s)
     setToasts(prev => [...prev, n]);
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== n.id)), 5000);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== n.id)), toastDuration);
+  };
+
+  // WS: Metriken-Alerts
+  useWSMessage('alert', (msg) => {
+    addNotification({ ...msg.payload, _type: 'alert', id: Date.now() + Math.random(), timestamp: Date.now() });
+  });
+
+  // WS: Aktions-Benachrichtigungen
+  useWSMessage('action_notify', (msg) => {
+    addNotification({ ...msg.payload, _type: 'action', id: Date.now() + Math.random(), timestamp: Date.now() }, 4000);
   });
 
   // Click outside → Bell schließen
@@ -85,13 +112,8 @@ export const Header = ({ connected }) => {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const toggleBell = () => {
-    setBellOpen(o => !o);
-    setUnread(0);
-  };
-
+  const toggleBell = () => { setBellOpen(o => !o); setUnread(0); };
   const dismissToast = (id) => setToasts(prev => prev.filter(t => t.id !== id));
-
   const fmtTime = (ts) => new Date(ts).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 
   return (
@@ -99,7 +121,9 @@ export const Header = ({ connected }) => {
       {/* ── Toasts (fixed, unten rechts) ─────────────────────────────────────── */}
       <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 items-end">
         {toasts.map(n => (
-          <Toast key={n.id} n={n} onDismiss={dismissToast} />
+          n._type === 'action'
+            ? <ActionToast key={n.id} n={n} onDismiss={dismissToast} />
+            : <AlertToast  key={n.id} n={n} onDismiss={dismissToast} />
         ))}
       </div>
 
@@ -129,16 +153,13 @@ export const Header = ({ connected }) => {
               )}
             </button>
 
-            {/* Dropdown */}
             {bellOpen && (
               <div className="absolute right-0 top-full mt-2 w-80 bg-panel-surface border border-panel-border rounded-lg shadow-2xl z-40 overflow-hidden">
                 <div className="flex items-center justify-between px-3 py-2 border-b border-panel-border">
                   <span className="text-xs font-semibold text-panel-text">Benachrichtigungen</span>
                   {notifications.length > 0 && (
-                    <button
-                      onClick={() => setNotifications([])}
-                      className="text-xs text-panel-muted hover:text-panel-text transition-colors"
-                    >
+                    <button onClick={() => { setNotifications([]); setUnread(0); }}
+                      className="text-xs text-panel-muted hover:text-panel-text transition-colors">
                       Alle löschen
                     </button>
                   )}
@@ -151,6 +172,25 @@ export const Header = ({ connected }) => {
                     </div>
                   ) : (
                     notifications.map((n, i) => {
+                      if (n._type === 'action') {
+                        return (
+                          <div key={n.id || i}
+                            className="flex items-start gap-3 px-3 py-2.5 border-b border-panel-border/50 last:border-0 hover:bg-panel-card/30 transition-colors">
+                            <User size={14} className="flex-shrink-0 mt-0.5 text-panel-accent" />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between gap-1">
+                                <p className="text-xs font-medium text-panel-text truncate">
+                                  👤 {n.actor}
+                                </p>
+                                <span className="text-[10px] text-panel-muted flex-shrink-0">{fmtTime(n.timestamp)}</span>
+                              </div>
+                              <p className="text-[11px] text-panel-muted mt-0.5">
+                                {n.serverName} {ACTION_LABELS[n.action] || n.action}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      }
                       const isFired = n.alertType === 'fired';
                       return (
                         <div key={n.id || i}

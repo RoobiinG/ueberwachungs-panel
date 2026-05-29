@@ -6,9 +6,59 @@ import { useAuth } from '../context/AuthContext';
 import {
   Cloud, Server, Eye, EyeOff, CheckCircle, XCircle,
   RefreshCw, Trash2, Lock, Mail, Key, ShieldCheck, Send,
-  User, Settings2, Layers, Timer,
+  User, Settings2, Layers, Timer, Bell,
 } from 'lucide-react';
 import { invalidateLiveIntervalCache } from '../hooks/useLiveInterval';
+
+// ── Aktions-Benachrichtigungen Toggle ─────────────────────────────────────────
+function ActionNotificationsToggle() {
+  const [enabled, setEnabled] = useState(false);
+  const [saving, setSaving]   = useState(false);
+  const [msg, setMsg]         = useState('');
+
+  useEffect(() => {
+    axios.get('/api/settings/notifications')
+      .then(r => setEnabled(!!r.data.actionNotifications))
+      .catch(() => {});
+  }, []);
+
+  const toggle = async () => {
+    const next = !enabled;
+    setEnabled(next);
+    setSaving(true);
+    setMsg('');
+    try {
+      await axios.put('/api/settings/notifications', { actionNotifications: next });
+      setMsg(next ? '✓ Aktiv' : '✓ Deaktiviert');
+    } catch { setMsg('Fehler'); setEnabled(!next); }
+    setSaving(false);
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-medium text-panel-text">Server-Aktionen benachrichtigen</p>
+          <p className="text-xs text-panel-muted mt-0.5">
+            Zeigt eine Benachrichtigung wenn ein Benutzer einen Server startet, stoppt oder neustartet.
+          </p>
+        </div>
+        <button
+          onClick={toggle}
+          disabled={saving}
+          className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out focus:outline-none ${
+            enabled ? 'bg-panel-accent' : 'bg-panel-border'
+          }`}
+        >
+          <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ease-in-out mt-0.5 ${
+            enabled ? 'translate-x-4' : 'translate-x-0.5'
+          }`} />
+        </button>
+      </div>
+      {msg && <p className={`text-xs ${msg.startsWith('✓') ? 'text-panel-green' : 'text-panel-red'}`}>{msg}</p>}
+    </div>
+  );
+}
 
 const inputCls = 'w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:border-panel-accent transition-colors';
 
@@ -675,6 +725,11 @@ export default function Settings() {
 
             <Msg msg={msgs.dockhand} />
           </div>
+        </Card>
+
+        {/* ── Benachrichtigungen ── */}
+        <Card title={<span className="flex items-center gap-2"><Bell size={14} />Benachrichtigungen</span>}>
+          <ActionNotificationsToggle />
         </Card>
 
         {/* ── Live-Refresh-Intervall ── */}
