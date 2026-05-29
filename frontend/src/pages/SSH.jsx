@@ -25,7 +25,7 @@ const STATUS_COLOR = {
 // ─── Hauptkomponente ─────────────────────────────────────────────────────────
 
 export default function SSH() {
-  const { sendMessage } = useWS();
+  const { sendMessage, connected } = useWS();
   const { addError }    = useErrors();
 
   // Daten
@@ -209,9 +209,34 @@ export default function SSH() {
     setActiveHost(null);
   });
 
+  // ── WS-Disconnect während SSH-Sitzung ────────────────────────────────────
+  // Wenn der Panel-WebSocket trennt während SSH verbindet/verbunden ist:
+  // Status zurücksetzen damit der User weiß, er muss erneut klicken.
+  useEffect(() => {
+    if (!connected && (sshStatus === 'connected' || sshStatus === 'connecting')) {
+      setSshStatus('disconnected');
+      setSshError('');
+      activeHostRef.current = null;
+      setActiveHost(null);
+      xtermRef.current?.write(
+        '\r\n\x1b[33m[Panel-WebSocket getrennt — wird automatisch wiederhergestellt, dann Host erneut auswählen]\x1b[0m\r\n'
+      );
+    }
+  }, [connected]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── SSH-Verbinden / Trennen ──────────────────────────────────────────────
 
   const connectHost = (host) => {
+    // Kein SSH-Versuch wenn WebSocket nicht verbunden
+    if (!connected) {
+      setSshStatus('error');
+      setSshError('Panel-Verbindung getrennt — wird gleich wiederhergestellt');
+      xtermRef.current?.write(
+        '\r\n\x1b[31m[Fehler: WebSocket nicht verbunden — wird automatisch verbunden, bitte warten]\x1b[0m\r\n'
+      );
+      return;
+    }
+
     // Vorherigen Zustand prüfen BEVOR der Ref überschrieben wird
     const alreadyConnected = activeHostRef.current?.id === host.id && sshStatus === 'connected';
 
