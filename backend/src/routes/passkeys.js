@@ -71,19 +71,12 @@ router.get('/register/start', async (req, res) => {
       transports: ['internal', 'hybrid'],
     })),
     authenticatorSelection: {
-      // cross-platform → schließt Windows Hello (Plattform-Authenticator) aus
-      // und zwingt Chrome dazu seinen eigenen Passkey-Dialog zu zeigen,
-      // in dem Enpass / Bitwarden / Hardware-Keys erscheinen.
-      authenticatorAttachment: 'cross-platform',
-      residentKey:             'preferred',
-      userVerification:        'preferred',
+      // Kein authenticatorAttachment → Browser/Enpass/Hardware-Keys alle erlaubt.
+      // 'cross-platform' würde Enpass in Brave (Platform-Authenticator) blockieren.
+      residentKey:      'required',    // discoverable credential → Login ohne Benutzername
+      userVerification: 'preferred',
     },
   });
-
-  // WebAuthn Level 3: hints signalisiert dem Browser "bevorzuge
-  // hybride / extension-basierte Provider" (Enpass, cross-device).
-  // Chrome 120+ zeigt dann seinen eigenen Dialog statt Windows Security.
-  if (!options.hints) options.hints = ['hybrid', 'security-key'];
 
   challenges.set(`reg:${user.id}`, { challenge: options.challenge, expiresAt: Date.now() + 5 * 60_000 });
   res.json(options);
