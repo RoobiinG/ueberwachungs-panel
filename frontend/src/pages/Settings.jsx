@@ -10,51 +10,109 @@ import {
 } from 'lucide-react';
 import { invalidateLiveIntervalCache } from '../hooks/useLiveInterval';
 
+// ── Toggle-Hilfkomponente ──────────────────────────────────────────────────────
+function Toggle({ on, onToggle, disabled }) {
+  return (
+    <button
+      onClick={onToggle}
+      disabled={disabled}
+      className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-50 ${
+        on ? 'bg-panel-accent' : 'bg-panel-border'
+      }`}
+    >
+      <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ease-in-out mt-0.5 ${
+        on ? 'translate-x-4' : 'translate-x-0.5'
+      }`} />
+    </button>
+  );
+}
+
 // ── Aktions-Benachrichtigungen Toggle ─────────────────────────────────────────
 function ActionNotificationsToggle() {
-  const [enabled, setEnabled] = useState(false);
-  const [saving, setSaving]   = useState(false);
-  const [msg, setMsg]         = useState('');
+  const [enabled,   setEnabled]   = useState(false);
+  const [webhookId, setWebhookId] = useState('');
+  const [webhooks,  setWebhooks]  = useState([]);
+  const [saving,    setSaving]    = useState(false);
+  const [msg,       setMsg]       = useState('');
 
   useEffect(() => {
-    axios.get('/api/settings/notifications')
-      .then(r => setEnabled(!!r.data.actionNotifications))
-      .catch(() => {});
+    Promise.all([
+      axios.get('/api/settings/notifications'),
+      axios.get('/api/webhooks').catch(() => ({ data: [] })),
+    ]).then(([notif, wh]) => {
+      setEnabled(!!notif.data.actionNotifications);
+      setWebhookId(notif.data.actionWebhookId ? String(notif.data.actionWebhookId) : '');
+      setWebhooks(wh.data || []);
+    }).catch(() => {});
   }, []);
 
-  const toggle = async () => {
-    const next = !enabled;
-    setEnabled(next);
+  const save = async (nextEnabled = enabled, nextWebhookId = webhookId) => {
     setSaving(true);
     setMsg('');
     try {
-      await axios.put('/api/settings/notifications', { actionNotifications: next });
-      setMsg(next ? '✓ Aktiv' : '✓ Deaktiviert');
-    } catch { setMsg('Fehler'); setEnabled(!next); }
+      await axios.put('/api/settings/notifications', {
+        actionNotifications: nextEnabled,
+        actionWebhookId:     nextWebhookId ? parseInt(nextWebhookId) : null,
+      });
+      setMsg('✓ Gespeichert');
+    } catch { setMsg('Fehler beim Speichern'); }
     setSaving(false);
   };
 
+  const toggle = () => {
+    const next = !enabled;
+    setEnabled(next);
+    save(next, webhookId);
+  };
+
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
+      {/* Toggle-Zeile */}
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-medium text-panel-text">Server-Aktionen benachrichtigen</p>
           <p className="text-xs text-panel-muted mt-0.5">
-            Zeigt eine Benachrichtigung wenn ein Benutzer einen Server startet, stoppt oder neustartet.
+            Browser-Benachrichtigung + optionaler Webhook wenn ein Benutzer einen Server startet, stoppt oder neustartet.
           </p>
         </div>
-        <button
-          onClick={toggle}
-          disabled={saving}
-          className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out focus:outline-none ${
-            enabled ? 'bg-panel-accent' : 'bg-panel-border'
-          }`}
-        >
-          <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ease-in-out mt-0.5 ${
-            enabled ? 'translate-x-4' : 'translate-x-0.5'
-          }`} />
-        </button>
+        <Toggle on={enabled} onToggle={toggle} disabled={saving} />
       </div>
+
+      {/* Webhook-Auswahl (immer sichtbar wenn Webhooks vorhanden) */}
+      {webhooks.length > 0 && (
+        <div className="flex items-center gap-3 pl-0 pt-1">
+          <div className="flex-1">
+            <label className="block text-xs text-panel-muted mb-1">Webhook für Aktions-Meldungen</label>
+            <select
+              value={webhookId}
+              onChange={e => setWebhookId(e.target.value)}
+              className="w-full bg-panel-surface border border-panel-border rounded-md px-3 py-1.5 text-sm text-panel-text focus:outline-none focus:border-panel-accent"
+            >
+              <option value="">— Nur Browser-Benachrichtigung —</option>
+              {webhooks.map(w => (
+                <option key={w.id} value={String(w.id)}>
+                  {w.name} ({w.type})
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            onClick={() => save(enabled, webhookId)}
+            disabled={saving}
+            className="mt-5 px-3 py-1.5 text-xs bg-panel-accent text-white rounded-md hover:bg-blue-500 transition-colors disabled:opacity-50"
+          >
+            {saving ? '…' : 'Speichern'}
+          </button>
+        </div>
+      )}
+
+      {webhooks.length === 0 && (
+        <p className="text-xs text-panel-muted pl-0">
+          Noch kein Webhook konfiguriert —{' '}
+          <a href="/webhooks" className="text-panel-accent hover:underline">Webhook anlegen</a>
+        </p>
+      )}
+
       {msg && <p className={`text-xs ${msg.startsWith('✓') ? 'text-panel-green' : 'text-panel-red'}`}>{msg}</p>}
     </div>
   );

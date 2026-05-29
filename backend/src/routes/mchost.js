@@ -2,21 +2,7 @@ const router      = require('express').Router();
 const axios       = require('axios');
 const db          = require('../db');
 const { requirePermission, getPermissions } = require('../middleware/requirePermission');
-const { broadcast } = require('../websocket');
-
-const notifyAction = (req, action, serverName) => {
-  if (db.prepare("SELECT value FROM settings WHERE key='action_notifications'").get()?.value !== '1') return;
-  broadcast({
-    type: 'action_notify',
-    payload: {
-      actor:      req.user?.username || 'Unbekannt',
-      action,
-      serverName,
-      platform:   'mchost',
-      timestamp:  Date.now(),
-    },
-  });
-};
+const { notifyAction } = require('../utils/actionNotify');
 
 const actionPermMap = {
   start:    'mchost.start',
@@ -168,7 +154,7 @@ router.post('/vserver/:id/:action', requirePermission('mchost.view'), async (req
   const serverName = req.body?.serverName || `VServer ${id}`;
   await handle(res, async () => {
     const result = await (await api()).post(`/vserver/${id}/${action}`);
-    notifyAction(req, action, serverName);
+    notifyAction(req, action, serverName, 'mchost');
     return result;
   });
 });

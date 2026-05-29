@@ -256,6 +256,7 @@ db.exec(`
 `);
 // Aktions-Benachrichtigungen
 db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('action_notifications', '0')").run();
+db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('action_webhook_id', '')").run();
 
 // ─── Standard-Rollen seeden ───────────────────────────────────────────────────
 const seedRole = db.transaction((name, label, isSystem, isAdmin, permissions) => {
