@@ -37,7 +37,16 @@ async function connect(ws, hostId, userId) {
 
   const conn = new Client();
 
+  // Diagnose-Info: Schlüssel-Typ + Verbindungsparameter im Backend-Log
+  const keyInfo = privateKey?.type
+    ? `ParsedKey(${privateKey.type})`
+    : typeof privateKey === 'string'
+      ? (privateKey.startsWith('PuTTY') ? 'PPK-String' : 'PEM-String')
+      : 'unknown';
+  console.log(`[SSH] Verbinde: ${host.username}@${host.hostname}:${host.port || 22} key=${keyInfo}`);
+
   conn.on('ready', () => {
+    console.log(`[SSH] ✓ Authentifiziert: ${host.username}@${host.hostname}`);
     conn.shell({ term: 'xterm-256color' }, (err, stream) => {
       if (err) {
         sendToClient(ws, 'ssh_error', { message: err.message });
@@ -58,6 +67,7 @@ async function connect(ws, hostId, userId) {
   });
 
   conn.on('error', (err) => {
+    console.error(`[SSH] ✗ Fehler: ${err.message} (${host.username}@${host.hostname})`);
     sessions.delete(ws);
     sendToClient(ws, 'ssh_error', { message: err.message });
   });
@@ -85,7 +95,15 @@ async function connect(ws, hostId, userId) {
   }
 
   try {
-    conn.connect(connectConfig);
+    conn.connect({
+      ...connectConfig,
+      // Debug-Logging: zeigt den verwendeten Auth-Algorithmus in den Docker-Logs
+      debug: (msg) => {
+        if (/(?:auth|pubkey|userauth|algorithm|handsh|kex)/i.test(msg)) {
+          console.log(`[SSH2] ${msg}`);
+        }
+      },
+    });
   } catch (err) {
     sendToClient(ws, 'ssh_error', { message: err.message });
   }
