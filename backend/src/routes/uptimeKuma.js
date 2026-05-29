@@ -215,6 +215,113 @@ function fetchViaSocket(url, apiKey) {
   });
 }
 
+// ─── Prometheus (Uptime Kuma v2.x) ───────────────────────────────────────────
+// Uptime Kuma v2 hat KEIN /api/v1/monitor REST-Endpoint und KEINE API-Key-Auth
+// über Socket.IO. Stattdessen: GET /metrics (Prometheus) mit HTTP Basic Auth,
+// wobei der API-Key als Passwort verwendet wird (Benutzername leer lassen).
+
+function parsePrometheusLabels(str) {
+  const out = {};
+  const re  = /(\w+)="((?:[^"\\]|\\.)*)"/g;
+  let m;
+  while ((m = re.exec(str)) !== null) {
+    out[m[1]] = m[2].replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+  }
+  return out;
+}
+
+function parsePrometheusText(text) {
+  const statusMap = {};
+  const pingMap   = {};
+  const uptimeMap = {};
+
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+
+    const bi = line.indexOf('{');
+    const be = line.indexOf('}');
+    if (bi < 0 || be < 0) continue;
+
+    const metricName = line.slice(0, bi);
+    const labelsStr  = line.slice(bi + 1, be);
+    const valueStr   = line.slice(be + 1).trim().split(/\s+/)[0];
+    const value      = parseFloat(valueStr);
+    if (isNaN(value)) continue;
+
+    const labels = parsePrometheusLabels(labelsStr);
+    const id     = labels.monitor_id;
+    if (!id) continue;
+
+    if (metricName === 'monitor_status') {
+      statusMap[id] = {
+        id:        parseInt(id, 10),
+        name:      labels.monitor_name || '',
+        type:      labels.monitor_type || null,
+        group:     null,
+        status:    Math.round(value),   // 1=UP 0=DOWN 2=PENDING 3=MAINTENANCE
+        ping:      null,
+        msg:       '',
+        lastCheck: null,
+        uptime24h: null,
+        uptime30d: null,
+      };
+    } else if (metricName === 'monitor_response_time') {
+      pingMap[id] = value;
+    } else if (metricName === 'monitor_uptime_ratio') {
+      if (!uptimeMap[id]) uptimeMap[id] = {};
+      const w = labels.window;
+      if (w === '1d' || w === '30d') uptimeMap[id][w] = value;
+    }
+  }
+
+  const monitors = Object.values(statusMap).map(m => {
+    const sid = String(m.id);
+    const u   = uptimeMap[sid] ?? {};
+    return {
+      ...m,
+      ping:      pingMap[sid]  != null ? pingMap[sid]  : null,
+      uptime24h: u['1d']  != null ? Math.round(u['1d']  * 1000) / 10 : null,
+      uptime30d: u['30d'] != null ? Math.round(u['30d'] * 1000) / 10 : null,
+    };
+  });
+
+  monitors.sort((a, b) =>
+    (a.status === 0 ? -1 : b.status === 0 ? 1 : 0) || a.name.localeCompare(b.name)
+  );
+  return monitors;
+}
+
+async function fetchViaPrometheus(url, apiKey) {
+  const cacheKey = `prom|${url}|${apiKey.slice(0, 8)}`;
+  const cached   = CACHE.get(cacheKey);
+  if (cached && Date.now() - cached.ts < TTL) return cached.data;
+
+  const base  = url.replace(/\/+$/, '');
+  const creds = Buffer.from(`:${apiKey}`).toString('base64');  // leerer Benutzername
+
+  const { data } = await axios.get(`${base}/metrics`, {
+    headers:      { Authorization: `Basic ${creds}` },
+    timeout:      10000,
+    responseType: 'text',
+  });
+
+  if (typeof data !== 'string') throw new Error('Keine Text-Antwort vom /metrics-Endpunkt');
+  if (!data.includes('monitor_status')) {
+    throw new Error(
+      '/metrics-Endpunkt antwortet, aber enthält keine monitor_status-Metriken ' +
+      '(Prometheus-Export evtl. deaktiviert oder API-Key hat keine Berechtigung)'
+    );
+  }
+
+  const monitors = parsePrometheusText(data);
+  if (monitors.length === 0) throw new Error('/metrics: 0 Monitore geparst');
+
+  const result = { monitors, incident: null };
+  CACHE.set(cacheKey, { data: result, ts: Date.now() });
+  return result;
+}
+
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
 function calcUptime(hbList, hours) {
@@ -284,31 +391,38 @@ router.get('/monitors', async (req, res) => {
   if (!url) return res.status(400).json({ error: 'Uptime Kuma URL nicht konfiguriert.' });
 
   if (apiKey) {
-    // ── REST API (Uptime Kuma v2+) ──────────────────────────────────────────
-    let restDiag = '';
+    const diag = [];
+
+    // ── 1. REST API (Uptime Kuma v1.23+ / einige v2-Instanzen) ────────────
     try {
       return res.json(await fetchViaRest(url, apiKey));
     } catch (restErr) {
-      // Diagnosemeldung für den Fallback-Fehler sammeln (HTTP-Status + Meldung)
       const status = restErr?.response?.status;
       const msg    = restErr?.response?.data?.message ?? restErr?.message ?? 'unbekannt';
-      if (status === 401) {
-        restDiag = 'REST HTTP 401 (API-Key abgelehnt)';
-      } else if (status === 404) {
-        restDiag = 'REST HTTP 404 (Endpunkt nicht gefunden)';
-      } else if (status) {
-        restDiag = `REST HTTP ${status}: ${msg}`;
-      } else {
-        restDiag = `REST-Fehler: ${msg}`;
-      }
+      diag.push(status === 401 ? 'REST HTTP 401 (API-Key abgelehnt)'
+              : status === 404 ? 'REST HTTP 404 (Endpunkt nicht gefunden)'
+              : status         ? `REST HTTP ${status}: ${msg}`
+              :                  `REST: ${msg}`);
     }
 
-    // ── Socket.IO Fallback (Uptime Kuma v1.x / v2.x) ───────────────────────
+    // ── 2. Prometheus /metrics (Uptime Kuma v2.x) ─────────────────────────
+    // v2 hat kein /api/v1/monitor und unterstützt keine API-Key-Auth via
+    // Socket.IO. Stattdessen: Basic-Auth (Passwort = API-Key) auf /metrics.
+    try {
+      return res.json(await fetchViaPrometheus(url, apiKey));
+    } catch (promErr) {
+      const status = promErr?.response?.status;
+      diag.push(status === 401 ? 'Prometheus HTTP 401 (API-Key abgelehnt — Key in Uptime Kuma Settings → API Keys prüfen)'
+              : status         ? `Prometheus HTTP ${status}: ${promErr.message}`
+              :                  `Prometheus: ${promErr.message}`);
+    }
+
+    // ── 3. Socket.IO Fallback (Uptime Kuma v1.x ohne REST) ────────────────
     try {
       return res.json(await fetchViaSocket(url, apiKey));
     } catch (sockErr) {
       return res.status(502).json({
-        error: `${sockErr.message} · ${restDiag}`,
+        error: [sockErr.message, ...diag].join(' · '),
       });
     }
   }
