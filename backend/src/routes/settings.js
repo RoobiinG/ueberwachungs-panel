@@ -168,4 +168,15 @@ router.put('/general', requireRole('admin'), (req, res) => {
   res.json({ success: true });
 });
 
+// ── Aktions-Benachrichtigungen ────────────────────────────────────────────────
+router.get('/notifications', requireRole('admin'), (req, res) => {
+  res.json({ actionNotifications: get('action_notifications') === '1' });
+});
+
+router.put('/notifications', requireRole('admin'), (req, res) => {
+  const { actionNotifications } = req.body;
+  set('action_notifications', actionNotifications ? '1' : '0');
+  res.json({ success: true });
+});
+
 module.exports = (req, res, next) => router(req, res, next);

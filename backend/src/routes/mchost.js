@@ -2,6 +2,21 @@ const router      = require('express').Router();
 const axios       = require('axios');
 const db          = require('../db');
 const { requirePermission, getPermissions } = require('../middleware/requirePermission');
+const { broadcast } = require('../websocket');
+
+const notifyAction = (req, action, serverName) => {
+  if (db.prepare("SELECT value FROM settings WHERE key='action_notifications'").get()?.value !== '1') return;
+  broadcast({
+    type: 'action_notify',
+    payload: {
+      actor:      req.user?.username || 'Unbekannt',
+      action,
+      serverName,
+      platform:   'mchost',
+      timestamp:  Date.now(),
+    },
+  });
+};
 
 const actionPermMap = {
   start:    'mchost.start',
@@ -148,7 +163,14 @@ router.post('/vserver/:id/:action', requirePermission('mchost.view'), async (req
   const perm = actionPermMap[req.params.action];
   if (!perm) return res.status(400).json({ error: 'Ungültige Aktion' });
   if (!getPermissions(req.user.role).includes(perm)) return res.status(403).json({ error: 'Keine Berechtigung' });
-  handle(res, async () => (await api()).post(`/vserver/${req.params.id}/${req.params.action}`));
+  const { id, action } = req.params;
+  // Servername für Benachrichtigung ermitteln
+  const serverName = req.body?.serverName || `VServer ${id}`;
+  await handle(res, async () => {
+    const result = await (await api()).post(`/vserver/${id}/${action}`);
+    notifyAction(req, action, serverName);
+    return result;
+  });
 });
 
 router.get('/vserver/:id/backups', requirePermission('mchost.view'), async (req, res) => {
