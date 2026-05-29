@@ -68,9 +68,9 @@ export default function Users() {
       </div>
 
       <Card title={`Benutzer (${users.length})`}>
-        <div className="divide-y divide-panel-border -mx-4 -mb-4">
+        <div className="-mx-4 -mb-4">
           {users.map(u => (
-            <div key={u.id} className="flex items-center justify-between px-4 py-3">
+            <div key={u.id} className="flex items-center justify-between px-4 py-3 table-row">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full bg-panel-surface border border-panel-border flex items-center justify-center text-xs font-bold text-panel-accent">
                   {u.username[0].toUpperCase()}

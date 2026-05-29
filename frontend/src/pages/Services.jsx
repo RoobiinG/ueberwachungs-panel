@@ -83,32 +83,42 @@ export default function Services() {
 
       <Card title={`Systemd Services (${filtered.length})`}>
         {loading ? (
-          <div className="text-panel-muted text-sm py-4 text-center">Lade...</div>
+          <div className="text-panel-muted text-sm py-6 text-center">Lade…</div>
+        ) : filtered.length === 0 ? (
+          <div className="text-panel-muted text-sm py-6 text-center">Keine Services gefunden</div>
         ) : (
-          <div className="divide-y divide-panel-border -mx-4 -mb-4">
-            {filtered.map(s => (
-              <div key={s.name} className="flex items-center justify-between px-4 py-2.5">
-                <div className="flex-1 min-w-0 mr-3">
-                  <div className="flex items-center gap-2">
+          <div className="-mx-4 -mb-4">
+            {filtered.map(s => {
+              const isActive  = s.active === 'active';
+              const isActing  = s.active === 'activating';
+              const dotColor  = isActive ? 'bg-panel-green' : isActing ? 'bg-panel-orange' : 'bg-panel-red';
+              return (
+                <div key={s.name} className="flex items-center justify-between px-4 py-2.5 table-row">
+                  <div className="flex-1 min-w-0 mr-3 flex items-center gap-3">
+                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotColor}`} />
+                    <div className="min-w-0">
+                      <span className="text-sm text-panel-text font-medium truncate block">{s.name}</span>
+                      {s.description && <div className="text-xs text-panel-muted truncate">{s.description}</div>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
                     <Badge color={activeColor(s.active)}>{s.active}</Badge>
-                    <span className="text-sm text-panel-text truncate">{s.name}</span>
+                    {canWrite && (
+                      <div className="flex items-center gap-1">
+                        {!isActive
+                          ? <Button size="sm" variant="success" onClick={() => act(s.name, 'start')}
+                              disabled={!!actBusy[s.name]}><Play size={11} /></Button>
+                          : <Button size="sm" variant="danger"  onClick={() => act(s.name, 'stop')}
+                              disabled={!!actBusy[s.name]}><Square size={11} /></Button>
+                        }
+                        <Button size="sm" variant="ghost" onClick={() => act(s.name, 'restart')}
+                          disabled={!!actBusy[s.name]}><RotateCcw size={11} /></Button>
+                      </div>
+                    )}
                   </div>
-                  {s.description && <div className="text-xs text-panel-muted mt-0.5 truncate">{s.description}</div>}
                 </div>
-                {canWrite && (
-                  <div className="flex items-center gap-1">
-                    {s.active !== 'active'
-                      ? <Button size="sm" variant="success" onClick={() => act(s.name, 'start')}
-                          disabled={!!actBusy[s.name]}><Play size={11} /></Button>
-                      : <Button size="sm" variant="danger"  onClick={() => act(s.name, 'stop')}
-                          disabled={!!actBusy[s.name]}><Square size={11} /></Button>
-                    }
-                    <Button size="sm" variant="ghost" onClick={() => act(s.name, 'restart')}
-                      disabled={!!actBusy[s.name]}><RotateCcw size={11} /></Button>
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Card>

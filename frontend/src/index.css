@@ -18,3 +18,36 @@ html, body, #root {
 input, select, textarea {
   color-scheme: dark;
 }
+
+@layer components {
+  /* Einheitliches Input-Styling */
+  .input-field {
+    @apply w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text
+           placeholder:text-panel-muted/40
+           focus:border-panel-accent focus:outline-none
+           transition-colors duration-150;
+  }
+
+  /* Sidebar-Abschnittsbeschriftungen */
+  .section-label {
+    @apply text-[9px] font-bold text-panel-muted/50 uppercase tracking-widest px-3 pt-4 pb-1.5 select-none;
+  }
+
+  /* Hover-Zeilen in Tabellen */
+  .table-row {
+    @apply border-b border-panel-border/50 last:border-0 hover:bg-panel-card/40 transition-colors duration-100;
+  }
+
+  /* Status-Dot animiert */
+  .status-dot-live {
+    @apply relative inline-flex h-2 w-2;
+  }
+  .status-dot-live::before {
+    content: '';
+    @apply absolute inset-0 rounded-full bg-panel-green opacity-75 animate-ping;
+  }
+  .status-dot-live::after {
+    content: '';
+    @apply absolute inset-0 rounded-full bg-panel-green;
+  }
+}
