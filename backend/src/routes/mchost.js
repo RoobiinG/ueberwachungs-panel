@@ -92,23 +92,9 @@ const handle = async (res, fn, _retried = false) => {
 
 const validId = (id) => /^\d+$/.test(id);
 
-router.get('/vserver', requirePermission('mchost.view'), async (req, res) => {
-  const client = await api().catch(err => { res.status(500).json({ error: err.message }); return null; });
-  if (!client) return;
-  let resp;
-  try { resp = await client.get('/vserver'); } catch (err) {
-    console.error('[MCHost] /vserver Fehler:', err.response?.status, JSON.stringify(err.response?.data));
-    const msg = err.response?.data?.messages
-      ? Object.values(err.response.data.messages).flat().join(', ')
-      : err.response?.data?.message || err.message;
-    return res.status(err.response?.status || 500).json({ error: msg });
-  }
-  console.log('[MCHost] /vserver raw response:', JSON.stringify(resp.data));
-  const body = resp.data;
-  const list = body?.data ?? body;
-  console.log('[MCHost] /vserver nach unwrap:', JSON.stringify(list));
-  res.json(list);
-});
+router.get('/vserver', requirePermission('mchost.view'), async (req, res) =>
+  handle(res, async () => (await api()).get('/vserver'))
+);
 
 router.get('/vserver/:id/status', requirePermission('mchost.view'), async (req, res) => {
   if (!validId(req.params.id)) return res.status(400).json({ error: 'Ungültige VServer-ID' });

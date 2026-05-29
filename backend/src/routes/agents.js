@@ -4,6 +4,7 @@ const https       = require('https');
 const tls         = require('tls');
 const fs          = require('fs');
 const path        = require('path');
+const crypto      = require('crypto');
 const db          = require('../db');
 const { requirePermission } = require('../middleware/requirePermission');
 const { validatePublicUrl } = require('../utils/validateUrl');
@@ -274,7 +275,9 @@ router.post('/:id/update', requirePermission('agents.update'), async (req, res) 
   }
 
   try {
-    const { data } = await agentApi(agent).post('/update', { script }, { timeout: 30000 });
+    // HMAC-Signatur damit der Agent die Herkunft verifizieren kann
+    const hmac = crypto.createHmac('sha256', agent.token).update(script).digest('hex');
+    const { data } = await agentApi(agent).post('/update', { script, hmac }, { timeout: 30000 });
     // Versions-Cache invalidieren damit nächste Abfrage aktuell ist
     _latestCache.ts = 0;
     res.json(data);

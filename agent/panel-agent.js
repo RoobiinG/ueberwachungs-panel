@@ -3,16 +3,17 @@
  * Überwachungs-Panel Agent
  * Installieren: curl -sL https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master/agent/install.sh | bash
  */
-const http  = require('http');
-const https = require('https');
-const os    = require('os');
-const path  = require('path');
+const http   = require('http');
+const https  = require('https');
+const os     = require('os');
+const path   = require('path');
+const crypto = require('crypto');
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const fs = require('fs');
 
 const execAsync = promisify(exec);
-const VERSION = '2.4.1';
+const VERSION = '2.4.2';
 const REPO_RAW = 'https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master/agent/panel-agent.js';
 const PORT  = parseInt(process.env.PANEL_AGENT_PORT || '7331');
 const TOKEN = process.env.PANEL_AGENT_TOKEN || '';
@@ -257,7 +258,8 @@ function respond(res, status, data) {
 }
 
 async function handler(req, res) {
-  if (TOKEN && req.headers['x-agent-token'] !== TOKEN) {
+  // SICHERHEIT: Leerer TOKEN bedeutet nicht "kein Schutz" sondern "alle abweisen"
+  if (!TOKEN || req.headers['x-agent-token'] !== TOKEN) {
     return respond(res, 401, { error: 'Unauthorized' });
   }
 
@@ -285,10 +287,17 @@ async function handler(req, res) {
       try {
         let content;
         if (body.script && typeof body.script === 'string' && body.script.length > 100) {
-          // Vom Panel direkt übermittelt → kein GitHub-Download nötig
+          // Vom Panel direkt übermittelt → HMAC-Signatur prüfen
+          if (!body.hmac) {
+            return respond(res, 403, { error: 'Fehlende HMAC-Signatur — Update abgelehnt' });
+          }
+          const expected = crypto.createHmac('sha256', TOKEN).update(body.script).digest('hex');
+          if (body.hmac !== expected) {
+            return respond(res, 403, { error: 'Ungültige HMAC-Signatur — Update abgelehnt' });
+          }
           content = body.script;
         } else {
-          // Fallback: von GitHub laden
+          // Fallback: von GitHub laden (kein script-Feld → kein HMAC nötig)
           await downloadFile(REPO_RAW, tmpPath);
           content = fs.readFileSync(tmpPath, 'utf8');
         }
@@ -399,5 +408,8 @@ server.on('error', (err) => {
 server.listen(PORT, '0.0.0.0', () => {
   const proto = useTLS ? 'HTTPS' : 'HTTP (kein Zertifikat gefunden — unsicher!)';
   console.log(`Panel Agent v${VERSION} [${proto}] läuft auf Port ${PORT}`);
-  if (!TOKEN) console.warn('WARNUNG: Kein PANEL_AGENT_TOKEN gesetzt!');
+  if (!TOKEN) {
+    console.error('SICHERHEIT: Kein PANEL_AGENT_TOKEN gesetzt — alle Anfragen werden abgewiesen!');
+    console.error('           Bitte /etc/panel-agent/env konfigurieren und den Service neu starten.');
+  }
 });
