@@ -11,7 +11,6 @@ import Dashboard from './pages/Dashboard';
 import Docker from './pages/Docker';
 import Services from './pages/Services';
 import Firewall from './pages/Firewall';
-import SSH from './pages/SSH';
 import Webhooks from './pages/Webhooks';
 import Users from './pages/Users';
 import Hetzner from './pages/Hetzner';
@@ -75,7 +74,6 @@ const AppRoutes = () => {
           <Route path="/firewall" element={<Firewall />} />
           <Route path="/network"    element={<Navigate to="/monitoring" replace />} />
           <Route path="/monitoring" element={<Monitoring liveStats={liveStats} />} />
-          <Route path="/ssh" element={<SSH />} />
           <Route path="/agents" element={<Agents />} />
           <Route path="/agents/:id" element={<AgentDetail />} />
           <Route path="/uptime-kuma" element={<UptimeKuma />} />

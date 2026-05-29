@@ -10,7 +10,6 @@ const pageTitles = {
   '/services': 'Services',
   '/firewall': 'Firewall & Ports',
   '/network': 'Netzwerk',
-  '/ssh': 'SSH Terminal',
   '/webhooks': 'Webhooks',
   '/alerts': 'Alert-Regeln',
   '/hetzner': 'Hetzner Cloud',

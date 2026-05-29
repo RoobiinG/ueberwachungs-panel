@@ -4,7 +4,7 @@ const WSContext = createContext(null);
 
 /**
  * Stellt eine einzige authentifizierte WebSocket-Verbindung bereit.
- * Alle Komponenten (Stats, SSH, …) nutzen dieselbe Verbindung.
+ * Alle Komponenten nutzen dieselbe Verbindung.
  */
 export function WSProvider({ token, children }) {
   const wsRef        = useRef(null);
