@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const db = require('../db');
-const { requirePermission } = require('../middleware/requirePermission');
+const { requirePermission, getPermissions } = require('../middleware/requirePermission');
 
 const RANGES = {
   '1h':  { seconds: 3600,         bucket: null  },  // Rohdaten (10-Sek)   → ≤360 Punkte
@@ -57,10 +57,16 @@ const queryRows = (from, to, bucket, serverId) => {
 };
 
 // Liste aller Server mit aufgezeichneten Metriken
+// Agents nur wenn agents.view-Berechtigung vorhanden
 router.get('/servers', requirePermission('metrics.view'), (req, res) => {
   const servers = [{ id: 'local', label: 'Panel (lokal)' }];
-  const agents  = db.prepare('SELECT id, name FROM remote_agents ORDER BY name ASC').all();
-  for (const a of agents) servers.push({ id: String(a.id), label: a.name });
+  const userRow = db.prepare('SELECT role FROM users WHERE id = ?').get(req.user?.id);
+  const perms   = userRow ? getPermissions(userRow.role) : [];
+  const canViewAgents = perms.includes('agents.view');
+  if (canViewAgents) {
+    const agents = db.prepare('SELECT id, name FROM remote_agents ORDER BY name ASC').all();
+    for (const a of agents) servers.push({ id: String(a.id), label: a.name });
+  }
   res.json(servers);
 });
 
