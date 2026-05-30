@@ -343,9 +343,15 @@ export default function Alerts() {
     setTimeout(() => setTestStatus(s => { const n = { ...s }; delete n[id]; return n; }), 3000);
   };
 
-  const fmtDate = (s) => s
-    ? new Date(s).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-    : '—';
+  const fmtDate = (s) => {
+    if (!s) return '—';
+    // SQLite speichert UTC ohne Timezone-Markierung → 'Z' anhängen damit JS korrekt parst
+    const iso = s.includes('Z') || s.includes('+') ? s : s.replace(' ', 'T') + 'Z';
+    return new Date(iso).toLocaleString('de-DE', {
+      day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+      timeZone: 'Europe/Berlin',
+    });
+  };
 
   return (
     <div className="space-y-4">
