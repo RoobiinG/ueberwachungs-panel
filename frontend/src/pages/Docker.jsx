@@ -8,7 +8,7 @@ import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { ServerSelector } from '../components/ui/ServerSelector';
-import { RefreshCw, Play, Square, RotateCcw, Tag, Check, X } from 'lucide-react';
+import { RefreshCw, Play, Square, RotateCcw, Tag, Check, X, ScrollText, ChevronDown, ChevronUp } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
@@ -44,6 +44,12 @@ export default function Docker() {
   const [labels,       setLabels]       = useState({});
   const [editingLabel, setEditingLabel] = useState(null);
   const [labelDraft,   setLabelDraft]   = useState({ nickname: '', tag: '' });
+
+  // Logs
+  const [logsOpen,    setLogsOpen]    = useState({});   // { containerId: bool }
+  const [logsContent, setLogsContent] = useState({});   // { containerId: string }
+  const [logsLoading, setLogsLoading] = useState({});   // { containerId: bool }
+  const logsEndRef = useRef({});
 
   // ── Container laden ────────────────────────────────────────────────────────
 
@@ -145,6 +151,31 @@ export default function Docker() {
     }
   };
 
+  // ── Logs ───────────────────────────────────────────────────────────────────
+  const toggleLogs = async (cid) => {
+    const isOpen = logsOpen[cid];
+    setLogsOpen(p => ({ ...p, [cid]: !isOpen }));
+    if (!isOpen) fetchLogs(cid);
+  };
+
+  const fetchLogs = async (cid, tail = 200) => {
+    setLogsLoading(p => ({ ...p, [cid]: true }));
+    try {
+      const url = selectedServer
+        ? `/api/agents/${selectedServer}/docker/containers/${cid}/logs?tail=${tail}`
+        : `/api/docker/containers/${cid}/logs?tail=${tail}`;
+      const { data } = await axios.get(url);
+      // Logs können als Array oder String kommen
+      const text = Array.isArray(data) ? data.join('\n') : (typeof data === 'string' ? data : JSON.stringify(data));
+      setLogsContent(p => ({ ...p, [cid]: text }));
+      // Ans Ende scrollen
+      setTimeout(() => logsEndRef.current[cid]?.scrollIntoView({ behavior: 'smooth' }), 50);
+    } catch (err) {
+      setLogsContent(p => ({ ...p, [cid]: `Fehler: ${err.response?.data?.error || err.message}` }));
+    }
+    setLogsLoading(p => ({ ...p, [cid]: false }));
+  };
+
   // ── Aktionen (Start/Stop/Restart) ─────────────────────────────────────────
 
   const act = async (cid, action) => {
@@ -191,8 +222,9 @@ export default function Docker() {
               const netRx   = live?.netRx    ?? c.netRx    ?? null;
               const netTx   = live?.netTx    ?? c.netTx    ?? null;
 
+              const isLogsOpen = !!logsOpen[c.id];
               return (
-                <div key={c.id} className="flex items-center justify-between px-4 py-3">
+                <div key={c.id} className="flex flex-col">
                   {/* Name & Status */}
                   <div className="flex-1 min-w-0 mr-3">
                     {editingLabel === c.id && canLabel ? (
@@ -313,8 +345,48 @@ export default function Docker() {
                         <Button size="sm" variant="ghost" onClick={() => act(c.id, 'restart')} disabled={!!busy[c.id]}><RotateCcw size={12} /></Button>
                       </>
                     )}
+                    {/* Logs-Button */}
+                    <button
+                      onClick={() => toggleLogs(c.id)}
+                      title="Container-Logs"
+                      className={`p-1.5 rounded transition-colors ${isLogsOpen ? 'text-panel-accent bg-panel-accent/10' : 'text-panel-muted hover:text-panel-text hover:bg-panel-card'}`}
+                    >
+                      <ScrollText size={13} />
+                    </button>
                   </div>
                 </div>
+
+                {/* ── Log-Panel ──────────────────────────────────────────── */}
+                {isLogsOpen && (
+                  <div className="bg-panel-bg border-t border-panel-border/50">
+                    {/* Log-Header */}
+                    <div className="flex items-center justify-between px-4 py-1.5 bg-panel-surface/60 border-b border-panel-border/30">
+                      <div className="flex items-center gap-2">
+                        <ScrollText size={11} className="text-panel-muted" />
+                        <span className="text-[11px] font-medium text-panel-muted">{c.name} — Logs</span>
+                        {logsLoading[c.id] && (
+                          <span className="text-[10px] text-panel-muted animate-pulse">Lade…</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {[50, 200, 500].map(n => (
+                          <button key={n} onClick={() => fetchLogs(c.id, n)}
+                            className="text-[10px] px-1.5 py-0.5 rounded text-panel-muted hover:text-panel-text hover:bg-panel-card transition-colors">
+                            {n}Z
+                          </button>
+                        ))}
+                        <button onClick={() => toggleLogs(c.id)} className="text-panel-muted hover:text-panel-text ml-1">
+                          <ChevronUp size={12} />
+                        </button>
+                      </div>
+                    </div>
+                    {/* Log-Inhalt */}
+                    <pre className="text-[10px] font-mono text-panel-text/80 leading-relaxed p-3 max-h-64 overflow-y-auto whitespace-pre-wrap break-all">
+                      {logsContent[c.id] || (logsLoading[c.id] ? 'Lade Logs…' : 'Keine Logs verfügbar')}
+                      <div ref={el => logsEndRef.current[c.id] = el} />
+                    </pre>
+                  </div>
+                )}
               );
             })}
           </div>

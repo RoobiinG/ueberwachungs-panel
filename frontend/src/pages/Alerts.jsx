@@ -21,7 +21,7 @@ const emptyCondition = () => ({ metric: 'cpu', condition: 'gt', threshold: 80 })
 
 const defaultForm = {
   name: '', metric: 'cpu', duration_seconds: 60, cooldown_minutes: 30, webhook_id: '',
-  agent_ids: [], conditions: [emptyCondition()], logic: 'and',
+  agent_ids: [], conditions: [emptyCondition()], logic: 'and', notify_resolved: false,
 };
 
 // ─── Bedingungs-Zeile ──────────────────────────────────────────────────────────
@@ -80,7 +80,7 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
       if (conds.length === 0) conds = [{ metric: initial.metric || 'cpu', condition: initial.condition || 'gt', threshold: initial.threshold ?? 80 }];
       let agentIds = [];
       try { agentIds = JSON.parse(initial.agent_ids || '[]'); } catch {}
-      setForm({ ...initial, conditions: conds, agent_ids: agentIds, logic: initial.logic || 'and' });
+      setForm({ ...initial, conditions: conds, agent_ids: agentIds, logic: initial.logic || 'and', notify_resolved: !!initial.notify_resolved });
     } else {
       setForm(defaultForm);
     }
@@ -251,6 +251,19 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
           </select>
           {webhooks.length === 0 && (
             <p className="text-xs text-panel-muted mt-1">Zuerst einen Webhook unter "Webhooks" anlegen.</p>
+          )}
+          {/* Wiederherstellungs-Benachrichtigung */}
+          {!isAction && (
+            <label className="flex items-center gap-2 mt-2 cursor-pointer select-none group">
+              <div
+                onClick={() => set('notify_resolved', !form.notify_resolved)}
+                className={`relative inline-flex h-4 w-7 flex-shrink-0 rounded-full transition-colors duration-200 ${form.notify_resolved ? 'bg-panel-accent' : 'bg-panel-border'}`}>
+                <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition duration-200 mt-0.5 ${form.notify_resolved ? 'translate-x-3' : 'translate-x-0.5'}`} />
+              </div>
+              <span className="text-xs text-panel-muted group-hover:text-panel-text transition-colors">
+                Auch bei Wiederherstellung benachrichtigen
+              </span>
+            </label>
           )}
         </div>
 
