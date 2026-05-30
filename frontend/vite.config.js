@@ -10,13 +10,19 @@ export default defineConfig({
     },
   },
   build: {
+    target: 'es2020',
+    sourcemap: false,
     rollupOptions: {
       output: {
         manualChunks: {
-          vendor:  ['react', 'react-dom', 'react-router-dom'],
-          charts:  ['recharts'],
-          icons:   ['lucide-react'],
-          ui:      ['axios'],
+          // Core React
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          // Charting (groß — separat damit Dashboard nicht alles blockiert)
+          'vendor-charts': ['recharts'],
+          // Icons
+          'vendor-icons': ['lucide-react'],
+          // HTTP-Client
+          'vendor-http': ['axios'],
         },
       },
     },
