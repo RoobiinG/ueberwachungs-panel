@@ -23,6 +23,16 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ─── Datei-Download (HTTPS, folgt Weiterleitungen) ───────────────────────────
 
+const ALLOWED_DOWNLOAD_HOSTS = ['raw.githubusercontent.com', 'github.com'];
+
+function isSafeRedirectUrl(location) {
+  try {
+    const u = new URL(location);
+    if (u.protocol !== 'https:') return false;
+    return ALLOWED_DOWNLOAD_HOSTS.some(h => u.hostname === h || u.hostname.endsWith('.' + h));
+  } catch { return false; }
+}
+
 function downloadFile(url, dest, redirects = 5) {
   return new Promise((resolve, reject) => {
     if (redirects <= 0) return reject(new Error('Zu viele Weiterleitungen'));
@@ -30,7 +40,10 @@ function downloadFile(url, dest, redirects = 5) {
     const req = https.get(url, { headers: { 'User-Agent': 'panel-agent-updater' } }, (res) => {
       if (res.statusCode === 301 || res.statusCode === 302) {
         file.destroy(); fs.unlink(dest, () => {});
-        return downloadFile(res.headers.location, dest, redirects - 1).then(resolve).catch(reject);
+        const location = res.headers.location || '';
+        if (!isSafeRedirectUrl(location))
+          return reject(new Error(`Unsichere Redirect-URL blockiert: ${location}`));
+        return downloadFile(location, dest, redirects - 1).then(resolve).catch(reject);
       }
       if (res.statusCode !== 200) {
         file.destroy(); fs.unlink(dest, () => {});
