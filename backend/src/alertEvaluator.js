@@ -66,6 +66,19 @@ function getServerList(rule) {
   return [{ key: 'local', name: 'Lokal', agentId: null }];
 }
 
+// ─── Alle Metrik-Werte für eine Bedingungsliste holen ────────────────────────
+async function evaluateConditions(conditions, agentId) {
+  const results = [];
+  for (const cond of conditions) {
+    let value;
+    try { value = await getMetricValue(cond.metric, agentId); } catch { value = null; }
+    if (value == null) { results.push(null); continue; }
+    const met = cond.condition === 'gt' ? value > cond.threshold : value < cond.threshold;
+    results.push({ met, value, cond });
+  }
+  return results;
+}
+
 // ─── Haupt-Evaluierungslauf ───────────────────────────────────────────────────
 async function evaluate() {
   const now   = Math.floor(Date.now() / 1000);
@@ -78,28 +91,46 @@ async function evaluate() {
   `).all();
 
   for (const rule of rules) {
-    const servers = getServerList(rule);
-    for (const srv of servers) {
-      let value;
-      try { value = await getMetricValue(rule.metric, srv.agentId); } catch { continue; }
-      if (value == null) continue;
+    // Bedingungen lesen (neu: conditions-Array, Fallback: alter Einzel-Wert)
+    let conditions = [];
+    try { conditions = JSON.parse(rule.conditions || '[]'); } catch {}
+    if (conditions.length === 0) {
+      // Fallback für alte Regeln ohne conditions-Array
+      conditions = [{ metric: rule.metric, condition: rule.condition, threshold: rule.threshold }];
+    }
 
-      const conditionMet = rule.condition === 'gt' ? value > rule.threshold : value < rule.threshold;
-      const stateKey     = `${rule.id}:${srv.key}`;
-      const s            = getState(stateKey);
-      const unit         = METRIC_UNIT[rule.metric] ?? '%';
-      const condStr      = rule.condition === 'gt' ? '>' : '<';
+    const logic   = rule.logic || 'and';
+    const servers = getServerList(rule);
+
+    for (const srv of servers) {
+      const results = await evaluateConditions(conditions, srv.agentId);
+      if (results.some(r => r === null)) continue; // Metrik nicht verfügbar
+
+      const conditionMet = logic === 'or'
+        ? results.some(r => r.met)
+        : results.every(r => r.met);
+
+      const stateKey = `${rule.id}:${srv.key}`;
+      const s        = getState(stateKey);
+
+      // Zusammenfassende Nachricht aus allen Bedingungen
+      const detailLines = results.map(r => {
+        const u = METRIC_UNIT[r.cond.metric] ?? '%';
+        const c = r.cond.condition === 'gt' ? '>' : '<';
+        return `${METRIC_LABELS[r.cond.metric] ?? r.cond.metric} ${c} ${r.cond.threshold}${u} (${r.value.toFixed(2)}${u})`;
+      }).join('\n');
 
       if (conditionMet) {
         if (s.activeSince === null) s.activeSince = now;
         const activeFor = now - s.activeSince;
 
-        if (activeFor >= rule.duration_seconds) {
+        if (activeFor >= (rule.duration_seconds || 0)) {
           const cooldownSecs = rule.cooldown_minutes * 60;
           const cooldownOk   = s.lastFiredAt === null || (now - s.lastFiredAt) >= cooldownSecs;
 
           if (cooldownOk) {
-            const message = `⚠️ Alert: ${rule.name}\n${METRIC_LABELS[rule.metric] ?? rule.metric} ${condStr} ${rule.threshold}${unit} (aktuell: ${value.toFixed(2)}${unit})\nServer: ${srv.name}`;
+            const logicStr  = logic === 'or' ? '(ODER)' : '(UND)';
+            const message   = `⚠️ Alert: ${rule.name} ${logicStr}\n${detailLines}\nServer: ${srv.name}`;
             try {
               await sendWebhook({ type: rule.wtype, url: rule.wurl }, message);
             } catch (err) {
@@ -109,50 +140,40 @@ async function evaluate() {
             s.hasFired    = true;
 
             try {
-              db.prepare(
-                "INSERT INTO alert_history (rule_id, value, message, type) VALUES (?, ?, ?, 'fired')"
-              ).run(rule.id, value, message);
+              db.prepare("INSERT INTO alert_history (rule_id, value, message, type) VALUES (?, ?, ?, 'fired')")
+                .run(rule.id, results[0]?.value ?? 0, message);
             } catch {}
 
             broadcast({
               type: 'alert',
               payload: {
-                alertType: 'fired',
-                ruleId:    rule.id,
-                ruleName:  rule.name,
-                metric:    rule.metric,
-                value,
-                threshold: rule.threshold,
-                condition: rule.condition,
+                alertType:  'fired',
+                ruleId:     rule.id,
+                ruleName:   rule.name,
+                conditions,
+                logic,
                 serverName: srv.name,
-                agentId:   srv.agentId || null,
+                agentId:    srv.agentId || null,
               },
             });
           }
         }
       } else {
         if (s.hasFired) {
-          s.hasFired = false;
-          const message = `✅ Erholt: ${rule.name}\n${METRIC_LABELS[rule.metric] ?? rule.metric} wieder normal (${value.toFixed(2)}${unit})\nServer: ${srv.name}`;
+          s.hasFired    = false;
+          s.activeSince = null;
+          const recoveryLines = results.map(r => {
+            const u = METRIC_UNIT[r.cond.metric] ?? '%';
+            return `${METRIC_LABELS[r.cond.metric] ?? r.cond.metric}: ${r.value.toFixed(2)}${u}`;
+          }).join(', ');
+          const message = `✅ Erholt: ${rule.name}\n${recoveryLines}\nServer: ${srv.name}`;
           try {
-            db.prepare(
-              "INSERT INTO alert_history (rule_id, value, message, type) VALUES (?, ?, ?, 'resolved')"
-            ).run(rule.id, value, message);
+            db.prepare("INSERT INTO alert_history (rule_id, value, message, type) VALUES (?, ?, ?, 'resolved')")
+              .run(rule.id, results[0]?.value ?? 0, message);
           } catch {}
-
           broadcast({
             type: 'alert',
-            payload: {
-              alertType: 'resolved',
-              ruleId:    rule.id,
-              ruleName:  rule.name,
-              metric:    rule.metric,
-              value,
-              threshold: rule.threshold,
-              condition: rule.condition,
-              serverName: srv.name,
-              agentId:   srv.agentId || null,
-            },
+            payload: { alertType: 'resolved', ruleId: rule.id, ruleName: rule.name, conditions, logic, serverName: srv.name, agentId: srv.agentId || null },
           });
         }
         s.activeSince = null;

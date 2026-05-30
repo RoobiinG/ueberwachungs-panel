@@ -14,51 +14,110 @@ const METRIC_COLORS  = { cpu: 'text-blue-400', memory: 'text-green-400', disk: '
 const METRIC_UNIT    = { cpu: '%', memory: '%', disk: '%', net_rx: ' MB/s', net_tx: ' MB/s', action: '' };
 const CONDITION_LABELS = { gt: 'über', lt: 'unter' };
 
+const THRESHOLD_MAX  = { cpu: 100, memory: 100, disk: 100, net_rx: 1000, net_tx: 1000 };
+const THRESHOLD_STEP = { cpu: 1, memory: 1, disk: 1, net_rx: 0.5, net_tx: 0.5 };
+
+const emptyCondition = () => ({ metric: 'cpu', condition: 'gt', threshold: 80 });
+
 const defaultForm = {
-  name: '', metric: 'cpu', condition: 'gt', threshold: 80,
-  duration_seconds: 60, cooldown_minutes: 30, webhook_id: '',
-  agent_ids: [], // [] = alle / leeres Array = Lokal + alle (abh. von Auswahl)
+  name: '', metric: 'cpu', duration_seconds: 60, cooldown_minutes: 30, webhook_id: '',
+  agent_ids: [], conditions: [emptyCondition()], logic: 'and',
 };
+
+// ─── Bedingungs-Zeile ──────────────────────────────────────────────────────────
+function ConditionRow({ cond, onChange, onRemove, canRemove }) {
+  const inputCls = 'bg-panel-surface border border-panel-border rounded px-2 py-1 text-xs text-panel-text focus:outline-none focus:border-panel-accent';
+  const isNet = cond.metric === 'net_rx' || cond.metric === 'net_tx';
+  const unit  = METRIC_UNIT[cond.metric] ?? '%';
+  return (
+    <div className="flex items-center gap-2 bg-panel-bg/60 rounded-lg px-3 py-2.5 border border-panel-border/60">
+      {/* Metrik */}
+      <select value={cond.metric} onChange={e => onChange({ ...cond, metric: e.target.value })} className={inputCls}>
+        <optgroup label="System">
+          <option value="cpu">CPU</option>
+          <option value="memory">RAM</option>
+          <option value="disk">Disk</option>
+        </optgroup>
+        <optgroup label="Netzwerk">
+          <option value="net_rx">Netz ↓</option>
+          <option value="net_tx">Netz ↑</option>
+        </optgroup>
+      </select>
+      {/* Bedingung */}
+      <select value={cond.condition} onChange={e => onChange({ ...cond, condition: e.target.value })} className={inputCls + ' w-20'}>
+        <option value="gt">{'>'}</option>
+        <option value="lt">{'<'}</option>
+      </select>
+      {/* Schwellenwert */}
+      <input
+        type="number" min="0" step={THRESHOLD_STEP[cond.metric] ?? 1}
+        max={THRESHOLD_MAX[cond.metric] ?? 100}
+        value={cond.threshold}
+        onChange={e => onChange({ ...cond, threshold: parseFloat(e.target.value) || 0 })}
+        className={inputCls + ' w-20 text-right'}
+      />
+      <span className="text-xs text-panel-muted w-8">{unit}</span>
+      {canRemove && (
+        <button onClick={onRemove} className="text-panel-muted hover:text-panel-red transition-colors ml-auto">
+          <Trash2 size={12} />
+        </button>
+      )}
+    </div>
+  );
+}
 
 // ─── Regel-Modal ───────────────────────────────────────────────────────────────
 function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
-  const [form, setForm] = useState(initial || defaultForm);
+  const [form,   setForm]   = useState(defaultForm);
   const [saving, setSaving] = useState(false);
-  const [error, setError]   = useState('');
+  const [error,  setError]  = useState('');
 
   useEffect(() => {
-    if (open) {
-      setForm(initial
-        ? { ...initial, agent_ids: (() => { try { return JSON.parse(initial.agent_ids || '[]'); } catch { return []; } })() }
-        : defaultForm
-      );
-      setError('');
+    if (!open) return;
+    if (initial) {
+      let conds = [];
+      try { conds = JSON.parse(initial.conditions || '[]'); } catch {}
+      if (conds.length === 0) conds = [{ metric: initial.metric || 'cpu', condition: initial.condition || 'gt', threshold: initial.threshold ?? 80 }];
+      let agentIds = [];
+      try { agentIds = JSON.parse(initial.agent_ids || '[]'); } catch {}
+      setForm({ ...initial, conditions: conds, agent_ids: agentIds, logic: initial.logic || 'and' });
+    } else {
+      setForm(defaultForm);
     }
+    setError('');
   }, [open, initial]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-
   const isAction = form.metric === 'action';
-  const isNetwork = form.metric === 'net_rx' || form.metric === 'net_tx';
-  const unit = METRIC_UNIT[form.metric] ?? '%';
 
   const toggleServer = (id) => {
     const ids = form.agent_ids || [];
     set('agent_ids', ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]);
   };
 
+  const updateCond = (i, val) => {
+    const next = [...(form.conditions || [])];
+    next[i] = val;
+    set('conditions', next);
+  };
+  const addCond    = () => set('conditions', [...(form.conditions || []), emptyCondition()]);
+  const removeCond = (i) => set('conditions', (form.conditions || []).filter((_, idx) => idx !== i));
+
   const handleSave = async () => {
     if (!form.name.trim()) return setError('Name ist erforderlich');
     if (!form.webhook_id)  return setError('Webhook auswählen');
+    if (!isAction && (!form.conditions || form.conditions.length === 0))
+      return setError('Mindestens eine Bedingung erforderlich');
     setSaving(true);
     setError('');
     try {
       await onSave({
         ...form,
-        threshold:        isAction ? 0 : parseFloat(form.threshold),
-        condition:        isAction ? 'gt' : form.condition,
-        duration_seconds: isAction ? 0 : parseInt(form.duration_seconds),
-        cooldown_minutes: parseInt(form.cooldown_minutes),
+        metric:           isAction ? 'action' : (form.conditions?.[0]?.metric || 'cpu'),
+        conditions:       isAction ? [] : (form.conditions || []),
+        logic:            form.logic || 'and',
+        duration_seconds: isAction ? 0 : parseInt(form.duration_seconds) || 0,
+        cooldown_minutes: parseInt(form.cooldown_minutes) || 30,
         webhook_id:       parseInt(form.webhook_id),
         agent_ids:        form.agent_ids || [],
       });
@@ -69,25 +128,46 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
     setSaving(false);
   };
 
-  const inputCls = 'w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:border-panel-accent';
-  const allServers = [{ id: 'local', name: 'Lokal (Panel-Server)' }, ...agents.map(a => ({ id: String(a.id), name: a.name }))];
+  const inputCls  = 'w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:border-panel-accent';
+  const allServers = [{ id: 'local', name: 'Lokal' }, ...agents.map(a => ({ id: String(a.id), name: a.name }))];
 
   return (
     <Modal open={open} title={initial?.id ? 'Regel bearbeiten' : 'Neue Alert-Regel'} onClose={onClose}>
-      <div className="space-y-3">
+      <div className="space-y-3 max-h-[70vh] overflow-y-auto pr-1">
         {error && <p className="text-panel-red text-xs bg-panel-red/10 rounded p-2">{error}</p>}
 
         {/* Name */}
         <div>
           <label className="text-xs text-panel-muted block mb-1">Name</label>
           <input className={inputCls} value={form.name}
-            onChange={e => set('name', e.target.value)} placeholder="z.B. CPU-Überlastung" />
+            onChange={e => set('name', e.target.value)} placeholder="z.B. CPU + RAM Überlastung" />
         </div>
 
-        {/* Server — Mehrfachauswahl */}
+        {/* Typ */}
+        <div>
+          <label className="text-xs text-panel-muted block mb-2">Typ</label>
+          <div className="flex gap-2">
+            {[
+              { val: false, label: '📊 Schwellenwert' },
+              { val: true,  label: '⚡ Server-Aktionen' },
+            ].map(t => (
+              <button key={String(t.val)} type="button"
+                onClick={() => set('metric', t.val ? 'action' : (form.conditions?.[0]?.metric || 'cpu'))}
+                className={`flex-1 px-3 py-2 rounded-lg border text-xs font-medium transition-all ${
+                  t.val === isAction
+                    ? 'border-panel-accent bg-panel-accent/10 text-panel-accent'
+                    : 'border-panel-border text-panel-muted hover:border-panel-muted/50 hover:text-panel-text'
+                }`}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Server */}
         <div>
           <label className="text-xs text-panel-muted block mb-1">
-            Server <span className="text-panel-muted/60">(keiner = alle)</span>
+            Server <span className="text-panel-muted/60 font-normal">(keiner = alle)</span>
           </label>
           <div className="flex flex-wrap gap-1.5 p-2 bg-panel-surface border border-panel-border rounded-md">
             {allServers.map(s => {
@@ -95,9 +175,8 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
               return (
                 <button key={s.id} type="button" onClick={() => toggleServer(s.id)}
                   className={`text-xs px-2 py-1 rounded border transition-all ${
-                    checked
-                      ? 'bg-panel-accent/15 border-panel-accent text-panel-accent'
-                      : 'border-panel-border text-panel-muted hover:border-panel-muted/60 hover:text-panel-text'
+                    checked ? 'bg-panel-accent/15 border-panel-accent text-panel-accent'
+                            : 'border-panel-border text-panel-muted hover:border-panel-muted/60 hover:text-panel-text'
                   }`}>
                   {s.name}
                 </button>
@@ -106,66 +185,48 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
           </div>
         </div>
 
-        {/* Metrik + Bedingung */}
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs text-panel-muted block mb-1">Metrik</label>
-            <select className={inputCls} value={form.metric} onChange={e => set('metric', e.target.value)}>
-              <optgroup label="System">
-                <option value="cpu">CPU</option>
-                <option value="memory">RAM</option>
-                <option value="disk">Disk</option>
-              </optgroup>
-              <optgroup label="Netzwerk">
-                <option value="net_rx">Netzwerk ↓ (RX)</option>
-                <option value="net_tx">Netzwerk ↑ (TX)</option>
-              </optgroup>
-              <optgroup label="Ereignisse">
-                <option value="action">Server-Aktionen</option>
-              </optgroup>
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-panel-muted block mb-1">Bedingung</label>
-            <select className={inputCls} value={form.condition} onChange={e => set('condition', e.target.value)}
-              disabled={isAction}>
-              <option value="gt">Über (&gt;)</option>
-              <option value="lt">Unter (&lt;)</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Schwellenwert — nicht für Action */}
+        {/* Bedingungen (nur für Schwellenwert) */}
         {!isAction && (
           <div>
-            <label className="text-xs text-panel-muted block mb-1">
-              Schwellenwert:{' '}
-              <span className="text-panel-accent font-semibold">
-                {form.threshold}{unit}
-              </span>
-            </label>
-            {isNetwork ? (
-              <input type="number" min="0" step="0.1" className={inputCls}
-                value={form.threshold} onChange={e => set('threshold', e.target.value)}
-                placeholder="z.B. 10 (MB/s)" />
-            ) : (
-              <>
-                <input type="range" min="1" max="100" step="1" className="w-full accent-panel-accent"
-                  value={form.threshold} onChange={e => set('threshold', e.target.value)} />
-                <div className="flex justify-between text-xs text-panel-muted mt-0.5"><span>1%</span><span>100%</span></div>
-              </>
-            )}
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs text-panel-muted">Bedingungen</label>
+              {/* Logik-Toggle */}
+              {(form.conditions || []).length > 1 && (
+                <div className="flex bg-panel-surface border border-panel-border rounded overflow-hidden text-[10px] font-semibold">
+                  {['and', 'or'].map(l => (
+                    <button key={l} type="button" onClick={() => set('logic', l)}
+                      className={`px-2.5 py-1 transition-colors ${
+                        form.logic === l ? 'bg-panel-accent text-white' : 'text-panel-muted hover:text-panel-text'
+                      }`}>
+                      {l === 'and' ? 'ALLE (UND)' : 'EINE (ODER)'}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="space-y-2">
+              {(form.conditions || []).map((cond, i) => (
+                <ConditionRow key={i} cond={cond}
+                  onChange={val => updateCond(i, val)}
+                  onRemove={() => removeCond(i)}
+                  canRemove={(form.conditions || []).length > 1}
+                />
+              ))}
+            </div>
+            <button type="button" onClick={addCond}
+              className="mt-2 flex items-center gap-1 text-xs text-panel-accent hover:text-blue-400 transition-colors">
+              <Plus size={12} />Bedingung hinzufügen
+            </button>
           </div>
         )}
 
-        {/* Info für Action-Metrik */}
         {isAction && (
           <div className="bg-panel-accent/10 border border-panel-accent/30 rounded-md px-3 py-2 text-xs text-panel-accent">
             Wird ausgelöst wenn jemand einen Server startet, stoppt oder neustartet. Kein Schwellenwert nötig.
           </div>
         )}
 
-        {/* Dauer + Cooldown — Dauer nur für nicht-Action */}
+        {/* Dauer + Cooldown */}
         <div className="grid grid-cols-2 gap-3">
           {!isAction && (
             <div>
@@ -175,7 +236,7 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
             </div>
           )}
           <div className={isAction ? 'col-span-2' : ''}>
-            <label className="text-xs text-panel-muted block mb-1">Cooldown (Min.) zwischen Alarmen</label>
+            <label className="text-xs text-panel-muted block mb-1">Cooldown (Min.)</label>
             <input type="number" min="1" max="1440" className={inputCls}
               value={form.cooldown_minutes} onChange={e => set('cooldown_minutes', e.target.value)} />
           </div>
@@ -312,25 +373,20 @@ export default function Alerts() {
                 <div className="flex items-center gap-3">
                   <AlertTriangle size={15} className={`flex-shrink-0 ${METRIC_COLORS[rule.metric]}`} />
                   <div className="flex-1 min-w-0">
-                    {/* Titelzeile */}
+                    {/* Name + Server + Webhook */}
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-semibold text-panel-text">{rule.name}</span>
-                      {rule.metric !== 'action' && (
-                        <span className="text-xs text-panel-muted">
-                          {METRIC_LABELS[rule.metric]} {CONDITION_LABELS[rule.condition]}{' '}
-                          <span className="font-semibold text-panel-accent">
-                            {rule.threshold}{METRIC_UNIT[rule.metric] ?? '%'}
+                      {rule.metric === 'action' && <span className="text-xs text-panel-accent">⚡ Server-Aktion</span>}
+                      {/* Logic-Badge */}
+                      {rule.metric !== 'action' && (() => {
+                        let conds = [];
+                        try { conds = JSON.parse(rule.conditions || '[]'); } catch {}
+                        if (conds.length > 1) return (
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-panel-surface border border-panel-border text-panel-muted">
+                            {(rule.logic || 'and') === 'and' ? 'UND' : 'ODER'}
                           </span>
-                        </span>
-                      )}
-                      {rule.metric === 'action' && (
-                        <span className="text-xs text-panel-accent">bei Server-Aktion</span>
-                      )}
-                      {rule.duration_seconds > 0 && rule.metric !== 'action' && (
-                        <span className="text-xs text-panel-muted flex items-center gap-1">
-                          <Clock size={11} />für {rule.duration_seconds}s
-                        </span>
-                      )}
+                        );
+                      })()}
                       {/* Server-Chips */}
                       {(() => {
                         let ids = [];
@@ -348,26 +404,37 @@ export default function Alerts() {
                       })()}
                       <span className="text-xs text-panel-muted">→ {rule.webhook_name}</span>
                     </div>
-                    {/* Threshold-Balken (nur für Prozent-Metriken) */}
-                    {rule.metric !== 'action' && (
-                      <div className="mt-2 flex items-center gap-2">
-                        {(rule.metric === 'cpu' || rule.metric === 'memory' || rule.metric === 'disk') && (
-                          <div className="flex-1 h-1 bg-panel-bg rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${
-                                rule.threshold >= 80 ? 'bg-panel-red' :
-                                rule.threshold >= 60 ? 'bg-panel-orange' : 'bg-panel-accent'
-                              }`}
-                              style={{ width: `${Math.min(rule.threshold, 100)}%` }}
-                            />
-                          </div>
-                        )}
-                        <span className="text-[10px] text-panel-muted tabular-nums">
-                          {rule.threshold}{METRIC_UNIT[rule.metric] ?? '%'}
-                        </span>
-                        <span className="text-[10px] text-panel-muted">Cooldown: {rule.cooldown_minutes} Min.</span>
-                      </div>
-                    )}
+                    {/* Bedingungen-Liste */}
+                    {rule.metric !== 'action' && (() => {
+                      let conds = [];
+                      try { conds = JSON.parse(rule.conditions || '[]'); } catch {}
+                      if (conds.length === 0) conds = [{ metric: rule.metric, condition: rule.condition, threshold: rule.threshold }];
+                      return (
+                        <div className="mt-2 space-y-1">
+                          {conds.map((c, i) => {
+                            const unit = METRIC_UNIT[c.metric] ?? '%';
+                            const isPct = c.metric === 'cpu' || c.metric === 'memory' || c.metric === 'disk';
+                            return (
+                              <div key={i} className="flex items-center gap-2">
+                                <span className="text-[11px] text-panel-muted w-20 flex-shrink-0">
+                                  {METRIC_LABELS[c.metric] ?? c.metric}
+                                </span>
+                                {isPct && (
+                                  <div className="flex-1 h-1 bg-panel-bg rounded-full overflow-hidden">
+                                    <div className={`h-full rounded-full ${c.threshold >= 80 ? 'bg-panel-red' : c.threshold >= 60 ? 'bg-panel-orange' : 'bg-panel-accent'}`}
+                                      style={{ width: `${Math.min(c.threshold, 100)}%` }} />
+                                  </div>
+                                )}
+                                <span className="text-[11px] text-panel-accent font-semibold tabular-nums flex-shrink-0">
+                                  {c.condition === 'gt' ? '>' : '<'} {c.threshold}{unit}
+                                </span>
+                              </div>
+                            );
+                          })}
+                          <div className="text-[10px] text-panel-muted pt-0.5">Cooldown: {rule.cooldown_minutes} Min.</div>
+                        </div>
+                      );
+                    })()}
                     {rule.metric === 'action' && (
                       <div className="mt-1 text-[10px] text-panel-muted">Cooldown: {rule.cooldown_minutes} Min.</div>
                     )}

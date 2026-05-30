@@ -165,6 +165,19 @@ try {
   }
 } catch (e) { console.warn('[DB] alert_rules Migration fehlgeschlagen:', e.message); }
 try { db.exec("ALTER TABLE alert_rules ADD COLUMN agent_ids TEXT NOT NULL DEFAULT '[]'"); } catch {}
+// Multi-Conditions: conditions-Array + logic (and/or)
+try { db.exec("ALTER TABLE alert_rules ADD COLUMN conditions TEXT NOT NULL DEFAULT '[]'"); } catch {}
+try { db.exec("ALTER TABLE alert_rules ADD COLUMN logic TEXT NOT NULL DEFAULT 'and'"); } catch {}
+// Bestehende Einzel-Regeln in conditions migrieren
+try {
+  db.prepare(`
+    UPDATE alert_rules
+    SET conditions = json_array(json_object('metric', metric, 'condition', "condition", 'threshold', threshold))
+    WHERE (conditions = '[]' OR conditions IS NULL)
+      AND metric != 'action'
+      AND metric IS NOT NULL
+  `).run();
+} catch {}
 // Rollen: Lokalen Server für diese Rolle ausblenden
 try { db.exec('ALTER TABLE roles ADD COLUMN hide_local INTEGER NOT NULL DEFAULT 0'); } catch {}
 // Metrics: Netzwerk-Durchsatz-Spalten (Bytes/Sek)
