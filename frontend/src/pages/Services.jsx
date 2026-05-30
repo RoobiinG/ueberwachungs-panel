@@ -1,13 +1,10 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { Card } from '../components/ui/Card';
-import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { ServerSelector } from '../components/ui/ServerSelector';
 import { RefreshCw, Play, Square, RotateCcw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-
-const activeColor = (s) => s === 'active' ? 'green' : s === 'activating' ? 'orange' : 'red';
 
 export default function Services() {
   const { canWrite, hideLocal } = useAuth();
@@ -89,31 +86,52 @@ export default function Services() {
         ) : (
           <div className="-mx-4 -mb-4">
             {filtered.map(s => {
-              const isActive  = s.active === 'active';
-              const isActing  = s.active === 'activating';
-              const dotColor  = isActive ? 'bg-panel-green' : isActing ? 'bg-panel-orange' : 'bg-panel-red';
+              const isActive = s.active === 'active';
+              const isFailed = s.active === 'failed';
+              const statusColor = isActive ? 'text-panel-green' : isFailed ? 'text-panel-red' : 'text-panel-orange';
+              const dotColor    = isActive ? 'bg-panel-green' : isFailed ? 'bg-panel-red' : 'bg-panel-orange';
               return (
-                <div key={s.name} className="flex items-center justify-between px-4 py-2.5 table-row">
-                  <div className="flex-1 min-w-0 mr-3 flex items-center gap-3">
-                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotColor}`} />
-                    <div className="min-w-0">
-                      <span className="text-sm text-panel-text font-medium truncate block">{s.name}</span>
-                      {s.description && <div className="text-xs text-panel-muted truncate">{s.description}</div>}
+                <div key={s.name}
+                  className="grid grid-cols-[1rem_1fr_auto] items-center gap-x-2 px-4 py-2 table-row">
+
+                  {/* Status-Dot */}
+                  <span className={`w-1.5 h-1.5 rounded-full justify-self-center flex-shrink-0 ${dotColor}`} />
+
+                  {/* Name + Description */}
+                  <div className="min-w-0">
+                    <div className="flex items-baseline gap-2 min-w-0">
+                      <span className="text-xs font-medium text-panel-text truncate">{s.name}</span>
+                      {s.description && (
+                        <span className="text-[11px] text-panel-muted truncate hidden sm:block">{s.description}</span>
+                      )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <Badge color={activeColor(s.active)}>{s.active}</Badge>
+
+                  {/* Status + Aktionen */}
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <span className={`text-[10px] font-semibold tabular-nums ${statusColor}`}>
+                      {s.active}
+                    </span>
                     {canWrite && (
-                      <div className="flex items-center gap-1">
+                      <>
                         {!isActive
-                          ? <Button size="sm" variant="success" onClick={() => act(s.name, 'start')}
-                              disabled={!!actBusy[s.name]}><Play size={11} /></Button>
-                          : <Button size="sm" variant="danger"  onClick={() => act(s.name, 'stop')}
-                              disabled={!!actBusy[s.name]}><Square size={11} /></Button>
+                          ? <button onClick={() => act(s.name, 'start')} disabled={!!actBusy[s.name]}
+                              title="Starten"
+                              className="p-1 rounded text-panel-green hover:bg-panel-green/15 disabled:opacity-40 transition-colors">
+                              <Play size={11} />
+                            </button>
+                          : <button onClick={() => act(s.name, 'stop')} disabled={!!actBusy[s.name]}
+                              title="Stoppen"
+                              className="p-1 rounded text-panel-red hover:bg-panel-red/15 disabled:opacity-40 transition-colors">
+                              <Square size={11} />
+                            </button>
                         }
-                        <Button size="sm" variant="ghost" onClick={() => act(s.name, 'restart')}
-                          disabled={!!actBusy[s.name]}><RotateCcw size={11} /></Button>
-                      </div>
+                        <button onClick={() => act(s.name, 'restart')} disabled={!!actBusy[s.name]}
+                          title="Neustarten"
+                          className="p-1 rounded text-panel-muted hover:text-panel-text hover:bg-panel-card disabled:opacity-40 transition-colors">
+                          <RotateCcw size={11} />
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
