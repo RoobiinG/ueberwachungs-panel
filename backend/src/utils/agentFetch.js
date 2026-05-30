@@ -31,10 +31,16 @@ async function fetchAgentStats(agentId) {
 
   try {
     const { data } = await axios.create(cfg).get('/stats');
+    // Netzwerk: Summe aller Interfaces in Bytes/s → MB/s
+    const netArr = Array.isArray(data.network) ? data.network : [];
+    const netRx  = netArr.reduce((s, n) => s + (n.rxSec ?? 0), 0) / (1024 * 1024);
+    const netTx  = netArr.reduce((s, n) => s + (n.txSec ?? 0), 0) / (1024 * 1024);
     return {
-      cpu:    data.cpu?.usage            ?? null,
-      memory: data.memory?.usedPercent   ?? null,
+      cpu:    data.cpu?.usage             ?? null,
+      memory: data.memory?.usedPercent    ?? null,
       disk:   data.disk?.[0]?.usedPercent ?? null,
+      net_rx: netRx,
+      net_tx: netTx,
     };
   } catch {
     return null;

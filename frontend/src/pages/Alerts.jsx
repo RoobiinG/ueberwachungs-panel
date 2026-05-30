@@ -9,14 +9,15 @@ import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { useAuth } from '../context/AuthContext';
 
-const METRIC_LABELS  = { cpu: 'CPU', memory: 'RAM', disk: 'Disk' };
-const METRIC_COLORS  = { cpu: 'text-blue-400', memory: 'text-green-400', disk: 'text-yellow-400' };
+const METRIC_LABELS  = { cpu: 'CPU', memory: 'RAM', disk: 'Disk', net_rx: 'Netzwerk ↓ (RX)', net_tx: 'Netzwerk ↑ (TX)', action: 'Server-Aktionen' };
+const METRIC_COLORS  = { cpu: 'text-blue-400', memory: 'text-green-400', disk: 'text-yellow-400', net_rx: 'text-purple-400', net_tx: 'text-purple-400', action: 'text-panel-accent' };
+const METRIC_UNIT    = { cpu: '%', memory: '%', disk: '%', net_rx: ' MB/s', net_tx: ' MB/s', action: '' };
 const CONDITION_LABELS = { gt: 'über', lt: 'unter' };
 
 const defaultForm = {
   name: '', metric: 'cpu', condition: 'gt', threshold: 80,
   duration_seconds: 60, cooldown_minutes: 30, webhook_id: '',
-  agent_id: '', // '' = lokal
+  agent_ids: [], // [] = alle / leeres Array = Lokal + alle (abh. von Auswahl)
 };
 
 // ─── Regel-Modal ───────────────────────────────────────────────────────────────
@@ -28,7 +29,7 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
   useEffect(() => {
     if (open) {
       setForm(initial
-        ? { ...initial, agent_id: initial.agent_id ?? '' }
+        ? { ...initial, agent_ids: (() => { try { return JSON.parse(initial.agent_ids || '[]'); } catch { return []; } })() }
         : defaultForm
       );
       setError('');
@@ -36,6 +37,15 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
   }, [open, initial]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const isAction = form.metric === 'action';
+  const isNetwork = form.metric === 'net_rx' || form.metric === 'net_tx';
+  const unit = METRIC_UNIT[form.metric] ?? '%';
+
+  const toggleServer = (id) => {
+    const ids = form.agent_ids || [];
+    set('agent_ids', ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]);
+  };
 
   const handleSave = async () => {
     if (!form.name.trim()) return setError('Name ist erforderlich');
@@ -45,11 +55,12 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
     try {
       await onSave({
         ...form,
-        threshold:        parseFloat(form.threshold),
-        duration_seconds: parseInt(form.duration_seconds),
+        threshold:        isAction ? 0 : parseFloat(form.threshold),
+        condition:        isAction ? 'gt' : form.condition,
+        duration_seconds: isAction ? 0 : parseInt(form.duration_seconds),
         cooldown_minutes: parseInt(form.cooldown_minutes),
         webhook_id:       parseInt(form.webhook_id),
-        agent_id:         form.agent_id !== '' ? parseInt(form.agent_id) : null,
+        agent_ids:        form.agent_ids || [],
       });
       onClose();
     } catch (e) {
@@ -59,6 +70,7 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
   };
 
   const inputCls = 'w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:border-panel-accent';
+  const allServers = [{ id: 'local', name: 'Lokal (Panel-Server)' }, ...agents.map(a => ({ id: String(a.id), name: a.name }))];
 
   return (
     <Modal open={open} title={initial?.id ? 'Regel bearbeiten' : 'Neue Alert-Regel'} onClose={onClose}>
@@ -72,13 +84,26 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
             onChange={e => set('name', e.target.value)} placeholder="z.B. CPU-Überlastung" />
         </div>
 
-        {/* Server (lokal oder Agent) */}
+        {/* Server — Mehrfachauswahl */}
         <div>
-          <label className="text-xs text-panel-muted block mb-1">Server</label>
-          <select className={inputCls} value={form.agent_id} onChange={e => set('agent_id', e.target.value)}>
-            <option value="">Lokal (dieser Server)</option>
-            {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
+          <label className="text-xs text-panel-muted block mb-1">
+            Server <span className="text-panel-muted/60">(keiner = alle)</span>
+          </label>
+          <div className="flex flex-wrap gap-1.5 p-2 bg-panel-surface border border-panel-border rounded-md">
+            {allServers.map(s => {
+              const checked = (form.agent_ids || []).includes(s.id);
+              return (
+                <button key={s.id} type="button" onClick={() => toggleServer(s.id)}
+                  className={`text-xs px-2 py-1 rounded border transition-all ${
+                    checked
+                      ? 'bg-panel-accent/15 border-panel-accent text-panel-accent'
+                      : 'border-panel-border text-panel-muted hover:border-panel-muted/60 hover:text-panel-text'
+                  }`}>
+                  {s.name}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Metrik + Bedingung */}
@@ -86,38 +111,70 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
           <div>
             <label className="text-xs text-panel-muted block mb-1">Metrik</label>
             <select className={inputCls} value={form.metric} onChange={e => set('metric', e.target.value)}>
-              <option value="cpu">CPU</option>
-              <option value="memory">RAM</option>
-              <option value="disk">Disk</option>
+              <optgroup label="System">
+                <option value="cpu">CPU</option>
+                <option value="memory">RAM</option>
+                <option value="disk">Disk</option>
+              </optgroup>
+              <optgroup label="Netzwerk">
+                <option value="net_rx">Netzwerk ↓ (RX)</option>
+                <option value="net_tx">Netzwerk ↑ (TX)</option>
+              </optgroup>
+              <optgroup label="Ereignisse">
+                <option value="action">Server-Aktionen</option>
+              </optgroup>
             </select>
           </div>
           <div>
             <label className="text-xs text-panel-muted block mb-1">Bedingung</label>
-            <select className={inputCls} value={form.condition} onChange={e => set('condition', e.target.value)}>
+            <select className={inputCls} value={form.condition} onChange={e => set('condition', e.target.value)}
+              disabled={isAction}>
               <option value="gt">Über (&gt;)</option>
               <option value="lt">Unter (&lt;)</option>
             </select>
           </div>
         </div>
 
-        {/* Schwellenwert */}
-        <div>
-          <label className="text-xs text-panel-muted block mb-1">
-            Schwellenwert: <span className="text-panel-accent font-semibold">{form.threshold}%</span>
-          </label>
-          <input type="range" min="1" max="100" step="1" className="w-full accent-panel-accent"
-            value={form.threshold} onChange={e => set('threshold', e.target.value)} />
-          <div className="flex justify-between text-xs text-panel-muted mt-0.5"><span>1%</span><span>100%</span></div>
-        </div>
-
-        {/* Dauer + Cooldown */}
-        <div className="grid grid-cols-2 gap-3">
+        {/* Schwellenwert — nicht für Action */}
+        {!isAction && (
           <div>
-            <label className="text-xs text-panel-muted block mb-1">Dauer (Sek.) bis Auslösung</label>
-            <input type="number" min="0" max="3600" className={inputCls}
-              value={form.duration_seconds} onChange={e => set('duration_seconds', e.target.value)} />
+            <label className="text-xs text-panel-muted block mb-1">
+              Schwellenwert:{' '}
+              <span className="text-panel-accent font-semibold">
+                {form.threshold}{unit}
+              </span>
+            </label>
+            {isNetwork ? (
+              <input type="number" min="0" step="0.1" className={inputCls}
+                value={form.threshold} onChange={e => set('threshold', e.target.value)}
+                placeholder="z.B. 10 (MB/s)" />
+            ) : (
+              <>
+                <input type="range" min="1" max="100" step="1" className="w-full accent-panel-accent"
+                  value={form.threshold} onChange={e => set('threshold', e.target.value)} />
+                <div className="flex justify-between text-xs text-panel-muted mt-0.5"><span>1%</span><span>100%</span></div>
+              </>
+            )}
           </div>
-          <div>
+        )}
+
+        {/* Info für Action-Metrik */}
+        {isAction && (
+          <div className="bg-panel-accent/10 border border-panel-accent/30 rounded-md px-3 py-2 text-xs text-panel-accent">
+            Wird ausgelöst wenn jemand einen Server startet, stoppt oder neustartet. Kein Schwellenwert nötig.
+          </div>
+        )}
+
+        {/* Dauer + Cooldown — Dauer nur für nicht-Action */}
+        <div className="grid grid-cols-2 gap-3">
+          {!isAction && (
+            <div>
+              <label className="text-xs text-panel-muted block mb-1">Dauer (Sek.) bis Auslösung</label>
+              <input type="number" min="0" max="3600" className={inputCls}
+                value={form.duration_seconds} onChange={e => set('duration_seconds', e.target.value)} />
+            </div>
+          )}
+          <div className={isAction ? 'col-span-2' : ''}>
             <label className="text-xs text-panel-muted block mb-1">Cooldown (Min.) zwischen Alarmen</label>
             <input type="number" min="1" max="1440" className={inputCls}
               value={form.cooldown_minutes} onChange={e => set('cooldown_minutes', e.target.value)} />
@@ -180,10 +237,12 @@ export default function Alerts() {
   }, [isAdmin]);
 
   const handleSave = async (form) => {
+    // agent_ids als JSON-String für Backend
+    const payload = { ...form };
     if (form.id) {
-      await axios.put(`/api/alerts/rules/${form.id}`, form);
+      await axios.put(`/api/alerts/rules/${form.id}`, payload);
     } else {
-      await axios.post('/api/alerts/rules', form);
+      await axios.post('/api/alerts/rules', payload);
     }
     await load();
   };
@@ -253,36 +312,65 @@ export default function Alerts() {
                 <div className="flex items-center gap-3">
                   <AlertTriangle size={15} className={`flex-shrink-0 ${METRIC_COLORS[rule.metric]}`} />
                   <div className="flex-1 min-w-0">
+                    {/* Titelzeile */}
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-semibold text-panel-text">{rule.name}</span>
-                      <span className="text-xs text-panel-muted">
-                        {METRIC_LABELS[rule.metric]} {CONDITION_LABELS[rule.condition]}{' '}
-                        <span className="font-semibold text-panel-accent">{rule.threshold}%</span>
-                      </span>
-                      {rule.duration_seconds > 0 && (
+                      {rule.metric !== 'action' && (
+                        <span className="text-xs text-panel-muted">
+                          {METRIC_LABELS[rule.metric]} {CONDITION_LABELS[rule.condition]}{' '}
+                          <span className="font-semibold text-panel-accent">
+                            {rule.threshold}{METRIC_UNIT[rule.metric] ?? '%'}
+                          </span>
+                        </span>
+                      )}
+                      {rule.metric === 'action' && (
+                        <span className="text-xs text-panel-accent">bei Server-Aktion</span>
+                      )}
+                      {rule.duration_seconds > 0 && rule.metric !== 'action' && (
                         <span className="text-xs text-panel-muted flex items-center gap-1">
                           <Clock size={11} />für {rule.duration_seconds}s
                         </span>
                       )}
-                      <span className="flex items-center gap-1 text-xs text-panel-muted bg-panel-card px-1.5 py-0.5 rounded border border-panel-border/50">
-                        {rule.agent_id ? <><Server size={10} />{rule.agent_name}</> : <><Monitor size={10} />Lokal</>}
-                      </span>
+                      {/* Server-Chips */}
+                      {(() => {
+                        let ids = [];
+                        try { ids = JSON.parse(rule.agent_ids || '[]'); } catch {}
+                        if (ids.length === 0) return (
+                          <span className="flex items-center gap-1 text-xs text-panel-muted bg-panel-card px-1.5 py-0.5 rounded border border-panel-border/50">
+                            <Monitor size={10} />Alle Server
+                          </span>
+                        );
+                        return ids.map(id => (
+                          <span key={id} className="flex items-center gap-1 text-xs text-panel-muted bg-panel-card px-1.5 py-0.5 rounded border border-panel-border/50">
+                            {id === 'local' ? <><Monitor size={10} />Lokal</> : <><Server size={10} />{agents.find(a => String(a.id) === id)?.name || `#${id}`}</>}
+                          </span>
+                        ));
+                      })()}
                       <span className="text-xs text-panel-muted">→ {rule.webhook_name}</span>
                     </div>
-                    {/* Threshold-Balken */}
-                    <div className="mt-2 flex items-center gap-2">
-                      <div className="flex-1 h-1 bg-panel-bg rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${
-                            rule.threshold >= 80 ? 'bg-panel-red' :
-                            rule.threshold >= 60 ? 'bg-panel-orange' : 'bg-panel-accent'
-                          }`}
-                          style={{ width: `${rule.threshold}%` }}
-                        />
+                    {/* Threshold-Balken (nur für Prozent-Metriken) */}
+                    {rule.metric !== 'action' && (
+                      <div className="mt-2 flex items-center gap-2">
+                        {(rule.metric === 'cpu' || rule.metric === 'memory' || rule.metric === 'disk') && (
+                          <div className="flex-1 h-1 bg-panel-bg rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${
+                                rule.threshold >= 80 ? 'bg-panel-red' :
+                                rule.threshold >= 60 ? 'bg-panel-orange' : 'bg-panel-accent'
+                              }`}
+                              style={{ width: `${Math.min(rule.threshold, 100)}%` }}
+                            />
+                          </div>
+                        )}
+                        <span className="text-[10px] text-panel-muted tabular-nums">
+                          {rule.threshold}{METRIC_UNIT[rule.metric] ?? '%'}
+                        </span>
+                        <span className="text-[10px] text-panel-muted">Cooldown: {rule.cooldown_minutes} Min.</span>
                       </div>
-                      <span className="text-[10px] text-panel-muted tabular-nums w-8 text-right">{rule.threshold}%</span>
-                      <span className="text-[10px] text-panel-muted">Cooldown: {rule.cooldown_minutes} Min.</span>
-                    </div>
+                    )}
+                    {rule.metric === 'action' && (
+                      <div className="mt-1 text-[10px] text-panel-muted">Cooldown: {rule.cooldown_minutes} Min.</div>
+                    )}
                   </div>
                 {isAdmin && (
                   <div className="flex items-center gap-1 flex-shrink-0">
