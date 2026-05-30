@@ -126,7 +126,7 @@ export const Header = ({ connected }) => {
 
   const toggleBell = () => { setBellOpen(o => !o); setUnread(0); };
   const dismissToast = (id) => setToasts(prev => prev.filter(t => t.id !== id));
-  const fmtTime = (ts) => new Date(ts).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  const fmtTime = (ts) => new Date(ts).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' });
 
   return (
     <>

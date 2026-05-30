@@ -142,8 +142,9 @@ async function evaluate() {
           const cooldownOk   = s.lastFiredAt === null || (now - s.lastFiredAt) >= cooldownSecs;
 
           if (cooldownOk) {
-            const logicStr  = logic === 'or' ? '(ODER)' : '(UND)';
-            const message   = `⚠️ Alert: ${rule.name} ${logicStr}\n${detailLines}\nServer: ${srv.name}`;
+            const isFirstFire = !s.hasFired;
+            const logicStr    = logic === 'or' ? '(ODER)' : '(UND)';
+            const message     = `⚠️ Alert: ${rule.name} ${logicStr}\n${detailLines}\nServer: ${srv.name}`;
             try {
               await sendWebhook({ type: rule.wtype, url: rule.wurl }, message);
             } catch (err) {
@@ -157,21 +158,24 @@ async function evaluate() {
                 .run(rule.id, results[0]?.value ?? 0, message);
             } catch {}
 
-            broadcast({
-              type: 'alert',
-              payload: {
-                alertType:  'fired',
-                ruleId:     rule.id,
-                ruleName:   rule.name,
-                conditions,
-                logic,
-                serverName: srv.name,
-                agentId:    srv.agentId || null,
-                metric:     conditions[0]?.metric ?? null,
-                value:      results[0]?.value ?? null,
-                threshold:  conditions[0]?.threshold ?? null,
-              },
-            });
+            // WS-Benachrichtigung nur beim ersten Auslösen — kein Spam bis Erholung
+            if (isFirstFire) {
+              broadcast({
+                type: 'alert',
+                payload: {
+                  alertType:  'fired',
+                  ruleId:     rule.id,
+                  ruleName:   rule.name,
+                  conditions,
+                  logic,
+                  serverName: srv.name,
+                  agentId:    srv.agentId || null,
+                  metric:     conditions[0]?.metric ?? null,
+                  value:      results[0]?.value ?? null,
+                  threshold:  conditions[0]?.threshold ?? null,
+                },
+              });
+            }
           }
         }
       } else {
