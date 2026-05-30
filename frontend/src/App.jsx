@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { WSProvider } from './context/WSContext';
@@ -6,27 +7,39 @@ import { useWebSocket } from './hooks/useWebSocket';
 import { useErrorReporter } from './hooks/useErrorReporter';
 import { Layout } from './components/Layout/Layout';
 import ErrorBoundary from './components/ErrorBoundary';
+
+// Auth-Seiten sofort laden (werden vor dem Login benötigt)
 import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import Docker from './pages/Docker';
-import Services from './pages/Services';
-import Firewall from './pages/Firewall';
-import Webhooks from './pages/Webhooks';
-import Users from './pages/Users';
-import Hetzner from './pages/Hetzner';
-import MCHost from './pages/MCHost';
-import Agents from './pages/Agents';
-import AgentDetail from './pages/AgentDetail';
-import UptimeKuma from './pages/UptimeKuma';
-import Settings from './pages/Settings';
-import Alerts from './pages/Alerts';
-import Roles from './pages/Roles';
-import AuditLog from './pages/AuditLog';
-import Monitoring from './pages/Monitoring';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
-import PanelLogs from './pages/PanelLogs';
-import PanelLogsShare from './pages/PanelLogsShare';
+
+// Alle anderen Seiten lazy laden → eigene Chunks, nur bei Bedarf geladen
+const Dashboard     = lazy(() => import('./pages/Dashboard'));
+const Docker        = lazy(() => import('./pages/Docker'));
+const Services      = lazy(() => import('./pages/Services'));
+const Firewall      = lazy(() => import('./pages/Firewall'));
+const Webhooks      = lazy(() => import('./pages/Webhooks'));
+const Users         = lazy(() => import('./pages/Users'));
+const Hetzner       = lazy(() => import('./pages/Hetzner'));
+const MCHost        = lazy(() => import('./pages/MCHost'));
+const Agents        = lazy(() => import('./pages/Agents'));
+const AgentDetail   = lazy(() => import('./pages/AgentDetail'));
+const UptimeKuma    = lazy(() => import('./pages/UptimeKuma'));
+const Settings      = lazy(() => import('./pages/Settings'));
+const Alerts        = lazy(() => import('./pages/Alerts'));
+const Roles         = lazy(() => import('./pages/Roles'));
+const AuditLog      = lazy(() => import('./pages/AuditLog'));
+const Monitoring    = lazy(() => import('./pages/Monitoring'));
+const PanelLogs     = lazy(() => import('./pages/PanelLogs'));
+const PanelLogsShare = lazy(() => import('./pages/PanelLogsShare'));
+
+function PageLoader() {
+  return (
+    <div className="flex items-center justify-center h-64">
+      <div className="w-6 h-6 border-2 border-panel-accent border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+}
 
 const ProtectedRoute = ({ children, adminOnly, permission }) => {
   const { user, hasPermission } = useAuth();
@@ -47,9 +60,11 @@ const AppRoutes = () => {
   // Öffentliche Share-Seite — kein Login nötig
   if (location.pathname.startsWith('/s/')) {
     return (
-      <Routes>
-        <Route path="/s/:token" element={<PanelLogsShare />} />
-      </Routes>
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          <Route path="/s/:token" element={<PanelLogsShare />} />
+        </Routes>
+      </Suspense>
     );
   }
 
@@ -67,27 +82,29 @@ const AppRoutes = () => {
   return (
     <Layout connected={connected}>
       <ErrorBoundary>
-        <Routes>
-          <Route path="/" element={<Dashboard liveStats={liveStats} />} />
-          <Route path="/docker" element={<Docker />} />
-          <Route path="/services" element={<Services />} />
-          <Route path="/firewall" element={<Firewall />} />
-          <Route path="/network"    element={<Navigate to="/monitoring" replace />} />
-          <Route path="/monitoring" element={<Monitoring liveStats={liveStats} />} />
-          <Route path="/agents" element={<Agents />} />
-          <Route path="/agents/:id" element={<AgentDetail />} />
-          <Route path="/uptime-kuma" element={<UptimeKuma />} />
-          <Route path="/alerts" element={<Alerts />} />
-          <Route path="/webhooks" element={<Webhooks />} />
-          <Route path="/hetzner" element={<Hetzner />} />
-          <Route path="/mchost" element={<MCHost />} />
-          <Route path="/users"     element={<ProtectedRoute adminOnly><Users /></ProtectedRoute>} />
-          <Route path="/roles"     element={<ProtectedRoute adminOnly><Roles /></ProtectedRoute>} />
-          <Route path="/audit"     element={<ProtectedRoute permission="audit.view"><AuditLog /></ProtectedRoute>} />
-          <Route path="/panel-logs" element={<ProtectedRoute adminOnly><PanelLogs /></ProtectedRoute>} />
-          <Route path="/settings"  element={<Settings />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route path="/" element={<Dashboard liveStats={liveStats} />} />
+            <Route path="/docker" element={<Docker />} />
+            <Route path="/services" element={<Services />} />
+            <Route path="/firewall" element={<Firewall />} />
+            <Route path="/network"    element={<Navigate to="/monitoring" replace />} />
+            <Route path="/monitoring" element={<Monitoring liveStats={liveStats} />} />
+            <Route path="/agents" element={<Agents />} />
+            <Route path="/agents/:id" element={<AgentDetail />} />
+            <Route path="/uptime-kuma" element={<UptimeKuma />} />
+            <Route path="/alerts" element={<Alerts />} />
+            <Route path="/webhooks" element={<Webhooks />} />
+            <Route path="/hetzner" element={<Hetzner />} />
+            <Route path="/mchost" element={<MCHost />} />
+            <Route path="/users"     element={<ProtectedRoute adminOnly><Users /></ProtectedRoute>} />
+            <Route path="/roles"     element={<ProtectedRoute adminOnly><Roles /></ProtectedRoute>} />
+            <Route path="/audit"     element={<ProtectedRoute permission="audit.view"><AuditLog /></ProtectedRoute>} />
+            <Route path="/panel-logs" element={<ProtectedRoute adminOnly><PanelLogs /></ProtectedRoute>} />
+            <Route path="/settings"  element={<Settings />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </Suspense>
       </ErrorBoundary>
     </Layout>
   );

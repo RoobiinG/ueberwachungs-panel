@@ -46,6 +46,18 @@ async function getMetricValue(metric, agentId) {
   return latest?.[metric] ?? null;
 }
 
+// ─── Agent-Cache (wird einmal pro evaluate()-Lauf befüllt) ───────────────────
+let _agentCache = null;
+const getAgentCache = () => {
+  if (!_agentCache) {
+    const rows = db.prepare('SELECT id, name FROM remote_agents').all();
+    _agentCache = new Map(rows.map(r => [String(r.id), r]));
+  }
+  return _agentCache;
+};
+// Cache nach jeder Runde invalidieren (Agenten könnten sich ändern)
+const clearAgentCache = () => { _agentCache = null; };
+
 // ─── Server-Liste für eine Regel ermitteln ────────────────────────────────────
 function getServerList(rule) {
   const ids = (() => {
@@ -53,9 +65,10 @@ function getServerList(rule) {
   })();
 
   if (ids.length > 0) {
+    const agents = getAgentCache();
     return ids.map(id => {
       if (id === 'local') return { key: 'local', name: 'Lokal', agentId: null };
-      const a = db.prepare('SELECT id, name FROM remote_agents WHERE id = ?').get(parseInt(id));
+      const a = agents.get(String(id));
       return a ? { key: String(a.id), name: a.name, agentId: a.id } : null;
     }).filter(Boolean);
   }
@@ -193,6 +206,7 @@ async function evaluate() {
       }
     }
   }
+  clearAgentCache();
 }
 
 function start() {

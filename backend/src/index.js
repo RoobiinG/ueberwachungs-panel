@@ -96,8 +96,17 @@ app.use('/api/version',          require('./routes/version'));
 
 // Serve React frontend in production
 const frontendDist = path.join(__dirname, '../../frontend/dist');
-app.use(express.static(frontendDist));
+// Hashed assets (JS/CSS mit Content-Hash im Dateinamen) → 1 Jahr cachen
+app.use('/assets', express.static(path.join(frontendDist, 'assets'), {
+  maxAge: '1y',
+  immutable: true,
+}));
+// index.html + sonstige Dateien → kein Cache (damit neue Deployments sofort wirken)
+app.use(express.static(frontendDist, {
+  setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache, must-revalidate'),
+}));
 app.get(/^(?!\/api).*/, (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, must-revalidate');
   res.sendFile(path.join(frontendDist, 'index.html'));
 });
 
