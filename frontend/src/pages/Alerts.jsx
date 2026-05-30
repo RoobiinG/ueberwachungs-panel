@@ -45,8 +45,8 @@ function ConditionRow({ cond, onChange, onRemove, canRemove }) {
       </select>
       {/* Bedingung */}
       <select value={cond.condition} onChange={e => onChange({ ...cond, condition: e.target.value })} className={inputCls + ' w-20'}>
-        <option value="gt">{'>'}</option>
-        <option value="lt">{'<'}</option>
+        <option value="gt">über</option>
+        <option value="lt">unter</option>
       </select>
       {/* Schwellenwert */}
       <input
@@ -439,7 +439,7 @@ export default function Alerts() {
                                   </div>
                                 )}
                                 <span className="text-[11px] text-panel-accent font-semibold tabular-nums flex-shrink-0">
-                                  {c.condition === 'gt' ? '>' : '<'} {c.threshold}{unit}
+                                  {CONDITION_LABELS[c.condition] ?? c.condition} {c.threshold}{unit}
                                 </span>
                               </div>
                             );
