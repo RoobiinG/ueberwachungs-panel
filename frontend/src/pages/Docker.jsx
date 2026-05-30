@@ -400,7 +400,8 @@ export default function Docker() {
                     </pre>
                   </div>
                 )}
-              );
+              </div>
+            );
             })}
           </div>
         )}
