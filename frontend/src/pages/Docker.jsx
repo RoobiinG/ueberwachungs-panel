@@ -226,6 +226,8 @@ export default function Docker() {
               const isLogsOpen = !!logsOpen[c.id];
               return (
                 <div key={c.id} className="flex flex-col">
+                  {/* ── Container-Zeile (Name + Aktionen) ─────────────── */}
+                  <div className="flex items-center justify-between px-4 py-3">
                   {/* Name & Status */}
                   <div className="flex-1 min-w-0 mr-3">
                     {editingLabel === c.id && canLabel ? (
