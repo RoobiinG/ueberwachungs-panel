@@ -13,6 +13,7 @@ async function sendWebhook(webhook, message) {
     const token  = urlObj.pathname.split('/')[2] || '';
     const chatId = urlObj.searchParams.get('chat_id') || '';
     if (!token || !chatId) throw new Error('Ungültige Telegram-Webhook-URL (bot-Token oder chat_id fehlt)');
+    if (!/^-?\d+$/.test(chatId)) throw new Error('Ungültige Telegram Chat-ID (muss numerisch sein)');
     await axios.post(
       `https://api.telegram.org/bot${token}/sendMessage`,
       { chat_id: chatId, text: message, parse_mode: 'HTML' },
