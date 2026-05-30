@@ -227,9 +227,9 @@ export default function Docker() {
               return (
                 <div key={c.id} className="flex flex-col">
                   {/* ── Container-Zeile (Name + Aktionen) ─────────────── */}
-                  <div className="flex items-center justify-between px-4 py-3">
+                  <div className="flex flex-col px-4 py-3 gap-2">
                   {/* Name & Status */}
-                  <div className="flex-1 min-w-0 mr-3">
+                  <div className="min-w-0">
                     {editingLabel === c.id && canLabel ? (
                       <div className="flex items-center gap-1 flex-wrap">
                         <input
@@ -338,7 +338,7 @@ export default function Docker() {
                   </div>
 
                   {/* Aktionen */}
-                  <div className="flex items-center gap-1 ml-2">
+                  <div className="flex items-center gap-1">
                     {canWrite && (
                       <>
                         {!isRun
