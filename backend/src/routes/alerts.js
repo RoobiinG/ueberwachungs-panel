@@ -23,35 +23,56 @@ const VALID_CONDITIONS = ['gt', 'lt'];
 
 router.post('/rules', requirePermission('alerts.manage'), (req, res) => {
   const {
-    name, metric, condition = 'gt', threshold = 0,
+    name, metric = 'cpu', condition = 'gt', threshold = 0,
     duration_seconds = 0, cooldown_minutes = 30,
     webhook_id, agent_ids = [],
+    conditions = [], logic = 'and',
   } = req.body;
 
-  if (!name || !metric || !webhook_id)
-    return res.status(400).json({ error: 'name, metric, webhook_id erforderlich' });
-  if (!VALID_METRICS.includes(metric))
-    return res.status(400).json({ error: `metric muss einer von ${VALID_METRICS.join(', ')} sein` });
-  if (metric !== 'action' && !VALID_CONDITIONS.includes(condition))
-    return res.status(400).json({ error: 'condition muss gt oder lt sein' });
+  if (!name || !webhook_id)
+    return res.status(400).json({ error: 'name, webhook_id erforderlich' });
   if (!Array.isArray(agent_ids))
     return res.status(400).json({ error: 'agent_ids muss ein Array sein' });
+  if (!['and', 'or'].includes(logic))
+    return res.status(400).json({ error: 'logic muss and oder or sein' });
+
+  // conditions validieren
+  const condArr = Array.isArray(conditions) ? conditions : [];
+  for (const c of condArr) {
+    if (!VALID_METRICS.includes(c.metric)) return res.status(400).json({ error: `Ungültige Metrik: ${c.metric}` });
+    if (!VALID_CONDITIONS.includes(c.condition)) return res.status(400).json({ error: `Ungültige Bedingung: ${c.condition}` });
+  }
 
   const webhook = db.prepare('SELECT id FROM webhooks WHERE id = ?').get(webhook_id);
   if (!webhook) return res.status(400).json({ error: 'Webhook nicht gefunden' });
 
-  const result = db.prepare(
-    'INSERT INTO alert_rules (name, metric, condition, threshold, duration_seconds, cooldown_minutes, webhook_id, agent_id, agent_ids) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(name.trim(), metric, condition, parseFloat(threshold) || 0, parseInt(duration_seconds) || 0, parseInt(cooldown_minutes) || 30, webhook_id, null, JSON.stringify(agent_ids));
+  // Haupt-Metrik: aus conditions ableiten oder explizit
+  const mainMetric    = condArr[0]?.metric || metric;
+  const mainCondition = condArr[0]?.condition || condition;
+  const mainThreshold = condArr[0]?.threshold ?? parseFloat(threshold) ?? 0;
 
-  auditLog(req, 'alert.create', 'alert_rule', name, { metric, threshold, servers: agent_ids.length });
-  res.status(201).json({ id: result.lastInsertRowid, name, metric, condition, threshold, duration_seconds, cooldown_minutes, webhook_id, agent_ids, enabled: 1 });
+  const result = db.prepare(
+    'INSERT INTO alert_rules (name, metric, condition, threshold, duration_seconds, cooldown_minutes, webhook_id, agent_id, agent_ids, conditions, logic) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(
+    name.trim(), mainMetric, mainCondition, mainThreshold,
+    parseInt(duration_seconds) || 0, parseInt(cooldown_minutes) || 30,
+    webhook_id, null,
+    JSON.stringify(agent_ids), JSON.stringify(condArr), logic
+  );
+
+  auditLog(req, 'alert.create', 'alert_rule', name, { conditions: condArr.length, servers: agent_ids.length, logic });
+  res.status(201).json({ id: result.lastInsertRowid, name, metric: mainMetric, conditions: condArr, logic, agent_ids, enabled: 1 });
 });
 
 router.put('/rules/:id', requirePermission('alerts.manage'), (req, res) => {
   const { name, metric, condition, threshold, duration_seconds, cooldown_minutes, webhook_id, agent_ids, enabled } = req.body;
   const rule = db.prepare('SELECT id FROM alert_rules WHERE id = ?').get(req.params.id);
   if (!rule) return res.status(404).json({ error: 'Regel nicht gefunden' });
+
+  const condArr = Array.isArray(conditions) ? conditions : undefined;
+  const mainMetric    = condArr?.[0]?.metric ?? metric ?? null;
+  const mainCondition = condArr?.[0]?.condition ?? condition ?? null;
+  const mainThreshold = condArr?.[0]?.threshold != null ? condArr[0].threshold : (threshold != null ? parseFloat(threshold) : null);
 
   db.prepare(`
     UPDATE alert_rules SET
@@ -63,15 +84,18 @@ router.put('/rules/:id', requirePermission('alerts.manage'), (req, res) => {
       cooldown_minutes = COALESCE(?, cooldown_minutes),
       webhook_id       = COALESCE(?, webhook_id),
       agent_ids        = COALESCE(?, agent_ids),
+      conditions       = COALESCE(?, conditions),
+      logic            = COALESCE(?, logic),
       enabled          = COALESCE(?, enabled)
     WHERE id = ?
   `).run(
-    name ?? null, metric ?? null, condition ?? null,
-    threshold != null ? parseFloat(threshold) : null,
+    name ?? null, mainMetric, mainCondition, mainThreshold,
     duration_seconds != null ? parseInt(duration_seconds) : null,
     cooldown_minutes != null ? parseInt(cooldown_minutes) : null,
     webhook_id ?? null,
     agent_ids != null ? JSON.stringify(agent_ids) : null,
+    condArr != null ? JSON.stringify(condArr) : null,
+    logic ?? null,
     enabled ?? null,
     req.params.id
   );
