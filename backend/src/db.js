@@ -135,6 +135,36 @@ try { db.exec('ALTER TABLE roles ADD COLUMN restrict_agents INTEGER NOT NULL DEF
 // Alerts: Remote-Agent-Unterstützung + History-Typ
 try { db.exec('ALTER TABLE alert_rules ADD COLUMN agent_id INTEGER REFERENCES remote_agents(id) ON DELETE SET NULL'); } catch {}
 try { db.exec("ALTER TABLE alert_history ADD COLUMN type TEXT NOT NULL DEFAULT 'fired'"); } catch {}
+// Alert-Rules: CHECK-Constraints entfernen + multi-server agent_ids + neue Metriken
+try {
+  const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='alert_rules'").get();
+  if (tableInfo?.sql?.includes("CHECK(metric IN")) {
+    db.exec(`
+      BEGIN;
+      CREATE TABLE alert_rules_v2 (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        name             TEXT NOT NULL,
+        metric           TEXT NOT NULL,
+        condition        TEXT NOT NULL DEFAULT 'gt',
+        threshold        REAL NOT NULL DEFAULT 0,
+        duration_seconds INTEGER NOT NULL DEFAULT 0,
+        cooldown_minutes INTEGER NOT NULL DEFAULT 30,
+        webhook_id       INTEGER NOT NULL REFERENCES webhooks(id) ON DELETE CASCADE,
+        enabled          INTEGER NOT NULL DEFAULT 1,
+        agent_id         INTEGER REFERENCES remote_agents(id) ON DELETE SET NULL,
+        agent_ids        TEXT NOT NULL DEFAULT '[]',
+        created_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      INSERT INTO alert_rules_v2 (id, name, metric, condition, threshold, duration_seconds, cooldown_minutes, webhook_id, enabled, agent_id, agent_ids, created_at)
+        SELECT id, name, metric, condition, threshold, duration_seconds, cooldown_minutes, webhook_id, enabled, agent_id, '[]', created_at FROM alert_rules;
+      DROP TABLE alert_rules;
+      ALTER TABLE alert_rules_v2 RENAME TO alert_rules;
+      COMMIT;
+    `);
+    console.log('[DB] alert_rules migriert: CHECK-Constraints entfernt, agent_ids hinzugefügt');
+  }
+} catch (e) { console.warn('[DB] alert_rules Migration fehlgeschlagen:', e.message); }
+try { db.exec("ALTER TABLE alert_rules ADD COLUMN agent_ids TEXT NOT NULL DEFAULT '[]'"); } catch {}
 // Rollen: Lokalen Server für diese Rolle ausblenden
 try { db.exec('ALTER TABLE roles ADD COLUMN hide_local INTEGER NOT NULL DEFAULT 0'); } catch {}
 // Metrics: Netzwerk-Durchsatz-Spalten (Bytes/Sek)

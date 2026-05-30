@@ -31,12 +31,6 @@ async function notifyAction(req, action, serverName, platform = 'server') {
   // 1. WebSocket an alle verbundenen Clients
   broadcast({ type: 'action_notify', payload });
 
-  // 2. Webhook (fire-and-forget, blockiert nicht die HTTP-Response)
-  const webhookIdVal = db.prepare("SELECT value FROM settings WHERE key='action_webhook_id'").get()?.value;
-  if (!webhookIdVal) return;
-  const webhook = db.prepare('SELECT * FROM webhooks WHERE id = ? AND active = 1').get(parseInt(webhookIdVal));
-  if (!webhook) return;
-
   const label   = ACTION_LABELS[action] || action;
   const dateStr = new Date().toLocaleString('de-DE', {
     day: '2-digit', month: '2-digit', year: 'numeric',
@@ -44,9 +38,61 @@ async function notifyAction(req, action, serverName, platform = 'server') {
   });
   const message = `🔔 <b>Server-Aktion</b>\n👤 <b>${actor}</b> hat <b>${serverName}</b> ${label}\n🕐 ${dateStr}`;
 
-  sendWebhook(webhook, message).catch(err =>
-    console.error('[Action-Webhook] Fehler beim Senden:', err.message)
-  );
+  // 2. Globaler Aktions-Webhook (aus Einstellungen)
+  const webhookIdVal = db.prepare("SELECT value FROM settings WHERE key='action_webhook_id'").get()?.value;
+  if (webhookIdVal) {
+    const webhook = db.prepare('SELECT * FROM webhooks WHERE id = ? AND active = 1').get(parseInt(webhookIdVal));
+    if (webhook) {
+      sendWebhook(webhook, message).catch(err =>
+        console.error('[Action-Webhook] Fehler beim Senden:', err.message)
+      );
+    }
+  }
+
+  // 3. Alert-Regeln vom Typ 'action' auswerten (mit Cooldown)
+  const now = Math.floor(Date.now() / 1000);
+  const actionRules = db.prepare(`
+    SELECT r.*, w.type AS wtype, w.url AS wurl
+    FROM alert_rules r
+    JOIN webhooks w ON r.webhook_id = w.id
+    WHERE r.enabled = 1 AND r.metric = 'action'
+  `).all();
+
+  for (const rule of actionRules) {
+    // Prüfen ob diese Regel für den betroffenen Server gilt
+    let agentIds = [];
+    try { agentIds = JSON.parse(rule.agent_ids || '[]'); } catch {}
+    const coversAll    = agentIds.length === 0;
+    const coversLocal  = agentIds.includes('local');
+    const agentIdStr   = platform === 'mchost' ? null : (req.body?.agentId ? String(req.body.agentId) : null);
+    const isLocal      = !agentIdStr;
+
+    if (!coversAll) {
+      if (isLocal && !coversLocal) continue;
+      if (!isLocal && !agentIds.includes(agentIdStr)) continue;
+    }
+
+    // Cooldown prüfen
+    const cooldownKey = `action:${rule.id}`;
+    const lastFired = db.prepare(
+      "SELECT triggered_at FROM alert_history WHERE rule_id=? AND type='fired' ORDER BY triggered_at DESC LIMIT 1"
+    ).get(rule.id);
+    if (lastFired) {
+      const lastTs = Math.floor(new Date(lastFired.triggered_at).getTime() / 1000);
+      if ((now - lastTs) < rule.cooldown_minutes * 60) continue;
+    }
+
+    // Regel feuern
+    const ruleMsg = `🔔 <b>Server-Aktion</b>: ${rule.name}\n👤 <b>${actor}</b> hat <b>${serverName}</b> ${label}\n🕐 ${dateStr}`;
+    sendWebhook({ type: rule.wtype, url: rule.wurl }, ruleMsg).catch(err =>
+      console.error(`[Action-Alert] Regel "${rule.name}" Webhook-Fehler:`, err.message)
+    );
+    try {
+      db.prepare(
+        "INSERT INTO alert_history (rule_id, value, message, type) VALUES (?, 0, ?, 'fired')"
+      ).run(rule.id, ruleMsg);
+    } catch {}
+  }
 }
 
 module.exports = { notifyAction };
