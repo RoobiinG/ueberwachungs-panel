@@ -22,8 +22,8 @@ const pageTitles = {
   '/settings': 'Einstellungen',
 };
 
-const METRIC_LABELS  = { cpu: 'CPU', memory: 'RAM', disk: 'Disk' };
-const METRIC_COLORS  = { cpu: 'text-blue-400', memory: 'text-green-400', disk: 'text-yellow-400' };
+const METRIC_LABELS  = { cpu: 'CPU', memory: 'RAM', disk: 'Disk', net_rx: 'Netz ↓', net_tx: 'Netz ↑', action: 'Server-Aktion' };
+const METRIC_COLORS  = { cpu: 'text-blue-400', memory: 'text-green-400', disk: 'text-yellow-400', net_rx: 'text-purple-400', net_tx: 'text-purple-400', action: 'text-panel-accent' };
 
 const ACTION_LABELS  = {
   start: 'gestartet', stop: 'gestoppt', restart: 'neugestartet',
