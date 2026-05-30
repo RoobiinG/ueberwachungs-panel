@@ -16,6 +16,7 @@ const PERMISSIONS = [
   // ─── Docker ───────────────────────────────────────────────────────────────
   { key: 'docker.view',         category: 'Docker',             label: 'Container anzeigen',              description: 'Container-Liste und Stats einsehen' },
   { key: 'docker.control',      category: 'Docker',             label: 'Container steuern',               description: 'Container starten, stoppen, neustarten, pausieren' },
+  { key: 'docker.logs',         category: 'Docker',             label: 'Container-Logs einsehen',         description: 'Logs von laufenden und gestoppten Containern abrufen (können sensible Daten enthalten)' },
   { key: 'docker.label',        category: 'Docker',             label: 'Spitznamen / Tags vergeben',       description: 'Container-Spitznamen und Tags anlegen oder ändern' },
 
   // ─── Systemd-Services ────────────────────────────────────────────────────
@@ -78,7 +79,7 @@ const ALL_KEYS = PERMISSIONS.map(p => p.key);
 const OPERATOR_PERMISSIONS = [
   'dashboard.view',
   'agents.view', 'agents.add', 'agents.edit', 'agents.update',
-  'docker.view', 'docker.control', 'docker.label',
+  'docker.view', 'docker.control', 'docker.logs', 'docker.label',
   'services.view', 'services.control',
   'firewall.view',
   'webhooks.view', 'webhooks.test',

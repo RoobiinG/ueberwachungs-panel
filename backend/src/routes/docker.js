@@ -54,7 +54,7 @@ router.get('/containers/:id/stats', requirePermission('docker.view'), async (req
 });
 
 // ── GET /api/docker/containers/:id/logs ──────────────────────────────────────
-router.get('/containers/:id/logs', requirePermission('docker.view'), async (req, res) => {
+router.get('/containers/:id/logs', requirePermission('docker.logs'), async (req, res) => {
   const envId = requireEnv(res);
   if (!envId) return;
   try {

@@ -27,8 +27,9 @@ const fmtBytes = (b) => {
 // ─── Haupt-Komponente ─────────────────────────────────────────────────────────
 
 export default function Docker() {
-  const { canWrite, hideLocal, hasPermission } = useAuth();
-  const canLabel = hasPermission('docker.label');
+  const { canWrite, hideLocal, hasPermission, isAdmin } = useAuth();
+  const canLabel = isAdmin || hasPermission('docker.label');
+  const canLogs  = isAdmin || hasPermission('docker.logs');
 
   const [selectedServer, setSelectedServer] = useState(null); // null = lokal
   const [containers, setContainers]         = useState([]);
@@ -345,14 +346,16 @@ export default function Docker() {
                         <Button size="sm" variant="ghost" onClick={() => act(c.id, 'restart')} disabled={!!busy[c.id]}><RotateCcw size={12} /></Button>
                       </>
                     )}
-                    {/* Logs-Button */}
-                    <button
-                      onClick={() => toggleLogs(c.id)}
-                      title="Container-Logs"
-                      className={`p-1.5 rounded transition-colors ${isLogsOpen ? 'text-panel-accent bg-panel-accent/10' : 'text-panel-muted hover:text-panel-text hover:bg-panel-card'}`}
-                    >
-                      <ScrollText size={13} />
-                    </button>
+                    {/* Logs-Button — nur mit docker.logs Recht */}
+                    {canLogs && (
+                      <button
+                        onClick={() => toggleLogs(c.id)}
+                        title="Container-Logs"
+                        className={`p-1.5 rounded transition-colors ${isLogsOpen ? 'text-panel-accent bg-panel-accent/10' : 'text-panel-muted hover:text-panel-text hover:bg-panel-card'}`}
+                      >
+                        <ScrollText size={13} />
+                      </button>
+                    )}
                   </div>
                 </div>
 

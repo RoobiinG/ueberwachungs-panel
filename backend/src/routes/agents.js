@@ -356,7 +356,7 @@ router.get('/:id/docker/containers/:containerId/stats', requirePermission('docke
   }
 });
 
-router.get('/:id/docker/containers/:containerId/logs', requirePermission('docker.view'), async (req, res) => {
+router.get('/:id/docker/containers/:containerId/logs', requirePermission('docker.logs'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
