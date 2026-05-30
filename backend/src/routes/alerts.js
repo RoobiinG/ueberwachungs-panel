@@ -26,7 +26,7 @@ router.post('/rules', requirePermission('alerts.manage'), (req, res) => {
     name, metric = 'cpu', condition = 'gt', threshold = 0,
     duration_seconds = 0, cooldown_minutes = 30,
     webhook_id, agent_ids = [],
-    conditions = [], logic = 'and',
+    conditions = [], logic = 'and', notify_resolved = 0,
   } = req.body;
 
   if (!name || !webhook_id)
@@ -52,12 +52,12 @@ router.post('/rules', requirePermission('alerts.manage'), (req, res) => {
   const mainThreshold = condArr[0]?.threshold ?? parseFloat(threshold) ?? 0;
 
   const result = db.prepare(
-    'INSERT INTO alert_rules (name, metric, condition, threshold, duration_seconds, cooldown_minutes, webhook_id, agent_id, agent_ids, conditions, logic) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO alert_rules (name, metric, condition, threshold, duration_seconds, cooldown_minutes, webhook_id, agent_id, agent_ids, conditions, logic, notify_resolved) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(
     name.trim(), mainMetric, mainCondition, mainThreshold,
     parseInt(duration_seconds) || 0, parseInt(cooldown_minutes) || 30,
     webhook_id, null,
-    JSON.stringify(agent_ids), JSON.stringify(condArr), logic
+    JSON.stringify(agent_ids), JSON.stringify(condArr), logic, notify_resolved ? 1 : 0
   );
 
   auditLog(req, 'alert.create', 'alert_rule', name, { conditions: condArr.length, servers: agent_ids.length, logic });
@@ -73,6 +73,7 @@ router.put('/rules/:id', requirePermission('alerts.manage'), (req, res) => {
   const mainMetric    = condArr?.[0]?.metric ?? metric ?? null;
   const mainCondition = condArr?.[0]?.condition ?? condition ?? null;
   const mainThreshold = condArr?.[0]?.threshold != null ? condArr[0].threshold : (threshold != null ? parseFloat(threshold) : null);
+  const { notify_resolved } = req.body;
 
   db.prepare(`
     UPDATE alert_rules SET
@@ -86,6 +87,7 @@ router.put('/rules/:id', requirePermission('alerts.manage'), (req, res) => {
       agent_ids        = COALESCE(?, agent_ids),
       conditions       = COALESCE(?, conditions),
       logic            = COALESCE(?, logic),
+      notify_resolved  = COALESCE(?, notify_resolved),
       enabled          = COALESCE(?, enabled)
     WHERE id = ?
   `).run(
@@ -96,6 +98,7 @@ router.put('/rules/:id', requirePermission('alerts.manage'), (req, res) => {
     agent_ids != null ? JSON.stringify(agent_ids) : null,
     condArr != null ? JSON.stringify(condArr) : null,
     logic ?? null,
+    notify_resolved != null ? (notify_resolved ? 1 : 0) : null,
     enabled ?? null,
     req.params.id
   );

@@ -167,6 +167,16 @@ async function evaluate() {
             return `${METRIC_LABELS[r.cond.metric] ?? r.cond.metric}: ${r.value.toFixed(2)}${u}`;
           }).join(', ');
           const message = `✅ Erholt: ${rule.name}\n${recoveryLines}\nServer: ${srv.name}`;
+
+          // Webhook nur senden wenn notify_resolved aktiv
+          if (rule.notify_resolved) {
+            try {
+              await sendWebhook({ type: rule.wtype, url: rule.wurl }, message);
+            } catch (err) {
+              console.error(`[AlertEvaluator] Resolved-Webhook "${rule.name}" fehlgeschlagen:`, err.message);
+            }
+          }
+
           try {
             db.prepare("INSERT INTO alert_history (rule_id, value, message, type) VALUES (?, ?, ?, 'resolved')")
               .run(rule.id, results[0]?.value ?? 0, message);

@@ -168,6 +168,7 @@ try { db.exec("ALTER TABLE alert_rules ADD COLUMN agent_ids TEXT NOT NULL DEFAUL
 // Multi-Conditions: conditions-Array + logic (and/or)
 try { db.exec("ALTER TABLE alert_rules ADD COLUMN conditions TEXT NOT NULL DEFAULT '[]'"); } catch {}
 try { db.exec("ALTER TABLE alert_rules ADD COLUMN logic TEXT NOT NULL DEFAULT 'and'"); } catch {}
+try { db.exec("ALTER TABLE alert_rules ADD COLUMN notify_resolved INTEGER NOT NULL DEFAULT 0"); } catch {}
 // Bestehende Einzel-Regeln in conditions migrieren
 try {
   db.prepare(`

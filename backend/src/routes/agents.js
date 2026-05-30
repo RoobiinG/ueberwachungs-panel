@@ -356,6 +356,20 @@ router.get('/:id/docker/containers/:containerId/stats', requirePermission('docke
   }
 });
 
+router.get('/:id/docker/containers/:containerId/logs', requirePermission('docker.view'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  if (!requireDockhandEnv(agent, res)) return;
+  try {
+    const tail = Math.max(1, Math.min(10000, parseInt(req.query.tail) || 100));
+    const { data } = await dockhand.getContainerLogs(agent.dockhand_env_id, req.params.containerId, tail);
+    res.json(data ?? []);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 router.post('/:id/docker/containers/:containerId/:action', requirePermission('docker.control'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
