@@ -154,6 +154,9 @@ async function evaluate() {
                 logic,
                 serverName: srv.name,
                 agentId:    srv.agentId || null,
+                metric:     conditions[0]?.metric ?? null,
+                value:      results[0]?.value ?? null,
+                threshold:  conditions[0]?.threshold ?? null,
               },
             });
           }
@@ -183,7 +186,7 @@ async function evaluate() {
           } catch {}
           broadcast({
             type: 'alert',
-            payload: { alertType: 'resolved', ruleId: rule.id, ruleName: rule.name, conditions, logic, serverName: srv.name, agentId: srv.agentId || null },
+            payload: { alertType: 'resolved', ruleId: rule.id, ruleName: rule.name, conditions, logic, serverName: srv.name, agentId: srv.agentId || null, metric: conditions[0]?.metric ?? null, value: results[0]?.value ?? null, threshold: conditions[0]?.threshold ?? null },
           });
         }
         s.activeSince = null;
