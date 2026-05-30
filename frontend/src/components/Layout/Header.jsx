@@ -24,6 +24,15 @@ const pageTitles = {
 
 const METRIC_LABELS  = { cpu: 'CPU', memory: 'RAM', disk: 'Disk', net_rx: 'Netz ↓', net_tx: 'Netz ↑', action: 'Server-Aktion' };
 const METRIC_COLORS  = { cpu: 'text-blue-400', memory: 'text-green-400', disk: 'text-yellow-400', net_rx: 'text-purple-400', net_tx: 'text-purple-400', action: 'text-panel-accent' };
+const METRIC_UNIT    = { net_rx: ' MB/s', net_tx: ' MB/s' };
+
+// Extrahiert metric/threshold aus der Notification — mit Fallback auf conditions-Array
+const resolveAlert = (n) => {
+  const metric    = n.metric    ?? n.conditions?.[0]?.metric    ?? null;
+  const threshold = n.threshold ?? n.conditions?.[0]?.threshold ?? null;
+  const unit      = METRIC_UNIT[metric] ?? '%';
+  return { metric, threshold, unit };
+};
 
 const ACTION_LABELS  = {
   start: 'gestartet', stop: 'gestoppt', restart: 'neugestartet',
@@ -33,6 +42,7 @@ const ACTION_LABELS  = {
 // ── Alert-Toast ────────────────────────────────────────────────────────────────
 function AlertToast({ n, onDismiss }) {
   const isFired = n.alertType === 'fired';
+  const { metric, threshold, unit } = resolveAlert(n);
   return (
     <div className={`flex items-start gap-3 px-4 py-3 rounded-lg shadow-xl border text-sm max-w-sm w-full
       ${isFired ? 'bg-panel-surface border-panel-orange/40' : 'bg-panel-surface border-panel-green/40'}
@@ -45,7 +55,9 @@ function AlertToast({ n, onDismiss }) {
       <div className="flex-1 min-w-0">
         <p className="font-medium text-panel-text truncate">{n.ruleName}</p>
         <p className="text-xs text-panel-muted mt-0.5">
-          {n.serverName} · {METRIC_LABELS[n.metric]} {n.value?.toFixed(1)}%
+          {n.serverName}{metric ? ` · ${METRIC_LABELS[metric] ?? metric}` : ''}
+          {n.value != null ? ` ${n.value.toFixed(1)}${unit}` : ''}
+          {threshold != null ? ` (Schwelle: ${threshold}${unit})` : ''}
         </p>
       </div>
       <button onClick={() => onDismiss(n.id)} className="text-panel-muted hover:text-panel-text flex-shrink-0">
@@ -196,11 +208,12 @@ export const Header = ({ connected }) => {
                         );
                       }
                       const isFired = n.alertType === 'fired';
+                      const { metric: m, threshold: thr, unit } = resolveAlert(n);
                       return (
                         <div key={n.id || i}
                           className="flex items-start gap-3 px-3 py-2.5 border-b border-panel-border/50 last:border-0 hover:bg-panel-card/30 transition-colors">
                           {isFired
-                            ? <AlertTriangle size={14} className={`flex-shrink-0 mt-0.5 ${METRIC_COLORS[n.metric] || 'text-panel-orange'}`} />
+                            ? <AlertTriangle size={14} className={`flex-shrink-0 mt-0.5 ${METRIC_COLORS[m] || 'text-panel-orange'}`} />
                             : <CheckCircle   size={14} className="flex-shrink-0 mt-0.5 text-panel-green" />
                           }
                           <div className="flex-1 min-w-0">
@@ -211,8 +224,9 @@ export const Header = ({ connected }) => {
                               <span className="text-[10px] text-panel-muted flex-shrink-0">{fmtTime(n.timestamp)}</span>
                             </div>
                             <p className="text-[11px] text-panel-muted mt-0.5">
-                              {n.serverName} · {METRIC_LABELS[n.metric]} {n.value?.toFixed(1)}%
-                              {isFired && <span className="ml-1">(Schwelle: {n.threshold}%)</span>}
+                              {n.serverName}{m ? ` · ${METRIC_LABELS[m] ?? m}` : ''}
+                              {n.value != null ? ` ${n.value.toFixed(1)}${unit}` : ''}
+                              {thr != null && <span className="ml-1">(Schwelle: {thr}{unit})</span>}
                             </p>
                           </div>
                         </div>
