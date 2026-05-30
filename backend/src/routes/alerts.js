@@ -65,15 +65,19 @@ router.post('/rules', requirePermission('alerts.manage'), (req, res) => {
 });
 
 router.put('/rules/:id', requirePermission('alerts.manage'), (req, res) => {
-  const { name, metric, condition, threshold, duration_seconds, cooldown_minutes, webhook_id, agent_ids, enabled } = req.body;
+  const {
+    name, metric, condition, threshold,
+    duration_seconds, cooldown_minutes, webhook_id,
+    agent_ids, enabled, conditions, logic, notify_resolved,
+  } = req.body;
   const rule = db.prepare('SELECT id FROM alert_rules WHERE id = ?').get(req.params.id);
   if (!rule) return res.status(404).json({ error: 'Regel nicht gefunden' });
 
-  const condArr = Array.isArray(conditions) ? conditions : undefined;
-  const mainMetric    = condArr?.[0]?.metric ?? metric ?? null;
+  const condArr       = Array.isArray(conditions) ? conditions : undefined;
+  const mainMetric    = condArr?.[0]?.metric    ?? metric    ?? null;
   const mainCondition = condArr?.[0]?.condition ?? condition ?? null;
-  const mainThreshold = condArr?.[0]?.threshold != null ? condArr[0].threshold : (threshold != null ? parseFloat(threshold) : null);
-  const { notify_resolved } = req.body;
+  const mainThreshold = condArr?.[0]?.threshold != null ? condArr[0].threshold
+                      : (threshold != null ? parseFloat(threshold) : null);
 
   db.prepare(`
     UPDATE alert_rules SET
