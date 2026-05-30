@@ -8,7 +8,7 @@ import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { ServerSelector } from '../components/ui/ServerSelector';
-import { RefreshCw, Play, Square, RotateCcw, Tag, Check, X, ScrollText, ChevronDown, ChevronUp } from 'lucide-react';
+import { RefreshCw, Play, Square, RotateCcw, Tag, Check, X, ScrollText, ChevronDown, ChevronUp, Zap } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
@@ -340,10 +340,20 @@ export default function Docker() {
                     {canWrite && (
                       <>
                         {!isRun
-                          ? <Button size="sm" variant="success" onClick={() => act(c.id, 'start')}   disabled={!!busy[c.id]}><Play size={12} /></Button>
-                          : <Button size="sm" variant="danger"  onClick={() => act(c.id, 'stop')}    disabled={!!busy[c.id]}><Square size={12} /></Button>
+                          ? <Button size="sm" variant="success" onClick={() => act(c.id, 'start')}   disabled={!!busy[c.id]} title="Starten"><Play size={12} /></Button>
+                          : <Button size="sm" variant="danger"  onClick={() => act(c.id, 'stop')}    disabled={!!busy[c.id]} title="Stoppen"><Square size={12} /></Button>
                         }
-                        <Button size="sm" variant="ghost" onClick={() => act(c.id, 'restart')} disabled={!!busy[c.id]}><RotateCcw size={12} /></Button>
+                        <Button size="sm" variant="ghost"   onClick={() => act(c.id, 'restart')} disabled={!!busy[c.id]} title="Neustarten"><RotateCcw size={12} /></Button>
+                        {isRun && (
+                          <button
+                            onClick={() => { if (confirm(`Container "${c.name}" sofort beenden (SIGKILL)?`)) act(c.id, 'kill'); }}
+                            disabled={!!busy[c.id]}
+                            title="Kill (SIGKILL) — sofortiges Beenden ohne Cleanup"
+                            className="p-1 rounded text-panel-orange hover:bg-panel-orange/15 disabled:opacity-40 transition-colors"
+                          >
+                            <Zap size={12} />
+                          </button>
+                        )}
                       </>
                     )}
                     {/* Logs-Button — nur mit docker.logs Recht */}
