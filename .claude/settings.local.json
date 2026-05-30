@@ -30,7 +30,14 @@
       "Bash(Get-Content \"C:\\\\Users\\\\gRobi\\\\Nextcloud2\\\\Coding\\\\Überwachungs-Panel\\\\backend\\\\node_modules\\\\ssh2\\\\package.json\")",
       "Bash(Select-String '\"version\"')",
       "Bash(Select-Object -First 1)",
-      "Bash(dir \"C:/Users/gRobi/Nextcloud2/Coding/Überwachungs-Panel/backend/\")"
+      "Bash(dir \"C:/Users/gRobi/Nextcloud2/Coding/Überwachungs-Panel/backend/\")",
+      "WebFetch(domain:i.imgur.com)",
+      "WebFetch(domain:r-panel.robin-glaser.de)",
+      "Bash(gh api *)",
+      "Bash(grep -n \"ssh\\\\|sftp\\\\|SSH\\\\|SFTP\" frontend/src/App.jsx)",
+      "Bash(grep -n \"ssh\\\\|sftp\\\\|SSH\\\\|SFTP\" frontend/src/main.jsx)",
+      "Bash(git pull *)",
+      "Bash(git stash *)"
     ]
   }
 }
