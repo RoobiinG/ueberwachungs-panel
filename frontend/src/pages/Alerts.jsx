@@ -496,37 +496,45 @@ export default function Alerts() {
           <div className="space-y-1.5">
             {history.map(h => {
               const isResolved = h.type === 'resolved';
+              // Detail-Zeilen aus der gespeicherten Nachricht extrahieren
+              // (erste Zeile = Header, letzte = "Server: …" → beide überspringen)
+              const detailLines = h.message
+                ? h.message.split('\n').slice(1).filter(l => l.trim() && !l.startsWith('Server:'))
+                : [];
               return (
                 <div key={h.id}
-                  className={`flex items-start gap-3 p-2.5 rounded-lg text-xs border
+                  className={`p-2.5 rounded-lg text-xs border
                     ${isResolved
                       ? 'bg-panel-green/5 border-panel-green/20'
                       : 'bg-panel-surface border-panel-border/50'
                     }`}>
-                  {isResolved
-                    ? <CheckCircle size={14} className="text-panel-green flex-shrink-0 mt-0.5" />
-                    : <AlertTriangle size={14} className={`${METRIC_COLORS[h.metric] || 'text-panel-orange'} flex-shrink-0 mt-0.5`} />
-                  }
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`font-semibold ${isResolved ? 'text-panel-green' : 'text-panel-text'}`}>
-                        {isResolved ? '✅ Erholt' : '⚠️ Ausgelöst'}
+                  {/* ── Kopfzeile ── */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {isResolved
+                      ? <CheckCircle size={13} className="text-panel-green flex-shrink-0" />
+                      : <AlertTriangle size={13} className={`${METRIC_COLORS[h.metric] || 'text-panel-orange'} flex-shrink-0`} />
+                    }
+                    <span className={`font-semibold ${isResolved ? 'text-panel-green' : 'text-panel-text'}`}>
+                      {isResolved ? '✅ Erholt' : '⚠️ Ausgelöst'}
+                    </span>
+                    <span className="text-panel-text font-medium">{h.rule_name || 'Gelöschte Regel'}</span>
+                    <span className="text-panel-muted">{fmtDate(h.triggered_at)}</span>
+                    {(h.agent_name || h.agent_id) && (
+                      <span className="flex items-center gap-1 text-panel-muted bg-panel-bg px-1.5 py-0.5 rounded border border-panel-border/40">
+                        <Server size={10} />{h.agent_name || `Agent #${h.agent_id}`}
                       </span>
-                      <span className="text-panel-text">{h.rule_name || 'Gelöschte Regel'}</span>
-                      <span className="text-panel-muted">{fmtDate(h.triggered_at)}</span>
-                      {h.value != null && (
-                        <span className={isResolved ? 'text-panel-green' : 'text-panel-accent'}>
-                          {h.value.toFixed(1)}%
-                        </span>
-                      )}
-                      {/* Server-Info */}
-                      {(h.agent_name || h.agent_id) && (
-                        <span className="flex items-center gap-1 text-panel-muted bg-panel-bg px-1.5 py-0.5 rounded">
-                          <Server size={10} />{h.agent_name || `Agent #${h.agent_id}`}
-                        </span>
-                      )}
-                    </div>
+                    )}
                   </div>
+                  {/* ── Detail-Zeilen (Metrik / Wert / Schwelle) ── */}
+                  {detailLines.length > 0 && (
+                    <div className="mt-1.5 pl-5 space-y-0.5">
+                      {detailLines.map((line, i) => (
+                        <p key={i} className={`font-mono text-[11px] ${isResolved ? 'text-panel-green/80' : 'text-panel-accent'}`}>
+                          {line}
+                        </p>
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })}
