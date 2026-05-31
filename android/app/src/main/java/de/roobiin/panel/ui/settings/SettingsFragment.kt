@@ -14,10 +14,11 @@ import de.roobiin.panel.ui.login.LoginActivity
 import de.roobiin.panel.utils.AppLockManager
 import de.roobiin.panel.utils.SessionManager
 
-class SettingsFragment : Fragment() {
+class SettingsFragment : Fragment(), PinSetupDialog.Listener {
 
     private var _binding: FragmentSettingsBinding? = null
     private val binding get() = _binding!!
+    private var pinSetupForEnable = false
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentSettingsBinding.inflate(inflater, container, false)
@@ -73,7 +74,8 @@ class SettingsFragment : Fragment() {
         binding.switchAppLock.setOnCheckedChangeListener { _, checked ->
             if (checked) {
                 if (session.getPinHash() == null) {
-                    showPinSetup(session, enableOnSuccess = true)
+                    pinSetupForEnable = true
+                    PinSetupDialog.newInstance().show(childFragmentManager, PinSetupDialog.TAG)
                 } else {
                     session.setAppLockEnabled(true)
                     AppLockManager.lockTimeoutMs = session.getLockTimeoutSeconds() * 1000L
@@ -87,7 +89,8 @@ class SettingsFragment : Fragment() {
         }
 
         binding.btnChangePin.setOnClickListener {
-            showPinSetup(session, enableOnSuccess = false)
+            pinSetupForEnable = false
+            PinSetupDialog.newInstance().show(childFragmentManager, PinSetupDialog.TAG)
         }
 
         binding.btnSaveLockTimeout.setOnClickListener {
@@ -103,7 +106,7 @@ class SettingsFragment : Fragment() {
                 Intent(requireContext(), MonitoringService::class.java)
                     .setAction(MonitoringService.ACTION_STOP)
             )
-            session.clearSession()
+            SessionManager(requireContext()).clearSession()
             AppLockManager.lock()
             startActivity(Intent(requireContext(), LoginActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
@@ -111,23 +114,23 @@ class SettingsFragment : Fragment() {
         }
     }
 
-    private fun showPinSetup(session: SessionManager, enableOnSuccess: Boolean) {
-        PinSetupDialog(
-            onPinSet = { hash ->
-                session.setPinHash(hash)
-                if (enableOnSuccess) {
-                    session.setAppLockEnabled(true)
-                    AppLockManager.lock()
-                }
-                updateLockUi(session.isAppLockEnabled())
-                Snackbar.make(binding.root, "PIN gespeichert", Snackbar.LENGTH_SHORT).show()
-            },
-            onCancel = {
-                if (enableOnSuccess) {
-                    binding.switchAppLock.isChecked = false
-                }
-            }
-        ).show(parentFragmentManager, "pin_setup")
+    // ─── PinSetupDialog.Listener ─────────────────────────────────────────────────
+
+    override fun onPinSet(hash: String) {
+        val session = SessionManager(requireContext())
+        session.setPinHash(hash)
+        if (pinSetupForEnable) {
+            session.setAppLockEnabled(true)
+            AppLockManager.lock()
+        }
+        updateLockUi(session.isAppLockEnabled())
+        Snackbar.make(binding.root, "PIN gespeichert", Snackbar.LENGTH_SHORT).show()
+    }
+
+    override fun onPinCancelled() {
+        if (pinSetupForEnable) {
+            binding.switchAppLock.isChecked = false
+        }
     }
 
     private fun updateLockUi(enabled: Boolean) {

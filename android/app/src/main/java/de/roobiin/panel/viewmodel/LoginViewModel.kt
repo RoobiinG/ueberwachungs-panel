@@ -1,6 +1,7 @@
 package de.roobiin.panel.viewmodel
 
 import android.app.Application
+import android.util.Patterns
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
@@ -27,19 +28,30 @@ class LoginViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
 
+        val normalizedUrl = normalizeUrl(baseUrl)
+        if (normalizedUrl == null) {
+            _error.value = "Ungültige Server-URL"
+            return
+        }
+
         viewModelScope.launch {
             _loading.value = true
             _error.value = null
+            val session = SessionManager(getApplication())
             try {
-                val normalizedUrl = if (baseUrl.startsWith("http")) baseUrl else "https://$baseUrl"
-                val session = SessionManager(getApplication())
+                // Retrofit mit neuer URL konfigurieren — noch KEIN Token speichern
                 session.saveSession("temp", username, normalizedUrl)
-
                 val api = ApiClient.rebuild(getApplication())
                 val resp = api.login(LoginRequest(username, password))
 
                 if (resp.isSuccessful) {
-                    val body = resp.body()!!
+                    val body = resp.body()
+                    if (body?.token == null) {
+                        session.clearSession()
+                        _error.value = "Ungültige Server-Antwort"
+                        return@launch
+                    }
+                    // Erst jetzt echten Token speichern (überschreibt "temp")
                     session.saveSession(body.token, body.user.username, normalizedUrl)
                     ApiClient.rebuild(getApplication())
                     _loginSuccess.value = true
@@ -48,14 +60,31 @@ class LoginViewModel(app: Application) : AndroidViewModel(app) {
                     _error.value = when (resp.code()) {
                         401 -> "Ungültige Anmeldedaten"
                         429 -> "Zu viele Versuche — bitte warten"
-                        else -> "Fehler ${resp.code()}"
+                        404 -> "Server-URL nicht gefunden"
+                        else -> "Server-Fehler ${resp.code()}"
                     }
                 }
             } catch (e: Exception) {
+                session.clearSession()
                 _error.value = "Verbindungsfehler: ${e.message}"
             } finally {
                 _loading.value = false
             }
+        }
+    }
+
+    private fun normalizeUrl(input: String): String? {
+        val url = if (input.startsWith("http://") || input.startsWith("https://")) {
+            input.trimEnd('/')
+        } else {
+            "https://${input.trimEnd('/')}"
+        }
+        // Mindest-Validierung: muss Host haben
+        return try {
+            val parsed = java.net.URL(url)
+            if (parsed.host.isNullOrBlank()) null else url
+        } catch (e: Exception) {
+            null
         }
     }
 }

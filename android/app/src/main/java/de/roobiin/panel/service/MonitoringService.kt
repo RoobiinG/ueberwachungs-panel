@@ -11,6 +11,7 @@ import kotlinx.coroutines.*
 import okhttp3.*
 import com.google.gson.Gson
 import com.google.gson.JsonObject
+import java.util.concurrent.TimeUnit
 
 class MonitoringService : Service() {
 
@@ -18,11 +19,19 @@ class MonitoringService : Service() {
     private var monitoringJob: Job? = null
     private var webSocket: WebSocket? = null
     private val gson = Gson()
+    private var isMonitoringStarted = false
+
+    // Einziger OkHttpClient für WebSocket — wird nicht bei jedem Reconnect neu erstellt
+    private val wsClient by lazy {
+        OkHttpClient.Builder()
+            .pingInterval(30, TimeUnit.SECONDS)
+            .build()
+    }
 
     companion object {
         const val ACTION_START = "START"
         const val ACTION_STOP = "STOP"
-        var isRunning = false
+        @Volatile var isRunning = false
     }
 
     override fun onCreate() {
@@ -41,7 +50,13 @@ class MonitoringService : Service() {
                 stopSelf()
                 return START_NOT_STICKY
             }
-            else -> startMonitoring()
+            else -> {
+                // Guard: startMonitoring nur einmal aufrufen
+                if (!isMonitoringStarted) {
+                    isMonitoringStarted = true
+                    startMonitoring()
+                }
+            }
         }
         return START_STICKY
     }
@@ -49,7 +64,6 @@ class MonitoringService : Service() {
     private fun startMonitoring() {
         val session = SessionManager(this)
         if (!session.isLoggedIn()) return
-
         connectWebSocket(session)
         startPolling(session)
     }
@@ -59,23 +73,25 @@ class MonitoringService : Service() {
         val token = session.getToken() ?: return
         val wsUrl = ApiClient.buildWebSocketUrl(baseUrl)
 
-        val client = okhttp3.OkHttpClient()
+        // Alten Socket sauber schließen bevor ein neuer aufgebaut wird
+        webSocket?.close(1000, "Reconnect")
+        webSocket = null
+
         val request = Request.Builder()
             .url(wsUrl)
             .addHeader("Authorization", "Bearer $token")
             .build()
 
-        webSocket = client.newWebSocket(request, object : WebSocketListener() {
+        webSocket = wsClient.newWebSocket(request, object : WebSocketListener() {
             override fun onMessage(webSocket: WebSocket, text: String) {
                 handleWsMessage(text)
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.w("MonitoringService", "WebSocket-Fehler: ${t.message}")
-                // Reconnect nach 15 Sekunden
                 scope.launch {
                     delay(15_000)
-                    connectWebSocket(session)
+                    if (isActive) connectWebSocket(session)
                 }
             }
         })
@@ -112,13 +128,11 @@ class MonitoringService : Service() {
         monitoringJob = scope.launch {
             val api = ApiClient.getClient(this@MonitoringService)
             while (isActive) {
-                val intervalMs = session.getMonitoringInterval() * 1000L
+                val intervalMs = session.getMonitoringInterval().coerceAtLeast(10) * 1000L
                 try {
-                    // Alert-History prüfen auf neue Alerts
                     val historyResp = api.getAlertHistory(limit = 5)
                     if (historyResp.isSuccessful && session.isNotificationsEnabled()) {
-                        val history = historyResp.body() ?: emptyList()
-                        checkNewAlerts(history, session)
+                        checkNewAlerts(historyResp.body() ?: emptyList())
                     }
                 } catch (e: Exception) {
                     Log.w("MonitoringService", "Polling-Fehler: ${e.message}")
@@ -130,7 +144,7 @@ class MonitoringService : Service() {
 
     private var lastAlertId: Int = -1
 
-    private fun checkNewAlerts(history: List<de.roobiin.panel.data.AlertHistory>, session: SessionManager) {
+    private fun checkNewAlerts(history: List<de.roobiin.panel.data.AlertHistory>) {
         if (history.isEmpty()) return
         val latest = history.first()
         if (lastAlertId == -1) {
@@ -152,8 +166,11 @@ class MonitoringService : Service() {
 
     override fun onDestroy() {
         isRunning = false
+        isMonitoringStarted = false
         scope.cancel()
         webSocket?.close(1000, "Service beendet")
+        webSocket = null
+        wsClient.dispatcher.executorService.shutdown()
         super.onDestroy()
     }
 

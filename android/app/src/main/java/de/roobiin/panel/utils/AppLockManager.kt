@@ -2,14 +2,16 @@ package de.roobiin.panel.utils
 
 object AppLockManager {
 
-    private var backgroundedAt: Long = 0L
-    var isUnlocked: Boolean = false
+    @Volatile private var backgroundedAt: Long = 0L
+    @Volatile var isUnlocked: Boolean = false
         private set
+    @Volatile var lockTimeoutMs: Long = 30_000L
 
     fun onAppForegrounded(): Boolean {
         if (!isUnlocked) return true
-        val elapsed = System.currentTimeMillis() - backgroundedAt
-        return backgroundedAt > 0L && elapsed > lockTimeoutMs
+        val snap = backgroundedAt
+        if (snap == 0L) return false
+        return System.currentTimeMillis() - snap > lockTimeoutMs
     }
 
     fun onAppBackgrounded() {
@@ -24,6 +26,4 @@ object AppLockManager {
     fun lock() {
         isUnlocked = false
     }
-
-    var lockTimeoutMs: Long = 30_000L
 }

@@ -8,20 +8,33 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.DialogFragment
 import de.roobiin.panel.R
-import java.security.MessageDigest
+import de.roobiin.panel.utils.PinHasher
+import kotlinx.coroutines.*
 
-class PinSetupDialog(
-    private val onPinSet: (String) -> Unit,
-    private val onCancel: () -> Unit
-) : DialogFragment() {
+// DialogFragment ohne Lambda-Konstruktor — sicher nach Config-Change/Screen-Rotation
+class PinSetupDialog : DialogFragment() {
+
+    interface Listener {
+        fun onPinSet(hash: String)
+        fun onPinCancelled()
+    }
 
     private val pinBuffer = StringBuilder()
     private var confirmMode = false
     private var firstPin = ""
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     private lateinit var tvTitle: TextView
     private lateinit var tvDots: TextView
     private lateinit var tvError: TextView
+
+    private val listener: Listener?
+        get() = parentFragment as? Listener ?: activity as? Listener
+
+    companion object {
+        const val TAG = "pin_setup"
+        fun newInstance() = PinSetupDialog()
+    }
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val view = LayoutInflater.from(requireContext()).inflate(R.layout.dialog_pin_setup, null)
@@ -44,9 +57,7 @@ class PinSetupDialog(
 
         return AlertDialog.Builder(requireContext())
             .setView(view)
-            .setNegativeButton("Abbrechen") { _, _ ->
-                onCancel()
-            }
+            .setNegativeButton("Abbrechen") { _, _ -> listener?.onPinCancelled() }
             .create()
             .also { it.setCanceledOnTouchOutside(false) }
     }
@@ -79,22 +90,30 @@ class PinSetupDialog(
             tvTitle.text = "PIN bestätigen"
             updateDots()
         } else {
-            if (pinBuffer.toString() == firstPin) {
-                onPinSet(sha256(pinBuffer.toString()))
-                dismiss()
+            val entered = pinBuffer.toString()
+            pinBuffer.clear()
+            updateDots()
+
+            if (entered == firstPin) {
+                // PBKDF2-Hashing auf IO-Thread
+                scope.launch {
+                    val hash = withContext(Dispatchers.IO) { PinHasher.hash(entered) }
+                    firstPin = "" // Klartext sofort löschen
+                    listener?.onPinSet(hash)
+                    dismiss()
+                }
             } else {
+                firstPin = ""
                 tvError.text = "PINs stimmen nicht überein"
                 confirmMode = false
-                firstPin = ""
-                pinBuffer.clear()
                 tvTitle.text = "Neuen PIN festlegen"
-                updateDots()
             }
         }
     }
 
-    private fun sha256(input: String): String {
-        val bytes = MessageDigest.getInstance("SHA-256").digest(input.toByteArray())
-        return bytes.joinToString("") { "%02x".format(it) }
+    override fun onDestroy() {
+        scope.cancel()
+        firstPin = "" // Klartext-PIN aus Speicher löschen
+        super.onDestroy()
     }
 }

@@ -87,6 +87,9 @@ class AgentDetailFragment : Fragment() {
         vm.loadMetrics(agentId, range)
     }
 
+    // Basiszeit für relative X-Achse (verhindert Float-Overflow bei Unix-Timestamps)
+    private var chartBaseTs: Long = 0L
+
     private fun setupChart() {
         val chart = binding.metricsChart
         chart.description.isEnabled = false
@@ -100,11 +103,15 @@ class AgentDetailFragment : Fragment() {
         chart.xAxis.apply {
             position = XAxis.XAxisPosition.BOTTOM
             setDrawGridLines(false)
-            granularity = 1f
+            granularity = 60f
+            // ThreadLocal verhindert SimpleDateFormat-Threadsicherheitsproblem
+            val sdfLocal = ThreadLocal.withInitial {
+                SimpleDateFormat("HH:mm", Locale.getDefault())
+            }
             valueFormatter = object : ValueFormatter() {
-                val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
                 override fun getFormattedValue(value: Float): String {
-                    return sdf.format(Date(value.toLong() * 1000))
+                    val absTs = (chartBaseTs + value.toLong()) * 1000L
+                    return sdfLocal.get()!!.format(Date(absTs))
                 }
             }
         }
@@ -119,14 +126,16 @@ class AgentDetailFragment : Fragment() {
     private fun updateChart(points: List<MetricPoint>) {
         if (points.isEmpty()) return
 
+        // Relative Timestamps — vermeidet Float-Präzisionsverlust
+        chartBaseTs = points.first().ts
         val cpuEntries = points.mapNotNull { p ->
-            p.cpu?.let { Entry(p.ts.toFloat(), it.toFloat()) }
+            p.cpu?.let { Entry((p.ts - chartBaseTs).toFloat(), it.toFloat()) }
         }
         val memEntries = points.mapNotNull { p ->
-            p.memory?.let { Entry(p.ts.toFloat(), it.toFloat()) }
+            p.memory?.let { Entry((p.ts - chartBaseTs).toFloat(), it.toFloat()) }
         }
         val diskEntries = points.mapNotNull { p ->
-            p.disk?.let { Entry(p.ts.toFloat(), it.toFloat()) }
+            p.disk?.let { Entry((p.ts - chartBaseTs).toFloat(), it.toFloat()) }
         }
 
         fun lineSet(entries: List<Entry>, label: String, color: Int) =
