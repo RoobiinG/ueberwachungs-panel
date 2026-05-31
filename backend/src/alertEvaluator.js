@@ -137,46 +137,38 @@ async function evaluate() {
         if (s.activeSince === null) s.activeSince = now;
         const activeFor = now - s.activeSince;
 
-        if (activeFor >= (rule.duration_seconds || 0)) {
-          const cooldownSecs = rule.cooldown_minutes * 60;
-          const cooldownOk   = s.lastFiredAt === null || (now - s.lastFiredAt) >= cooldownSecs;
-
-          if (cooldownOk) {
-            const isFirstFire = !s.hasFired;
-            const logicStr    = logic === 'or' ? '(ODER)' : '(UND)';
-            const message     = `⚠️ Alert: ${rule.name} ${logicStr}\n${detailLines}\nServer: ${srv.name}`;
-            try {
-              await sendWebhook({ type: rule.wtype, url: rule.wurl }, message);
-            } catch (err) {
-              console.error(`[AlertEvaluator] Webhook "${rule.name}" fehlgeschlagen:`, err.message);
-            }
-            s.lastFiredAt = now;
-            s.hasFired    = true;
-
-            try {
-              db.prepare("INSERT INTO alert_history (rule_id, value, message, type) VALUES (?, ?, ?, 'fired')")
-                .run(rule.id, results[0]?.value ?? 0, message);
-            } catch {}
-
-            // WS-Benachrichtigung nur beim ersten Auslösen — kein Spam bis Erholung
-            if (isFirstFire) {
-              broadcast({
-                type: 'alert',
-                payload: {
-                  alertType:  'fired',
-                  ruleId:     rule.id,
-                  ruleName:   rule.name,
-                  conditions,
-                  logic,
-                  serverName: srv.name,
-                  agentId:    srv.agentId || null,
-                  metric:     conditions[0]?.metric ?? null,
-                  value:      results[0]?.value ?? null,
-                  threshold:  conditions[0]?.threshold ?? null,
-                },
-              });
-            }
+        // Nur beim ersten Auslösen reagieren — kein Spam bis zur Erholung
+        if (activeFor >= (rule.duration_seconds || 0) && !s.hasFired) {
+          const logicStr = logic === 'or' ? '(ODER)' : '(UND)';
+          const message  = `⚠️ Alert: ${rule.name} ${logicStr}\n${detailLines}\nServer: ${srv.name}`;
+          try {
+            await sendWebhook({ type: rule.wtype, url: rule.wurl }, message);
+          } catch (err) {
+            console.error(`[AlertEvaluator] Webhook "${rule.name}" fehlgeschlagen:`, err.message);
           }
+          s.lastFiredAt = now;
+          s.hasFired    = true;
+
+          try {
+            db.prepare("INSERT INTO alert_history (rule_id, value, message, type) VALUES (?, ?, ?, 'fired')")
+              .run(rule.id, results[0]?.value ?? 0, message);
+          } catch {}
+
+          broadcast({
+            type: 'alert',
+            payload: {
+              alertType:  'fired',
+              ruleId:     rule.id,
+              ruleName:   rule.name,
+              conditions,
+              logic,
+              serverName: srv.name,
+              agentId:    srv.agentId || null,
+              metric:     conditions[0]?.metric ?? null,
+              value:      results[0]?.value ?? null,
+              threshold:  conditions[0]?.threshold ?? null,
+            },
+          });
         }
       } else {
         if (s.hasFired) {
