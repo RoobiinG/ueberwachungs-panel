@@ -181,13 +181,11 @@ async function evaluate() {
           }).join('\n');
           const message = `✅ Erholt: ${rule.name}\n${recoveryLines}\nServer: ${srv.name}`;
 
-          // Webhook nur senden wenn notify_resolved aktiv
-          if (rule.notify_resolved) {
-            try {
-              await sendWebhook({ type: rule.wtype, url: rule.wurl }, message);
-            } catch (err) {
-              console.error(`[AlertEvaluator] Resolved-Webhook "${rule.name}" fehlgeschlagen:`, err.message);
-            }
+          // Erholungs-Webhook immer senden (einmal-Modell: fire once → resolve once)
+          try {
+            await sendWebhook({ type: rule.wtype, url: rule.wurl }, message);
+          } catch (err) {
+            console.error(`[AlertEvaluator] Resolved-Webhook "${rule.name}" fehlgeschlagen:`, err.message);
           }
 
           try {

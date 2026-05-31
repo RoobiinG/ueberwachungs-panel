@@ -252,18 +252,12 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
           {webhooks.length === 0 && (
             <p className="text-xs text-panel-muted mt-1">Zuerst einen Webhook unter "Webhooks" anlegen.</p>
           )}
-          {/* Wiederherstellungs-Benachrichtigung */}
+          {/* Wiederherstellungs-Benachrichtigung ist immer aktiv (einmal-Modell) */}
           {!isAction && (
-            <label className="flex items-center gap-2 mt-2 cursor-pointer select-none group">
-              <div
-                onClick={() => set('notify_resolved', !form.notify_resolved)}
-                className={`relative inline-flex h-4 w-7 flex-shrink-0 rounded-full transition-colors duration-200 ${form.notify_resolved ? 'bg-panel-accent' : 'bg-panel-border'}`}>
-                <span className={`inline-block h-3 w-3 transform rounded-full bg-white shadow transition duration-200 mt-0.5 ${form.notify_resolved ? 'translate-x-3' : 'translate-x-0.5'}`} />
-              </div>
-              <span className="text-xs text-panel-muted group-hover:text-panel-text transition-colors">
-                Auch bei Wiederherstellung benachrichtigen
-              </span>
-            </label>
+            <p className="text-xs text-panel-muted mt-2 flex items-center gap-1.5">
+              <span className="text-panel-green">✓</span>
+              Erholungs-Benachrichtigung wird immer gesendet
+            </p>
           )}
         </div>
 
