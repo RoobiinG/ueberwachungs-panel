@@ -175,9 +175,10 @@ async function evaluate() {
           s.hasFired    = false;
           s.activeSince = null;
           const recoveryLines = results.map(r => {
-            const u = METRIC_UNIT[r.cond.metric] ?? '%';
-            return `${METRIC_LABELS[r.cond.metric] ?? r.cond.metric}: ${r.value.toFixed(2)}${u}`;
-          }).join(', ');
+            const u   = METRIC_UNIT[r.cond.metric] ?? '%';
+            const dir = r.cond.condition === 'gt' ? 'über' : 'unter';
+            return `${METRIC_LABELS[r.cond.metric] ?? r.cond.metric}: ${r.value.toFixed(1)}${u} ✓ (war ${dir} ${r.cond.threshold}${u})`;
+          }).join('\n');
           const message = `✅ Erholt: ${rule.name}\n${recoveryLines}\nServer: ${srv.name}`;
 
           // Webhook nur senden wenn notify_resolved aktiv
