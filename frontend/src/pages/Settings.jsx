@@ -6,7 +6,8 @@ import { useAuth } from '../context/AuthContext';
 import {
   Cloud, Server, Eye, EyeOff, CheckCircle, XCircle,
   RefreshCw, Trash2, Lock, Mail, Key, ShieldCheck, Send,
-  User, Settings2, Layers, Timer, Bell,
+  User, Settings2, Layers, Timer, Bell, Monitor, Smartphone,
+  Globe, LogOut, Laptop,
 } from 'lucide-react';
 import { invalidateLiveIntervalCache } from '../hooks/useLiveInterval';
 
@@ -127,6 +128,148 @@ const StatusBadge = ({ set }) => set
 const Msg = ({ msg }) => msg ? (
   <p className={`text-xs mt-2 ${msg.type === 'ok' ? 'text-panel-green' : 'text-panel-red'}`}>{msg.text}</p>
 ) : null;
+
+// ── UA-Hilfsfunktionen ─────────────────────────────────────────────────────────
+function parseBrowser(ua = '') {
+  if (!ua) return 'Unbekannt';
+  if (/Edg\//.test(ua))                         return 'Edge';
+  if (/OPR\//.test(ua))                         return 'Opera';
+  if (/Chrome\//.test(ua))                      return 'Chrome';
+  if (/Firefox\//.test(ua))                     return 'Firefox';
+  if (/Safari\//.test(ua))                      return 'Safari';
+  if (/curl\//.test(ua))                        return 'cURL';
+  return 'Browser';
+}
+function parseOS(ua = '') {
+  if (/Windows/.test(ua))                       return 'Windows';
+  if (/Android/.test(ua))                       return 'Android';
+  if (/iPhone|iPad/.test(ua))                   return 'iOS';
+  if (/Mac OS/.test(ua))                        return 'macOS';
+  if (/Linux/.test(ua))                         return 'Linux';
+  return '';
+}
+function DeviceIcon({ ua }) {
+  if (/iPhone|iPad|Android/.test(ua))  return <Smartphone size={15} className="text-panel-muted" />;
+  if (/Windows|Mac OS|Linux/.test(ua)) return <Laptop     size={15} className="text-panel-muted" />;
+  return <Globe size={15} className="text-panel-muted" />;
+}
+function fmtRelTime(dateStr) {
+  if (!dateStr) return '—';
+  const iso = dateStr.includes('Z') || dateStr.includes('+') ? dateStr : dateStr.replace(' ', 'T') + 'Z';
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (diff < 60)   return 'gerade eben';
+  if (diff < 3600) return `vor ${Math.floor(diff / 60)} Min.`;
+  if (diff < 86400) return `vor ${Math.floor(diff / 3600)} Std.`;
+  return `vor ${Math.floor(diff / 86400)} Tagen`;
+}
+function fmtAbsTime(dateStr) {
+  if (!dateStr) return '—';
+  const iso = dateStr.includes('Z') || dateStr.includes('+') ? dateStr : dateStr.replace(' ', 'T') + 'Z';
+  return new Date(iso).toLocaleString('de-DE', {
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin',
+  });
+}
+
+// ── SessionsSection ────────────────────────────────────────────────────────────
+function SessionsSection({ isAdmin }) {
+  const [sessions, setSessions] = useState([]);
+  const [loading,  setLoading]  = useState(true);
+  const [busy,     setBusy]     = useState({});
+
+  const load = () => {
+    setLoading(true);
+    axios.get('/api/sessions')
+      .then(r => setSessions(r.data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const revoke = async (id) => {
+    setBusy(b => ({ ...b, [id]: true }));
+    try {
+      await axios.delete(`/api/sessions/${id}`);
+      setSessions(s => s.filter(x => x.id !== id));
+    } catch {}
+    setBusy(b => ({ ...b, [id]: false }));
+  };
+
+  const revokeOthers = async () => {
+    setBusy(b => ({ ...b, _all: true }));
+    try {
+      await axios.delete('/api/sessions/others');
+      load();
+    } catch {}
+    setBusy(b => ({ ...b, _all: false }));
+  };
+
+  const others = sessions.filter(s => !s.is_current);
+
+  return (
+    <Card title={
+      <div className="flex items-center justify-between w-full">
+        <span>{isAdmin ? 'Alle aktiven Sitzungen' : 'Aktive Sitzungen'}</span>
+        {others.length > 0 && !isAdmin && (
+          <Button size="sm" variant="danger" onClick={revokeOthers} disabled={!!busy._all}>
+            <LogOut size={12} className="mr-1" />Alle anderen abmelden
+          </Button>
+        )}
+      </div>
+    }>
+      {loading ? (
+        <p className="text-panel-muted text-sm py-4 text-center">Lade…</p>
+      ) : sessions.length === 0 ? (
+        <p className="text-panel-muted text-sm py-4 text-center">Keine aktiven Sitzungen</p>
+      ) : (
+        <div className="space-y-2">
+          {sessions.map(s => (
+            <div key={s.id}
+              className={`flex items-center gap-3 p-3 rounded-lg border transition-colors
+                ${s.is_current
+                  ? 'border-panel-accent/50 bg-panel-accent/5'
+                  : 'border-panel-border bg-panel-surface'}`}>
+              <DeviceIcon ua={s.user_agent} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-medium text-panel-text">
+                    {parseBrowser(s.user_agent)}
+                    {parseOS(s.user_agent) ? ` · ${parseOS(s.user_agent)}` : ''}
+                  </span>
+                  {s.is_current && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-panel-accent/20 text-panel-accent font-semibold">
+                      Diese Sitzung
+                    </span>
+                  )}
+                  {isAdmin && s.username && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-panel-surface border border-panel-border text-panel-muted">
+                      <User size={9} className="inline mr-0.5" />{s.username}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-3 mt-0.5 text-[11px] text-panel-muted flex-wrap">
+                  {s.ip && <span>IP: {s.ip}</span>}
+                  <span title={fmtAbsTime(s.created_at)}>Angemeldet: {fmtAbsTime(s.created_at)}</span>
+                  <span title={fmtAbsTime(s.last_used)}>Zuletzt aktiv: {fmtRelTime(s.last_used)}</span>
+                </div>
+              </div>
+              {!s.is_current && (
+                <button
+                  onClick={() => revoke(s.id)}
+                  disabled={!!busy[s.id]}
+                  title="Sitzung beenden"
+                  className="p-1.5 rounded text-panel-muted hover:text-panel-red hover:bg-panel-red/10 transition-colors disabled:opacity-40 flex-shrink-0">
+                  <LogOut size={14} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
 
 export default function Settings() {
   const { isAdmin } = useAuth();
@@ -871,6 +1014,9 @@ export default function Settings() {
         </Card>
 
       </>)}
+
+      {/* ── Aktive Sitzungen ─────────────────────────────────────────────────── */}
+      <SessionsSection isAdmin={user?.role === 'admin'} />
 
     </div>
   );

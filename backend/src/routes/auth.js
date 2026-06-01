@@ -8,6 +8,16 @@ const authMiddleware = require('../middleware/auth');
 const { getPermissions } = require('../middleware/requirePermission');
 const { auditLog } = require('../utils/audit');
 
+const hashToken   = (t) => crypto.createHash('sha256').update(t).digest('hex');
+const storeSession = (token, userId, req) => {
+  try {
+    db.prepare(`
+      INSERT OR IGNORE INTO sessions (user_id, token_hash, ip, user_agent)
+      VALUES (?, ?, ?, ?)
+    `).run(userId, hashToken(token), req.ip || '', req.headers['user-agent'] || '');
+  } catch {}
+};
+
 // ─── Rate-Limiting ────────────────────────────────────────────────────────────
 
 const loginLimiter = rateLimit({
@@ -66,6 +76,7 @@ router.post('/login', loginLimiter, (req, res) => {
   const permissions = getPermissions(user.role);
   const roleRow = db.prepare('SELECT hide_local, is_admin FROM roles WHERE name = ?').get(user.role);
   const hideLocal = roleRow?.is_admin ? false : !!roleRow?.hide_local;
+  storeSession(token, user.id, req);
   auditLog(req, 'login', 'user', user.username);
   res.json({ token, user: { id: user.id, username: user.username, role: user.role }, permissions, hideLocal });
 });
