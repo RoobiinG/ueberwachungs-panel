@@ -44,13 +44,12 @@ object ApiClient {
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
             .addInterceptor { chain ->
-                val request: Request = if (!token.isNullOrEmpty() && token != "temp") {
-                    chain.request().newBuilder()
-                        .addHeader("Authorization", "Bearer $token")
-                        .build()
-                } else {
-                    chain.request()
+                val requestBuilder = chain.request().newBuilder()
+                    .header("User-Agent", "PanelApp-Android/${BuildConfig.VERSION_NAME}")
+                if (!token.isNullOrEmpty() && token != "temp") {
+                    requestBuilder.addHeader("Authorization", "Bearer $token")
                 }
+                val request: Request = requestBuilder.build()
                 val response = chain.proceed(request)
                 // Nur einmal feuern — verhindert mehrfache Login-Redirects
                 if (response.code == 401 && sessionExpiredFired.compareAndSet(false, true)) {

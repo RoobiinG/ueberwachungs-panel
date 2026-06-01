@@ -132,6 +132,8 @@ const Msg = ({ msg }) => msg ? (
 // ── UA-Hilfsfunktionen ─────────────────────────────────────────────────────────
 function parseBrowser(ua = '') {
   if (!ua) return 'Unbekannt';
+  if (/PanelApp-Android/.test(ua))              return 'Panel App';
+  if (/okhttp|Dalvik/.test(ua))                 return 'Android App';
   if (/Edg\//.test(ua))                         return 'Edge';
   if (/OPR\//.test(ua))                         return 'Opera';
   if (/Chrome\//.test(ua))                      return 'Chrome';
@@ -141,6 +143,7 @@ function parseBrowser(ua = '') {
   return 'Browser';
 }
 function parseOS(ua = '') {
+  if (/PanelApp-Android/.test(ua))              return 'Android';
   if (/Windows/.test(ua))                       return 'Windows';
   if (/Android/.test(ua))                       return 'Android';
   if (/iPhone|iPad/.test(ua))                   return 'iOS';
@@ -149,8 +152,8 @@ function parseOS(ua = '') {
   return '';
 }
 function DeviceIcon({ ua }) {
-  if (/iPhone|iPad|Android/.test(ua))  return <Smartphone size={15} className="text-panel-muted" />;
-  if (/Windows|Mac OS|Linux/.test(ua)) return <Laptop     size={15} className="text-panel-muted" />;
+  if (/PanelApp-Android|iPhone|iPad|Android/.test(ua)) return <Smartphone size={15} className="text-panel-muted" />;
+  if (/Windows|Mac OS|Linux/.test(ua))                 return <Laptop     size={15} className="text-panel-muted" />;
   return <Globe size={15} className="text-panel-muted" />;
 }
 function fmtRelTime(dateStr) {
