@@ -5,12 +5,12 @@ plugins {
 
 android {
     namespace = "de.roobiin.panel"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "de.roobiin.panel"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -19,6 +19,7 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
@@ -59,6 +60,6 @@ dependencies {
     implementation(libs.datastore)
     implementation(libs.mpandroidchart)
     implementation(libs.swiperefreshlayout)
-    implementation("androidx.security:security-crypto:1.1.0-alpha06")
-    implementation("androidx.biometric:biometric:1.2.0-alpha05")
+    implementation(libs.security.crypto)
+    implementation(libs.biometric)
 }
