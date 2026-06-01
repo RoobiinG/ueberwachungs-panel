@@ -302,6 +302,26 @@ db.exec(`
 db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('action_notifications', '0')").run();
 db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('action_webhook_id', '')").run();
 
+// ─── Session-Management ───────────────────────────────────────────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS sessions (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash TEXT    NOT NULL UNIQUE,
+    ip         TEXT    NOT NULL DEFAULT '',
+    user_agent TEXT    NOT NULL DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_used  DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_sessions_user  ON sessions(user_id);
+  CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token_hash);
+
+  CREATE TABLE IF NOT EXISTS revoked_tokens (
+    token_hash TEXT    PRIMARY KEY,
+    revoked_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
 // ─── Standard-Rollen seeden ───────────────────────────────────────────────────
 const seedRole = db.transaction((name, label, isSystem, isAdmin, permissions) => {
   let role = db.prepare('SELECT id FROM roles WHERE name = ?').get(name);
