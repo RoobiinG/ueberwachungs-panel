@@ -7,7 +7,7 @@ data class LoginRequest(val username: String, val password: String)
 data class LoginResponse(
     val token: String,
     val user: UserInfo,
-    val permissions: Map<String, Boolean>?,
+    val permissions: List<String>?,
     val hideLocal: Boolean = false
 )
 
