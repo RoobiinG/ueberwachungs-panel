@@ -1019,7 +1019,7 @@ export default function Settings() {
       </>)}
 
       {/* ── Aktive Sitzungen ─────────────────────────────────────────────────── */}
-      <SessionsSection isAdmin={user?.role === 'admin'} />
+      <SessionsSection isAdmin={isAdmin} />
 
     </div>
   );
