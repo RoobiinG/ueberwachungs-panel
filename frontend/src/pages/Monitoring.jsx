@@ -616,10 +616,10 @@ export default function Monitoring({ liveStats }) {
         const tx   = n0 ? Math.round((n0.txSec ?? n0.tx_sec ?? 0)) : null;
         return (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <StatCard label="CPU" value={cpu != null ? `${cpu}%` : '—'} color="text-orange-400" />
-            <StatCard label="RAM" value={mem != null ? `${mem}%` : '—'} color="text-green-400" />
-            <StatCard label="Download" value={rx != null ? fmtSpeed(rx) : '—'} color="text-blue-400" />
-            <StatCard label="Upload"   value={tx != null ? fmtSpeed(tx) : '—'} color="text-purple-400" />
+            <StatCard title="CPU"      value={cpu != null ? `${cpu}%` : '—'} color="orange" />
+            <StatCard title="RAM"      value={mem != null ? `${mem}%` : '—'} color="green"  />
+            <StatCard title="Download" value={rx  != null ? fmtSpeed(rx) : '—'} color="blue" />
+            <StatCard title="Upload"   value={tx  != null ? fmtSpeed(tx) : '—'} color="purple" />
           </div>
         );
       }
