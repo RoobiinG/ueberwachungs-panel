@@ -45,12 +45,12 @@ async function record() {
 
 function start() {
   record();
-  setInterval(record, 10_000);
-  // Cleanup nur stündlich statt bei jedem Messwert
-  const runCleanup = () => cleanup.run(Math.floor(Date.now() / 1000) - 30 * 24 * 3600);
+  setInterval(record, 1_000);
+  // Raw-Daten nur 6 Stunden aufbewahren — Langzeit via metricsAggregator
+  const runCleanup = () => cleanup.run(Math.floor(Date.now() / 1000) - 6 * 3600);
   runCleanup();
   setInterval(runCleanup, 3_600_000);
-  console.log('Metrics-Recorder gestartet (alle 10 Sek, 30 Tage Aufbewahrung)');
+  console.log('Metrics-Recorder gestartet (alle 1 Sek, 6 Std. Aufbewahrung)');
 }
 
 module.exports = { start };

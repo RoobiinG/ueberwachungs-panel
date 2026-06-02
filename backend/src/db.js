@@ -184,6 +184,32 @@ try { db.exec('ALTER TABLE roles ADD COLUMN hide_local INTEGER NOT NULL DEFAULT 
 // Metrics: Netzwerk-Durchsatz-Spalten (Bytes/Sek)
 try { db.exec('ALTER TABLE metrics ADD COLUMN net_rx_sec INTEGER NOT NULL DEFAULT 0'); } catch {}
 try { db.exec('ALTER TABLE metrics ADD COLUMN net_tx_sec INTEGER NOT NULL DEFAULT 0'); } catch {}
+// Tiered-Metriken: Aggregations-Tabellen für lange Aufbewahrung
+db.exec(`
+  CREATE TABLE IF NOT EXISTS metrics_10s (
+    ts        INTEGER NOT NULL,
+    server_id TEXT    NOT NULL,
+    cpu       REAL, mem REAL, disk REAL, net_rx REAL, net_tx REAL,
+    PRIMARY KEY (ts, server_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_metrics_10s  ON metrics_10s(server_id, ts);
+
+  CREATE TABLE IF NOT EXISTS metrics_1min (
+    ts        INTEGER NOT NULL,
+    server_id TEXT    NOT NULL,
+    cpu       REAL, mem REAL, disk REAL, net_rx REAL, net_tx REAL,
+    PRIMARY KEY (ts, server_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_metrics_1min ON metrics_1min(server_id, ts);
+
+  CREATE TABLE IF NOT EXISTS metrics_1hour (
+    ts        INTEGER NOT NULL,
+    server_id TEXT    NOT NULL,
+    cpu       REAL, mem REAL, disk REAL, net_rx REAL, net_tx REAL,
+    PRIMARY KEY (ts, server_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_metrics_1hour ON metrics_1hour(server_id, ts);
+`);
 // Dashboard-Layouts pro User
 db.exec(`
   CREATE TABLE IF NOT EXISTS dashboard_layouts (
