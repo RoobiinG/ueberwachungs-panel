@@ -81,7 +81,7 @@ const AppRoutes = () => {
 
   return (
     <Layout connected={connected}>
-      <ErrorBoundary>
+      <ErrorBoundary resetKey={location.pathname}>
         <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/" element={<Dashboard liveStats={liveStats} />} />
