@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, startTransition, memo } from 'react';
 import axios from 'axios';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
@@ -99,7 +99,7 @@ function PermissionNotice() {
   );
 }
 
-function MetricPanel({ def, data, span, loading }) {
+const MetricPanel = memo(function MetricPanel({ def, data, span, loading }) {
   const latest = data.length > 0 ? data[data.length - 1]?.[def.key] ?? null : null;
   return (
     <div className="bg-panel-surface border border-panel-border rounded-lg overflow-hidden">
@@ -151,9 +151,9 @@ function MetricPanel({ def, data, span, loading }) {
       </div>
     </div>
   );
-}
+});
 
-function NetworkHistoryPanel({ data, span, loading }) {
+const NetworkHistoryPanel = memo(function NetworkHistoryPanel({ data, span, loading }) {
   const last = data.length > 0 ? data[data.length - 1] : null;
   return (
     <div className="bg-panel-surface border border-panel-border rounded-lg overflow-hidden">
@@ -209,7 +209,7 @@ function NetworkHistoryPanel({ data, span, loading }) {
       </div>
     </div>
   );
-}
+});
 
 /* ═══════════════════════════════════════════════════════════
    Hauptkomponente
@@ -328,9 +328,11 @@ export default function Monitoring({ liveStats }) {
         url  = `/api/metrics?range=${range}&server=${server}`;
       }
       const { data: res } = await axios.get(url);
-      setMetricData(res.rows || []);
-      setSpanSeconds(span);
-      setLastUpdate(new Date());
+      startTransition(() => {
+        setMetricData(res.rows || []);
+        setSpanSeconds(span);
+        setLastUpdate(new Date());
+      });
     } catch {}
     if (!silent) setLoading(false);
   }, [range, server, customMode, fromInput, toInput, canViewMetrics]);
