@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
 }
 
 android {
@@ -27,6 +28,7 @@ android {
     buildFeatures {
         viewBinding = true
         buildConfig = true
+        compose = true
     }
 
     compileOptions {
@@ -64,4 +66,5 @@ dependencies {
     implementation(libs.swiperefreshlayout)
     implementation(libs.security.crypto)
     implementation(libs.biometric)
+
 }
