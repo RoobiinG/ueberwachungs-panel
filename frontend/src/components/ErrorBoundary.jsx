@@ -8,7 +8,15 @@ import { AlertTriangle, RefreshCw } from 'lucide-react';
 export default class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
-    this.state = { error: null, errorInfo: null };
+    this.state = { error: null, errorInfo: null, prevResetKey: props.resetKey };
+  }
+
+  // Wenn sich der resetKey ändert (z.B. Route-Wechsel) → Fehler-State zurücksetzen
+  static getDerivedStateFromProps(props, state) {
+    if (props.resetKey !== state.prevResetKey) {
+      return { error: null, errorInfo: null, prevResetKey: props.resetKey };
+    }
+    return null;
   }
 
   static getDerivedStateFromError(error) {
