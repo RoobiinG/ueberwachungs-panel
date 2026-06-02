@@ -22,7 +22,7 @@ const startMonitoring = () => {
       broadcast({
         type: 'stats',
         payload: {
-          cpu: Math.round(cpu.currentLoad),
+          cpu: Math.round(cpu.currentLoad * 10) / 10,
           memory: { total: mem.total, used: mem.total - mem.available, usedPercent: Math.round(((mem.total - mem.available) / mem.total) * 100) },
           network: network.map(n => ({ iface: n.iface, rxSec: n.rx_sec, txSec: n.tx_sec })),
           containers,
@@ -30,7 +30,7 @@ const startMonitoring = () => {
         },
       });
     } catch {}
-  }, 5000);
+  }, 1000);
 };
 
 const setup = (server) => {

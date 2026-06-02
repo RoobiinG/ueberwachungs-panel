@@ -10,6 +10,7 @@ import {
   ChevronDown, ChevronRight, FolderOpen,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useWSMessage } from '../context/WSContext';
 import { Card } from '../components/ui/Card';
 import { StatCard } from '../components/ui/StatCard';
 
@@ -339,8 +340,10 @@ export default function Monitoring({ liveStats }) {
   const [fromInput,  setFromInput]  = useState('');
   const [toInput,    setToInput]    = useState('');
   const [showCalendar, setShowCalendar] = useState(false);
+  const [liveMode,   setLiveMode]   = useState(false);
 
-  const timerRef = useRef(null);
+  const timerRef    = useRef(null);
+  const liveDiskRef = useRef(null);  // letzter bekannter Disk-Wert für live-Stream
   const networkAgentId = server !== 'local' ? server : null;
 
   /* ── Drag & Drop ────────────────────────────────────────── */
@@ -402,6 +405,35 @@ export default function Monitoring({ liveStats }) {
 
   const n0 = networkAgentId ? remoteStats?.[0] : liveStats?.network?.[0];
 
+  /* ── Live-Stream (lokal) — WS-Daten direkt in Chart ─────── */
+  useWSMessage('stats', (msg) => {
+    if (!liveMode || server !== 'local') return;
+    const p   = msg.payload;
+    const ts  = Math.floor(Date.now() / 1000);
+    const cpu = p?.cpu ?? null;
+    const mem = p?.memory ? Math.round(p.memory.usedPercent * 10) / 10 : null;
+    let rxKBs = 0, txKBs = 0;
+    for (const n of (p?.network || [])) {
+      if (n.iface === 'lo') continue;
+      rxKBs += (n.rxSec || 0) / 1024;
+      txKBs += (n.txSec || 0) / 1024;
+    }
+    const point = {
+      t: ts, cpu, mem,
+      disk: liveDiskRef.current,
+      net_rx: Math.round(rxKBs * 100) / 100,
+      net_tx: Math.round(txKBs * 100) / 100,
+    };
+    startTransition(() => {
+      setMetricData(prev => {
+        const cutoff = ts - 180; // 3 Minuten Rolling-Window im Live-Modus
+        return [...prev.filter(p => p.t >= cutoff), point];
+      });
+      setSpanSeconds(180);
+      setLastUpdate(new Date());
+    });
+  });
+
   /* ── Metriken laden ─────────────────────────────────────── */
   const loadMetrics = useCallback(async (silent = false) => {
     if (!canViewMetrics) return;
@@ -419,7 +451,11 @@ export default function Monitoring({ liveStats }) {
       }
       const { data: res } = await axios.get(url);
       startTransition(() => {
-        setMetricData(res.rows || []);
+        const rows = res.rows || [];
+        // Letzten Disk-Wert für Live-Modus merken
+        const lastDisk = [...rows].reverse().find(r => r.disk != null)?.disk ?? null;
+        if (lastDisk != null) liveDiskRef.current = lastDisk;
+        setMetricData(rows);
         setSpanSeconds(span);
         setLastUpdate(new Date());
       });
@@ -429,13 +465,39 @@ export default function Monitoring({ liveStats }) {
 
   useEffect(() => {
     if (!canViewMetrics) return;
-    setLoading(true); setMetricData([]);
-    loadMetrics();
     if (timerRef.current) clearInterval(timerRef.current);
-    const live = !customMode && (range === '15m' || range === '1h' || range === '6h');
-    if (live) timerRef.current = setInterval(() => loadMetrics(true), 5_000);
+
+    if (liveMode) {
+      if (server === 'local') {
+        // Lokal: WS-Stream übernimmt, nur einmal initialen Schnappschuss laden
+        setMetricData([]); setSpanSeconds(180);
+        loadMetrics(true);
+      } else {
+        // Remote: 1s API-Polling der letzten 60s
+        const fetchLive = async () => {
+          try {
+            const now  = Math.floor(Date.now() / 1000);
+            const { data: res } = await axios.get(`/api/metrics?from=${now - 60}&to=${now}&server=${server}`);
+            startTransition(() => {
+              const rows = res.rows || [];
+              rows.forEach(r => { if (r.disk != null) liveDiskRef.current = r.disk; });
+              setMetricData(rows);
+              setSpanSeconds(60);
+              setLastUpdate(new Date());
+            });
+          } catch {}
+        };
+        fetchLive();
+        timerRef.current = setInterval(fetchLive, 1_000);
+      }
+    } else {
+      setLoading(true); setMetricData([]);
+      loadMetrics();
+      const autoLive = !customMode && (range === '15m' || range === '1h' || range === '6h');
+      if (autoLive) timerRef.current = setInterval(() => loadMetrics(true), 5_000);
+    }
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [range, server, customMode, loadMetrics, canViewMetrics]);
+  }, [range, server, customMode, loadMetrics, canViewMetrics, liveMode]);
 
   const applyCustom = () => { if (timerRef.current) clearInterval(timerRef.current); loadMetrics(); };
 
@@ -593,8 +655,20 @@ export default function Monitoring({ liveStats }) {
           </select>
         )}
 
+        {/* ⚡ Live-Button */}
+        <button
+          onClick={() => { setLiveMode(v => !v); setCustomMode(false); }}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded border transition-colors
+            ${liveMode
+              ? 'bg-red-600/20 border-red-500/50 text-red-400'
+              : 'border-white/10 text-gray-500 hover:text-gray-200 hover:bg-white/5'}`}
+        >
+          <span className={`inline-block w-1.5 h-1.5 rounded-full ${liveMode ? 'bg-red-400 animate-pulse' : 'bg-gray-600'}`} />
+          Live
+        </button>
+
         {/* Preset-Buttons */}
-        <div className="flex items-center rounded overflow-hidden border border-white/10">
+        <div className={`flex items-center rounded overflow-hidden border border-white/10 ${liveMode ? 'opacity-40 pointer-events-none' : ''}`}>
           {PRESETS.map(p => (
             <button key={p.value}
               onClick={() => { setRange(p.value); setCustomMode(false); }}
@@ -654,12 +728,18 @@ export default function Monitoring({ liveStats }) {
           <LayoutDashboard size={12} />Layout
         </button>
 
-        {/* Zuletzt aktualisiert */}
-        {lastUpdate && !loading && (
-          <span className="text-[10px] text-gray-600">
-            Zuletzt: {lastUpdate.toLocaleTimeString('de-DE', { timeZone: TZ })}
-          </span>
-        )}
+        {/* Zuletzt aktualisiert / Live-Indikator */}
+        {liveMode
+          ? <span className="text-[10px] text-red-400/70 flex items-center gap-1">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+              {server === 'local' ? 'WS-Stream aktiv' : '1s Polling aktiv'}
+            </span>
+          : lastUpdate && !loading && (
+              <span className="text-[10px] text-gray-600">
+                Zuletzt: {lastUpdate.toLocaleTimeString('de-DE', { timeZone: TZ })}
+              </span>
+            )
+        }
       </div>
 
       {/* ── Benutzerdefinierter Zeitraum ─────────────────────── */}
