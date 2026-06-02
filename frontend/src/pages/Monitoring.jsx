@@ -360,6 +360,7 @@ export default function Monitoring({ liveStats }) {
   const [zoomLeft,   setZoomLeft]   = useState(null);
   const [zoomRight,  setZoomRight]  = useState(null);
   const [preZoom,    setPreZoom]    = useState(null); // Range vor dem Zoom für Reset
+  const zoomRef = useRef({ left: null, right: null }); // Ref für stableref in onZoomEnd
 
   const timerRef    = useRef(null);
   const liveDiskRef = useRef(null);  // letzter bekannter Disk-Wert für live-Stream
@@ -522,34 +523,35 @@ export default function Monitoring({ liveStats }) {
 
   /* ── Zoom-Logik ─────────────────────────────────────────── */
   const onZoomStart = useCallback((ts) => {
+    zoomRef.current = { left: ts, right: null };
     setZoomLeft(ts);
     setZoomRight(null);
   }, []);
 
   const onZoomMove = useCallback((ts) => {
-    setZoomRight(prev => {
-      // Nur updaten wenn nennenswerter Unterschied (Ruckeln vermeiden)
-      if (prev !== null && Math.abs(ts - prev) < 1) return prev;
-      return ts;
-    });
+    if (zoomRef.current.left == null) return;
+    if (zoomRef.current.right !== null && Math.abs(ts - zoomRef.current.right) < 1) return;
+    zoomRef.current.right = ts;
+    setZoomRight(ts);
   }, []);
 
   const onZoomEnd = useCallback(() => {
-    if (zoomLeft == null || zoomRight == null) { setZoomLeft(null); setZoomRight(null); return; }
-    const from = Math.min(zoomLeft, zoomRight);
-    const to   = Math.max(zoomLeft, zoomRight);
-    if (to - from < 2) { setZoomLeft(null); setZoomRight(null); return; } // Zu kleiner Bereich
-    // Pre-Zoom-State speichern für Reset
+    const { left, right } = zoomRef.current;
+    zoomRef.current = { left: null, right: null };
+    setZoomLeft(null);
+    setZoomRight(null);
+    if (left == null || right == null) return;
+    const from = Math.min(left, right);
+    const to   = Math.max(left, right);
+    if (to - from < 2) return; // Zu kleine Selektion ignorieren
     setPreZoom({ customMode, fromInput, toInput, range });
     setFromInput(toInputValue(from));
     setToInput(toInputValue(to));
     setCustomMode(true);
     setLiveMode(false);
-    setZoomLeft(null);
-    setZoomRight(null);
     if (timerRef.current) clearInterval(timerRef.current);
     setTimeout(() => loadMetrics(), 30);
-  }, [zoomLeft, zoomRight, customMode, fromInput, toInput, range, loadMetrics]);
+  }, [customMode, fromInput, toInput, range, loadMetrics]);
 
   const resetZoom = useCallback(() => {
     if (!preZoom) { setCustomMode(false); return; }
@@ -702,19 +704,25 @@ export default function Monitoring({ liveStats }) {
   return (
     <div className="space-y-3">
 
+      {/* ── Server-Tabs ─────────────────────────────────────── */}
+      {servers.length > 1 && (
+        <div className="flex items-center gap-1 flex-wrap">
+          {servers.map(s => (
+            <button key={s.id}
+              onClick={() => { setServer(s.id); setCustomMode(false); setLiveMode(false); setZoomLeft(null); setZoomRight(null); setPreZoom(null); }}
+              className={`px-3 py-1.5 text-xs font-medium rounded border transition-all
+                ${server === s.id
+                  ? 'bg-blue-600/80 border-blue-500/60 text-white'
+                  : 'bg-[#0f111a] border-white/10 text-gray-400 hover:text-gray-200 hover:border-white/20'}`}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* ── Toolbar ─────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
-
-        {/* Server-Wahl */}
-        {servers.length > 1 && (
-          <select
-            value={server}
-            onChange={e => { setServer(e.target.value); setCustomMode(false); }}
-            className="bg-[#0f111a] border border-white/10 text-gray-300 text-xs rounded px-2 py-1.5 focus:outline-none focus:border-blue-500/50"
-          >
-            {servers.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-          </select>
-        )}
 
         {/* ⚡ Live-Button */}
         <button
