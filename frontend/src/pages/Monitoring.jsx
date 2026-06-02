@@ -2,12 +2,12 @@ import { useState, useEffect, useCallback, useRef, startTransition, memo } from 
 import axios from 'axios';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  ReferenceLine, LineChart, Line, Legend,
+  ReferenceLine, ReferenceArea, LineChart, Line, Legend,
 } from 'recharts';
 import {
   RefreshCw, Calendar, Activity, Globe,
   GripVertical, Plus, X, LayoutDashboard, Save, RotateCcw, CheckCircle2,
-  ChevronDown, ChevronRight, FolderOpen,
+  ChevronDown, ChevronRight, FolderOpen, ZoomIn, ZoomOut,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useWSMessage } from '../context/WSContext';
@@ -116,7 +116,7 @@ const TOOLTIP_STYLE = {
 /* ═══════════════════════════════════════════════════════════
    MetricPanel (CPU / RAM / Disk)
    ═══════════════════════════════════════════════════════════ */
-const MetricPanel = memo(function MetricPanel({ def, data, span, loading }) {
+const MetricPanel = memo(function MetricPanel({ def, data, span, loading, zoomLeft, zoomRight, onZoomStart, onZoomMove, onZoomEnd }) {
   const latest = data.length > 0 ? data[data.length - 1]?.[def.key] ?? null : null;
   return (
     <div className="bg-[#0f111a] border border-white/8 rounded-lg overflow-hidden">
@@ -127,14 +127,18 @@ const MetricPanel = memo(function MetricPanel({ def, data, span, loading }) {
           : <span className="text-sm text-gray-600">—</span>
         }
       </div>
-      <div className="px-1 pt-3 pb-1">
+      <div className="px-1 pt-3 pb-1" style={{ cursor: 'crosshair' }}>
         {loading
           ? <div className="flex items-center justify-center" style={{ height: 180 }}><RefreshCw size={14} className="text-gray-600 animate-spin" /></div>
           : data.length === 0
             ? <div className="flex items-center justify-center text-gray-600 text-sm" style={{ height: 180 }}>Keine Daten</div>
             : (
-              <ResponsiveContainer width="100%" height={180} >
-                <AreaChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 0 }} syncId="monitoring">
+              <ResponsiveContainer width="100%" height={180}>
+                <AreaChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 0 }} syncId="monitoring"
+                  onMouseDown={e => e?.activeLabel != null && onZoomStart?.(e.activeLabel)}
+                  onMouseMove={e => e?.activeLabel != null && onZoomMove?.(e.activeLabel)}
+                  onMouseUp={onZoomEnd}
+                >
                   <defs>
                     <linearGradient id={def.gradientId} x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%"  stopColor={def.color} stopOpacity={0.25} />
@@ -158,6 +162,10 @@ const MetricPanel = memo(function MetricPanel({ def, data, span, loading }) {
                     fill={`url(#${def.gradientId})`} dot={false}
                     activeDot={{ r: 4, fill: def.color, stroke: '#0f111a', strokeWidth: 2 }}
                     connectNulls isAnimationActive={false} />
+                  {zoomLeft != null && zoomRight != null && (
+                    <ReferenceArea x1={Math.min(zoomLeft,zoomRight)} x2={Math.max(zoomLeft,zoomRight)}
+                      fill="rgba(59,130,246,0.15)" stroke="rgba(59,130,246,0.5)" strokeWidth={1} />
+                  )}
                 </AreaChart>
               </ResponsiveContainer>
             )
@@ -170,7 +178,7 @@ const MetricPanel = memo(function MetricPanel({ def, data, span, loading }) {
 /* ═══════════════════════════════════════════════════════════
    NetworkHistoryPanel
    ═══════════════════════════════════════════════════════════ */
-const NetworkHistoryPanel = memo(function NetworkHistoryPanel({ data, span, loading }) {
+const NetworkHistoryPanel = memo(function NetworkHistoryPanel({ data, span, loading, zoomLeft, zoomRight, onZoomStart, onZoomMove, onZoomEnd }) {
   const last = data.length > 0 ? data[data.length - 1] : null;
   return (
     <div className="bg-[#0f111a] border border-white/8 rounded-lg overflow-hidden">
@@ -181,14 +189,18 @@ const NetworkHistoryPanel = memo(function NetworkHistoryPanel({ data, span, load
           <span style={{ color: '#3B82F6' }}>↑ {fmtKBs(last?.net_tx)}</span>
         </div>
       </div>
-      <div className="px-1 pt-3 pb-1">
+      <div className="px-1 pt-3 pb-1" style={{ cursor: 'crosshair' }}>
         {loading
           ? <div className="flex items-center justify-center" style={{ height: 180 }}><RefreshCw size={14} className="text-gray-600 animate-spin" /></div>
           : data.length === 0
             ? <div className="flex items-center justify-center text-gray-600 text-sm" style={{ height: 180 }}>Keine Daten</div>
             : (
               <ResponsiveContainer width="100%" height={180}>
-                <AreaChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 0 }} syncId="monitoring">
+                <AreaChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 0 }} syncId="monitoring"
+                  onMouseDown={e => e?.activeLabel != null && onZoomStart?.(e.activeLabel)}
+                  onMouseMove={e => e?.activeLabel != null && onZoomMove?.(e.activeLabel)}
+                  onMouseUp={onZoomEnd}
+                >
                   <defs>
                     <linearGradient id="gradNetRx" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%"  stopColor="#22C55E" stopOpacity={0.2} />
@@ -219,6 +231,10 @@ const NetworkHistoryPanel = memo(function NetworkHistoryPanel({ data, span, load
                     fill="url(#gradNetTx)" dot={false}
                     activeDot={{ r: 4, fill: '#3B82F6', stroke: '#0f111a', strokeWidth: 2 }}
                     connectNulls isAnimationActive={false} />
+                  {zoomLeft != null && zoomRight != null && (
+                    <ReferenceArea x1={Math.min(zoomLeft,zoomRight)} x2={Math.max(zoomLeft,zoomRight)}
+                      fill="rgba(59,130,246,0.15)" stroke="rgba(59,130,246,0.5)" strokeWidth={1} />
+                  )}
                 </AreaChart>
               </ResponsiveContainer>
             )
@@ -341,6 +357,9 @@ export default function Monitoring({ liveStats }) {
   const [toInput,    setToInput]    = useState('');
   const [showCalendar, setShowCalendar] = useState(false);
   const [liveMode,   setLiveMode]   = useState(false);
+  const [zoomLeft,   setZoomLeft]   = useState(null);
+  const [zoomRight,  setZoomRight]  = useState(null);
+  const [preZoom,    setPreZoom]    = useState(null); // Range vor dem Zoom für Reset
 
   const timerRef    = useRef(null);
   const liveDiskRef = useRef(null);  // letzter bekannter Disk-Wert für live-Stream
@@ -501,6 +520,47 @@ export default function Monitoring({ liveStats }) {
 
   const applyCustom = () => { if (timerRef.current) clearInterval(timerRef.current); loadMetrics(); };
 
+  /* ── Zoom-Logik ─────────────────────────────────────────── */
+  const onZoomStart = useCallback((ts) => {
+    setZoomLeft(ts);
+    setZoomRight(null);
+  }, []);
+
+  const onZoomMove = useCallback((ts) => {
+    setZoomRight(prev => {
+      // Nur updaten wenn nennenswerter Unterschied (Ruckeln vermeiden)
+      if (prev !== null && Math.abs(ts - prev) < 1) return prev;
+      return ts;
+    });
+  }, []);
+
+  const onZoomEnd = useCallback(() => {
+    if (zoomLeft == null || zoomRight == null) { setZoomLeft(null); setZoomRight(null); return; }
+    const from = Math.min(zoomLeft, zoomRight);
+    const to   = Math.max(zoomLeft, zoomRight);
+    if (to - from < 2) { setZoomLeft(null); setZoomRight(null); return; } // Zu kleiner Bereich
+    // Pre-Zoom-State speichern für Reset
+    setPreZoom({ customMode, fromInput, toInput, range });
+    setFromInput(toInputValue(from));
+    setToInput(toInputValue(to));
+    setCustomMode(true);
+    setLiveMode(false);
+    setZoomLeft(null);
+    setZoomRight(null);
+    if (timerRef.current) clearInterval(timerRef.current);
+    setTimeout(() => loadMetrics(), 30);
+  }, [zoomLeft, zoomRight, customMode, fromInput, toInput, range, loadMetrics]);
+
+  const resetZoom = useCallback(() => {
+    if (!preZoom) { setCustomMode(false); return; }
+    setCustomMode(preZoom.customMode);
+    setFromInput(preZoom.fromInput);
+    setToInput(preZoom.toInput);
+    setRange(preZoom.range);
+    setPreZoom(null);
+    setTimeout(() => loadMetrics(), 30);
+  }, [preZoom, loadMetrics]);
+
   /* ── Kalender-Tag wählen ────────────────────────────────── */
   const selectCalendarDay = (dateStr) => {
     // Tages-Anfang und -Ende in lokaler Zeit (Berlin) berechnen
@@ -543,7 +603,8 @@ export default function Monitoring({ liveStats }) {
   /* ── Panel-Inhalte ──────────────────────────────────────── */
   const renderContent = (panel) => {
     const def = METRIC_MAP[panel.type];
-    if (def) return <MetricPanel def={def} data={metricData} span={spanSeconds} loading={loading} />;
+    const zoomProps = { zoomLeft, zoomRight, onZoomStart, onZoomMove, onZoomEnd };
+    if (def) return <MetricPanel def={def} data={metricData} span={spanSeconds} loading={loading} {...zoomProps} />;
 
     switch (panel.type) {
       case 'stat_cards': {
@@ -596,7 +657,7 @@ export default function Monitoring({ liveStats }) {
         );
       }
       case 'network_history':
-        return <NetworkHistoryPanel data={metricData} span={spanSeconds} loading={loading} />;
+        return <NetworkHistoryPanel data={metricData} span={spanSeconds} loading={loading} {...zoomProps} />;
       case 'interfaces':
         return (
           <div className="bg-[#0f111a] border border-white/8 rounded-lg overflow-hidden">
@@ -713,6 +774,14 @@ export default function Monitoring({ liveStats }) {
         >
           <Calendar size={12} />Zeitraum
         </button>
+
+        {/* Zoom zurücksetzen — erscheint wenn man reingezoomt hat */}
+        {(customMode || preZoom) && (
+          <button onClick={resetZoom}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-blue-500/40 text-blue-400 hover:bg-blue-600/10 rounded transition-colors">
+            <ZoomOut size={12} />Zoom zurück
+          </button>
+        )}
 
         {/* Refresh */}
         <button onClick={() => loadMetrics()}
