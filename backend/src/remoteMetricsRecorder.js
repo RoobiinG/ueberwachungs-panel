@@ -76,16 +76,16 @@ async function recordAll() {
 
 function start() {
   recordAll();
-  setInterval(recordAll, 10_000);
-  // Cleanup stündlich
+  setInterval(recordAll, 5_000);
+  // Raw-Daten nur 6 Stunden — Langzeit via metricsAggregator
   const runCleanup = () => {
-    const cutoff = Math.floor(Date.now() / 1000) - 30 * 24 * 3600;
+    const cutoff = Math.floor(Date.now() / 1000) - 6 * 3600;
     const agents  = db.prepare('SELECT id FROM remote_agents').all();
     for (const a of agents) cleanup.run(cutoff, `agent:${a.id}`);
   };
   runCleanup();
   setInterval(runCleanup, 3_600_000);
-  console.log('Remote-Metrics-Recorder gestartet (alle 10 Sek, 30 Tage Aufbewahrung)');
+  console.log('Remote-Metrics-Recorder gestartet (alle 5 Sek, 6 Std. Aufbewahrung)');
 }
 
 module.exports = { start };
