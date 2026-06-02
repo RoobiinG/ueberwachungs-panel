@@ -76,7 +76,7 @@ async function recordAll() {
 
 function start() {
   recordAll();
-  setInterval(recordAll, 5_000);
+  setInterval(recordAll, 1_000);
   // Raw-Daten nur 6 Stunden — Langzeit via metricsAggregator
   const runCleanup = () => {
     const cutoff = Math.floor(Date.now() / 1000) - 6 * 3600;
@@ -85,7 +85,7 @@ function start() {
   };
   runCleanup();
   setInterval(runCleanup, 3_600_000);
-  console.log('Remote-Metrics-Recorder gestartet (alle 5 Sek, 6 Std. Aufbewahrung)');
+  console.log('Remote-Metrics-Recorder gestartet (alle 1 Sek, 6 Std. Aufbewahrung)');
 }
 
 module.exports = { start };
