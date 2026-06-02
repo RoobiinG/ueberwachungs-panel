@@ -18,6 +18,8 @@ mpandroidchart = "v3.1.0"
 swiperefreshlayout = "1.1.0"
 securityCrypto = "1.1.0"
 biometric = "1.2.0-alpha05"
+compose-bom = "2025.02.00"
+activity-compose = "1.13.0"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -42,6 +44,12 @@ mpandroidchart = { group = "com.github.PhilJay", name = "MPAndroidChart", versio
 swiperefreshlayout = { group = "androidx.swiperefreshlayout", name = "swiperefreshlayout", version.ref = "swiperefreshlayout" }
 security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
 biometric = { group = "androidx.biometric", name = "biometric", version.ref = "biometric" }
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "compose-bom" }
+androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
+androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
+androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activity-compose" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
