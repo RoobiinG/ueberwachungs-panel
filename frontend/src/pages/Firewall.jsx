@@ -26,6 +26,7 @@ function AiCard({ apiBase }) {
   const [tips,        setTips]        = useState('');
   const [loading,     setLoading]     = useState(false);
   const [error,       setError]       = useState('');
+  const [fallback,    setFallback]    = useState(false);
   const [autoScan,    setAutoScan]    = useState(false);
   const [lastScan,    setLastScan]    = useState(null);
   const [expanded,    setExpanded]    = useState(true);
@@ -34,10 +35,12 @@ function AiCard({ apiBase }) {
   const analyse = async () => {
     setLoading(true);
     setError('');
+    setFallback(false);
     try {
       const { data } = await axios.post(`${apiBase}/firewall/ai-tips`);
       setTips(data.tips || '');
       setLastScan(new Date());
+      setFallback(!!data.fallback);
     } catch (err) {
       setError(err.response?.data?.error || 'Analyse fehlgeschlagen');
     }
@@ -116,6 +119,14 @@ function AiCard({ apiBase }) {
             <div className="flex items-start gap-2 bg-panel-red/10 border border-panel-red/30 rounded-md px-3 py-2">
               <AlertTriangle size={13} className="text-panel-red mt-0.5 flex-shrink-0" />
               <p className="text-xs text-panel-red">{error}</p>
+            </div>
+          )}
+
+          {/* Fallback-Hinweis */}
+          {fallback && !error && (
+            <div className="flex items-center gap-2 bg-yellow-400/8 border border-yellow-400/20 rounded-md px-3 py-1.5">
+              <AlertTriangle size={11} className="text-yellow-400 flex-shrink-0" />
+              <p className="text-[11px] text-yellow-400">Automatisch auf Gemini 2.0 Flash gewechselt — in den Einstellungen kannst du das Modell dauerhaft ändern.</p>
             </div>
           )}
 
