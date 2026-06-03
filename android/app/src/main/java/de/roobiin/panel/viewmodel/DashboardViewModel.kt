@@ -1,6 +1,7 @@
 package de.roobiin.panel.viewmodel
 
 import android.app.Application
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
@@ -36,44 +37,52 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
             delay(300)
 
             try {
-                // Dashboard und Agents parallel anfragen
-                val dashDeferred = viewModelScope.launch {
-                    try {
-                        val resp = api.getDashboard()
-                        if (resp.isSuccessful) {
-                            _dashboard.postValue(resp.body())
-                        } else if (resp.code() != 404) {
-                            _error.postValue("Dashboard-Fehler: ${resp.code()}")
-                        }
-                    } catch (e: Exception) {
-                        // Dashboard-Fehler ignorieren, falls Agents geladen werden können
-                    }
-                }
-
+                // Agents laden
                 val agentsResp = api.getAgents()
                 if (agentsResp.isSuccessful) {
-                    val agents = agentsResp.body() ?: emptyList()
-                    _agents.value = agents
+                    val baseAgents = agentsResp.body() ?: emptyList()
                     
-                    // Fallback: Wenn Dashboard fehlt (404) oder leer ist, Daten aus Agents nutzen
-                    if (_dashboard.value == null && agents.isNotEmpty()) {
-                        val firstOnline = agents.firstOrNull { it.online } ?: agents.first()
-                        _dashboard.value = DashboardData(
-                            cpu = firstOnline.cpu,
-                            memory = firstOnline.memory,
-                            disk = firstOnline.disk,
-                            uptime = firstOnline.uptime,
-                            hostname = firstOnline.hostname ?: firstOnline.name,
-                            os = firstOnline.os,
-                            agentCount = agents.size,
-                            agentsOnline = agents.count { it.online },
-                            alertCount = 0
-                        )
+                    // Für jeden Agent die detaillierten Werte abrufen (inkl. CPU/RAM/Disk)
+                    val updatedAgents = baseAgents.map { agent ->
+                        try {
+                            val detailResp = api.getAgent(agent.id)
+                            if (detailResp.isSuccessful && detailResp.body() != null) {
+                                detailResp.body()!!
+                            } else {
+                                agent
+                            }
+                        } catch (e: Exception) {
+                            agent
+                        }
+                    }
+                    _agents.value = updatedAgents
+
+                    // Dashboard-Logik
+                    val dashResp = api.getDashboard()
+                    if (dashResp.isSuccessful && dashResp.body()?.cpu != null) {
+                        _dashboard.value = dashResp.body()
+                    } else {
+                        // Fallback: Daten aus dem ersten verfügbaren Agent bauen
+                        val firstOnline = updatedAgents.firstOrNull { it.online } ?: updatedAgents.firstOrNull()
+                        if (firstOnline != null) {
+                            _dashboard.value = DashboardData(
+                                cpu = firstOnline.cpu,
+                                memory = firstOnline.memory,
+                                disk = firstOnline.disk,
+                                uptime = firstOnline.uptime,
+                                hostname = firstOnline.hostname ?: firstOnline.name,
+                                os = firstOnline.os,
+                                agentCount = updatedAgents.size,
+                                agentsOnline = updatedAgents.count { it.online },
+                                alertCount = 0
+                            )
+                        }
                     }
                 } else {
-                    _error.value = "Agents konnten nicht geladen werden"
+                    _error.value = "Agents konnten nicht geladen werden (Code: ${agentsResp.code()})"
                 }
             } catch (e: Exception) {
+                Log.e("DashboardVM", "Load failed", e)
                 _error.value = "Verbindung zum Server fehlgeschlagen"
             } finally {
                 _loading.value = false
