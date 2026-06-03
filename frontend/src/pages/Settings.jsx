@@ -304,10 +304,10 @@ export default function Settings() {
   const [smtp, setSmtp] = useState({ host: '', port: 587, user: '', pass: '', from: '', secure: false });
   const [showSmtpPw, setShowSmtpPw] = useState(false);
 
-  // Gemini KI
-  const [geminiKey,   setGeminiKey]   = useState('');
-  const [geminiModel, setGeminiModel] = useState('gemini-2.0-flash');
-  const [showGeminiKey, setShowGeminiKey] = useState(false);
+  // Claude KI
+  const [claudeKey,      setClaudeKey]      = useState('');
+  const [claudeModel,    setClaudeModel]    = useState('claude-haiku-4-5');
+  const [showClaudeKey,  setShowClaudeKey]  = useState(false);
 
   // Passkeys
   const [passkeys,     setPasskeys]     = useState([]);
@@ -1023,66 +1023,66 @@ export default function Settings() {
 
       </>)}
 
-      {/* ── Gemini KI ────────────────────────────────────────────────────────── */}
+      {/* ── Claude KI ────────────────────────────────────────────────────────── */}
       {isAdmin && (
-        <Card title={<span className="flex items-center gap-2"><Key size={14} />KI-Assistent (Google Gemini)</span>}>
+        <Card title={<span className="flex items-center gap-2"><Key size={14} />KI-Assistent (Claude · Anthropic)</span>}>
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <StatusBadge set={!!status.gemini_api_key} />
+              <StatusBadge set={!!status.claude_api_key} />
             </div>
             <div>
               <label className="block text-xs text-panel-muted mb-1">API-Key</label>
               <div className="relative">
                 <input
-                  type={showGeminiKey ? 'text' : 'password'}
-                  value={geminiKey}
-                  onChange={e => setGeminiKey(e.target.value)}
-                  placeholder={status.gemini_api_key ? '***gesetzt*** (neu eingeben zum Ändern)' : 'AIza…'}
+                  type={showClaudeKey ? 'text' : 'password'}
+                  value={claudeKey}
+                  onChange={e => setClaudeKey(e.target.value)}
+                  placeholder={status.claude_api_key ? '***gesetzt*** (neu eingeben zum Ändern)' : 'sk-ant-…'}
                   className={inputCls + ' pr-9'}
                 />
-                <button type="button" onClick={() => setShowGeminiKey(v => !v)}
+                <button type="button" onClick={() => setShowClaudeKey(v => !v)}
                   className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
-                  {showGeminiKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                  {showClaudeKey ? <EyeOff size={14} /> : <Eye size={14} />}
                 </button>
               </div>
               <p className="text-xs text-panel-muted mt-1">
-                API-Key aus <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-panel-accent underline">Google AI Studio</a> — kostenlos für Gemini 1.5 Pro.
+                API-Key aus <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer" className="text-panel-accent underline">Anthropic Console</a> — beginnt mit <code className="bg-panel-surface px-1 rounded">sk-ant-</code>
               </p>
             </div>
             <div>
               <label className="block text-xs text-panel-muted mb-1">Modell</label>
-              <select value={geminiModel} onChange={e => setGeminiModel(e.target.value)} className={inputCls}>
-                <option value="gemini-2.0-flash">Gemini 2.0 Flash (empfohlen, Free-Tier)</option>
-                <option value="gemini-2.5-flash-preview-05-20">Gemini 2.5 Flash Preview (kostenpflichtig)</option>
-                <option value="gemini-2.5-pro-preview-06-05">Gemini 2.5 Pro Preview (kostenpflichtig)</option>
+              <select value={claudeModel} onChange={e => setClaudeModel(e.target.value)} className={inputCls}>
+                <option value="claude-haiku-4-5">Claude Haiku 4.5 (schnell &amp; günstig, empfohlen)</option>
+                <option value="claude-sonnet-4-5">Claude Sonnet 4.5 (ausgewogen)</option>
+                <option value="claude-opus-4-5">Claude Opus 4.5 (leistungsstark)</option>
               </select>
             </div>
             <div className="flex gap-2">
               <Button size="sm" onClick={async () => {
-                if (!geminiKey) return;
-                setLoading(l => ({ ...l, gemini: true }));
+                if (!claudeKey) return;
+                setLoading(l => ({ ...l, claude: true }));
                 try {
-                  await axios.put('/api/settings/gemini', { apiKey: geminiKey, model: geminiModel });
-                  setMsgs(m => ({ ...m, gemini: '✓ Gespeichert' }));
-                  setGeminiKey('');
+                  await axios.put('/api/settings/claude', { apiKey: claudeKey, model: claudeModel });
+                  setMsgs(m => ({ ...m, claude: '✓ Gespeichert' }));
+                  setClaudeKey('');
                   await loadAdmin();
-                } catch (e) { setMsgs(m => ({ ...m, gemini: e.response?.data?.error || 'Fehler' })); }
-                setLoading(l => ({ ...l, gemini: false }));
-              }} disabled={!geminiKey || loading.gemini}>
-                {loading.gemini ? 'Speichere…' : 'Speichern'}
+                } catch (e) { setMsgs(m => ({ ...m, claude: e.response?.data?.error || 'Fehler' })); }
+                setLoading(l => ({ ...l, claude: false }));
+              }} disabled={!claudeKey || loading.claude}>
+                {loading.claude ? 'Speichere…' : 'Speichern'}
               </Button>
-              {status.gemini_api_key && (
+              {status.claude_api_key && (
                 <Button size="sm" variant="danger" onClick={async () => {
-                  if (!confirm('Gemini API-Key wirklich entfernen?')) return;
-                  await axios.delete('/api/settings/gemini');
-                  setMsgs(m => ({ ...m, gemini: '✓ Entfernt' }));
+                  if (!confirm('Claude API-Key wirklich entfernen?')) return;
+                  await axios.delete('/api/settings/claude');
+                  setMsgs(m => ({ ...m, claude: '✓ Entfernt' }));
                   await loadAdmin();
                 }}>
                   <Trash2 size={12} className="mr-1" />Entfernen
                 </Button>
               )}
             </div>
-            <Msg msg={msgs.gemini} />
+            <Msg msg={msgs.claude} />
           </div>
         </Card>
       )}

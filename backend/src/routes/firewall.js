@@ -114,17 +114,17 @@ router.put('/rules/:id', requirePermission('firewall.manage'), async (req, res) 
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ─── KI-Analyse (Gemini) ──────────────────────────────────────────────────────
+// ─── KI-Analyse (Claude / Anthropic) ─────────────────────────────────────────
 router.post('/ai-tips', requirePermission('firewall.view'), async (req, res) => {
-  const apiKey = getSetting('gemini_api_key');
-  if (!apiKey) return res.status(400).json({ error: 'Kein Gemini API-Key hinterlegt. Bitte unter Einstellungen → KI konfigurieren.' });
+  const apiKey = getSetting('claude_api_key');
+  if (!apiKey) return res.status(400).json({ error: 'Kein Claude API-Key hinterlegt. Bitte unter Einstellungen → KI konfigurieren.' });
 
   try {
     const { tool, active } = await detectFirewall(host).catch(() => ({ tool: 'unbekannt', active: false }));
     const adapter = getAdapter(tool, host);
     const allRules = adapter ? await adapter.getRules().catch(() => []) : [];
 
-    // Max. 40 Regeln senden um Token-Quota zu schonen
+    // Max. 40 Regeln senden um Token-Limit zu schonen
     const MAX_RULES = 40;
     const rules = allRules.slice(0, MAX_RULES);
     const truncated = allRules.length > MAX_RULES;
@@ -145,50 +145,33 @@ Regeln für die Antwort:
 - Nummerierte Liste (1. Tipp...)
 - Gefährliche offene Ports oder fehlende Regeln hervorheben`;
 
-    const FALLBACK = 'gemini-2.0-flash';
-    const callGemini = async (model) => {
-      const url = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`;
-      const { data } = await axios.post(url, {
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.4, maxOutputTokens: 512 },
-      }, { timeout: 20000 });
-      return data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    };
+    const model = getSetting('claude_model') || 'claude-haiku-4-5';
+    const { data } = await axios.post('https://api.anthropic.com/v1/messages', {
+      model,
+      max_tokens: 512,
+      messages: [{ role: 'user', content: prompt }],
+    }, {
+      headers: {
+        'x-api-key':         apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type':      'application/json',
+      },
+      timeout: 20000,
+    });
 
-    const preferredModel = getSetting('gemini_model') || FALLBACK;
-    let text = '';
-    let usedModel = preferredModel;
-
-    try {
-      text = await callGemini(preferredModel);
-    } catch (firstErr) {
-      const raw = firstErr.response?.data?.error?.message || firstErr.message || '';
-      const shouldFallback = raw.toLowerCase().includes('quota')
-        || raw.toLowerCase().includes('rate')
-        || raw.toLowerCase().includes('not found')
-        || raw.toLowerCase().includes('not supported')
-        || firstErr.response?.status === 429;
-      if (shouldFallback && preferredModel !== FALLBACK) {
-        // Automatisch auf Flash zurückfallen
-        text = await callGemini(FALLBACK);
-        usedModel = FALLBACK;
-      } else {
-        throw firstErr;
-      }
-    }
-
-    if (!text) return res.status(502).json({ error: 'Leere Antwort von Gemini erhalten.' });
-    res.json({ tips: text, tool, active, rulesCount: rules.length, model: usedModel, fallback: usedModel !== preferredModel });
+    const text = data?.content?.[0]?.text || '';
+    if (!text) return res.status(502).json({ error: 'Leere Antwort von Claude erhalten.' });
+    res.json({ tips: text, tool, active, rulesCount: rules.length, model });
   } catch (err) {
     const raw = err.response?.data?.error?.message || err.message || '';
-    const isQuota = raw.toLowerCase().includes('quota') || raw.toLowerCase().includes('rate') || err.response?.status === 429;
-    const isModel = raw.toLowerCase().includes('not found') || raw.toLowerCase().includes('not supported');
+    const isQuota  = err.response?.status === 429 || raw.toLowerCase().includes('rate') || raw.toLowerCase().includes('quota');
+    const isAuth   = err.response?.status === 401 || raw.toLowerCase().includes('auth') || raw.toLowerCase().includes('api key');
     const msg = isQuota
-      ? `Kontingent erschöpft für alle Modelle. Bitte warte kurz oder prüfe dein Google AI Studio Konto.`
-      : isModel
-      ? `Modell nicht verfügbar. Bitte prüfe dein Gemini-Modell in den Einstellungen.`
+      ? 'Rate-Limit erreicht. Bitte kurz warten und erneut versuchen.'
+      : isAuth
+      ? 'Ungültiger Claude API-Key. Bitte in den Einstellungen prüfen.'
       : raw.length > 200 ? raw.slice(0, 200) + '…' : raw;
-    res.status(isQuota ? 429 : 500).json({ error: msg });
+    res.status(err.response?.status || 500).json({ error: msg });
   }
 });
 
