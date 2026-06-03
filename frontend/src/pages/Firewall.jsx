@@ -130,10 +130,10 @@ export default function Firewall() {
         </div>
       </div>
 
-      {/* ── Kein Tool gefunden ────────────────────────────────────────────── */}
+      {/* ── Kein aktives Tool gefunden ───────────────────────────────────── */}
       {detectedTool?.tool === 'none' && !loading && (
         <div className="bg-panel-orange/10 border border-panel-orange/30 text-panel-orange text-sm rounded-md px-3 py-3">
-          ⚠️ Kein unterstütztes Firewall-Tool gefunden. Bitte installiere UFW, iptables, nftables oder firewalld.
+          ⚠️ Keine aktive Firewall gefunden. Entweder ist kein Tool installiert oder alle installierten Tools sind deaktiviert (UFW, iptables, nftables, firewalld).
         </div>
       )}
 

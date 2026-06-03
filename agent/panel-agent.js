@@ -188,16 +188,16 @@ const _validPort  = (p) => { if (!p || !/^\d{1,5}(:\d{1,5})?$/.test(String(p))) 
 const _validProto = (p) => ['tcp','udp'].includes(p) ? p : null;
 const _validFrom  = (f) => (!f || _IPV4_RE.test(f) || _IPV6_RE.test(f)) ? (f||null) : null;
 
-// Erkennt aktive Firewall-Software
+// Erkennt aktive Firewall-Software — inaktive Tools werden übersprungen
 async function detectAgentFirewall() {
   try { const { stdout } = await execAsync('which ufw 2>/dev/null', { timeout: 3000 });
-    if (stdout.trim()) { try { const { stdout: s } = await execAsync('ufw status 2>/dev/null', { timeout: 3000 }); return { tool: 'ufw', active: /Status:\s*active/i.test(s) }; } catch { return { tool: 'ufw', active: false }; } }
+    if (stdout.trim()) { try { const { stdout: s } = await execAsync('ufw status 2>/dev/null', { timeout: 3000 }); if (/Status:\s*active/i.test(s)) return { tool: 'ufw', active: true }; } catch {} }
   } catch {}
   try { const { stdout } = await execAsync('which firewall-cmd 2>/dev/null', { timeout: 3000 });
-    if (stdout.trim()) { try { const { stdout: s } = await execAsync('firewall-cmd --state 2>/dev/null', { timeout: 3000 }); return { tool: 'firewalld', active: s.trim() === 'running' }; } catch { return { tool: 'firewalld', active: false }; } }
+    if (stdout.trim()) { try { const { stdout: s } = await execAsync('firewall-cmd --state 2>/dev/null', { timeout: 3000 }); if (s.trim() === 'running') return { tool: 'firewalld', active: true }; } catch {} }
   } catch {}
   try { const { stdout } = await execAsync('which nft 2>/dev/null', { timeout: 3000 });
-    if (stdout.trim()) { try { await execAsync('nft list tables 2>/dev/null', { timeout: 3000 }); return { tool: 'nftables', active: true }; } catch { return { tool: 'nftables', active: false }; } }
+    if (stdout.trim()) { try { await execAsync('nft list tables 2>/dev/null', { timeout: 3000 }); return { tool: 'nftables', active: true }; } catch {} }
   } catch {}
   try { const { stdout } = await execAsync('which iptables 2>/dev/null', { timeout: 3000 }); if (stdout.trim()) return { tool: 'iptables', active: true }; } catch {}
   return { tool: 'none', active: false };
