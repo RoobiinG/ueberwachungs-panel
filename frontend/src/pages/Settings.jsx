@@ -306,7 +306,7 @@ export default function Settings() {
 
   // Gemini KI
   const [geminiKey,   setGeminiKey]   = useState('');
-  const [geminiModel, setGeminiModel] = useState('gemini-1.5-pro');
+  const [geminiModel, setGeminiModel] = useState('gemini-2.0-flash');
   const [showGeminiKey, setShowGeminiKey] = useState(false);
 
   // Passkeys
@@ -1052,9 +1052,9 @@ export default function Settings() {
             <div>
               <label className="block text-xs text-panel-muted mb-1">Modell</label>
               <select value={geminiModel} onChange={e => setGeminiModel(e.target.value)} className={inputCls}>
-                <option value="gemini-1.5-pro">Gemini 1.5 Pro (empfohlen)</option>
-                <option value="gemini-1.5-flash">Gemini 1.5 Flash (schneller)</option>
-                <option value="gemini-2.0-flash">Gemini 2.0 Flash (neuester)</option>
+                <option value="gemini-2.0-flash">Gemini 2.0 Flash (empfohlen)</option>
+                <option value="gemini-2.5-flash">Gemini 2.5 Flash (schnell & günstig)</option>
+                <option value="gemini-2.5-pro">Gemini 2.5 Pro (leistungsstark)</option>
               </select>
             </div>
             <div className="flex gap-2">

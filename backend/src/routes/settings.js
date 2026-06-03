@@ -24,7 +24,7 @@ router.get('/', requireRole('admin'), (req, res) => {
     smtp_from:         get('smtp_from'),
     smtp_secure:       get('smtp_secure') || 'false',
     gemini_api_key:    get('gemini_api_key') ? '***gesetzt***' : '',
-    gemini_model:      get('gemini_model') || 'gemini-1.5-pro',
+    gemini_model:      get('gemini_model') || 'gemini-2.0-flash',
   });
 });
 
