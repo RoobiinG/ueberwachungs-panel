@@ -17,14 +17,15 @@ const validFrom  = (f) => (!f || IPV4_RE.test(f) || IPV6_RE.test(f)) ? f || null
  * @returns {{ tool: string, active: boolean }}
  */
 async function detectFirewall(exec) {
+  // Nur AKTIVE Tools werden zurückgegeben — inaktive werden übersprungen
+
   // 1. UFW
   try {
     const { stdout } = await exec('which ufw 2>/dev/null');
     if (stdout.trim()) {
-      try {
-        const { stdout: s } = await exec('ufw status 2>/dev/null');
-        return { tool: 'ufw', active: /Status:\s*active/i.test(s) };
-      } catch { return { tool: 'ufw', active: false }; }
+      const { stdout: s } = await exec('ufw status 2>/dev/null').catch(() => ({ stdout: '' }));
+      if (/Status:\s*active/i.test(s)) return { tool: 'ufw', active: true };
+      // UFW installiert aber inaktiv → nächstes Tool prüfen
     }
   } catch {}
 
@@ -32,10 +33,8 @@ async function detectFirewall(exec) {
   try {
     const { stdout } = await exec('which firewall-cmd 2>/dev/null');
     if (stdout.trim()) {
-      try {
-        const { stdout: s } = await exec('firewall-cmd --state 2>/dev/null');
-        return { tool: 'firewalld', active: s.trim() === 'running' };
-      } catch { return { tool: 'firewalld', active: false }; }
+      const { stdout: s } = await exec('firewall-cmd --state 2>/dev/null').catch(() => ({ stdout: '' }));
+      if (s.trim() === 'running') return { tool: 'firewalld', active: true };
     }
   } catch {}
 
@@ -43,19 +42,15 @@ async function detectFirewall(exec) {
   try {
     const { stdout } = await exec('which nft 2>/dev/null');
     if (stdout.trim()) {
-      try {
-        await exec('nft list tables 2>/dev/null');
-        return { tool: 'nftables', active: true };
-      } catch { return { tool: 'nftables', active: false }; }
+      await exec('nft list tables 2>/dev/null');
+      return { tool: 'nftables', active: true };
     }
   } catch {}
 
-  // 4. iptables (Fallback)
+  // 4. iptables (Fallback — wenn installiert, gilt als aktiv)
   try {
     const { stdout } = await exec('which iptables 2>/dev/null');
-    if (stdout.trim()) {
-      return { tool: 'iptables', active: true };
-    }
+    if (stdout.trim()) return { tool: 'iptables', active: true };
   } catch {}
 
   return { tool: 'none', active: false };
