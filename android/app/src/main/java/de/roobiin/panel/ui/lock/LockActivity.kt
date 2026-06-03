@@ -197,6 +197,7 @@ class LockActivity : AppCompatActivity() {
         finish()
     }
 
+    @Suppress("MissingSuperCall", "GestureBackNavigation")
     override fun onBackPressed() {
         // Absichtlich leer — Lock nicht umgehbar
     }

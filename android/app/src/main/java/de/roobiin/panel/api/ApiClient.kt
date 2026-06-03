@@ -38,7 +38,8 @@ object ApiClient {
         return getClient(context)
     }
 
-    private fun buildRetrofit(baseUrl: String, token: String?): Retrofit {
+    private fun buildRetrofit(context: Context, baseUrl: String): Retrofit {
+        val session = SessionManager(context)
         val clientBuilder = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
@@ -46,6 +47,8 @@ object ApiClient {
             .addInterceptor { chain ->
                 val requestBuilder = chain.request().newBuilder()
                     .header("User-Agent", "PanelApp-Android/${BuildConfig.VERSION_NAME}")
+                
+                val token = session.getToken()
                 if (!token.isNullOrEmpty() && token != "temp") {
                     requestBuilder.addHeader("Authorization", "Bearer $token")
                 }
