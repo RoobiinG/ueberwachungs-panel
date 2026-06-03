@@ -122,24 +122,28 @@ router.post('/ai-tips', requirePermission('firewall.view'), async (req, res) => 
   try {
     const { tool, active } = await detectFirewall(host).catch(() => ({ tool: 'unbekannt', active: false }));
     const adapter = getAdapter(tool, host);
-    const rules   = adapter ? await adapter.getRules().catch(() => []) : [];
+    const allRules = adapter ? await adapter.getRules().catch(() => []) : [];
+
+    // Max. 40 Regeln senden um Token-Quota zu schonen
+    const MAX_RULES = 40;
+    const rules = allRules.slice(0, MAX_RULES);
+    const truncated = allRules.length > MAX_RULES;
 
     const rulesText = rules.length === 0
       ? 'Keine Regeln vorhanden.'
-      : rules.map(r => `- Port ${r.port}${r.proto !== 'any' ? '/' + r.proto : ''}: ${r.action === 'allow' ? 'ERLAUBT' : 'GESPERRT'} von ${r.from || 'any'}`).join('\n');
+      : rules.map(r => `- Port ${r.port}${r.proto !== 'any' ? '/' + r.proto : ''}: ${r.action === 'allow' ? 'ERLAUBT' : 'GESPERRT'} von ${r.from || 'any'}`).join('\n')
+        + (truncated ? `\n(... und ${allRules.length - MAX_RULES} weitere Regeln)` : '');
 
-    const prompt = `Du bist ein Firewall-Sicherheitsexperte. Analysiere die folgende Firewall-Konfiguration und gib genau 3-5 kurze, einfache Sicherheitstipps auf Deutsch.
+    const prompt = `Du bist ein Firewall-Sicherheitsexperte. Analysiere diese Firewall und gib 3-5 kurze Sicherheitstipps auf Deutsch.
 
-Regeln:
-- Jeder Tipp max. 2 Sätze
-- Konkret und verständlich, kein Fachjargon
-- Formatiere als nummerierte Liste (1. Tipp...)
-- Hebe gefährliche offene Ports oder fehlende Regeln hervor
+Firewall-Tool: ${tool} | Status: ${active ? 'AKTIV' : 'INAKTIV'} | Regeln gesamt: ${allRules.length}
+${rulesText}
 
-Firewall-Tool: ${tool}
-Status: ${active ? 'aktiv' : 'inaktiv'}
-Aktuelle Regeln:
-${rulesText}`;
+Regeln für die Antwort:
+- Max. 2 Sätze pro Tipp
+- Kein Fachjargon, einfache Sprache
+- Nummerierte Liste (1. Tipp...)
+- Gefährliche offene Ports oder fehlende Regeln hervorheben`;
 
     const model   = getSetting('gemini_model') || 'gemini-2.0-flash';
     const url     = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`;
@@ -153,8 +157,16 @@ ${rulesText}`;
 
     res.json({ tips: text, tool, active, rulesCount: rules.length });
   } catch (err) {
-    const msg = err.response?.data?.error?.message || err.message;
-    res.status(500).json({ error: `Gemini-Fehler: ${msg}` });
+    const raw = err.response?.data?.error?.message || err.message || '';
+    // Quota-Fehler → kurze verständliche Meldung
+    const isQuota = raw.toLowerCase().includes('quota') || raw.toLowerCase().includes('rate') || err.response?.status === 429;
+    const isModel = raw.toLowerCase().includes('not found') || raw.toLowerCase().includes('not supported');
+    const msg = isQuota
+      ? `Kontingent erschöpft. Bitte wechsle in den Einstellungen auf "Gemini 2.0 Flash" oder warte kurz.`
+      : isModel
+      ? `Modell nicht verfügbar. Bitte wechsle in den Einstellungen auf "Gemini 2.0 Flash".`
+      : raw.length > 200 ? raw.slice(0, 200) + '…' : raw;
+    res.status(isQuota ? 429 : 500).json({ error: msg });
   }
 });
 

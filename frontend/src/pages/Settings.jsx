@@ -1052,9 +1052,9 @@ export default function Settings() {
             <div>
               <label className="block text-xs text-panel-muted mb-1">Modell</label>
               <select value={geminiModel} onChange={e => setGeminiModel(e.target.value)} className={inputCls}>
-                <option value="gemini-2.0-flash">Gemini 2.0 Flash (empfohlen)</option>
-                <option value="gemini-2.5-flash">Gemini 2.5 Flash (schnell & günstig)</option>
-                <option value="gemini-2.5-pro">Gemini 2.5 Pro (leistungsstark)</option>
+                <option value="gemini-2.0-flash">Gemini 2.0 Flash (empfohlen, Free-Tier)</option>
+                <option value="gemini-2.5-flash-preview-05-20">Gemini 2.5 Flash Preview (kostenpflichtig)</option>
+                <option value="gemini-2.5-pro-preview-06-05">Gemini 2.5 Pro Preview (kostenpflichtig)</option>
               </select>
             </div>
             <div className="flex gap-2">
