@@ -141,8 +141,8 @@ Status: ${active ? 'aktiv' : 'inaktiv'}
 Aktuelle Regeln:
 ${rulesText}`;
 
-    const model   = getSetting('gemini_model') || 'gemini-1.5-pro';
-    const url     = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const model   = getSetting('gemini_model') || 'gemini-2.0-flash';
+    const url     = `https://generativelanguage.googleapis.com/v1/models/${model}:generateContent?key=${apiKey}`;
     const { data } = await axios.post(url, {
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: { temperature: 0.4, maxOutputTokens: 512 },
