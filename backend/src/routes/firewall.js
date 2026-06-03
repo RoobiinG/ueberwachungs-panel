@@ -25,6 +25,22 @@ async function getLocalAdapter() {
   return { adapter, tool };
 }
 
+// ─── An- / Ausschalten ────────────────────────────────────────────────────────
+router.post('/toggle', requirePermission('firewall.manage'), async (req, res) => {
+  const { enable } = req.body; // true = einschalten, false = ausschalten
+  if (typeof enable !== 'boolean') return res.status(400).json({ error: 'enable (bool) erforderlich' });
+  try {
+    const { tool } = await detectFirewall(host);
+    // Bei "ausschalten" auch inaktive Tools ansprechen → Tool-Name muss übergeben werden
+    const targetTool = tool !== 'none' ? tool : req.body.tool;
+    const adapter = getAdapter(targetTool, host);
+    if (!adapter) throw new Error('Kein unterstütztes Firewall-Tool gefunden');
+    const output = enable ? await adapter.enable() : await adapter.disable();
+    auditLog(req, enable ? 'firewall.enable' : 'firewall.disable', 'firewall', targetTool);
+    res.json({ success: true, output });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ─── Status ───────────────────────────────────────────────────────────────────
 router.get('/status', requirePermission('firewall.view'), async (req, res) => {
   try {

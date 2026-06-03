@@ -119,6 +119,9 @@ class UfwAdapter {
     const { stdout } = await this.exec(`sh -c 'echo y | ufw delete ${id}'`);
     return stdout;
   }
+
+  async enable()  { const { stdout } = await this.exec('ufw --force enable');  return stdout; }
+  async disable() { const { stdout } = await this.exec('ufw disable');          return stdout; }
 }
 
 // ─── iptables Adapter ─────────────────────────────────────────────────────────
@@ -180,8 +183,16 @@ class IptablesAdapter {
   }
 
   async _persist() {
-    // Regeln persistieren sofern iptables-persistent installiert
     try { await this.exec('sh -c "iptables-save > /etc/iptables/rules.v4 2>/dev/null || true"'); } catch {}
+  }
+
+  async enable() {
+    try { await this.exec('systemctl start iptables 2>/dev/null'); return 'iptables gestartet'; }
+    catch { await this.exec('iptables -P INPUT DROP'); return 'Standard-Policy auf DROP gesetzt'; }
+  }
+  async disable() {
+    try { await this.exec('systemctl stop iptables 2>/dev/null'); return 'iptables gestoppt'; }
+    catch { await this.exec('iptables -P INPUT ACCEPT'); return 'Standard-Policy auf ACCEPT gesetzt'; }
   }
 }
 
@@ -272,6 +283,15 @@ class NftablesAdapter {
     return stdout;
   }
 
+  async enable()  {
+    try { await this.exec('systemctl start nftables 2>/dev/null'); return 'nftables gestartet'; }
+    catch { await this._ensureChain(); return 'nftables-Chain sichergestellt'; }
+  }
+  async disable() {
+    try { await this.exec('systemctl stop nftables 2>/dev/null'); return 'nftables gestoppt'; }
+    catch { throw new Error('nftables kann nicht deaktiviert werden (kein systemctl)'); }
+  }
+
   async _ensureChain() {
     // Sicherstellen dass die Tabelle/Chain existiert
     try { await this.exec('nft add table inet filter 2>/dev/null'); } catch {}
@@ -329,6 +349,16 @@ class FirewalldAdapter {
 
   async deny(port, proto) {
     return this.deleteRule(`${port}/${proto || 'tcp'}`);
+  }
+
+  async enable()  {
+    await this.exec('systemctl start firewalld');
+    await this.exec('firewall-cmd --reload 2>/dev/null').catch(() => {});
+    return 'firewalld gestartet';
+  }
+  async disable() {
+    await this.exec('systemctl stop firewalld');
+    return 'firewalld gestoppt';
   }
 
   async deleteRule(id) {

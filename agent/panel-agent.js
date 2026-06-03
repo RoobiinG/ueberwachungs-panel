@@ -443,6 +443,25 @@ async function handler(req, res) {
     } else if (url === '/firewall/detect' && req.method === 'GET') {
       respond(res, 200, await detectAgentFirewall());
 
+    } else if (url === '/firewall/toggle' && req.method === 'POST') {
+      const raw = await new Promise((resolve) => { let d = ''; req.on('data', c => d += c); req.on('end', () => resolve(d)); });
+      const { enable, tool: reqTool } = JSON.parse(raw || '{}');
+      if (typeof enable !== 'boolean') return respond(res, 400, { error: 'enable (bool) erforderlich' });
+      const { tool } = await detectAgentFirewall();
+      const targetTool = tool !== 'none' ? tool : reqTool;
+      if (!targetTool || targetTool === 'none') return respond(res, 400, { error: 'Kein Firewall-Tool gefunden' });
+      if (targetTool === 'ufw') {
+        await execAsync(enable ? 'ufw --force enable' : 'ufw disable', { timeout: 10000 });
+      } else if (targetTool === 'firewalld') {
+        await execAsync(enable ? 'systemctl start firewalld' : 'systemctl stop firewalld', { timeout: 10000 });
+      } else if (targetTool === 'nftables') {
+        await execAsync(enable ? 'systemctl start nftables' : 'systemctl stop nftables', { timeout: 10000 });
+      } else if (targetTool === 'iptables') {
+        try { await execAsync(enable ? 'systemctl start iptables' : 'systemctl stop iptables', { timeout: 10000 }); }
+        catch { await execAsync(enable ? 'iptables -P INPUT DROP' : 'iptables -P INPUT ACCEPT', { timeout: 5000 }); }
+      }
+      respond(res, 200, { success: true });
+
     } else if (url === '/firewall/status' && req.method === 'GET') {
       respond(res, 200, await getFirewallStatus());
 
