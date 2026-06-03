@@ -49,7 +49,7 @@ object ApiClient {
                 
                 val token = session.getToken()
                 if (!token.isNullOrEmpty() && token != "temp") {
-                    requestBuilder.addHeader("Authorization", "Bearer $token")
+                    requestBuilder.header("Authorization", "Bearer $token")
                 }
                 val request: Request = requestBuilder.build()
                 val response = chain.proceed(request)

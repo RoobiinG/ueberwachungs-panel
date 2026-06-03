@@ -14,28 +14,26 @@ class GaugeView @JvmOverloads constructor(
 
     private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 22f
+        strokeWidth = 24f
         color = Color.parseColor("#1c2128")
         strokeCap = Paint.Cap.ROUND
     }
 
     private val fgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeWidth = 22f
+        strokeWidth = 24f
         strokeCap = Paint.Cap.ROUND
     }
 
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
         textAlign = Paint.Align.CENTER
-        textSize = 42f
         typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
     }
 
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#8b949e")
         textAlign = Paint.Align.CENTER
-        textSize = 28f
         letterSpacing = 0.1f
     }
 
@@ -56,7 +54,7 @@ class GaugeView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         val cx = width / 2f
         val cy = height / 2f
-        val radius = (minOf(width, height) / 2f) - 30f
+        val radius = (minOf(width, height) / 2f) - 32f
         val oval = RectF(cx - radius, cy - radius, cx + radius, cy + radius)
 
         // Background Track
@@ -66,22 +64,22 @@ class GaugeView @JvmOverloads constructor(
             val v = value!!.coerceIn(0.0, 100.0)
             val sweep = (v / 100.0 * 270f).toFloat()
             
-            // Draw glow/shadow for the progress
-            fgPaint.setShadowLayer(15f, 0f, 0f, fgPaint.color)
+            // Subtle glow for the progress arc
+            fgPaint.setShadowLayer(12f, 0f, 0f, fgPaint.color)
             canvas.drawArc(oval, 135f, maxOf(1f, sweep), false, fgPaint)
             fgPaint.clearShadowLayer()
         }
 
         val valueText = if (value != null) "${String.format("%.0f", value)}%" else "--"
-        textPaint.textSize = radius * 0.5f
+        textPaint.textSize = radius * 0.52f
         canvas.drawText(valueText, cx, cy + textPaint.textSize / 3f, textPaint)
 
-        labelPaint.textSize = radius * 0.25f
-        canvas.drawText(label, cx, cy + radius * 0.75f, labelPaint)
+        labelPaint.textSize = radius * 0.26f
+        canvas.drawText(label, cx, cy + radius * 0.78f, labelPaint)
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val size = MeasureSpec.getSize(widthMeasureSpec).coerceAtMost(300)
+        val size = MeasureSpec.getSize(widthMeasureSpec).coerceAtMost(400)
         setMeasuredDimension(size, size)
     }
 }

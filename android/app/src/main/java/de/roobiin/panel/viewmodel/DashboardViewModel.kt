@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import de.roobiin.panel.api.ApiClient
 import de.roobiin.panel.data.Agent
 import de.roobiin.panel.data.DashboardData
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class DashboardViewModel(app: Application) : AndroidViewModel(app) {
@@ -30,21 +31,31 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _loading.value = true
             _error.value = null
+            
+            // Kleiner Delay für UI-Feedback
+            delay(300)
+
             try {
-                val dashResp = api.getDashboard()
-                val agentsResp = api.getAgents()
-                
-                if (dashResp.isSuccessful) {
-                    _dashboard.value = dashResp.body()
-                } else if (dashResp.code() != 404) {
-                    _error.value = "Dashboard-Fehler: ${dashResp.code()}"
+                // Dashboard und Agents parallel anfragen
+                val dashDeferred = viewModelScope.launch {
+                    try {
+                        val resp = api.getDashboard()
+                        if (resp.isSuccessful) {
+                            _dashboard.postValue(resp.body())
+                        } else if (resp.code() != 404) {
+                            _error.postValue("Dashboard-Fehler: ${resp.code()}")
+                        }
+                    } catch (e: Exception) {
+                        // Dashboard-Fehler ignorieren, falls Agents geladen werden können
+                    }
                 }
 
+                val agentsResp = api.getAgents()
                 if (agentsResp.isSuccessful) {
                     val agents = agentsResp.body() ?: emptyList()
                     _agents.value = agents
                     
-                    // Fallback: Wenn Dashboard 404 liefert, baue Daten aus Agents zusammen
+                    // Fallback: Wenn Dashboard fehlt (404) oder leer ist, Daten aus Agents nutzen
                     if (_dashboard.value == null && agents.isNotEmpty()) {
                         val firstOnline = agents.firstOrNull { it.online } ?: agents.first()
                         _dashboard.value = DashboardData(
@@ -59,7 +70,7 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
                             alertCount = 0
                         )
                     }
-                } else if (_error.value == null) {
+                } else {
                     _error.value = "Agents konnten nicht geladen werden"
                 }
             } catch (e: Exception) {

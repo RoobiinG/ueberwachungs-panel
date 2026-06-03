@@ -53,7 +53,7 @@ class DashboardFragment : Fragment() {
             binding.memGauge.setMetric("RAM", data.memory)
             binding.diskGauge.setMetric("Disk", data.disk)
 
-            binding.tvUptime.text = data.uptime?.let { uptime: Long -> formatUptime(uptime) } ?: "--"
+            binding.tvUptime.text = data.uptime?.let { formatUptime(it) } ?: "--"
             binding.tvAlertCount.text = "${data.alertCount}"
             
             val alertColor = if (data.alertCount > 0) 
@@ -67,6 +67,16 @@ class DashboardFragment : Fragment() {
         vm.agents.observe(viewLifecycleOwner) { agents ->
             val onlineCount = agents.count { it.online }
             binding.tvAgentsInfo.text = "$onlineCount/${agents.size} Agents online"
+            
+            // Status-Punkt bei Infrastruktur dynamisch färben
+            val statusColor = if (onlineCount == agents.size && agents.isNotEmpty())
+                ContextCompat.getColor(requireContext(), R.color.status_online)
+            else if (onlineCount > 0)
+                ContextCompat.getColor(requireContext(), R.color.accent_orange)
+            else
+                ContextCompat.getColor(requireContext(), R.color.status_offline)
+            
+            binding.statusDotInfra.setColorFilter(statusColor)
         }
     }
 

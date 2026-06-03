@@ -25,10 +25,10 @@ data class Agent(
     @SerializedName("last_seen") val lastSeen: String?,
     val version: String?,
     @SerializedName("latest_version") val latestVersion: String?,
-    val online: Boolean = false,
-    val cpu: Double? = null,
-    val memory: Double? = null,
-    val disk: Double? = null,
+    @SerializedName("online", alternate = ["is_online", "status"]) val online: Boolean = false,
+    @SerializedName("cpu", alternate = ["cpu_usage", "cpu_percent"]) val cpu: Double? = null,
+    @SerializedName("memory", alternate = ["memory_usage", "memory_percent", "mem_usage"]) val memory: Double? = null,
+    @SerializedName("disk", alternate = ["disk_usage", "disk_percent"]) val disk: Double? = null,
     val uptime: Long? = null,
     val hostname: String? = null,
     val os: String? = null,
@@ -36,9 +36,9 @@ data class Agent(
 )
 
 data class AgentMetrics(
-    val cpu: Double,
-    val memory: Double,
-    val disk: Double,
+    @SerializedName("cpu", alternate = ["cpu_usage", "cpu_percent"]) val cpu: Double,
+    @SerializedName("memory", alternate = ["memory_usage", "memory_percent", "mem_usage"]) val memory: Double,
+    @SerializedName("disk", alternate = ["disk_usage", "disk_percent"]) val disk: Double,
     val uptime: Long,
     val hostname: String?,
     val os: String?,
@@ -46,9 +46,9 @@ data class AgentMetrics(
 )
 
 data class DashboardData(
-    val cpu: Double?,
-    val memory: Double?,
-    val disk: Double?,
+    @SerializedName("cpu", alternate = ["cpu_usage", "cpu_percent"]) val cpu: Double?,
+    @SerializedName("memory", alternate = ["memory_usage", "memory_percent", "mem_usage"]) val memory: Double?,
+    @SerializedName("disk", alternate = ["disk_usage", "disk_percent"]) val disk: Double?,
     val uptime: Long?,
     val hostname: String?,
     val os: String?,

@@ -36,18 +36,18 @@ class AgentsAdapter(
             tvStatus.setTextColor(onlineColor)
 
             if (agent.online) {
-                val cpu = agent.cpu ?: 0.0
-                val mem = agent.memory ?: 0.0
-                val disk = agent.disk ?: 0.0
+                val cpu = agent.cpu
+                val mem = agent.memory
+                val disk = agent.disk
 
-                tvCpu.text = "CPU: ${String.format("%.1f", cpu)}%"
-                pbCpu.progress = cpu.toInt()
+                tvCpu.text = if (cpu != null) "CPU: ${String.format("%.1f", cpu)}%" else "CPU: N/A"
+                pbCpu.progress = cpu?.toInt() ?: 0
 
-                tvMem.text = "RAM: ${String.format("%.1f", mem)}%"
-                pbMem.progress = mem.toInt()
+                tvMem.text = if (mem != null) "RAM: ${String.format("%.1f", mem)}%" else "RAM: N/A"
+                pbMem.progress = mem?.toInt() ?: 0
 
-                tvDisk.text = "Disk: ${String.format("%.1f", disk)}%"
-                pbDisk.progress = disk.toInt()
+                tvDisk.text = if (disk != null) "Disk: ${String.format("%.1f", disk)}%" else "Disk: N/A"
+                pbDisk.progress = disk?.toInt() ?: 0
             } else {
                 tvCpu.text = ""
                 pbCpu.progress = 0
