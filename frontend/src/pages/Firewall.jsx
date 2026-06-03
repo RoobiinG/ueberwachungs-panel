@@ -74,8 +74,8 @@ function AiCard({ apiBase }) {
         <div className="flex items-center gap-2">
           <Sparkles size={14} className="text-yellow-400" />
           <span className="text-sm font-semibold text-panel-text">KI-Sicherheitsanalyse</span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-400/10 text-yellow-400 border border-yellow-400/20 font-medium">
-            Gemini
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-400/10 text-orange-400 border border-orange-400/20 font-medium">
+            Claude
           </span>
           {lastScan && !loading && (
             <span className="text-[10px] text-panel-muted flex items-center gap-1">
@@ -122,13 +122,6 @@ function AiCard({ apiBase }) {
             </div>
           )}
 
-          {/* Fallback-Hinweis */}
-          {fallback && !error && (
-            <div className="flex items-center gap-2 bg-yellow-400/8 border border-yellow-400/20 rounded-md px-3 py-1.5">
-              <AlertTriangle size={11} className="text-yellow-400 flex-shrink-0" />
-              <p className="text-[11px] text-yellow-400">Automatisch auf Gemini 2.0 Flash gewechselt — in den Einstellungen kannst du das Modell dauerhaft ändern.</p>
-            </div>
-          )}
 
           {/* Tipps */}
           {parsedTips.length > 0 && (
