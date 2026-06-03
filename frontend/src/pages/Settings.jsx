@@ -304,6 +304,11 @@ export default function Settings() {
   const [smtp, setSmtp] = useState({ host: '', port: 587, user: '', pass: '', from: '', secure: false });
   const [showSmtpPw, setShowSmtpPw] = useState(false);
 
+  // Gemini KI
+  const [geminiKey,   setGeminiKey]   = useState('');
+  const [geminiModel, setGeminiModel] = useState('gemini-1.5-pro');
+  const [showGeminiKey, setShowGeminiKey] = useState(false);
+
   // Passkeys
   const [passkeys,     setPasskeys]     = useState([]);
   const [passkeyName,  setPasskeyName]  = useState('');
@@ -1017,6 +1022,70 @@ export default function Settings() {
         </Card>
 
       </>)}
+
+      {/* ── Gemini KI ────────────────────────────────────────────────────────── */}
+      {isAdmin && (
+        <Card title={<span className="flex items-center gap-2"><Key size={14} />KI-Assistent (Google Gemini)</span>}>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <StatusBadge set={!!status.gemini_api_key} />
+            </div>
+            <div>
+              <label className="block text-xs text-panel-muted mb-1">API-Key</label>
+              <div className="relative">
+                <input
+                  type={showGeminiKey ? 'text' : 'password'}
+                  value={geminiKey}
+                  onChange={e => setGeminiKey(e.target.value)}
+                  placeholder={status.gemini_api_key ? '***gesetzt*** (neu eingeben zum Ändern)' : 'AIza…'}
+                  className={inputCls + ' pr-9'}
+                />
+                <button type="button" onClick={() => setShowGeminiKey(v => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
+                  {showGeminiKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+              <p className="text-xs text-panel-muted mt-1">
+                API-Key aus <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-panel-accent underline">Google AI Studio</a> — kostenlos für Gemini 1.5 Pro.
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs text-panel-muted mb-1">Modell</label>
+              <select value={geminiModel} onChange={e => setGeminiModel(e.target.value)} className={inputCls}>
+                <option value="gemini-1.5-pro">Gemini 1.5 Pro (empfohlen)</option>
+                <option value="gemini-1.5-flash">Gemini 1.5 Flash (schneller)</option>
+                <option value="gemini-2.0-flash">Gemini 2.0 Flash (neuester)</option>
+              </select>
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={async () => {
+                if (!geminiKey) return;
+                setLoading(l => ({ ...l, gemini: true }));
+                try {
+                  await axios.put('/api/settings/gemini', { apiKey: geminiKey, model: geminiModel });
+                  setMsgs(m => ({ ...m, gemini: '✓ Gespeichert' }));
+                  setGeminiKey('');
+                  await loadAdmin();
+                } catch (e) { setMsgs(m => ({ ...m, gemini: e.response?.data?.error || 'Fehler' })); }
+                setLoading(l => ({ ...l, gemini: false }));
+              }} disabled={!geminiKey || loading.gemini}>
+                {loading.gemini ? 'Speichere…' : 'Speichern'}
+              </Button>
+              {status.gemini_api_key && (
+                <Button size="sm" variant="danger" onClick={async () => {
+                  if (!confirm('Gemini API-Key wirklich entfernen?')) return;
+                  await axios.delete('/api/settings/gemini');
+                  setMsgs(m => ({ ...m, gemini: '✓ Entfernt' }));
+                  await loadAdmin();
+                }}>
+                  <Trash2 size={12} className="mr-1" />Entfernen
+                </Button>
+              )}
+            </div>
+            <Msg msg={msgs.gemini} />
+          </div>
+        </Card>
+      )}
 
       {/* ── Aktive Sitzungen ─────────────────────────────────────────────────── */}
       <SessionsSection isAdmin={isAdmin} />

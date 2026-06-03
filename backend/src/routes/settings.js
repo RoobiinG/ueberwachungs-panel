@@ -4,7 +4,7 @@ const db = require('../db');
 const requireRole = require('../middleware/roles');
 const { auditLog } = require('../utils/audit');
 
-const SENSITIVE = ['hetzner_api_token', 'mchost_password', 'mchost_api_token', 'smtp_pass'];
+const SENSITIVE = ['hetzner_api_token', 'mchost_password', 'mchost_api_token', 'smtp_pass', 'gemini_api_key'];
 
 const get = (key) => db.prepare('SELECT value FROM settings WHERE key = ?').get(key)?.value || '';
 const set = (key, value) => db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)').run(key, value);
@@ -23,7 +23,24 @@ router.get('/', requireRole('admin'), (req, res) => {
     smtp_pass:         get('smtp_pass') ? '***gesetzt***' : '',
     smtp_from:         get('smtp_from'),
     smtp_secure:       get('smtp_secure') || 'false',
+    gemini_api_key:    get('gemini_api_key') ? '***gesetzt***' : '',
+    gemini_model:      get('gemini_model') || 'gemini-1.5-pro',
   });
+});
+
+// ── Gemini API Key ─────────────────────────────────────────────────────────────
+router.put('/gemini', requireRole('admin'), (req, res) => {
+  const { apiKey, model } = req.body;
+  if (!apiKey) return res.status(400).json({ error: 'API-Key erforderlich' });
+  set('gemini_api_key', apiKey.trim());
+  if (model) set('gemini_model', model.trim());
+  auditLog(req, 'settings.gemini', 'settings', 'gemini_api_key');
+  res.json({ success: true });
+});
+router.delete('/gemini', requireRole('admin'), (req, res) => {
+  del('gemini_api_key');
+  del('gemini_model');
+  res.json({ success: true });
 });
 
 // Hetzner Token speichern
