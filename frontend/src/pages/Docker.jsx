@@ -8,8 +8,9 @@ import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { ServerSelector } from '../components/ui/ServerSelector';
-import { RefreshCw, Play, Square, RotateCcw, Tag, Check, X, ScrollText, ChevronDown, ChevronUp, Zap } from 'lucide-react';
+import { RefreshCw, Play, Square, RotateCcw, Tag, Check, X, ScrollText, ChevronDown, ChevronUp, Zap, Shield } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useWSMessage } from '../context/WSContext';
 
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
@@ -51,6 +52,17 @@ export default function Docker() {
   const [logsContent, setLogsContent] = useState({});   // { containerId: string }
   const [logsLoading, setLogsLoading] = useState({});   // { containerId: bool }
   const logsEndRef = useRef({});
+
+  // Firewall-Port-Vorschlag nach Container-Start
+  const [portSuggestion, setPortSuggestion] = useState(null); // { containerId, containerName, ports }
+  const [portAdding, setPortAdding]         = useState(false);
+  const [portAdded,  setPortAdded]          = useState([]);   // Liste bereits hinzugefügter Ports
+
+  // WS: Docker-Port-Vorschlag empfangen
+  useWSMessage('docker_ports', (msg) => {
+    setPortAdded([]);
+    setPortSuggestion(msg.payload);
+  });
 
   // ── Container laden ────────────────────────────────────────────────────────
 
@@ -408,6 +420,65 @@ export default function Docker() {
           </div>
         )}
       </Card>
+
+      {/* ── Firewall-Port-Vorschlag nach Container-Start ───────────────────────── */}
+      {portSuggestion && (
+        <div className="fixed bottom-6 right-6 z-50 w-80 bg-panel-surface border border-panel-accent/40 rounded-xl shadow-2xl p-4 space-y-3 animate-in slide-in-from-right-5 duration-300">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Shield size={16} className="text-panel-accent flex-shrink-0" />
+              <p className="text-sm font-semibold text-panel-text">Firewall-Ports öffnen?</p>
+            </div>
+            <button onClick={() => setPortSuggestion(null)}
+              className="text-panel-muted hover:text-panel-text transition-colors flex-shrink-0">
+              <X size={14} />
+            </button>
+          </div>
+
+          <p className="text-xs text-panel-muted">
+            <span className="text-panel-text font-medium">{portSuggestion.containerName}</span> wurde gestartet
+            und exponiert folgende Ports:
+          </p>
+
+          <div className="space-y-1">
+            {portSuggestion.ports.map((p, i) => {
+              const portProto = `${p.hostPort || p.containerPort}/${p.proto || 'tcp'}`;
+              const added = portAdded.includes(portProto);
+              return (
+                <div key={i} className="flex items-center justify-between bg-panel-bg rounded px-2.5 py-1.5">
+                  <span className="text-xs font-mono text-panel-text">{portProto}</span>
+                  {added
+                    ? <span className="text-xs text-panel-green flex items-center gap-1"><Check size={11} />Freigegeben</span>
+                    : <button
+                        disabled={portAdding}
+                        onClick={async () => {
+                          setPortAdding(true);
+                          try {
+                            await axios.post('/api/firewall/allow', {
+                              port: p.hostPort || p.containerPort,
+                              proto: p.proto || 'tcp',
+                            });
+                            setPortAdded(prev => [...prev, portProto]);
+                          } catch {}
+                          setPortAdding(false);
+                        }}
+                        className="text-xs text-panel-accent hover:text-blue-300 transition-colors disabled:opacity-50">
+                        Freigeben
+                      </button>
+                  }
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex justify-end gap-2 pt-1">
+            <button onClick={() => setPortSuggestion(null)}
+              className="text-xs text-panel-muted hover:text-panel-text transition-colors px-2 py-1 rounded hover:bg-panel-card">
+              Ignorieren
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -4,71 +4,77 @@ const { promisify } = require('util');
 const execAsync = promisify(exec);
 const { requirePermission } = require('../middleware/requirePermission');
 const { auditLog } = require('../utils/audit');
+const { detectFirewall, getAdapter } = require('../utils/firewallAdapters');
 
-const host = (cmd) => execAsync(`nsenter --target 1 --mount --uts --ipc --net --pid -- ${cmd}`);
+// nsenter: Führt Befehle im Host-Namespace aus (nötig wenn Panel in Docker läuft)
+const host = (cmd) => execAsync(`nsenter --target 1 --mount --uts --ipc --net --pid -- ${cmd}`, { timeout: 10000 });
 
-const validPort = (p) => { if (!/^\d{1,5}$/.test(p) || +p < 1 || +p > 65535) throw new Error('Ungültiger Port'); return p; };
-const validProto = (p) => { if (p && !['tcp', 'udp'].includes(p)) throw new Error('Ungültiges Protokoll'); return p; };
-// Erlaubt: IPv4 (1.2.3.4), IPv4-CIDR (1.2.3.4/24), IPv6, IPv6-CIDR — kein Shell-Sonderzeichen
-const IPV4_RE   = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
-const IPV6_RE   = /^[0-9a-fA-F:]+(%[a-z0-9]+)?(\/\d{1,3})?$/;
-const validFrom = (f) => {
-  if (!f) return f;
-  if (!IPV4_RE.test(f) && !IPV6_RE.test(f)) throw new Error('Ungültige IP/CIDR');
-  return f;
-};
+// ─── Firewall erkennen ─────────────────────────────────────────────────────────
+router.get('/detect', requirePermission('firewall.view'), async (req, res) => {
+  try {
+    const result = await detectFirewall(host);
+    res.json(result);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
+// ─── Adapter holen (cached pro Request) ───────────────────────────────────────
+async function getLocalAdapter() {
+  const { tool } = await detectFirewall(host);
+  const adapter  = getAdapter(tool, host);
+  if (!adapter) throw new Error('Kein unterstütztes Firewall-Tool gefunden (UFW, iptables, nftables oder firewalld)');
+  return { adapter, tool };
+}
+
+// ─── Status ───────────────────────────────────────────────────────────────────
 router.get('/status', requirePermission('firewall.view'), async (req, res) => {
   try {
-    const { stdout } = await host('ufw status verbose');
-    res.json({ status: stdout });
+    const { adapter } = await getLocalAdapter();
+    const status = await adapter.getStatus();
+    res.json(status);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ─── Regeln auflisten ──────────────────────────────────────────────────────────
 router.get('/rules', requirePermission('firewall.view'), async (req, res) => {
   try {
-    const { stdout } = await host('ufw status numbered');
-    const rules = stdout.split('\n').filter(l => l.match(/^\[\s*\d+\]/)).map(line => {
-      const match = line.match(/^\[\s*(\d+)\]\s+(.+?)\s{2,}(.+?)\s{2,}(.+)$/);
-      if (!match) return { raw: line.trim() };
-      return { num: match[1].trim(), to: match[2].trim(), action: match[3].trim(), from: match[4].trim() };
-    });
-    res.json(rules);
+    const { adapter, tool } = await getLocalAdapter();
+    const rules = await adapter.getRules();
+    res.json({ tool, rules });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ─── Regel erlauben ───────────────────────────────────────────────────────────
 router.post('/allow', requirePermission('firewall.manage'), async (req, res) => {
   const { port, proto, from } = req.body;
-  if (!port) return res.status(400).json({ error: 'Port required' });
+  if (!port) return res.status(400).json({ error: 'Port erforderlich' });
   try {
-    const p = validPort(String(port)), pr = validProto(proto), fr = validFrom(from);
-    const cmd = fr
-      ? `ufw allow from ${fr} to any port ${p}${pr ? ' proto ' + pr : ''}`
-      : `ufw allow ${p}${pr ? '/' + pr : ''}`;
-    const { stdout } = await host(cmd);
-    auditLog(req, 'firewall.allow', 'rule', `${p}${pr ? '/' + pr : ''}`, { from: fr || 'any' });
-    res.json({ success: true, output: stdout });
+    const { adapter, tool } = await getLocalAdapter();
+    const output = await adapter.allow(String(port), proto, from);
+    auditLog(req, 'firewall.allow', 'rule', `${port}${proto ? '/' + proto : ''}`, { from: from || 'any', tool });
+    res.json({ success: true, output });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ─── Regel verweigern ─────────────────────────────────────────────────────────
 router.post('/deny', requirePermission('firewall.manage'), async (req, res) => {
   const { port, proto } = req.body;
-  if (!port) return res.status(400).json({ error: 'Port required' });
+  if (!port) return res.status(400).json({ error: 'Port erforderlich' });
   try {
-    const p = validPort(String(port)), pr = validProto(proto);
-    const { stdout } = await host(`ufw deny ${p}${pr ? '/' + pr : ''}`);
-    auditLog(req, 'firewall.deny', 'rule', `${p}${pr ? '/' + pr : ''}`);
-    res.json({ success: true, output: stdout });
+    const { adapter, tool } = await getLocalAdapter();
+    const output = await adapter.deny(String(port), proto);
+    auditLog(req, 'firewall.deny', 'rule', `${port}${proto ? '/' + proto : ''}`, { tool });
+    res.json({ success: true, output });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-router.delete('/rules/:num', requirePermission('firewall.manage'), async (req, res) => {
-  const num = req.params.num;
-  if (!/^\d+$/.test(num)) return res.status(400).json({ error: 'Ungültige Regel-Nummer' });
+// ─── Regel löschen ────────────────────────────────────────────────────────────
+router.delete('/rules/:id', requirePermission('firewall.manage'), async (req, res) => {
+  const id = req.params.id;
   try {
-    const { stdout } = await host(`sh -c 'echo y | ufw delete ${num}'`);
-    auditLog(req, 'firewall.delete', 'rule', `Regel #${num}`);
-    res.json({ success: true, output: stdout });
+    const { adapter, tool } = await getLocalAdapter();
+    const output = await adapter.deleteRule(id);
+    auditLog(req, 'firewall.delete', 'rule', `Regel ${id}`, { tool });
+    res.json({ success: true, output });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
