@@ -36,13 +36,25 @@ class AgentsAdapter(
             tvStatus.setTextColor(onlineColor)
 
             if (agent.online) {
-                tvCpu.text = "CPU: ${String.format("%.1f", agent.cpu ?: 0.0)}%"
-                tvMem.text = "RAM: ${String.format("%.1f", agent.memory ?: 0.0)}%"
-                tvDisk.text = "Disk: ${String.format("%.1f", agent.disk ?: 0.0)}%"
+                val cpu = agent.cpu ?: 0.0
+                val mem = agent.memory ?: 0.0
+                val disk = agent.disk ?: 0.0
+
+                tvCpu.text = "CPU: ${String.format("%.1f", cpu)}%"
+                pbCpu.progress = cpu.toInt()
+
+                tvMem.text = "RAM: ${String.format("%.1f", mem)}%"
+                pbMem.progress = mem.toInt()
+
+                tvDisk.text = "Disk: ${String.format("%.1f", disk)}%"
+                pbDisk.progress = disk.toInt()
             } else {
                 tvCpu.text = ""
+                pbCpu.progress = 0
                 tvMem.text = ""
+                pbMem.progress = 0
                 tvDisk.text = ""
+                pbDisk.progress = 0
             }
 
             root.setOnClickListener { onClick(agent) }

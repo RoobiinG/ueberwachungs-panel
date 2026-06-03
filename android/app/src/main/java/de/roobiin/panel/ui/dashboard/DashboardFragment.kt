@@ -4,9 +4,9 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
-import androidx.navigation.fragment.findNavController
 import de.roobiin.panel.R
 import de.roobiin.panel.databinding.FragmentDashboardBinding
 import de.roobiin.panel.viewmodel.DashboardViewModel
@@ -36,22 +36,32 @@ class DashboardFragment : Fragment() {
         }
 
         vm.error.observe(viewLifecycleOwner) { err ->
-            binding.tvError.text = err ?: ""
-            binding.tvError.visibility = if (err != null) View.VISIBLE else View.GONE
+            if (err != null) {
+                binding.tvError.text = err
+                binding.tvError.visibility = View.VISIBLE
+                binding.tvError.postDelayed({ binding.tvError.visibility = View.GONE }, 5000)
+            } else {
+                binding.tvError.visibility = View.GONE
+            }
         }
 
         vm.dashboard.observe(viewLifecycleOwner) { data ->
             if (data == null) return@observe
-            binding.tvHostname.text = data.hostname ?: "Lokal"
-            binding.tvOs.text = data.os ?: ""
+            binding.tvHostname.text = data.hostname ?: "Panel-Server"
+            binding.tvOs.text = data.os ?: "Linux"
             binding.cpuGauge.setMetric("CPU", data.cpu)
             binding.memGauge.setMetric("RAM", data.memory)
             binding.diskGauge.setMetric("Disk", data.disk)
 
-            val uptime = data.uptime ?: 0
-            binding.tvUptime.text = formatUptime(uptime)
-            binding.tvAgentsInfo.text = "${data.agentsOnline}/${data.agentCount} Agents online"
-            binding.tvAlertCount.text = "${data.alertCount} aktive Alarm-Regeln"
+            binding.tvUptime.text = data.uptime?.let { uptime: Long -> formatUptime(uptime) } ?: "--"
+            binding.tvAlertCount.text = "${data.alertCount}"
+            
+            val alertColor = if (data.alertCount > 0) 
+                ContextCompat.getColor(requireContext(), R.color.accent_red)
+            else 
+                ContextCompat.getColor(requireContext(), R.color.text_secondary)
+            
+            binding.tvAlertCount.setTextColor(alertColor)
         }
 
         vm.agents.observe(viewLifecycleOwner) { agents ->

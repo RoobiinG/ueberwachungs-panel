@@ -22,11 +22,10 @@ object ApiClient {
     fun getClient(context: Context): PanelApi {
         val session = SessionManager(context)
         val baseUrl = session.getBaseUrl() ?: "http://localhost:3001/"
-        val token = session.getToken()
 
         if (retrofit == null || currentBaseUrl != baseUrl) {
             currentBaseUrl = baseUrl
-            retrofit = buildRetrofit(baseUrl, token)
+            retrofit = buildRetrofit(context, baseUrl)
         }
 
         return retrofit!!.create(PanelApi::class.java)

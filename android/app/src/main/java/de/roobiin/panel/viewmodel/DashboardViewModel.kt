@@ -32,12 +32,38 @@ class DashboardViewModel(app: Application) : AndroidViewModel(app) {
             _error.value = null
             try {
                 val dashResp = api.getDashboard()
-                if (dashResp.isSuccessful) _dashboard.value = dashResp.body()
-
                 val agentsResp = api.getAgents()
-                if (agentsResp.isSuccessful) _agents.value = agentsResp.body() ?: emptyList()
+                
+                if (dashResp.isSuccessful) {
+                    _dashboard.value = dashResp.body()
+                } else if (dashResp.code() != 404) {
+                    _error.value = "Dashboard-Fehler: ${dashResp.code()}"
+                }
+
+                if (agentsResp.isSuccessful) {
+                    val agents = agentsResp.body() ?: emptyList()
+                    _agents.value = agents
+                    
+                    // Fallback: Wenn Dashboard 404 liefert, baue Daten aus Agents zusammen
+                    if (_dashboard.value == null && agents.isNotEmpty()) {
+                        val firstOnline = agents.firstOrNull { it.online } ?: agents.first()
+                        _dashboard.value = DashboardData(
+                            cpu = firstOnline.cpu,
+                            memory = firstOnline.memory,
+                            disk = firstOnline.disk,
+                            uptime = firstOnline.uptime,
+                            hostname = firstOnline.hostname ?: firstOnline.name,
+                            os = firstOnline.os,
+                            agentCount = agents.size,
+                            agentsOnline = agents.count { it.online },
+                            alertCount = 0
+                        )
+                    }
+                } else if (_error.value == null) {
+                    _error.value = "Agents konnten nicht geladen werden"
+                }
             } catch (e: Exception) {
-                _error.value = e.message ?: "Verbindungsfehler"
+                _error.value = "Verbindung zum Server fehlgeschlagen"
             } finally {
                 _loading.value = false
             }
