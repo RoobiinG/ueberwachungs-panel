@@ -180,38 +180,142 @@ async function serviceAction(name, action) {
   return stdout;
 }
 
-// ─── Firewall (UFW) ──────────────────────────────────────────────────────────
+// ─── Firewall (Multi-Tool: UFW, iptables, nftables, firewalld) ───────────────
 
+const _IPV4_RE   = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
+const _IPV6_RE   = /^[0-9a-fA-F:]+(%[a-z0-9]+)?(\/\d{1,3})?$/;
+const _validPort  = (p) => { if (!p || !/^\d{1,5}(:\d{1,5})?$/.test(String(p))) throw new Error('Ungültiger Port'); return String(p); };
+const _validProto = (p) => ['tcp','udp'].includes(p) ? p : null;
+const _validFrom  = (f) => (!f || _IPV4_RE.test(f) || _IPV6_RE.test(f)) ? (f||null) : null;
+
+// Erkennt aktive Firewall-Software
+async function detectAgentFirewall() {
+  try { const { stdout } = await execAsync('which ufw 2>/dev/null', { timeout: 3000 });
+    if (stdout.trim()) { try { const { stdout: s } = await execAsync('ufw status 2>/dev/null', { timeout: 3000 }); return { tool: 'ufw', active: /Status:\s*active/i.test(s) }; } catch { return { tool: 'ufw', active: false }; } }
+  } catch {}
+  try { const { stdout } = await execAsync('which firewall-cmd 2>/dev/null', { timeout: 3000 });
+    if (stdout.trim()) { try { const { stdout: s } = await execAsync('firewall-cmd --state 2>/dev/null', { timeout: 3000 }); return { tool: 'firewalld', active: s.trim() === 'running' }; } catch { return { tool: 'firewalld', active: false }; } }
+  } catch {}
+  try { const { stdout } = await execAsync('which nft 2>/dev/null', { timeout: 3000 });
+    if (stdout.trim()) { try { await execAsync('nft list tables 2>/dev/null', { timeout: 3000 }); return { tool: 'nftables', active: true }; } catch { return { tool: 'nftables', active: false }; } }
+  } catch {}
+  try { const { stdout } = await execAsync('which iptables 2>/dev/null', { timeout: 3000 }); if (stdout.trim()) return { tool: 'iptables', active: true }; } catch {}
+  return { tool: 'none', active: false };
+}
+
+// Firewall-Status (einheitlich)
 async function getFirewallStatus() {
-  const { stdout } = await execAsync('ufw status verbose', { timeout: 5000 });
-  return { status: stdout };
-}
-
-async function getFirewallRules() {
+  const { tool, active } = await detectAgentFirewall();
+  let rawOutput = '';
   try {
-    const { stdout } = await execAsync('ufw status numbered', { timeout: 5000 });
-    return stdout.split('\n').filter(l => /^\[\s*\d+\]/.test(l)).map(line => {
-      const m = line.match(/^\[\s*(\d+)\]\s+(.+?)\s{2,}(.+?)\s{2,}(.+)$/);
-      if (!m) return { raw: line.trim() };
-      return { num: m[1].trim(), to: m[2].trim(), action: m[3].trim(), from: m[4].trim() };
-    });
-  } catch { return []; }
+    if (tool === 'ufw')      { const { stdout } = await execAsync('ufw status verbose', { timeout: 5000 }); rawOutput = stdout; }
+    else if (tool === 'firewalld') { const { stdout } = await execAsync('firewall-cmd --list-all 2>/dev/null', { timeout: 5000 }); rawOutput = stdout; }
+    else if (tool === 'nftables') { const { stdout } = await execAsync('nft list ruleset 2>/dev/null', { timeout: 5000 }); rawOutput = stdout; }
+    else if (tool === 'iptables') { const { stdout } = await execAsync('iptables -L INPUT -n --line-numbers 2>/dev/null', { timeout: 5000 }); rawOutput = stdout; }
+  } catch (e) { rawOutput = e.message; }
+  return { tool, active, rawOutput, status: rawOutput };
 }
 
-const _validPort  = (p) => {
-  if (!p) throw new Error('Port erforderlich');
-  const s = String(p);
-  if (!/^\d{1,5}(:\d{1,5})?$/.test(s)) throw new Error('Ungültiger Port');
-  return s;
-};
-const _validProto = (p) => { if (p && !['tcp', 'udp'].includes(p)) throw new Error('Ungültiges Protokoll'); return p; };
-const _IPV4_RE    = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
-const _IPV6_RE    = /^[0-9a-fA-F:]+(%[a-z0-9]+)?(\/\d{1,3})?$/;
-const _validFrom  = (f) => {
-  if (!f) return f;
-  if (!_IPV4_RE.test(f) && !_IPV6_RE.test(f)) throw new Error('Ungültige IP/CIDR');
-  return f;
-};
+// Regeln abrufen (einheitliches Format)
+async function getFirewallRules() {
+  const { tool } = await detectAgentFirewall();
+  const rules = [];
+  try {
+    if (tool === 'ufw') {
+      const { stdout } = await execAsync('ufw status numbered', { timeout: 5000 });
+      return stdout.split('\n').filter(l => /^\[\s*\d+\]/.test(l)).map(line => {
+        const m = line.match(/^\[\s*(\d+)\]\s+(.+?)\s{2,}(.+?)\s{2,}(.+)$/);
+        if (!m) return { id: null, port: '?', proto: 'any', action: '?', from: 'any', raw: line.trim() };
+        const to = m[2].trim(); const pm = to.match(/^(\d[\d:]*)(?:\/(tcp|udp))?/i);
+        return { id: m[1].trim(), port: pm ? pm[1] : to, proto: pm?.[2]?.toLowerCase() ?? 'any', action: m[3].trim().toLowerCase().includes('allow') ? 'allow' : 'deny', from: m[4].trim() === 'Anywhere' ? 'any' : m[4].trim(), raw: line.trim() };
+      });
+    } else if (tool === 'firewalld') {
+      const { stdout: p } = await execAsync('firewall-cmd --list-ports 2>/dev/null', { timeout: 5000 });
+      const { stdout: s } = await execAsync('firewall-cmd --list-services 2>/dev/null', { timeout: 5000 });
+      p.trim().split(/\s+/).filter(Boolean).forEach(pp => { const [port,proto] = pp.split('/'); rules.push({ id: pp, port, proto: proto||'tcp', action: 'allow', from: 'any', raw: pp }); });
+      s.trim().split(/\s+/).filter(Boolean).forEach(svc => rules.push({ id: `svc:${svc}`, port: svc, proto: 'service', action: 'allow', from: 'any', raw: svc }));
+      return rules;
+    } else if (tool === 'nftables') {
+      try {
+        const { stdout } = await execAsync('nft -j list ruleset 2>/dev/null', { timeout: 5000 });
+        const items = JSON.parse(stdout)?.nftables || [];
+        for (const item of items) {
+          if (!item.rule) continue;
+          const r = item.rule; const expr = r.expr || [];
+          const verdict = expr.find(e => e.accept !== undefined || e.drop !== undefined);
+          const action = verdict ? (verdict.accept !== undefined ? 'allow' : 'deny') : 'unknown';
+          let port = 'any', proto = 'any';
+          for (const e of expr) {
+            if (e.match?.left?.payload?.field === 'dport') { const rr = e.match?.right; port = typeof rr === 'object' ? `${rr.range?.[0]}:${rr.range?.[1]}` : String(rr ?? 'any'); }
+            if (e.match?.left?.meta?.key === 'l4proto') { proto = String(e.match?.right ?? 'any'); }
+          }
+          rules.push({ id: String(r.handle ?? ''), port, proto, action, from: 'any', raw: JSON.stringify(r) });
+        }
+      } catch {
+        const { stdout } = await execAsync('nft list ruleset 2>/dev/null', { timeout: 5000 });
+        for (const line of stdout.split('\n')) { const m = line.match(/(\w+)\s+dport\s+(\S+)\s+(accept|drop).*#\s*handle\s+(\d+)/i); if (m) rules.push({ id: m[4], port: m[2], proto: m[1].toLowerCase(), action: m[3] === 'accept' ? 'allow' : 'deny', from: 'any', raw: line.trim() }); }
+      }
+      return rules;
+    } else if (tool === 'iptables') {
+      const { stdout } = await execAsync('iptables -L INPUT -n --line-numbers 2>/dev/null', { timeout: 5000 });
+      for (const line of stdout.split('\n').slice(2)) {
+        const m = line.match(/^(\d+)\s+(ACCEPT|DROP|REJECT)\s+(\w+)\s+--\s+(\S+)\s+\S+(?:.*dpt:(\d+)(?::(\d+))?)?/i);
+        if (m) rules.push({ id: m[1], port: m[6] ? `${m[5]}:${m[6]}` : (m[5]||'any'), proto: m[3].toLowerCase()==='all'?'any':m[3].toLowerCase(), action: m[2].toLowerCase()==='accept'?'allow':'deny', from: m[4]==='0.0.0.0/0'?'any':m[4], raw: line.trim() });
+      }
+      return rules;
+    }
+  } catch {}
+  return rules;
+}
+
+// Firewall-Regel hinzufügen/löschen
+async function firewallAllow(port, proto, from, action) {
+  const { tool } = await detectAgentFirewall();
+  const p  = _validPort(port);
+  const pr = _validProto(proto);
+  const fr = _validFrom(from);
+  if (tool === 'ufw') {
+    const cmd = (action === 'allow' && fr) ? `ufw allow from ${fr} to any port ${p}${pr?' proto '+pr:''}` : `ufw ${action} ${p}${pr?'/'+pr:''}`;
+    await execAsync(cmd, { timeout: 10000 });
+  } else if (tool === 'firewalld') {
+    if (action === 'allow') { await execAsync(`firewall-cmd --permanent --add-port=${p}/${pr||'tcp'}`, { timeout: 10000 }); }
+    else { await execAsync(`firewall-cmd --permanent --remove-port=${p}/${pr||'tcp'}`, { timeout: 10000 }); }
+    await execAsync('firewall-cmd --reload', { timeout: 10000 });
+  } else if (tool === 'nftables') {
+    try { await execAsync('nft add table inet filter 2>/dev/null'); } catch {}
+    try { await execAsync("nft add chain inet filter input '{ type filter hook input priority 0; }' 2>/dev/null"); } catch {}
+    const verdict = action === 'allow' ? 'accept' : 'drop';
+    await execAsync(`nft add rule inet filter input ${pr||'tcp'} dport ${p} ${verdict}`, { timeout: 10000 });
+  } else if (tool === 'iptables') {
+    const target = action === 'allow' ? 'ACCEPT' : 'DROP';
+    const src = fr ? `-s ${fr}` : '';
+    await execAsync(`iptables -I INPUT -p ${pr||'tcp'} ${src} --dport ${p} -j ${target}`, { timeout: 10000 });
+    try { await execAsync('sh -c "iptables-save > /etc/iptables/rules.v4 2>/dev/null || true"'); } catch {}
+  } else {
+    throw new Error('Kein unterstütztes Firewall-Tool gefunden');
+  }
+}
+
+async function firewallDeleteRule(id) {
+  const { tool } = await detectAgentFirewall();
+  if (tool === 'ufw') {
+    if (!/^\d+$/.test(String(id))) throw new Error('Ungültige Regel-Nummer');
+    await execAsync(`sh -c 'echo y | ufw delete ${id}'`, { timeout: 10000 });
+  } else if (tool === 'firewalld') {
+    if (String(id).startsWith('svc:')) { await execAsync(`firewall-cmd --permanent --remove-service=${id.slice(4)}`, { timeout: 10000 }); }
+    else { const [p,pr] = id.split('/'); await execAsync(`firewall-cmd --permanent --remove-port=${p}/${pr||'tcp'}`, { timeout: 10000 }); }
+    await execAsync('firewall-cmd --reload', { timeout: 10000 });
+  } else if (tool === 'nftables') {
+    if (!/^\d+$/.test(String(id))) throw new Error('Ungültiger Handle');
+    await execAsync(`nft delete rule inet filter input handle ${id}`, { timeout: 10000 });
+  } else if (tool === 'iptables') {
+    if (!/^\d+$/.test(String(id))) throw new Error('Ungültige Regel-Nummer');
+    await execAsync(`iptables -D INPUT ${id}`, { timeout: 10000 });
+    try { await execAsync('sh -c "iptables-save > /etc/iptables/rules.v4 2>/dev/null || true"'); } catch {}
+  } else {
+    throw new Error('Kein unterstütztes Firewall-Tool gefunden');
+  }
+}
 
 // ─── Netzwerk ─────────────────────────────────────────────────────────────────
 
@@ -336,33 +440,26 @@ async function handler(req, res) {
       respond(res, 200, { success: true, output });
 
     // ── Firewall ──────────────────────────────────────────────────────────────
+    } else if (url === '/firewall/detect' && req.method === 'GET') {
+      respond(res, 200, await detectAgentFirewall());
+
     } else if (url === '/firewall/status' && req.method === 'GET') {
       respond(res, 200, await getFirewallStatus());
 
     } else if (url === '/firewall/rules' && req.method === 'GET') {
-      respond(res, 200, await getFirewallRules());
+      const { tool } = await detectAgentFirewall();
+      respond(res, 200, { tool, rules: await getFirewallRules() });
 
     } else if ((url === '/firewall/allow' || url === '/firewall/deny') && req.method === 'POST') {
-      const raw = await new Promise((resolve) => {
-        let data = '';
-        req.on('data', c => data += c);
-        req.on('end', () => resolve(data));
-      });
+      const raw = await new Promise((resolve) => { let d = ''; req.on('data', c => d += c); req.on('end', () => resolve(d)); });
       const { port, proto, from } = JSON.parse(raw || '{}');
       const action = url.endsWith('/allow') ? 'allow' : 'deny';
-      const p  = _validPort(port);
-      const pr = _validProto(proto);
-      const fr = _validFrom(from);
-      const cmd = (action === 'allow' && fr)
-        ? `ufw allow from ${fr} to any port ${p}${pr ? ' proto ' + pr : ''}`
-        : `ufw ${action} ${p}${pr ? '/' + pr : ''}`;
-      await execAsync(cmd, { timeout: 10000 });
+      await firewallAllow(port, proto, from, action);
       respond(res, 200, { success: true });
 
     } else if (url.startsWith('/firewall/rules/') && req.method === 'DELETE') {
-      const num = url.split('/')[3];
-      if (!/^\d+$/.test(num)) return respond(res, 400, { error: 'Ungültige Regel-Nummer' });
-      await execAsync(`sh -c 'echo y | ufw delete ${num}'`, { timeout: 10000 });
+      const id = decodeURIComponent(url.split('/').slice(3).join('/'));
+      await firewallDeleteRule(id);
       respond(res, 200, { success: true });
 
     // ── Netzwerk ──────────────────────────────────────────────────────────────

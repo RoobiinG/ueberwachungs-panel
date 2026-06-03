@@ -9,6 +9,13 @@ const db                    = require('../db');
 const dockhand              = require('../utils/dockhandClient');
 const { notifyAction } = require('../utils/actionNotify');
 
+// broadcast lazy laden (zirkuläre Abhängigkeit vermeiden)
+let _broadcast = null;
+const broadcast = (data) => {
+  if (!_broadcast) { try { _broadcast = require('../websocket').broadcast; } catch {} }
+  _broadcast?.(data);
+};
+
 const localEnvId = () =>
   db.prepare("SELECT value FROM settings WHERE key = 'dockhandLocalEnvId'").get()?.value ?? null;
 
@@ -75,6 +82,37 @@ router.post('/containers/:id/:action', requirePermission('docker.control'), asyn
     await dockhand.containerAction(envId, id, action);
     auditLog(req, `docker.${action}`, 'container', id.slice(0, 12), { containerId: id.slice(0, 12) });
     notifyAction(req, action, req.body?.containerName || id.slice(0, 12), 'docker');
+
+    // Bei start/restart: exponierte Host-Ports per WS melden → Firewall-Vorschlag im Frontend
+    if (action === 'start' || action === 'restart') {
+      try {
+        const { data: c } = await dockhand.getContainer(envId, id);
+        const container   = dockhand.normalizeContainer(c);
+        const hostPorts   = (container.ports || [])
+          .map(p => {
+            if (typeof p === 'string') {
+              // Format: "hostPort:containerPort/proto" oder "containerPort/proto"
+              const m = p.match(/^(?:(\d+):)?(\d+)(?:\/(tcp|udp))?$/i);
+              if (!m || !m[1]) return null; // kein Host-Port → nicht öffentlich exponiert
+              return { hostPort: m[1], containerPort: m[2], proto: m[3] || 'tcp' };
+            }
+            return p.hostPort ? p : null;
+          })
+          .filter(Boolean);
+
+        if (hostPorts.length > 0) {
+          broadcast({
+            type: 'docker_ports',
+            payload: {
+              containerId:   id.slice(0, 12),
+              containerName: container.name || req.body?.containerName || id.slice(0, 12),
+              ports:         hostPorts,
+            },
+          });
+        }
+      } catch {} // Port-Benachrichtigung ist optional — Fehler ignorieren
+    }
+
     res.json({ success: true });
   } catch (err) { res.status(502).json({ error: err.message }); }
 });
