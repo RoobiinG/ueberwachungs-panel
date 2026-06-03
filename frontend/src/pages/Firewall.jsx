@@ -5,7 +5,7 @@ import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { ServerSelector } from '../components/ui/ServerSelector';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Trash2, RefreshCw, Shield, ScanSearch } from 'lucide-react';
+import { Plus, Trash2, RefreshCw, Shield, ScanSearch, Power } from 'lucide-react';
 
 const inputCls = 'w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:border-panel-accent';
 
@@ -23,6 +23,7 @@ export default function Firewall() {
   const [selectedServer, setSelectedServer] = useState(null);
   const [detectedTool, setDetectedTool]     = useState(null);   // { tool, active }
   const [detecting, setDetecting]           = useState(false);
+  const [toggling,  setToggling]            = useState(false);
   const [status, setStatus]   = useState('');
   const [rules,  setRules]    = useState([]);
   const [loading, setLoading] = useState(true);
@@ -95,6 +96,20 @@ export default function Firewall() {
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }));
   const toolInfo = TOOL_LABELS[detectedTool?.tool] || null;
 
+  const toggleFirewall = async () => {
+    if (!detectedTool || detectedTool.tool === 'none') return;
+    const enable = !detectedTool.active;
+    if (!confirm(`Firewall (${toolInfo?.label}) wirklich ${enable ? 'aktivieren' : 'deaktivieren'}?`)) return;
+    setToggling(true);
+    try {
+      await axios.post(`${apiBase}/firewall/toggle`, { enable, tool: detectedTool.tool });
+      await load(); // Status neu laden
+    } catch (err) {
+      setError(err.response?.data?.error || 'Fehler beim Umschalten der Firewall');
+    }
+    setToggling(false);
+  };
+
   return (
     <div className="space-y-3">
       {/* ── Kopfzeile ─────────────────────────────────────────────────────── */}
@@ -120,6 +135,19 @@ export default function Firewall() {
             <ScanSearch size={12} className={detecting ? 'animate-spin' : ''} />
             {detecting ? 'Erkenne…' : 'Erkennen'}
           </button>
+
+          {/* An/Aus-Toggle — nur wenn Tool bekannt */}
+          {canWrite && detectedTool && detectedTool.tool !== 'none' && (
+            <button onClick={toggleFirewall} disabled={toggling}
+              className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded border transition-colors disabled:opacity-50
+                ${detectedTool.active
+                  ? 'bg-panel-red/10 border-panel-red/40 text-panel-red hover:bg-panel-red/20'
+                  : 'bg-panel-green/10 border-panel-green/40 text-panel-green hover:bg-panel-green/20'}`}
+            >
+              <Power size={12} />
+              {toggling ? '…' : detectedTool.active ? 'Deaktivieren' : 'Aktivieren'}
+            </button>
+          )}
         </div>
 
         <div className="flex gap-2">
