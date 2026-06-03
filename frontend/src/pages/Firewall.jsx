@@ -177,20 +177,30 @@ export default function Firewall() {
 
   const detect = async () => {
     setDetecting(true);
+    let result = { tool: 'none', active: false };
     try {
       const { data } = await axios.get(`${apiBase}/firewall/detect`);
+      result = data;
       setDetectedTool(data);
     } catch {
-      setDetectedTool({ tool: 'none', active: false });
+      setDetectedTool(result);
     }
     setDetecting(false);
+    return result;
   };
 
   const load = async () => {
     setLoading(true);
     setError('');
     try {
-      await detect();
+      const detected = await detect();
+      // Kein Tool → kein weiterer Abruf nötig
+      if (detected.tool === 'none') {
+        setStatus('');
+        setRules([]);
+        setLoading(false);
+        return;
+      }
       const [s, r] = await Promise.all([
         axios.get(`${apiBase}/firewall/status`),
         axios.get(`${apiBase}/firewall/rules`),
