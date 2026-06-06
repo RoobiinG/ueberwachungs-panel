@@ -73,6 +73,13 @@ const fmtSpeed = (bps) => {
   if (bps > 1_024)     return `${(bps / 1_024).toFixed(1)} KB/s`;
   return `${Math.round(bps)} B/s`;
 };
+// Bytes → lesbare Größe (GB / MB)
+const fmtBytes = (b) => {
+  if (b == null || b <= 0) return null;
+  if (b >= 1_073_741_824) return `${(b / 1_073_741_824).toFixed(1)} GB`;
+  if (b >= 1_048_576)     return `${(b / 1_048_576).toFixed(0)} MB`;
+  return `${Math.round(b / 1024)} KB`;
+};
 const fmtKBs = (v) =>
   v == null ? '—' : v >= 1024 ? `${(v / 1024).toFixed(1)} MB/s` : `${v.toFixed(1)} KB/s`;
 
@@ -116,12 +123,23 @@ const TOOLTIP_STYLE = {
 /* ═══════════════════════════════════════════════════════════
    MetricPanel (CPU / RAM / Disk)
    ═══════════════════════════════════════════════════════════ */
-const MetricPanel = memo(function MetricPanel({ def, data, span, loading, zoomLeft, zoomRight, onZoomStart, onZoomMove, onZoomEnd }) {
+const MetricPanel = memo(function MetricPanel({ def, data, span, loading, zoomLeft, zoomRight, onZoomStart, onZoomMove, onZoomEnd, sysTotal, sysCores }) {
   const latest = data.length > 0 ? data[data.length - 1]?.[def.key] ?? null : null;
+
+  // Absoluten Wert berechnen (RAM / Disk): Prozent × Gesamtgröße
+  const absUsed  = (latest != null && sysTotal) ? fmtBytes(sysTotal * latest / 100) : null;
+  const absTotal = sysTotal ? fmtBytes(sysTotal) : null;
+
   return (
     <div className="bg-[#0f111a] border border-white/8 rounded-lg overflow-hidden">
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/8">
-        <span className="text-xs font-semibold uppercase tracking-widest text-gray-500">{def.label}</span>
+        <div>
+          <span className="text-xs font-semibold uppercase tracking-widest text-gray-500">{def.label}</span>
+          {sysCores && <span className="ml-2 text-[10px] text-gray-600">{sysCores} Kerne</span>}
+          {absUsed && absTotal && (
+            <p className="text-[11px] text-gray-500 mt-0.5 tabular-nums">{absUsed} / {absTotal}</p>
+          )}
+        </div>
         {latest !== null
           ? <span className="text-2xl font-bold tabular-nums" style={{ color: def.color }}>{latest.toFixed(1)}<span className="text-sm font-normal ml-0.5 text-gray-500">%</span></span>
           : <span className="text-sm text-gray-600">—</span>
@@ -360,6 +378,7 @@ export default function Monitoring({ liveStats }) {
   const [zoomLeft,   setZoomLeft]   = useState(null);
   const [zoomRight,  setZoomRight]  = useState(null);
   const [preZoom,    setPreZoom]    = useState(null); // Range vor dem Zoom für Reset
+  const [sysInfo,    setSysInfo]    = useState(null); // Systeminfos (Disk, CPU-Kerne, RAM-Gesamt)
   const zoomRef = useRef({ left: null, right: null }); // Ref für stableref in onZoomEnd
 
   const timerRef    = useRef(null);
@@ -374,6 +393,14 @@ export default function Monitoring({ liveStats }) {
   useEffect(() => {
     axios.get('/api/metrics/servers').then(r => setServers(r.data)).catch(() => {});
   }, []);
+
+  /* ── System-Infos (RAM-Total, Disk-Total, CPU-Kerne) ─────── */
+  useEffect(() => {
+    const base = server !== 'local' ? `/api/agents/${server}` : '/api';
+    axios.get(`${base}/system/stats`)
+      .then(r => setSysInfo(r.data))
+      .catch(() => setSysInfo(null));
+  }, [server]);
 
   /* ── Dashboard-Layout laden ─────────────────────────────── */
   useEffect(() => {
@@ -606,7 +633,15 @@ export default function Monitoring({ liveStats }) {
   const renderContent = (panel) => {
     const def = METRIC_MAP[panel.type];
     const zoomProps = { zoomLeft, zoomRight, onZoomStart, onZoomMove, onZoomEnd };
-    if (def) return <MetricPanel def={def} data={metricData} span={spanSeconds} loading={loading} {...zoomProps} />;
+    if (def) {
+      // Absolute Werte je nach Metric-Typ
+      const sysTotal = def.key === 'mem'  ? sysInfo?.memory?.total
+                     : def.key === 'disk' ? (sysInfo?.disk?.find(d => d.mount === '/') ?? sysInfo?.disk?.[0])?.size
+                     : null;
+      const sysCores = def.key === 'cpu' ? (sysInfo?.cpu?.cores || null) : null;
+      return <MetricPanel def={def} data={metricData} span={spanSeconds} loading={loading}
+                          sysTotal={sysTotal} sysCores={sysCores} {...zoomProps} />;
+    }
 
     switch (panel.type) {
       case 'stat_cards': {
@@ -614,10 +649,26 @@ export default function Monitoring({ liveStats }) {
         const mem  = liveStats?.memory ? Math.round(liveStats.memory.usedPercent) : null;
         const rx   = n0 ? Math.round((n0.rxSec ?? n0.rx_sec ?? 0)) : null;
         const tx   = n0 ? Math.round((n0.txSec ?? n0.tx_sec ?? 0)) : null;
+
+        // Absoluter RAM-Wert aus Live-Daten
+        const ramUsed  = fmtBytes(liveStats?.memory?.used);
+        const ramTotal = fmtBytes(liveStats?.memory?.total);
+        const ramSub   = ramUsed && ramTotal ? `${ramUsed} / ${ramTotal}` : null;
+
+        // CPU-Kerne aus sysInfo
+        const cpuCores = sysInfo?.cpu?.cores ? `${sysInfo.cpu.cores} Kerne` : null;
+
+        // Disk aus sysInfo (Root-Partition bevorzugt)
+        const rootDisk  = sysInfo?.disk?.find(d => d.mount === '/') ?? sysInfo?.disk?.[0];
+        const diskPct   = rootDisk ? Math.round(rootDisk.usedPercent) : null;
+        const diskUsed  = fmtBytes(rootDisk?.used);
+        const diskTotal = fmtBytes(rootDisk?.size);
+        const diskSub   = diskUsed && diskTotal ? `${diskUsed} / ${diskTotal}` : null;
+
         return (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <StatCard title="CPU"      value={cpu != null ? `${cpu}%` : '—'} color="orange" />
-            <StatCard title="RAM"      value={mem != null ? `${mem}%` : '—'} color="green"  />
+            <StatCard title="CPU"      value={cpu != null ? `${cpu}%` : '—'} color="orange" subtitle={cpuCores} percent={cpu} />
+            <StatCard title="RAM"      value={mem != null ? `${mem}%` : '—'} color="green"  subtitle={ramSub}   percent={mem} />
             <StatCard title="Download" value={rx  != null ? fmtSpeed(rx) : '—'} color="blue" />
             <StatCard title="Upload"   value={tx  != null ? fmtSpeed(tx) : '—'} color="purple" />
           </div>
