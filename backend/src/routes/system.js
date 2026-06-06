@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const os     = require('os');
 const si = require('systeminformation');
 const { getHostDisks } = require('../hostUtils');
 const { requirePermission } = require('../middleware/requirePermission');
@@ -21,7 +22,7 @@ router.get('/stats', requirePermission('metrics.view'), async (req, res) => {
     }));
 
     res.json({
-      cpu: { usage: Math.round(cpu.currentLoad), cores: cpu.cpus?.length || 0 },
+      cpu: { usage: Math.round(cpu.currentLoad), cores: cpu.cpus?.length || os.cpus().length || 0 },
       memory: {
         total: mem.total,
         // mem.available = MemAvailable (Linux), entspricht dem was htop/free -h zeigen.

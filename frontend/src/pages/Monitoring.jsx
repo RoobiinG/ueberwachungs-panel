@@ -171,7 +171,16 @@ const MetricPanel = memo(function MetricPanel({ def, data, span, loading, zoomLe
                     tickLine={false} width={26} tickCount={5} unit="%" />
                   <Tooltip {...TOOLTIP_STYLE}
                     labelFormatter={v => formatTip(v)}
-                    formatter={v => [`${v?.toFixed(2) ?? '—'}%`, def.label]}
+                    formatter={(v) => {
+                      const num = v != null && !isNaN(Number(v)) ? Number(v) : null;
+                      const pct = num != null ? `${num.toFixed(1)}%` : '—';
+                      // RAM / Disk: absoluten Wert zusätzlich anzeigen
+                      if (sysTotal && num != null) {
+                        const abs = fmtBytes(sysTotal * num / 100);
+                        return [`${abs}  (${pct})`, def.label];
+                      }
+                      return [pct, def.label];
+                    }}
                     itemStyle={{ color: def.color, fontWeight: '600' }}
                   />
                   <ReferenceLine y={80} stroke="rgba(251,146,60,0.2)"  strokeDasharray="4 3" />
@@ -638,7 +647,7 @@ export default function Monitoring({ liveStats }) {
       const sysTotal = def.key === 'mem'  ? sysInfo?.memory?.total
                      : def.key === 'disk' ? (sysInfo?.disk?.find(d => d.mount === '/') ?? sysInfo?.disk?.[0])?.size
                      : null;
-      const sysCores = def.key === 'cpu' ? (sysInfo?.cpu?.cores || null) : null;
+      const sysCores = def.key === 'cpu' ? (sysInfo?.cpu?.cores > 0 ? sysInfo.cpu.cores : null) : null;
       return <MetricPanel def={def} data={metricData} span={spanSeconds} loading={loading}
                           sysTotal={sysTotal} sysCores={sysCores} {...zoomProps} />;
     }
@@ -656,7 +665,7 @@ export default function Monitoring({ liveStats }) {
         const ramSub   = ramUsed && ramTotal ? `${ramUsed} / ${ramTotal}` : null;
 
         // CPU-Kerne aus sysInfo
-        const cpuCores = sysInfo?.cpu?.cores ? `${sysInfo.cpu.cores} Kerne` : null;
+        const cpuCores = sysInfo?.cpu?.cores > 0 ? `${sysInfo.cpu.cores} Kerne` : null;
 
         // Disk aus sysInfo (Root-Partition bevorzugt)
         const rootDisk  = sysInfo?.disk?.find(d => d.mount === '/') ?? sysInfo?.disk?.[0];
