@@ -23,24 +23,21 @@ const TOOL_LABELS = {
 
 // ─── KI-Analyse Karte ──────────────────────────────────────────────────────────
 function AiCard({ apiBase }) {
-  const [tips,        setTips]        = useState('');
-  const [loading,     setLoading]     = useState(false);
-  const [error,       setError]       = useState('');
-  const [fallback,    setFallback]    = useState(false);
-  const [autoScan,    setAutoScan]    = useState(false);
-  const [lastScan,    setLastScan]    = useState(null);
-  const [expanded,    setExpanded]    = useState(true);
+  const [tips,     setTips]     = useState('');
+  const [loading,  setLoading]  = useState(false);
+  const [error,    setError]    = useState('');
+  const [autoScan, setAutoScan] = useState(false);
+  const [lastScan, setLastScan] = useState(null);
+  const [expanded, setExpanded] = useState(true);
   const intervalRef = useRef(null);
 
   const analyse = async () => {
     setLoading(true);
     setError('');
-    setFallback(false);
     try {
       const { data } = await axios.post(`${apiBase}/firewall/ai-tips`);
       setTips(data.tips || '');
       setLastScan(new Date());
-      setFallback(!!data.fallback);
     } catch (err) {
       setError(err.response?.data?.error || 'Analyse fehlgeschlagen');
     }

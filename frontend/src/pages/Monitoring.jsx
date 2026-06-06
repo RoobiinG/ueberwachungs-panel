@@ -660,17 +660,18 @@ export default function Monitoring({ liveStats }) {
 
         // Disk aus sysInfo (Root-Partition bevorzugt)
         const rootDisk  = sysInfo?.disk?.find(d => d.mount === '/') ?? sysInfo?.disk?.[0];
-        const diskPct   = rootDisk ? Math.round(rootDisk.usedPercent) : null;
         const diskUsed  = fmtBytes(rootDisk?.used);
         const diskTotal = fmtBytes(rootDisk?.size);
         const diskSub   = diskUsed && diskTotal ? `${diskUsed} / ${diskTotal}` : null;
+        const diskPct   = rootDisk ? Math.round(rootDisk.usedPercent) : null;
 
         return (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <StatCard title="CPU"      value={cpu != null ? `${cpu}%` : '—'} color="orange" subtitle={cpuCores} percent={cpu} />
-            <StatCard title="RAM"      value={mem != null ? `${mem}%` : '—'} color="green"  subtitle={ramSub}   percent={mem} />
-            <StatCard title="Download" value={rx  != null ? fmtSpeed(rx) : '—'} color="blue" />
-            <StatCard title="Upload"   value={tx  != null ? fmtSpeed(tx) : '—'} color="purple" />
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
+            <StatCard title="CPU"       value={cpu  != null ? `${cpu}%`  : '—'} color="orange" subtitle={cpuCores} percent={cpu}  />
+            <StatCard title="RAM"       value={mem  != null ? `${mem}%`  : '—'} color="green"  subtitle={ramSub}   percent={mem}  />
+            <StatCard title="Disk"      value={diskPct != null ? `${diskPct}%` : '—'} color="blue" subtitle={diskSub} percent={diskPct} />
+            <StatCard title="Download"  value={rx   != null ? fmtSpeed(rx) : '—'} color="blue"   />
+            <StatCard title="Upload"    value={tx   != null ? fmtSpeed(tx) : '—'} color="purple" />
           </div>
         );
       }
