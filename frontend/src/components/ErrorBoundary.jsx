@@ -26,7 +26,25 @@ export default class ErrorBoundary extends Component {
   componentDidCatch(error, errorInfo) {
     this.setState({ errorInfo });
     console.error('[ErrorBoundary]', error, errorInfo?.componentStack);
-    // Direkt ans Backend melden (fetch statt axios, um Zirkelabhängigkeiten zu vermeiden)
+
+    // ── Chunk-Mismatch nach Deploy → automatisch hard-reload ───────────────
+    // Passiert wenn Browser alte HTML-Datei gecacht hat, neue Chunk-Dateinamen aber
+    // nicht mehr auf dem Server vorhanden sind (Vite content-hash ändert sich beim Build).
+    const msg = error?.message || String(error);
+    const isChunkError = /dynamically imported module|Loading chunk|Failed to fetch/i.test(msg);
+    if (isChunkError) {
+      const KEY = 'panel_chunk_reload_ts';
+      const last = parseInt(sessionStorage.getItem(KEY) || '0', 10);
+      if (Date.now() - last > 15_000) {          // max. 1 automatischer Reload alle 15s
+        sessionStorage.setItem(KEY, String(Date.now()));
+        window.location.reload();
+        return;                                   // render() wird nicht mehr aufgerufen
+      }
+      // Falls Reload nicht half → normaler Error-State mit Hinweis
+      this.setState({ isChunkError: true });
+    }
+
+    // Ans Backend loggen
     try {
       fetch('/api/logs', {
         method:  'POST',
@@ -34,7 +52,7 @@ export default class ErrorBoundary extends Component {
         body: JSON.stringify({
           level:   'error',
           source:  'React-ErrorBoundary',
-          message: (error?.message || String(error)).slice(0, 2000),
+          message: msg.slice(0, 2000),
           stack:   errorInfo?.componentStack?.slice(0, 5000),
           url:     window.location.pathname,
         }),
@@ -43,13 +61,17 @@ export default class ErrorBoundary extends Component {
   }
 
   handleReset = () => {
-    this.setState({ error: null, errorInfo: null });
-    // Zurück zur Startseite navigieren
-    window.location.href = '/';
+    this.setState({ error: null, errorInfo: null, isChunkError: false });
+    // Chunk-Fehler: hard reload erzwingen (Cache umgehen)
+    if (this.state.isChunkError) {
+      window.location.href = '/?_=' + Date.now();
+    } else {
+      window.location.href = '/';
+    }
   };
 
   render() {
-    const { error, errorInfo } = this.state;
+    const { error, errorInfo, isChunkError } = this.state;
 
     if (!error) return this.props.children;
 
@@ -68,19 +90,23 @@ export default class ErrorBoundary extends Component {
           {/* Titel */}
           <div>
             <h2 className="text-lg font-semibold text-white">
-              Diese Seite konnte nicht geladen werden
+              {isChunkError ? 'Neue Version verfügbar' : 'Diese Seite konnte nicht geladen werden'}
             </h2>
             <p className="text-sm text-gray-400 mt-1">
-              Ein unerwarteter Fehler ist aufgetreten.
+              {isChunkError
+                ? 'Das Panel wurde aktualisiert. Bitte einmal neu laden.'
+                : 'Ein unerwarteter Fehler ist aufgetreten.'}
             </p>
           </div>
 
-          {/* Fehlermeldung */}
-          <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 text-left">
-            <p className="text-sm font-mono text-red-300 break-words">
-              {error.message || String(error)}
-            </p>
-          </div>
+          {/* Fehlermeldung — bei Chunk-Fehler vereinfacht */}
+          {!isChunkError && (
+            <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 text-left">
+              <p className="text-sm font-mono text-red-300 break-words">
+                {error.message || String(error)}
+              </p>
+            </div>
+          )}
 
           {/* Stack Trace (nur im Dev-Modus) */}
           {isDev && errorInfo?.componentStack && (
@@ -94,13 +120,13 @@ export default class ErrorBoundary extends Component {
             </details>
           )}
 
-          {/* Zurück-Button */}
+          {/* Button */}
           <button
             onClick={this.handleReset}
             className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
           >
             <RefreshCw size={14} />
-            Zur Startseite
+            {isChunkError ? 'Jetzt neu laden' : 'Zur Startseite'}
           </button>
         </div>
       </div>
