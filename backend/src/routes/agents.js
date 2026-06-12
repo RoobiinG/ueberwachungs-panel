@@ -450,6 +450,21 @@ router.delete('/:id/firewall/rules/:num', requirePermission('firewall.manage'), 
   }
 });
 
+// ── System-Stats Proxy (CPU, RAM, Disk, Kerne) ──────────────────────────────
+// Wird von Monitoring-Frontend alle 3s gepolt — fehlte bisher → 404
+
+router.get('/:id/system/stats', requirePermission('metrics.view'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  try {
+    const { data } = await agentApi(agent).get('/stats', { timeout: 8000 });
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.response?.data?.error || err.message });
+  }
+});
+
 // ── Netzwerk Proxy ──────────────────────────────────────────────────────────
 
 router.get('/:id/network/interfaces', requirePermission('metrics.view'), async (req, res) => {

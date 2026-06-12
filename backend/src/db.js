@@ -243,6 +243,8 @@ try {
     `);
   }
 } catch (e) { console.warn('Metrics-Migration fehlgeschlagen:', e.message); }
+// Sicherstellen dass der zusammengesetzte Index existiert — auch auf alten Instanzen
+try { db.exec('CREATE INDEX IF NOT EXISTS idx_metrics_server_ts ON metrics(server_id, ts)'); } catch {}
 // Container-Spitznamen (panel-seitig, kein Agent nötig)
 db.exec(`
   CREATE TABLE IF NOT EXISTS container_labels (

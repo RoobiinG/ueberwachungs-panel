@@ -427,29 +427,39 @@ export default function Monitoring({ liveStats }) {
     axios.get(`${base}/network/public-ip`).then(r => setPublicIp(r.data.ip || '')).catch(() => {});
   }, [networkAgentId]);
 
-  /* ── Remote-Polling (Netzwerk) ──────────────────────────── */
+  /* ── Remote-Polling (Netzwerk) — mit inflight-Guard ─────── */
   useEffect(() => {
     if (!networkAgentId) { setRemoteStats(null); return; }
-    const fetch = () =>
-      axios.get(`/api/agents/${networkAgentId}/network/stats`)
-        .then(r => setRemoteStats(r.data)).catch(() => {});
-    fetch();
-    const id = setInterval(fetch, 3000);
-    return () => clearInterval(id);
-  }, [networkAgentId]);
-
-  /* ── Remote-Polling (CPU / RAM / Disk) ──────────────────── */
-  useEffect(() => {
-    if (!networkAgentId) { setRemoteLive(null); return; }
-    const poll = () =>
-      axios.get(`/api/agents/${networkAgentId}/system/stats`)
-        .then(r => {
-          setRemoteLive(r.data);
-          setSysInfo(r.data); // MetricPanel-Header aktuell halten
-        }).catch(() => {});
+    let inflight = false;
+    const poll = async () => {
+      if (inflight) return;
+      inflight = true;
+      try {
+        const r = await axios.get(`/api/agents/${networkAgentId}/network/stats`);
+        setRemoteStats(r.data);
+      } catch {} finally { inflight = false; }
+    };
     poll();
     const id = setInterval(poll, 3000);
-    return () => clearInterval(id);
+    return () => { clearInterval(id); };
+  }, [networkAgentId]);
+
+  /* ── Remote-Polling (CPU / RAM / Disk) — mit inflight-Guard */
+  useEffect(() => {
+    if (!networkAgentId) { setRemoteLive(null); return; }
+    let inflight = false;
+    const poll = async () => {
+      if (inflight) return;
+      inflight = true;
+      try {
+        const r = await axios.get(`/api/agents/${networkAgentId}/system/stats`);
+        setRemoteLive(r.data);
+        setSysInfo(r.data);
+      } catch {} finally { inflight = false; }
+    };
+    poll();
+    const id = setInterval(poll, 3000);
+    return () => { clearInterval(id); };
   }, [networkAgentId]);
 
   /* ── Live-Chart lokal ───────────────────────────────────── */
@@ -534,9 +544,11 @@ export default function Monitoring({ liveStats }) {
     if (!silent) setLoading(false);
   }, [range, server, customMode, fromInput, toInput, canViewMetrics]);
 
+  const clearTimer = () => { clearInterval(timerRef.current); timerRef.current = null; };
+
   useEffect(() => {
     if (!canViewMetrics) return;
-    if (timerRef.current) clearInterval(timerRef.current);
+    clearTimer();
 
     if (liveMode) {
       if (server === 'local') {
@@ -544,22 +556,25 @@ export default function Monitoring({ liveStats }) {
         setMetricData([]); setSpanSeconds(180);
         loadMetrics(true);
       } else {
-        // Remote: 1s API-Polling der letzten 60s
+        // Remote: 5s API-Polling der letzten 5min (weniger Last, ausreichend für Live-Ansicht)
+        let inflightLive = false;
         const fetchLive = async () => {
+          if (inflightLive) return;
+          inflightLive = true;
           try {
             const now  = Math.floor(Date.now() / 1000);
-            const { data: res } = await axios.get(`/api/metrics?from=${now - 60}&to=${now}&server=${server}`);
+            const { data: res } = await axios.get(`/api/metrics?from=${now - 300}&to=${now}&server=${server}`);
             startTransition(() => {
               const rows = res.rows || [];
               rows.forEach(r => { if (r.disk != null) liveDiskRef.current = r.disk; });
               setMetricData(rows);
-              setSpanSeconds(60);
+              setSpanSeconds(300);
               setLastUpdate(new Date());
             });
-          } catch {}
+          } catch {} finally { inflightLive = false; }
         };
         fetchLive();
-        timerRef.current = setInterval(fetchLive, 1_000);
+        timerRef.current = setInterval(fetchLive, 5_000); // war 1s → jetzt 5s
       }
     } else {
       setLoading(true); setMetricData([]);
@@ -567,10 +582,10 @@ export default function Monitoring({ liveStats }) {
       const autoLive = !customMode && (range === '15m' || range === '1h' || range === '6h');
       if (autoLive) timerRef.current = setInterval(() => loadMetrics(true), 5_000);
     }
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+    return () => clearTimer();
   }, [range, server, customMode, loadMetrics, canViewMetrics, liveMode]);
 
-  const applyCustom = () => { if (timerRef.current) clearInterval(timerRef.current); loadMetrics(); };
+  const applyCustom = () => { clearTimer(); loadMetrics(); };
 
   /* ── Zoom-Logik ─────────────────────────────────────────── */
   const onZoomStart = useCallback((ts) => {
@@ -794,7 +809,7 @@ export default function Monitoring({ liveStats }) {
         <div className="flex items-center gap-1 flex-wrap">
           {servers.map(s => (
             <button key={s.id}
-              onClick={() => { setServer(s.id); setCustomMode(false); setLiveMode(false); setZoomLeft(null); setZoomRight(null); setPreZoom(null); }}
+              onClick={() => { setServer(s.id); setCustomMode(false); setLiveMode(false); setZoomLeft(null); setZoomRight(null); setPreZoom(null); liveDiskRef.current = null; setRemoteLive(null); setSysInfo(null); }}
               className={`px-3 py-1.5 text-xs font-medium rounded border transition-all
                 ${server === s.id
                   ? 'bg-blue-600/80 border-blue-500/60 text-white'
