@@ -388,6 +388,7 @@ export default function Monitoring({ liveStats }) {
   const [zoomRight,  setZoomRight]  = useState(null);
   const [preZoom,    setPreZoom]    = useState(null); // Range vor dem Zoom für Reset
   const [sysInfo,    setSysInfo]    = useState(null); // Systeminfos (Disk, CPU-Kerne, RAM-Gesamt)
+  const [remoteLive, setRemoteLive] = useState(null); // Live-Stats vom Remote-Agent (CPU, RAM, Disk)
   const zoomRef = useRef({ left: null, right: null }); // Ref für stableref in onZoomEnd
 
   const timerRef    = useRef(null);
@@ -426,7 +427,7 @@ export default function Monitoring({ liveStats }) {
     axios.get(`${base}/network/public-ip`).then(r => setPublicIp(r.data.ip || '')).catch(() => {});
   }, [networkAgentId]);
 
-  /* ── Remote-Polling ─────────────────────────────────────── */
+  /* ── Remote-Polling (Netzwerk) ──────────────────────────── */
   useEffect(() => {
     if (!networkAgentId) { setRemoteStats(null); return; }
     const fetch = () =>
@@ -434,6 +435,20 @@ export default function Monitoring({ liveStats }) {
         .then(r => setRemoteStats(r.data)).catch(() => {});
     fetch();
     const id = setInterval(fetch, 3000);
+    return () => clearInterval(id);
+  }, [networkAgentId]);
+
+  /* ── Remote-Polling (CPU / RAM / Disk) ──────────────────── */
+  useEffect(() => {
+    if (!networkAgentId) { setRemoteLive(null); return; }
+    const poll = () =>
+      axios.get(`/api/agents/${networkAgentId}/system/stats`)
+        .then(r => {
+          setRemoteLive(r.data);
+          setSysInfo(r.data); // MetricPanel-Header aktuell halten
+        }).catch(() => {});
+    poll();
+    const id = setInterval(poll, 3000);
     return () => clearInterval(id);
   }, [networkAgentId]);
 
@@ -654,33 +669,42 @@ export default function Monitoring({ liveStats }) {
 
     switch (panel.type) {
       case 'stat_cards': {
-        const cpu  = liveStats?.cpu  ?? null;
-        const mem  = liveStats?.memory ? Math.round(liveStats.memory.usedPercent) : null;
-        const rx   = n0 ? Math.round((n0.rxSec ?? n0.rx_sec ?? 0)) : null;
-        const tx   = n0 ? Math.round((n0.txSec ?? n0.tx_sec ?? 0)) : null;
+        const isRemote = !!networkAgentId;
 
-        // Absoluter RAM-Wert aus Live-Daten
-        const ramUsed  = fmtBytes(liveStats?.memory?.used);
-        const ramTotal = fmtBytes(liveStats?.memory?.total);
+        // CPU — Remote: aus remoteLive, Lokal: aus WebSocket
+        const cpu = isRemote
+          ? (remoteLive?.cpu?.usage ?? null)
+          : (liveStats?.cpu ?? null);
+
+        // RAM — Remote: aus remoteLive, Lokal: aus WebSocket
+        const memObj = isRemote ? remoteLive?.memory : liveStats?.memory;
+        const mem    = memObj ? Math.round(memObj.usedPercent) : null;
+        const ramUsed  = fmtBytes(memObj?.used);
+        const ramTotal = fmtBytes(memObj?.total);
         const ramSub   = ramUsed && ramTotal ? `${ramUsed} / ${ramTotal}` : null;
 
         // CPU-Kerne aus sysInfo
         const cpuCores = sysInfo?.cpu?.cores > 0 ? `${sysInfo.cpu.cores} Kerne` : null;
 
-        // Disk aus sysInfo (Root-Partition bevorzugt)
-        const rootDisk  = sysInfo?.disk?.find(d => d.mount === '/') ?? sysInfo?.disk?.[0];
-        const diskUsed  = fmtBytes(rootDisk?.used);
+        // Netzwerk
+        const rx = n0 ? Math.round((n0.rxSec ?? n0.rx_sec ?? 0)) : null;
+        const tx = n0 ? Math.round((n0.txSec ?? n0.tx_sec ?? 0)) : null;
+
+        // Disk — Remote: aus remoteLive, Lokal: aus sysInfo
+        const diskArr  = isRemote ? remoteLive?.disk : sysInfo?.disk;
+        const rootDisk = diskArr?.find(d => d.mount === '/') ?? diskArr?.[0];
+        const diskPct  = rootDisk ? Math.round(rootDisk.usedPercent) : null;
+        const diskUsed = fmtBytes(rootDisk?.used);
         const diskTotal = fmtBytes(rootDisk?.size);
-        const diskSub   = diskUsed && diskTotal ? `${diskUsed} / ${diskTotal}` : null;
-        const diskPct   = rootDisk ? Math.round(rootDisk.usedPercent) : null;
+        const diskSub  = diskUsed && diskTotal ? `${diskUsed} / ${diskTotal}` : null;
 
         return (
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
-            <StatCard title="CPU"       value={cpu  != null ? `${cpu}%`  : '—'} color="orange" subtitle={cpuCores} percent={cpu}  />
-            <StatCard title="RAM"       value={mem  != null ? `${mem}%`  : '—'} color="green"  subtitle={ramSub}   percent={mem}  />
-            <StatCard title="Disk"      value={diskPct != null ? `${diskPct}%` : '—'} color="blue" subtitle={diskSub} percent={diskPct} />
-            <StatCard title="Download"  value={rx   != null ? fmtSpeed(rx) : '—'} color="blue"   />
-            <StatCard title="Upload"    value={tx   != null ? fmtSpeed(tx) : '—'} color="purple" />
+            <StatCard title="CPU"      value={cpu     != null ? `${cpu}%`     : '—'} color="orange" subtitle={cpuCores} percent={cpu}     />
+            <StatCard title="RAM"      value={mem     != null ? `${mem}%`     : '—'} color="green"  subtitle={ramSub}   percent={mem}     />
+            <StatCard title="Disk"     value={diskPct != null ? `${diskPct}%` : '—'} color="blue"   subtitle={diskSub}  percent={diskPct} />
+            <StatCard title="Download" value={rx      != null ? fmtSpeed(rx)  : '—'} color="blue"   />
+            <StatCard title="Upload"   value={tx      != null ? fmtSpeed(tx)  : '—'} color="purple" />
           </div>
         );
       }
