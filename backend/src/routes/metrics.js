@@ -7,7 +7,7 @@ const { requirePermission, getPermissions } = require('../middleware/requirePerm
 const RANGES = {
   '15m': { seconds: 900,          table: 'raw',          bucket: null   },  // 1s roh
   '1h':  { seconds: 3_600,        table: 'raw',          bucket: null   },  // 1s roh  → ≤3600 Punkte
-  '6h':  { seconds: 6 * 3_600,    table: 'raw',          bucket: 10     },  // 10s roh → 2160 Punkte
+  '6h':  { seconds: 6 * 3_600,    table: 'metrics_10s',  bucket: null   },  // 10s-Tabelle → max. 2160 Punkte, kein GROUP BY nötig
   '24h': { seconds: 86_400,       table: 'metrics_10s',  bucket: 60     },  // 1min    → 1440 Punkte
   '7d':  { seconds: 7 * 86_400,   table: 'metrics_1min', bucket: 600    },  // 10min   → 1008 Punkte
   '30d': { seconds: 30 * 86_400,  table: 'metrics_1min', bucket: 3_600  },  // 1h      → 720 Punkte

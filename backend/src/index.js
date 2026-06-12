@@ -111,6 +111,7 @@ app.get(/^(?!\/api).*/, (req, res) => {
   res.sendFile(path.join(frontendDist, 'index.html'));
 });
 
+require('./metricsCache').start();     // Muss VOR websocket + metricsRecorder starten
 setupWS(server);
 require('./metricsRecorder').start();
 require('./metricsAggregator').start();
