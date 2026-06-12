@@ -212,47 +212,76 @@ class NftablesAdapter {
   async getRules() {
     const rules = [];
     try {
-      // JSON-Output versuchen (nft >= 0.9.1)
+      // JSON-Output (nft >= 0.9.1)
       const { stdout } = await this.exec('nft -j list ruleset 2>/dev/null');
       const parsed = JSON.parse(stdout);
-      const items = parsed?.nftables || [];
-      for (const item of items) {
+      for (const item of (parsed?.nftables || [])) {
         if (!item.rule) continue;
         const rule = item.rule;
         const handle = String(rule.handle ?? '');
-        const expr = rule.expr || [];
-        // Verdict (accept/drop)
-        const verdict = expr.find(e => e.accept !== undefined || e.drop !== undefined || e?.jump || e?.verdict);
-        const action = verdict ? (verdict.accept !== undefined ? 'allow' : 'deny') : 'unknown';
-        // Port
-        let port = 'any', proto = 'any';
+        const expr   = rule.expr || [];
+
+        // ── Verdict bestimmen ────────────────────────────────────
+        let action = 'unknown';
         for (const e of expr) {
-          if (e.match?.left?.payload?.field === 'dport') {
-            const right = e.match?.right;
-            port = typeof right === 'object' ? `${right.range?.[0]}:${right.range?.[1]}` : String(right ?? 'any');
-          }
-          if (e.match?.left?.meta?.key === 'l4proto' || e.match?.left?.payload?.protocol) {
-            proto = String(e.match?.right ?? 'any');
+          if ('accept' in e)            { action = 'allow'; break; }
+          if ('drop' in e || 'reject' in e) { action = 'deny';  break; }
+          if (e.verdict) {
+            if ('accept' in e.verdict)            { action = 'allow'; break; }
+            if ('drop' in e.verdict || 'reject' in e.verdict) { action = 'deny';  break; }
           }
         }
-        rules.push({ id: handle, port, proto, action, from: 'any', raw: JSON.stringify(rule) });
+        if (action === 'unknown') continue; // Jump/Counter-only-Regeln überspringen
+
+        // ── Port & Protokoll ────────────────────────────────────
+        let port = null, proto = 'any';
+        for (const e of expr) {
+          const left  = e.match?.left;
+          const right = e.match?.right;
+          // dport
+          if (left?.payload?.field === 'dport') {
+            if (right?.set)   port = right.set.map(String).join(', ');
+            else if (right?.range) port = `${right.range[0]}:${right.range[1]}`;
+            else if (right != null) port = String(right);
+          }
+          // Protokoll aus meta l4proto (Zahl → Name)
+          if (left?.meta?.key === 'l4proto') {
+            const v = right;
+            proto = v === 6 ? 'tcp' : v === 17 ? 'udp' : typeof v === 'string' ? v : 'any';
+          }
+          // Protokoll direkt im payload-Protocol-Feld
+          if (left?.payload?.protocol && !e.match?.left?.payload?.field) {
+            proto = String(left.payload.protocol);
+          }
+        }
+
+        // ── Quell-IP (saddr) ────────────────────────────────────
+        let from = 'any';
+        for (const e of expr) {
+          if (e.match?.left?.payload?.field === 'saddr') {
+            const r = e.match?.right;
+            from = r?.prefix
+              ? `${r.prefix.addr}/${r.prefix.len}`
+              : String(r ?? 'any');
+          }
+        }
+
+        rules.push({ id: handle, port: port || 'any', proto, action, from, raw: JSON.stringify(rule) });
       }
     } catch {
       // Fallback: Text-Output parsen
       try {
         const { stdout } = await this.exec('nft list ruleset 2>/dev/null');
         for (const line of stdout.split('\n')) {
-          const m = line.match(/(\w+)\s+dport\s+(\S+)\s+(accept|drop).*#\s*handle\s+(\d+)/i);
-          if (m) {
-            rules.push({
-              id:     m[4],
-              port:   m[2].replace('{', '').replace('}', '').trim(),
-              proto:  m[1].toLowerCase(),
-              action: m[3].toLowerCase() === 'accept' ? 'allow' : 'deny',
-              from:   'any',
-              raw:    line.trim(),
-            });
-          }
+          const m = line.match(/(\w+)\s+dport\s+(\S+)\s+(accept|drop|reject).*#\s*handle\s+(\d+)/i);
+          if (m) rules.push({
+            id:     m[4],
+            port:   m[2].replace(/[{}]/g, '').trim(),
+            proto:  m[1].toLowerCase(),
+            action: m[3].toLowerCase() === 'accept' ? 'allow' : 'deny',
+            from:   'any',
+            raw:    line.trim(),
+          });
         }
       } catch {}
     }
