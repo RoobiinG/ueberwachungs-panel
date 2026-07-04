@@ -43,6 +43,21 @@ function pickStr(obj, ...keys) {
   return null;
 }
 
+// Konkrete Fehlermeldung aus einer PatchMon-Antwort ziehen (JSON-Feld oder Text-Snippet).
+function extractServerMsg(body) {
+  if (!body) return null;
+  if (typeof body === 'string') {
+    const s = body.replace(/\s+/g, ' ').trim();
+    if (!s || /^<(?:!doctype|html)/i.test(s)) return null;   // HTML → keine sinnvolle Meldung
+    return s.slice(0, 200);
+  }
+  if (typeof body === 'object') {
+    const m = body.error || body.message || body.detail || body.msg || body.error_description;
+    if (m) return String(m).slice(0, 200);
+  }
+  return null;
+}
+
 function mapHost(h) {
   // Stats können verschachtelt (h.stats) oder flach am Host hängen.
   const stats = (h.stats && typeof h.stats === 'object') ? h.stats : h;
@@ -177,15 +192,17 @@ router.get('/hosts', async (req, res) => {
     return res.json(await fetchHosts(url, tokenKey, tokenSecret));
   } catch (err) {
     const status = err?.response?.status;
+    const serverMsg = extractServerMsg(err?.response?.data);   // konkrete PatchMon-Meldung, falls vorhanden
+    const suffix    = serverMsg ? ` — PatchMon meldet: „${serverMsg}"` : '';
     const msg =
       err.isDataError
         ? err.message
         : status === 401 || status === 403
-        ? 'API-Token abgelehnt (401/403) — Token-Key/Secret und Scope `host:get` in PatchMon prüfen.'
+        ? `API-Token abgelehnt (${status}) — Token-Key/Secret und Scope \`host:get\` in PatchMon prüfen${suffix}`
         : status === 404
-        ? 'Endpunkt nicht gefunden (404) — URL und PatchMon-Version (v2 erforderlich) prüfen.'
+        ? `Endpunkt nicht gefunden (404) — URL und PatchMon-Version (v2 erforderlich) prüfen${suffix}`
         : status
-        ? `PatchMon HTTP ${status}: ${err.response?.data?.error || err.message}`
+        ? `PatchMon HTTP ${status}${suffix || ': ' + err.message}`
         : `Verbindung fehlgeschlagen: ${err.message}`;
     return res.status(502).json({ error: msg });
   }
