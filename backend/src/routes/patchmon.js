@@ -73,19 +73,39 @@ function mapHost(h) {
     'security_updates_count',
   );
 
+  const totalPackages = pickNum(stats, 'total_packages', 'totalPackages', 'packages_total', 'installed_packages');
+
   const os = pickStr(h, 'os', 'os_type', 'osType', 'operating_system', 'distro', 'platform');
   const osVersion = pickStr(h, 'os_version', 'osVersion', 'os_release', 'version');
 
+  // Host-Gruppen: PatchMon v2 liefert host_groups als Array (von Objekten oder Strings).
+  let hostGroup = pickStr(h, 'host_group', 'hostGroup', 'group', 'group_name', 'hostgroup');
+  const groups = h.host_groups ?? h.hostGroups ?? h.groups;
+  if (!hostGroup && Array.isArray(groups) && groups.length) {
+    hostGroup = groups
+      .map(g => (typeof g === 'string' ? g : g?.name ?? g?.friendly_name ?? g?.label))
+      .filter(Boolean)
+      .join(', ') || null;
+  }
+
+  const hostname     = pickStr(h, 'hostname', 'host', 'machine_name') || null;
+  const friendlyName = pickStr(h, 'friendly_name', 'friendlyName', 'name') || null;
+
   return {
-    id:        h.id ?? h.uuid ?? h.host_id ?? h.machine_id ?? h.hostname,
-    hostname:  pickStr(h, 'hostname', 'friendly_name', 'friendlyName', 'name', 'host') || 'unbekannt',
+    id:        h.id ?? h.uuid ?? h.host_id ?? h.machine_id ?? hostname ?? friendlyName,
+    // Anzeigename: sprechender friendly_name bevorzugt, sonst der technische Hostname.
+    name:      friendlyName || hostname || 'unbekannt',
+    hostname,
+    ip:        pickStr(h, 'ip', 'ip_address', 'ipAddress', 'address'),
     os:        [os, osVersion].filter(Boolean).join(' ') || null,
     updatesCount,
     securityCount,
+    totalPackages,
     updatesAvailable: updatesCount > 0,
+    needsReboot: h.needs_reboot ?? h.needsReboot ?? false,
     lastCheckIn: pickStr(h, 'last_check_in', 'lastCheckIn', 'last_report', 'lastReport',
-                            'last_seen', 'lastSeen', 'updated_at', 'last_update'),
-    hostGroup: pickStr(h, 'host_group', 'hostGroup', 'group', 'group_name', 'hostgroup'),
+                            'last_seen', 'lastSeen', 'last_update', 'updated_at'),
+    hostGroup,
     agentStatus: pickStr(h, 'agent_status', 'agentStatus', 'status', 'connection_status'),
   };
 }
@@ -144,11 +164,11 @@ async function fetchHosts(url, tokenKey, tokenSecret) {
 
   const hosts = arr.map(mapHost);
 
-  // Sortierung: Hosts mit Updates zuerst, dann alphabetisch nach Hostname.
+  // Sortierung: Hosts mit Updates zuerst, dann alphabetisch nach Anzeigename.
   hosts.sort((a, b) =>
     (b.updatesCount > 0 ? 1 : 0) - (a.updatesCount > 0 ? 1 : 0) ||
     b.updatesCount - a.updatesCount ||
-    a.hostname.localeCompare(b.hostname, 'de')
+    (a.name || '').localeCompare(b.name || '', 'de')
   );
 
   const result = { hosts };

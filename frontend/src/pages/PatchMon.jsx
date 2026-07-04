@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   RefreshCw, Settings2, CheckCircle2, Key, Eye, EyeOff,
-  Search, PackageCheck, Package, ShieldAlert, Server, ArrowUpCircle, Clock,
+  Search, PackageCheck, Package, ShieldAlert, Server, ArrowUpCircle, Clock, RotateCw,
 } from 'lucide-react';
 import axios from 'axios';
 import { Card } from '../components/ui/Card';
@@ -26,14 +26,17 @@ const InputField = ({ label, value, onChange, placeholder, hint }) => (
 // ── Host-Karte ──────────────────────────────────────────────────────────────
 function HostCard({ h }) {
   const hasUpdates = h.updatesAvailable;
+  // Technische Zweitzeile: echter Hostname (falls vom Anzeigenamen abweichend) + IP.
+  const sub = [h.hostname && h.hostname !== h.name ? h.hostname : null, h.ip]
+    .filter(Boolean).join(' · ');
   return (
     <div className="bg-panel-card border border-panel-border rounded-lg p-3 flex flex-col gap-2 hover:border-panel-muted/40 transition-colors">
-      {/* Hostname + Status-Dot */}
+      {/* Name + Status-Dot */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex items-center gap-2 min-w-0">
           <span className={`w-2 h-2 rounded-full flex-shrink-0 ${hasUpdates ? 'bg-panel-orange' : 'bg-panel-green'}`} />
-          <span className="text-sm font-medium text-panel-text truncate" title={h.hostname}>
-            {h.hostname}
+          <span className="text-sm font-medium text-panel-text truncate" title={h.name}>
+            {h.name}
           </span>
         </div>
         {h.hostGroup && (
@@ -43,7 +46,8 @@ function HostCard({ h }) {
         )}
       </div>
 
-      {/* OS */}
+      {/* Hostname/IP + OS */}
+      {sub && <div className="text-xs text-panel-muted/80 truncate font-mono" title={sub}>{sub}</div>}
       {h.os && <div className="text-xs text-panel-muted truncate" title={h.os}>{h.os}</div>}
 
       {/* Update-Status */}
@@ -63,10 +67,19 @@ function HostCard({ h }) {
             <ShieldAlert size={12} /> {h.securityCount} Security
           </span>
         )}
+        {h.needsReboot && (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-panel-accent/15 text-panel-accent text-xs font-medium"
+            title="Neustart erforderlich">
+            <RotateCw size={12} /> Neustart
+          </span>
+        )}
       </div>
 
-      {/* Footer: letzter Check-in + Update-Button-Platzhalter */}
+      {/* Footer: Pakete gesamt · letzter Check-in + Update-Button-Platzhalter */}
       <div className="flex items-center gap-2 text-xs text-panel-muted mt-auto pt-1 border-t border-panel-border/50">
+        {h.totalPackages > 0 && (
+          <span className="tabular-nums" title="Installierte Pakete gesamt">{h.totalPackages} Pakete</span>
+        )}
         {h.lastCheckIn && (
           <span className="inline-flex items-center gap-1 truncate" title={`Letzter Check-in: ${h.lastCheckIn}`}>
             <Clock size={11} />
@@ -157,7 +170,9 @@ export default function PatchMon() {
     if (!search.trim()) return hosts;
     const q = search.toLowerCase();
     return hosts.filter(h =>
+      h.name?.toLowerCase().includes(q) ||
       h.hostname?.toLowerCase().includes(q) ||
+      h.ip?.toLowerCase().includes(q) ||
       h.os?.toLowerCase().includes(q) ||
       h.hostGroup?.toLowerCase().includes(q)
     );
