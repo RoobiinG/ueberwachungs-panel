@@ -88,16 +88,43 @@ async function fetchHosts(url, tokenKey, tokenSecret) {
     timeout: 10000,
   });
 
+  // PatchMon könnte gültiges JSON mit falschem Content-Type (text/plain) senden →
+  // axios lässt es dann als String. Erst parsen versuchen, bevor wir aufgeben.
+  let payload = data;
+  if (typeof payload === 'string') {
+    const trimmed = payload.trim();
+    if (trimmed && (trimmed[0] === '{' || trimmed[0] === '[')) {
+      try { payload = JSON.parse(trimmed); } catch { /* unten als Fehler behandelt */ }
+    }
+  }
+
+  // Immer noch String → Text/HTML statt JSON: aussagekräftige Diagnose mit Antwort-Anfang.
+  if (typeof payload === 'string') {
+    const snippet   = payload.replace(/\s+/g, ' ').trim().slice(0, 200);
+    const looksHtml = /^\s*<(?:!doctype|html)/i.test(payload);
+    const e = new Error(
+      looksHtml
+        ? `PatchMon lieferte HTML statt JSON (HTTP 200) — vermutlich zeigt die URL aufs Web-UI statt auf die API, oder der Pfad /api/v1/api/hosts stimmt für diese Version nicht. Antwort-Anfang: ${snippet}`
+        : `PatchMon-Antwort ist Text statt JSON (HTTP 200): ${snippet || '(leer)'}`
+    );
+    e.isDataError = true;
+    throw e;
+  }
+
+  const data2 = payload;
+
   // Antwort kann sein: Array direkt · { hosts: [...] } · { data: [...] } · { results: [...] }
   let arr;
-  if (Array.isArray(data))                    arr = data;
-  else if (Array.isArray(data?.hosts))        arr = data.hosts;
-  else if (Array.isArray(data?.data))         arr = data.data;
-  else if (Array.isArray(data?.results))      arr = data.results;
-  else if (Array.isArray(data?.items))        arr = data.items;
+  if (Array.isArray(data2))                    arr = data2;
+  else if (Array.isArray(data2?.hosts))        arr = data2.hosts;
+  else if (Array.isArray(data2?.data))         arr = data2.data;
+  else if (Array.isArray(data2?.results))      arr = data2.results;
+  else if (Array.isArray(data2?.items))        arr = data2.items;
   else {
-    const keys = data && typeof data === 'object' ? Object.keys(data).slice(0, 8).join(', ') : typeof data;
-    throw new Error(`Unerwartetes Antwortformat — vorhandene Felder: ${keys || '(leer)'}`);
+    const keys = data2 && typeof data2 === 'object' ? Object.keys(data2).slice(0, 8).join(', ') : typeof data2;
+    const e = new Error(`Unerwartetes JSON-Antwortformat — vorhandene Felder: ${keys || '(leer)'}`);
+    e.isDataError = true;
+    throw e;
   }
 
   const hosts = arr.map(mapHost);
@@ -151,7 +178,9 @@ router.get('/hosts', async (req, res) => {
   } catch (err) {
     const status = err?.response?.status;
     const msg =
-      status === 401 || status === 403
+      err.isDataError
+        ? err.message
+        : status === 401 || status === 403
         ? 'API-Token abgelehnt (401/403) — Token-Key/Secret und Scope `host:get` in PatchMon prüfen.'
         : status === 404
         ? 'Endpunkt nicht gefunden (404) — URL und PatchMon-Version (v2 erforderlich) prüfen.'
