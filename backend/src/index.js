@@ -89,6 +89,7 @@ app.use('/api/uptime-kuma', auth, require('./routes/uptimeKuma'));
 app.use('/api/alerts',      auth, require('./routes/alerts'));
 app.use('/api/sessions',    auth, require('./routes/sessions'));
 app.use('/api/dockhand',    auth, require('./routes/dockhand'));
+app.use('/api/patchmon',    auth, require('./routes/patchmon'));
 app.use('/api/audit',       auth, require('./routes/audit'));
 // Öffentlicher Share-Endpunkt (kein Login nötig) — muss VOR auth stehen
 app.get('/api/logs/share/:token', require('./routes/panelLogsPublic'));

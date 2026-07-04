@@ -25,6 +25,7 @@ const MCHost        = lazy(() => import('./pages/MCHost'));
 const Agents        = lazy(() => import('./pages/Agents'));
 const AgentDetail   = lazy(() => import('./pages/AgentDetail'));
 const UptimeKuma    = lazy(() => import('./pages/UptimeKuma'));
+const PatchMon      = lazy(() => import('./pages/PatchMon'));
 const Settings      = lazy(() => import('./pages/Settings'));
 const Alerts        = lazy(() => import('./pages/Alerts'));
 const Roles         = lazy(() => import('./pages/Roles'));
@@ -93,6 +94,7 @@ const AppRoutes = () => {
             <Route path="/agents" element={<Agents />} />
             <Route path="/agents/:id" element={<AgentDetail />} />
             <Route path="/uptime-kuma" element={<UptimeKuma />} />
+            <Route path="/patchmon" element={<PatchMon />} />
             <Route path="/alerts" element={<Alerts />} />
             <Route path="/webhooks" element={<Webhooks />} />
             <Route path="/hetzner" element={<Hetzner />} />
