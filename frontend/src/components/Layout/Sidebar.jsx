@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Container, Wrench, Shield,
   Webhook, Users, Cloud, Gamepad2, ChevronLeft, ChevronRight,
   Server, Settings, ServerCog, MonitorCheck, Bell, ShieldCheck, ClipboardList,
-  BarChart2, AlertCircle, Trash2, ScrollText,
+  BarChart2, AlertCircle, Trash2, ScrollText, PackageCheck,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
@@ -23,6 +23,7 @@ const navItems = [
 
   { section: 'Dienste' },
   { to: '/uptime-kuma', icon: MonitorCheck, label: 'Uptime Kuma' },
+  { to: '/patchmon',    icon: PackageCheck, label: 'PatchMon' },
   { to: '/alerts',      icon: Bell,         label: 'Benachrichtigungen' },
   { to: '/webhooks',    icon: Webhook,      label: 'Webhooks',   permission: 'webhooks.view' },
   { to: '/hetzner',     icon: Cloud,        label: 'Hetzner',    permission: 'hetzner.view' },
