@@ -603,7 +603,7 @@ export default function Settings() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-4 max-w-xl">
+    <div className="space-y-4">
 
       {/* Tab-Header */}
       <div className="flex gap-1 bg-panel-surface border border-panel-border rounded-lg p-1">
@@ -624,6 +624,9 @@ export default function Settings() {
           </button>
         )}
       </div>
+
+      {/* Karten als responsives Masonry-Raster (nebeneinander + untereinander) */}
+      <div className="columns-1 lg:columns-2 gap-4 [&>*]:mb-4 [&>*]:break-inside-avoid">
 
       {/* ═══════════════════ PROFIL-TAB ═══════════════════ */}
       {tab === 'profile' && (<>
@@ -1090,6 +1093,7 @@ export default function Settings() {
       {/* ── Aktive Sitzungen ─────────────────────────────────────────────────── */}
       <SessionsSection isAdmin={isAdmin} />
 
+      </div>{/* /Masonry-Raster */}
     </div>
   );
 }
