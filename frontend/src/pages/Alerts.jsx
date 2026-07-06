@@ -42,10 +42,6 @@ function ConditionRow({ cond, onChange, onRemove, canRemove }) {
           <option value="net_rx">Netz ↓</option>
           <option value="net_tx">Netz ↑</option>
         </optgroup>
-        <optgroup label="PatchMon (nur verknüpfte Server)">
-          <option value="patchmon_updates">Updates verfügbar</option>
-          <option value="patchmon_security">Security-Updates</option>
-        </optgroup>
       </select>
       {/* Bedingung */}
       <select value={cond.condition} onChange={e => onChange({ ...cond, condition: e.target.value })} className={inputCls + ' w-20'}>
@@ -92,7 +88,30 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
   }, [open, initial]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-  const isAction = form.metric === 'action';
+  const isAction   = form.metric === 'action';
+  const isPatchmon = form.metric === 'patchmon_updates' || form.metric === 'patchmon_security';
+  const activeType = isAction ? 'action' : isPatchmon ? 'patchmon' : 'threshold';
+
+  // Typ umschalten: Metric + passende Bedingungen setzen
+  const selectType = (type) => {
+    if (type === 'action') {
+      set('metric', 'action');
+    } else if (type === 'patchmon') {
+      setForm(f => ({ ...f, metric: 'patchmon_updates', conditions: [{ metric: 'patchmon_updates', condition: 'gt', threshold: 0 }] }));
+    } else {
+      setForm(f => {
+        const keep = (f.conditions || []).filter(c => !String(c.metric).startsWith('patchmon'));
+        return { ...f, metric: 'cpu', conditions: keep.length ? keep : [emptyCondition()] };
+      });
+    }
+  };
+
+  // PatchMon-Feld ändern (Metrik-Auswahl bzw. Schwelle)
+  const setPatchmon = (patch) => setForm(f => {
+    const cur = f.conditions?.[0] || { metric: 'patchmon_updates', condition: 'gt', threshold: 0 };
+    const next = { ...cur, condition: 'gt', ...patch };
+    return { ...f, metric: next.metric, conditions: [next] };
+  });
 
   const toggleServer = (id) => {
     const ids = form.agent_ids || [];
@@ -120,7 +139,7 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
         metric:           isAction ? 'action' : (form.conditions?.[0]?.metric || 'cpu'),
         conditions:       isAction ? [] : (form.conditions || []),
         logic:            form.logic || 'and',
-        duration_seconds: isAction ? 0 : parseInt(form.duration_seconds) || 0,
+        duration_seconds: (isAction || isPatchmon) ? 0 : parseInt(form.duration_seconds) || 0,
         cooldown_minutes: parseInt(form.cooldown_minutes) || 30,
         webhook_id:       parseInt(form.webhook_id),
         agent_ids:        form.agent_ids || [],
@@ -152,13 +171,14 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
           <label className="text-xs text-panel-muted block mb-2">Typ</label>
           <div className="flex gap-2">
             {[
-              { val: false, label: '📊 Schwellenwert' },
-              { val: true,  label: '⚡ Server-Aktionen' },
+              { key: 'threshold', label: '📊 Schwellenwert' },
+              { key: 'patchmon',  label: '🔧 PatchMon-Updates' },
+              { key: 'action',    label: '⚡ Server-Aktionen' },
             ].map(t => (
-              <button key={String(t.val)} type="button"
-                onClick={() => set('metric', t.val ? 'action' : (form.conditions?.[0]?.metric || 'cpu'))}
+              <button key={t.key} type="button"
+                onClick={() => selectType(t.key)}
                 className={`flex-1 px-3 py-2 rounded-lg border text-xs font-medium transition-all ${
-                  t.val === isAction
+                  t.key === activeType
                     ? 'border-panel-accent bg-panel-accent/10 text-panel-accent'
                     : 'border-panel-border text-panel-muted hover:border-panel-muted/50 hover:text-panel-text'
                 }`}>
@@ -189,8 +209,38 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
           </div>
         </div>
 
+        {/* PatchMon-Feld (nur für PatchMon-Typ) */}
+        {isPatchmon && (
+          <div>
+            <label className="text-xs text-panel-muted block mb-1">PatchMon-Überwachung</label>
+            <div className="flex items-center gap-2 flex-wrap bg-panel-bg/60 rounded-lg px-3 py-2.5 border border-panel-border/60">
+              <select
+                value={form.metric}
+                onChange={e => setPatchmon({ metric: e.target.value })}
+                className="bg-panel-surface border border-panel-border rounded px-2 py-1 text-xs text-panel-text focus:outline-none focus:border-panel-accent"
+              >
+                <option value="patchmon_updates">Neue Updates</option>
+                <option value="patchmon_security">Neue Security-Updates</option>
+              </select>
+              <span className="text-xs text-panel-muted">mehr als</span>
+              <input
+                type="number" min="0"
+                value={form.conditions?.[0]?.threshold ?? 0}
+                onChange={e => setPatchmon({ threshold: parseInt(e.target.value) || 0 })}
+                className="w-16 bg-panel-surface border border-panel-border rounded px-2 py-1 text-xs text-panel-text text-right focus:outline-none focus:border-panel-accent"
+              />
+              <span className="text-xs text-panel-muted">
+                {form.metric === 'patchmon_security' ? 'Security-Updates' : 'Updates'}
+              </span>
+            </div>
+            <p className="text-xs text-panel-muted mt-1">
+              Meldet nur Server, die mit einem PatchMon-Host verknüpft sind (Server-Editor oder Einstellungen).
+            </p>
+          </div>
+        )}
+
         {/* Bedingungen (nur für Schwellenwert) */}
-        {!isAction && (
+        {activeType === 'threshold' && (
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs text-panel-muted">Bedingungen</label>
@@ -232,14 +282,14 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
 
         {/* Dauer + Cooldown */}
         <div className="grid grid-cols-2 gap-3">
-          {!isAction && (
+          {activeType === 'threshold' && (
             <div>
               <label className="text-xs text-panel-muted block mb-1">Dauer (Sek.) bis Auslösung</label>
               <input type="number" min="0" max="3600" className={inputCls}
                 value={form.duration_seconds} onChange={e => set('duration_seconds', e.target.value)} />
             </div>
           )}
-          <div className={isAction ? 'col-span-2' : ''}>
+          <div className={activeType !== 'threshold' ? 'col-span-2' : ''}>
             <label className="text-xs text-panel-muted block mb-1">Cooldown (Min.)</label>
             <input type="number" min="1" max="1440" className={inputCls}
               value={form.cooldown_minutes} onChange={e => set('cooldown_minutes', e.target.value)} />

@@ -286,6 +286,21 @@ router.get('/hosts/:id/system', requirePermission('patchmon.view'), async (req, 
   }
 });
 
+// ─── Verknüpfung des lokalen Panel-Servers mit einem PatchMon-Host ───────────
+// (Agenten-Verknüpfung läuft über PUT /api/agents/:id; hier nur der lokale Server.)
+
+// GET /api/patchmon/local-binding
+router.get('/local-binding', requirePermission('patchmon.view'), (req, res) => {
+  res.json({ hostId: getSetting('patchmonLocalHostId') || '' });
+});
+
+// POST /api/patchmon/local-binding
+router.post('/local-binding', requirePermission('patchmon.manage'), (req, res) => {
+  const { hostId } = req.body;
+  setSetting('patchmonLocalHostId', hostId ? String(hostId) : '');
+  res.json({ ok: true });
+});
+
 module.exports = router;
 // fetchHosts für den Alert-Evaluator (PatchMon-Metriken) wiederverwendbar machen.
 module.exports.fetchHosts = fetchHosts;
