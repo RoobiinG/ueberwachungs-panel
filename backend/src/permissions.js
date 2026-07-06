@@ -39,6 +39,14 @@ const PERMISSIONS = [
   // ─── Monitoring ───────────────────────────────────────────────────────────
   { key: 'metrics.view',        category: 'Monitoring',         label: 'Metriken anzeigen',               description: 'System-Metriken, Charts und Zeitreihen abrufen' },
 
+  // ─── PatchMon ─────────────────────────────────────────────────────────────
+  { key: 'patchmon.view',       category: 'PatchMon',           label: 'Updates anzeigen',                description: 'PatchMon-Server, ausstehende Updates und Kernel-Infos einsehen' },
+  { key: 'patchmon.manage',     category: 'PatchMon',           label: 'Verbindung/Benachrichtigung verwalten', description: 'PatchMon-Verbindung (URL/Token) und Update-Benachrichtigungen konfigurieren' },
+
+  // ─── Uptime Kuma ──────────────────────────────────────────────────────────
+  { key: 'uptimekuma.view',     category: 'Uptime Kuma',        label: 'Monitore anzeigen',               description: 'Uptime-Kuma-Monitore und Status einsehen' },
+  { key: 'uptimekuma.manage',   category: 'Uptime Kuma',        label: 'Verbindung verwalten',            description: 'Uptime-Kuma-Verbindung (URL/API-Key) konfigurieren' },
+
   // ─── Benutzerverwaltung ───────────────────────────────────────────────────
   { key: 'users.view',          category: 'Benutzerverwaltung', label: 'Benutzer anzeigen',               description: 'Benutzerliste einsehen' },
   { key: 'users.manage',        category: 'Benutzerverwaltung', label: 'Benutzer verwalten',              description: 'Benutzer erstellen, bearbeiten, löschen' },
@@ -85,6 +93,8 @@ const OPERATOR_PERMISSIONS = [
   'webhooks.view', 'webhooks.test',
   'alerts.view',
   'metrics.view',
+  'patchmon.view',
+  'uptimekuma.view',
   'hetzner.view', 'hetzner.start', 'hetzner.stop', 'hetzner.restart', 'hetzner.backup',
   'mchost.view', 'mchost.start', 'mchost.stop', 'mchost.restart', 'mchost.backup',
   'users.view',
@@ -101,6 +111,8 @@ const GUEST_PERMISSIONS = [
   'webhooks.view',
   'alerts.view',
   'metrics.view',
+  'patchmon.view',
+  'uptimekuma.view',
 ];
 
 module.exports = { PERMISSIONS, ALL_KEYS, OPERATOR_PERMISSIONS, GUEST_PERMISSIONS };
