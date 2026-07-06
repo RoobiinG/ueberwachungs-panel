@@ -17,6 +17,12 @@ const setSetting = (key, val) =>
 const CACHE = new Map();
 const TTL   = 30_000;
 
+// HTTP-Basic-Auth-Header für die PatchMon-Scoped-API (token_key:token_secret).
+const authHeaders = (tokenKey, tokenSecret) => ({
+  Authorization: `Basic ${Buffer.from(`${tokenKey}:${tokenSecret}`).toString('base64')}`,
+  Accept: 'application/json',
+});
+
 // ─── PatchMon Scoped-Integration-API ─────────────────────────────────────────
 // Base-Path: <url>/api/v1/api  ·  Auth: HTTP Basic (token_key:token_secret)
 // Hosts:     GET /api/v1/api/hosts?include=stats
@@ -116,10 +122,9 @@ async function fetchHosts(url, tokenKey, tokenSecret) {
   if (cached && Date.now() - cached.ts < TTL) return cached.data;
 
   const base  = url.replace(/\/+$/, '');
-  const creds = Buffer.from(`${tokenKey}:${tokenSecret}`).toString('base64');
 
   const { data } = await axios.get(`${base}/api/v1/api/hosts?include=stats`, {
-    headers: { Authorization: `Basic ${creds}`, Accept: 'application/json' },
+    headers: authHeaders(tokenKey, tokenSecret),
     timeout: 10000,
   });
 
@@ -176,6 +181,36 @@ async function fetchHosts(url, tokenKey, tokenSecret) {
   return result;
 }
 
+// ─── Host-System (nur nicht-duplizierende Kernel-Infos) ──────────────────────
+// Panel-Agent liefert CPU/RAM/Disk/Uptime bereits → hier NUR Kernel + Reboot-Grund.
+
+function mapSystem(s) {
+  const sys = (s && typeof s === 'object' && s.system && typeof s.system === 'object') ? s.system : s;
+  if (!sys || typeof sys !== 'object') return null;
+  return {
+    kernelRunning:   pickStr(sys, 'kernel_version', 'kernelVersion', 'kernel', 'running_kernel'),
+    kernelInstalled: pickStr(sys, 'installed_kernel_version', 'installedKernelVersion', 'latest_kernel', 'kernel_installed'),
+    rebootReason:    pickStr(sys, 'reboot_reason', 'rebootReason', 'reboot_required_reason'),
+    needsReboot:     sys.needs_reboot ?? sys.needsReboot ?? false,
+  };
+}
+
+async function fetchHostSystem(url, tokenKey, tokenSecret, id) {
+  const cacheKey = `sys|${url}|${tokenKey}|${id}`;
+  const cached   = CACHE.get(cacheKey);
+  if (cached && Date.now() - cached.ts < TTL) return cached.data;
+
+  const base = url.replace(/\/+$/, '');
+  const { data } = await axios.get(`${base}/api/v1/api/hosts/${encodeURIComponent(id)}/system`, {
+    headers: authHeaders(tokenKey, tokenSecret),
+    timeout: 10000,
+  });
+
+  const system = mapSystem(data);
+  CACHE.set(cacheKey, { data: system, ts: Date.now() });
+  return system;
+}
+
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
 // GET /api/patchmon/config
@@ -224,6 +259,29 @@ router.get('/hosts', async (req, res) => {
         : status
         ? `PatchMon HTTP ${status}${suffix || ': ' + err.message}`
         : `Verbindung fehlgeschlagen: ${err.message}`;
+    return res.status(502).json({ error: msg });
+  }
+});
+
+// GET /api/patchmon/hosts/:id/system — nur Kernel/Reboot-Grund (fail-soft)
+router.get('/hosts/:id/system', async (req, res) => {
+  const url         = getSetting('patchmonUrl');
+  const tokenKey    = getSetting('patchmonTokenKey');
+  const tokenSecret = getSetting('patchmonTokenSecret');
+
+  if (!url || !tokenKey || !tokenSecret)
+    return res.status(400).json({ error: 'PatchMon nicht konfiguriert.' });
+  if (!req.params.id)
+    return res.status(400).json({ error: 'Host-ID fehlt.' });
+
+  try {
+    return res.json({ system: await fetchHostSystem(url, tokenKey, tokenSecret, req.params.id) });
+  } catch (err) {
+    const status = err?.response?.status;
+    const serverMsg = extractServerMsg(err?.response?.data);
+    const msg = status
+      ? `PatchMon HTTP ${status}${serverMsg ? ` — ${serverMsg}` : ''}`
+      : `Verbindung fehlgeschlagen: ${err.message}`;
     return res.status(502).json({ error: msg });
   }
 });

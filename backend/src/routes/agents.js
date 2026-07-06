@@ -106,13 +106,13 @@ router.get('/', requirePermission('agents.view'), (req, res) => {
 
   if (!role || role.is_admin || !role.restrict_agents) {
     return res.json(db.prepare(
-      'SELECT id, name, url, fingerprint, dockhand_env_id, created_at FROM remote_agents ORDER BY name'
+      'SELECT id, name, url, fingerprint, dockhand_env_id, patchmon_host_id, created_at FROM remote_agents ORDER BY name'
     ).all());
   }
 
   // Eingeschränkte Rolle: nur gewährte Server
   return res.json(db.prepare(`
-    SELECT ra.id, ra.name, ra.url, ra.fingerprint, ra.dockhand_env_id, ra.created_at
+    SELECT ra.id, ra.name, ra.url, ra.fingerprint, ra.dockhand_env_id, ra.patchmon_host_id, ra.created_at
     FROM remote_agents ra
     INNER JOIN agent_grants ag ON ag.agent_id = ra.id
     WHERE ag.role_id = ?
@@ -146,7 +146,7 @@ router.put('/:id', requirePermission('agents.edit'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
 
-  const { name, url, token } = req.body;
+  const { name, url, token, patchmon_host_id } = req.body;
   const newUrl = (url ?? agent.url).trim().replace(/\/$/, '');
 
   if (url && url !== agent.url) {
@@ -159,14 +159,20 @@ router.put('/:id', requirePermission('agents.edit'), async (req, res) => {
     try { fingerprint = (await fetchFingerprint(newUrl)) || ''; } catch { fingerprint = ''; }
   }
 
+  // PatchMon-Verknüpfung: nur ändern wenn Feld im Body ist ('' → Verknüpfung entfernen)
+  const pmHostId = ('patchmon_host_id' in req.body)
+    ? (patchmon_host_id ? String(patchmon_host_id).trim() : null)
+    : (agent.patchmon_host_id ?? null);
+
   db.prepare(`
     UPDATE remote_agents SET
-      name        = COALESCE(?, name),
-      url         = ?,
-      token       = COALESCE(?, token),
-      fingerprint = ?
+      name             = COALESCE(?, name),
+      url              = ?,
+      token            = COALESCE(?, token),
+      fingerprint      = ?,
+      patchmon_host_id = ?
     WHERE id = ?
-  `).run(name?.trim() ?? null, newUrl, token !== undefined ? token.trim() : null, fingerprint, agent.id);
+  `).run(name?.trim() ?? null, newUrl, token !== undefined ? token.trim() : null, fingerprint, pmHostId, agent.id);
 
   auditLog(req, 'agent.edit', 'agent', agent.name, { newUrl });
   res.json({ success: true });

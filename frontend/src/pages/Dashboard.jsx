@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Cpu, WifiOff, Container, ChevronRight, Server, Activity,
   MemoryStick, HardDrive, Network, ArrowDownToLine, ArrowUpFromLine,
-  Clock, Monitor,
+  Clock, Monitor, Package, ShieldAlert, RotateCw,
 } from 'lucide-react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
@@ -253,11 +253,14 @@ export default function Dashboard({ liveStats }) {
   const [agentStats,  setAgentStats]  = useState({});   // { [id]: stats }
   const [agentOnline, setAgentOnline] = useState({});   // { [id]: bool }
   const [agentDocker, setAgentDocker] = useState({});   // { [id]: containers[] }
+  const [patchmonHosts, setPatchmonHosts] = useState([]);
 
   // ── Initial-Daten ──────────────────────────────────────────────────────────
   useEffect(() => {
     axios.get('/api/system/stats').then(r => setLocalInfo(r.data)).catch(() => {});
     axios.get('/api/agents').then(r => setAgents(r.data)).catch(() => {});
+    // PatchMon-Gesamtübersicht (fail-soft — nicht konfiguriert = Kachel ausblenden)
+    axios.get('/api/patchmon/hosts').then(r => setPatchmonHosts(r.data.hosts || [])).catch(() => setPatchmonHosts([]));
   }, []);
 
   // ── Remote-Agent-Stats pollen ──────────────────────────────────────────────
@@ -301,6 +304,12 @@ export default function Dashboard({ liveStats }) {
     .flat()
     .filter(c => c?.state === 'running').length;
 
+  // ── PatchMon-Aggregat ──────────────────────────────────────────────────────
+  const pmConfigured  = patchmonHosts.length > 0;
+  const pmWithUpdates = patchmonHosts.filter(h => h.updatesAvailable).length;
+  const pmSecurity    = patchmonHosts.reduce((s, h) => s + (h.securityCount || 0), 0);
+  const pmReboot      = patchmonHosts.filter(h => h.needsReboot).length;
+
   return (
     <div className="space-y-5">
 
@@ -332,6 +341,31 @@ export default function Dashboard({ liveStats }) {
           <span>Live · Auto-Refresh 15s</span>
         </div>
       </div>
+
+      {/* ── PatchMon-Kachel (nur wenn PatchMon konfiguriert) ──────────── */}
+      {pmConfigured && (
+        <button onClick={() => navigate('/patchmon')}
+          className="w-full flex items-center gap-4 text-xs bg-panel-card border border-panel-border rounded-lg px-4 py-2.5 hover:border-panel-accent/40 transition-colors flex-wrap">
+          <span className="flex items-center gap-1.5 text-panel-text font-medium">
+            <Package size={13} className="text-panel-accent" /> PatchMon
+          </span>
+          <span className="text-panel-muted">
+            <strong className={pmWithUpdates > 0 ? 'text-panel-orange' : 'text-panel-text'}>{pmWithUpdates}</strong>
+            {' '}von {patchmonHosts.length} Servern mit Updates
+          </span>
+          {pmSecurity > 0 && (
+            <span className="flex items-center gap-1.5 text-panel-red">
+              <ShieldAlert size={13} /> <strong>{pmSecurity}</strong> Security-Updates
+            </span>
+          )}
+          {pmReboot > 0 && (
+            <span className="flex items-center gap-1.5 text-panel-accent">
+              <RotateCw size={13} /> <strong>{pmReboot}</strong> Neustart nötig
+            </span>
+          )}
+          <ChevronRight size={13} className="ml-auto text-panel-muted" />
+        </button>
+      )}
 
       {/* ── Server-Grid ───────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">

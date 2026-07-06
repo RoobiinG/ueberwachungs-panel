@@ -259,6 +259,8 @@ db.exec(`
 try { db.exec('ALTER TABLE audit_log ADD COLUMN location TEXT'); } catch {}
 // Dockhand-Integration: Environment-ID pro Remote-Agent
 try { db.exec('ALTER TABLE remote_agents ADD COLUMN dockhand_env_id INTEGER'); } catch {}
+// PatchMon-Integration: Verknüpfung zu einem PatchMon-Host (dessen id) pro Remote-Agent
+try { db.exec('ALTER TABLE remote_agents ADD COLUMN patchmon_host_id TEXT'); } catch {}
 // Panel-Logs: Frontend-Fehler + API-Fehler persistent speichern
 db.exec(`
   CREATE TABLE IF NOT EXISTS panel_logs (
