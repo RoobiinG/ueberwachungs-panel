@@ -5,9 +5,22 @@ import {
   MemoryStick, HardDrive, Network, ArrowDownToLine, ArrowUpFromLine,
   Clock, Monitor, Package, ShieldAlert, RotateCw,
 } from 'lucide-react';
+import { LineChart, Line, YAxis, ResponsiveContainer } from 'recharts';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { useLiveInterval } from '../hooks/useLiveInterval';
+
+// Recharts-Farben (an Panel-Palette angelehnt)
+const C_CPU = '#388bfd';
+const C_RAM = '#3fb950';
+
+// Zeitreihe auf ~48 Punkte ausdünnen (für kompakte Sparklines)
+const decimate = (rows, max = 48) => {
+  const clean = (rows || []).filter(r => r && r.cpu != null);
+  const src = clean.length <= max ? clean
+    : clean.filter((_, i) => i % Math.ceil(clean.length / max) === 0);
+  return src.map(r => ({ cpu: r.cpu, mem: r.mem }));
+};
 
 // ── Hilfsfunktionen ──────────────────────────────────────────────────────────
 
@@ -89,9 +102,36 @@ function Skeleton() {
   );
 }
 
+// ── Mini-Verlaufs-Chart (CPU / RAM) ───────────────────────────────────────────
+
+function MiniChart({ data }) {
+  return (
+    <div>
+      <div className="flex items-center gap-3 text-[10px] text-panel-muted/70 mb-0.5">
+        <span className="flex items-center gap-1">
+          <span className="inline-block w-2.5 h-0.5 rounded" style={{ backgroundColor: C_CPU }} />CPU
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="inline-block w-2.5 h-0.5 rounded" style={{ backgroundColor: C_RAM }} />RAM
+        </span>
+        <span className="ml-auto">letzte 15 min</span>
+      </div>
+      <div className="h-14 -mx-1">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
+            <YAxis hide domain={[0, 100]} />
+            <Line type="monotone" dataKey="cpu" stroke={C_CPU} strokeWidth={1.5} dot={false} isAnimationActive={false} />
+            <Line type="monotone" dataKey="mem" stroke={C_RAM} strokeWidth={1.5} dot={false} isAnimationActive={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
 // ── Server-Karte ──────────────────────────────────────────────────────────────
 
-function ServerCard({ name, stats, online, isLocal, docker, onNavigate }) {
+function ServerCard({ name, stats, online, isLocal, docker, history, onNavigate }) {
   const cpu     = stats?.cpu?.usage ?? 0;
   const memPct  = stats?.memory?.usedPercent ?? 0;
   const diskPct = stats?.disk?.[0]?.usedPercent ?? 0;
@@ -185,6 +225,7 @@ function ServerCard({ name, stats, online, isLocal, docker, onNavigate }) {
           {stats.disk?.[0] && (
             <StatRow icon={HardDrive} label="Disk" value={diskPct} sub={diskSub} />
           )}
+          {Array.isArray(history) && history.length >= 2 && <MiniChart data={history} />}
         </div>
       )}
 
@@ -254,6 +295,7 @@ export default function Dashboard({ liveStats }) {
   const [agentOnline, setAgentOnline] = useState({});   // { [id]: bool }
   const [agentDocker, setAgentDocker] = useState({});   // { [id]: containers[] }
   const [patchmonHosts, setPatchmonHosts] = useState([]);
+  const [histories,   setHistories]   = useState({});   // { [serverKey]: [{cpu,mem}] } für Mini-Charts
 
   // ── Initial-Daten ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -284,6 +326,28 @@ export default function Dashboard({ liveStats }) {
     const t = setInterval(() => pollAgents(agents), liveInterval);
     return () => clearInterval(t);
   }, [agents, pollAgents, liveInterval]);
+
+  // ── Verlaufs-Historie für Mini-Charts (echte Metriken, alle 30s) ────────────
+  const loadHistories = useCallback(async () => {
+    const targets = [...(hideLocal ? [] : ['local']), ...agents.map(a => String(a.id))];
+    if (targets.length === 0) return;
+    const results = await Promise.all(targets.map(key =>
+      axios.get(`/api/metrics?range=15m&server=${key}`)
+        .then(r => [key, decimate(r.data.rows)])
+        .catch(() => [key, null])
+    ));
+    setHistories(h => {
+      const next = { ...h };
+      for (const [key, data] of results) if (data) next[key] = data;
+      return next;
+    });
+  }, [agents, hideLocal]);
+
+  useEffect(() => {
+    loadHistories();
+    const t = setInterval(loadHistories, 30_000);
+    return () => clearInterval(t);
+  }, [loadHistories]);
 
   // ── Lokaler Server: Live-Stats einmischen ──────────────────────────────────
   const localCpu    = liveStats?.cpu ?? localInfo?.cpu?.usage ?? 0;
@@ -376,6 +440,7 @@ export default function Dashboard({ liveStats }) {
             online={true}
             isLocal={true}
             docker={null}
+            history={histories.local}
           />
         )}
         {agents.map(agent => (
@@ -386,6 +451,7 @@ export default function Dashboard({ liveStats }) {
             online={agentOnline[agent.id]}
             isLocal={false}
             docker={agentDocker[agent.id] ?? null}
+            history={histories[String(agent.id)]}
             onNavigate={() => navigate(`/agents/${agent.id}`)}
           />
         ))}
