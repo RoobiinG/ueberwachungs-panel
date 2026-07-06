@@ -92,7 +92,7 @@ export default function Services() {
               const dotColor    = isActive ? 'bg-panel-green' : isFailed ? 'bg-panel-red' : 'bg-panel-orange';
               return (
                 <div key={s.name}
-                  className="grid grid-cols-[1rem_1fr_auto] items-center gap-x-2 px-4 py-2 table-row">
+                  className="grid grid-cols-[1rem_1fr_auto] items-center gap-x-2 px-4 py-2 list-row">
 
                   {/* Status-Dot */}
                   <span className={`w-1.5 h-1.5 rounded-full justify-self-center flex-shrink-0 ${dotColor}`} />
