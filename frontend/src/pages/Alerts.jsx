@@ -2,20 +2,20 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import {
   Bell, Plus, Trash2, Play, ToggleLeft, ToggleRight,
-  AlertTriangle, Clock, CheckCircle, XCircle, Server, Monitor, PackageCheck,
+  AlertTriangle, Clock, CheckCircle, XCircle, Server, Monitor,
 } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { useAuth } from '../context/AuthContext';
 
-const METRIC_LABELS  = { cpu: 'CPU', memory: 'RAM', disk: 'Disk', net_rx: 'Netzwerk ↓ (RX)', net_tx: 'Netzwerk ↑ (TX)', action: 'Server-Aktionen' };
-const METRIC_COLORS  = { cpu: 'text-blue-400', memory: 'text-green-400', disk: 'text-yellow-400', net_rx: 'text-purple-400', net_tx: 'text-purple-400', action: 'text-panel-accent' };
-const METRIC_UNIT    = { cpu: '%', memory: '%', disk: '%', net_rx: ' MB/s', net_tx: ' MB/s', action: '' };
+const METRIC_LABELS  = { cpu: 'CPU', memory: 'RAM', disk: 'Disk', net_rx: 'Netzwerk ↓ (RX)', net_tx: 'Netzwerk ↑ (TX)', action: 'Server-Aktionen', patchmon_updates: 'PatchMon Updates', patchmon_security: 'PatchMon Security' };
+const METRIC_COLORS  = { cpu: 'text-blue-400', memory: 'text-green-400', disk: 'text-yellow-400', net_rx: 'text-purple-400', net_tx: 'text-purple-400', action: 'text-panel-accent', patchmon_updates: 'text-panel-orange', patchmon_security: 'text-panel-red' };
+const METRIC_UNIT    = { cpu: '%', memory: '%', disk: '%', net_rx: ' MB/s', net_tx: ' MB/s', action: '', patchmon_updates: '', patchmon_security: '' };
 const CONDITION_LABELS = { gt: 'über', lt: 'unter' };
 
-const THRESHOLD_MAX  = { cpu: 100, memory: 100, disk: 100, net_rx: 1000, net_tx: 1000 };
-const THRESHOLD_STEP = { cpu: 1, memory: 1, disk: 1, net_rx: 0.5, net_tx: 0.5 };
+const THRESHOLD_MAX  = { cpu: 100, memory: 100, disk: 100, net_rx: 1000, net_tx: 1000, patchmon_updates: 9999, patchmon_security: 9999 };
+const THRESHOLD_STEP = { cpu: 1, memory: 1, disk: 1, net_rx: 0.5, net_tx: 0.5, patchmon_updates: 1, patchmon_security: 1 };
 
 const emptyCondition = () => ({ metric: 'cpu', condition: 'gt', threshold: 80 });
 
@@ -41,6 +41,10 @@ function ConditionRow({ cond, onChange, onRemove, canRemove }) {
         <optgroup label="Netzwerk">
           <option value="net_rx">Netz ↓</option>
           <option value="net_tx">Netz ↑</option>
+        </optgroup>
+        <optgroup label="PatchMon (nur verknüpfte Server)">
+          <option value="patchmon_updates">Updates verfügbar</option>
+          <option value="patchmon_security">Security-Updates</option>
         </optgroup>
       </select>
       {/* Bedingung */}
@@ -283,7 +287,6 @@ export default function Alerts() {
   const [modalOpen, setModalOpen]   = useState(false);
   const [editRule, setEditRule]     = useState(null);
   const [testStatus, setTestStatus] = useState({});
-  const [pmNotify, setPmNotify] = useState({ enabled: false, webhookId: '', securityOnly: false });
 
   const load = async () => {
     try {
@@ -302,14 +305,8 @@ export default function Alerts() {
     if (isAdmin) {
       axios.get('/api/webhooks').then(r => setWebhooks(r.data)).catch(() => {});
       axios.get('/api/agents').then(r => setAgents(r.data)).catch(() => {});
-      axios.get('/api/patchmon/notify-config').then(r => setPmNotify(r.data)).catch(() => {});
     }
   }, [isAdmin]);
-
-  const savePmNotify = async (next) => {
-    setPmNotify(next);
-    try { await axios.post('/api/patchmon/notify-config', next); } catch {}
-  };
 
   const handleSave = async (form) => {
     // agent_ids als JSON-String für Backend
@@ -364,44 +361,6 @@ export default function Alerts() {
         agents={agents}
         initial={editRule}
       />
-
-      {/* ── PatchMon-Update-Benachrichtigung (Admin) ──────────────────────────── */}
-      {isAdmin && (
-        <Card title={<span className="flex items-center gap-2"><PackageCheck size={14} />PatchMon-Update-Benachrichtigung</span>}>
-          <div className="space-y-3">
-            <p className="text-xs text-panel-muted">
-              Sendet eine Nachricht über den gewählten Webhook, sobald in PatchMon neue Updates auftauchen (Prüfung alle 15 Minuten).
-            </p>
-            <label className="flex items-center gap-2 text-sm text-panel-text cursor-pointer w-fit">
-              <input type="checkbox" checked={pmNotify.enabled}
-                onChange={e => savePmNotify({ ...pmNotify, enabled: e.target.checked })} />
-              Benachrichtigung aktiv
-            </label>
-            <div>
-              <label className="block text-xs text-panel-muted mb-1">Webhook</label>
-              <select
-                className="w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:border-panel-accent"
-                value={pmNotify.webhookId}
-                onChange={e => savePmNotify({ ...pmNotify, webhookId: e.target.value })}
-              >
-                <option value="">— Webhook wählen —</option>
-                {webhooks.map(w => <option key={w.id} value={w.id}>{w.name} ({w.type})</option>)}
-              </select>
-              {webhooks.length === 0 && (
-                <p className="text-xs text-panel-muted mt-1">Noch kein Webhook angelegt — zuerst unter „Webhooks" einen erstellen.</p>
-              )}
-            </div>
-            <label className="flex items-center gap-2 text-sm text-panel-text cursor-pointer w-fit">
-              <input type="checkbox" checked={pmNotify.securityOnly}
-                onChange={e => savePmNotify({ ...pmNotify, securityOnly: e.target.checked })} />
-              Nur bei neuen Security-Updates benachrichtigen
-            </label>
-            {pmNotify.enabled && !pmNotify.webhookId && (
-              <p className="text-xs text-panel-orange">Bitte einen Webhook wählen, sonst werden keine Benachrichtigungen versendet.</p>
-            )}
-          </div>
-        </Card>
-      )}
 
       {/* ── Alert-Regeln ──────────────────────────────────────────────────────── */}
       <Card title={

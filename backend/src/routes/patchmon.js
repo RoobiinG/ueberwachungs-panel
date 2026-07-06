@@ -286,26 +286,6 @@ router.get('/hosts/:id/system', requirePermission('patchmon.view'), async (req, 
   }
 });
 
-// ─── Update-Benachrichtigung (Config) ────────────────────────────────────────
-
-// GET /api/patchmon/notify-config
-router.get('/notify-config', requirePermission('alerts.view'), (req, res) => {
-  res.json({
-    enabled:      getSetting('patchmonNotifyEnabled') === '1',
-    webhookId:    getSetting('patchmonNotifyWebhookId') || '',
-    securityOnly: getSetting('patchmonNotifySecurityOnly') === '1',
-  });
-});
-
-// POST /api/patchmon/notify-config
-router.post('/notify-config', requirePermission('alerts.manage'), (req, res) => {
-  const { enabled, webhookId, securityOnly } = req.body;
-  if (enabled      !== undefined) setSetting('patchmonNotifyEnabled',      enabled ? '1' : '0');
-  if (webhookId    !== undefined) setSetting('patchmonNotifyWebhookId',    webhookId ? String(webhookId) : '');
-  if (securityOnly !== undefined) setSetting('patchmonNotifySecurityOnly', securityOnly ? '1' : '0');
-  res.json({ ok: true });
-});
-
 module.exports = router;
-// Für den Hintergrund-Notifier (patchmonNotifier.js) wiederverwendbar machen.
+// fetchHosts für den Alert-Evaluator (PatchMon-Metriken) wiederverwendbar machen.
 module.exports.fetchHosts = fetchHosts;

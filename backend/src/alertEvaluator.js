@@ -1,6 +1,19 @@
 const db              = require('./db');
 const { sendWebhook } = require('./utils/sendWebhook');
 const { fetchAgentStats } = require('./utils/agentFetch');
+const patchmon        = require('./routes/patchmon');   // .fetchHosts (30s-Cache intern)
+
+const getSetting = (k) => db.prepare('SELECT value FROM settings WHERE key = ?').get(k)?.value ?? null;
+
+// PatchMon-Hosts holen (fail-soft; patchmon.fetchHosts cached 30s intern)
+async function getPatchmonHosts() {
+  const url = getSetting('patchmonUrl');
+  const key = getSetting('patchmonTokenKey');
+  const sec = getSetting('patchmonTokenSecret');
+  if (!url || !key || !sec) return null;
+  try { const { hosts } = await patchmon.fetchHosts(url, key, sec); return hosts; }
+  catch { return null; }
+}
 
 // broadcast wird lazy geladen (zirkuläre Abhängigkeit vermeiden)
 let _broadcast = null;
@@ -19,12 +32,24 @@ const getState = (key) => {
   return state.get(key);
 };
 
-const METRIC_LABELS = { cpu: 'CPU', memory: 'RAM', disk: 'Disk', net_rx: 'Netz ↓', net_tx: 'Netz ↑', action: 'Aktion' };
-const METRIC_UNIT   = { cpu: '%', memory: '%', disk: '%', net_rx: ' MB/s', net_tx: ' MB/s', action: '' };
+const METRIC_LABELS = { cpu: 'CPU', memory: 'RAM', disk: 'Disk', net_rx: 'Netz ↓', net_tx: 'Netz ↑', action: 'Aktion', patchmon_updates: 'PatchMon Updates', patchmon_security: 'PatchMon Security' };
+const METRIC_UNIT   = { cpu: '%', memory: '%', disk: '%', net_rx: ' MB/s', net_tx: ' MB/s', action: '', patchmon_updates: '', patchmon_security: '' };
 
 // ─── Metrik-Wert abrufen ─────────────────────────────────────────────────────
 async function getMetricValue(metric, agentId) {
   if (metric === 'action') return null; // Aktions-Alerts werden in actionNotify gehandelt
+
+  // PatchMon-Metriken: Wert kommt vom verknüpften PatchMon-Host des Servers.
+  if (metric === 'patchmon_updates' || metric === 'patchmon_security') {
+    if (agentId == null) return null; // lokaler Server hat keine PatchMon-Bindung
+    const row = db.prepare('SELECT patchmon_host_id FROM remote_agents WHERE id = ?').get(agentId);
+    if (!row?.patchmon_host_id) return null;
+    const hosts = await getPatchmonHosts();
+    if (!hosts) return null;
+    const host = hosts.find(h => h.id === row.patchmon_host_id);
+    if (!host) return null;
+    return metric === 'patchmon_security' ? (host.securityCount || 0) : (host.updatesCount || 0);
+  }
 
   if (agentId != null) {
     const stats = await fetchAgentStats(agentId);
