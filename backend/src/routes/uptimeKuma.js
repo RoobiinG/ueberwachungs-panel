@@ -2,7 +2,7 @@ const router      = require('express').Router();
 const axios       = require('axios');
 const { io }      = require('socket.io-client');
 const db          = require('../db');
-const requireRole = require('../middleware/roles');
+const { requirePermission } = require('../middleware/requirePermission');
 const { validatePublicUrl } = require('../utils/validateUrl');
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -361,7 +361,7 @@ function buildResult(monitors, heartbeats, uptime) {
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
 // GET /api/uptime-kuma/config
-router.get('/config', (req, res) => {
+router.get('/config', requirePermission('uptimekuma.view'), (req, res) => {
   res.json({
     url:       getSetting('uptimeKumaUrl')    || '',
     hasApiKey: !!getSetting('uptimeKumaApiKey'),
@@ -369,8 +369,8 @@ router.get('/config', (req, res) => {
   });
 });
 
-// POST /api/uptime-kuma/config  (nur Admins dürfen die Verbindung ändern)
-router.post('/config', requireRole('admin'), (req, res) => {
+// POST /api/uptime-kuma/config  (Verbindung ändern erfordert Verwaltungsrecht)
+router.post('/config', requirePermission('uptimekuma.manage'), (req, res) => {
   const { url, apiKey, slug } = req.body;
   if (url !== undefined) {
     try { validatePublicUrl(url); } catch (e) { return res.status(400).json({ error: e.message }); }
@@ -383,7 +383,7 @@ router.post('/config', requireRole('admin'), (req, res) => {
 });
 
 // GET /api/uptime-kuma/monitors
-router.get('/monitors', async (req, res) => {
+router.get('/monitors', requirePermission('uptimekuma.view'), async (req, res) => {
   const url    = getSetting('uptimeKumaUrl');
   const apiKey = getSetting('uptimeKumaApiKey');
   const slug   = getSetting('uptimeKumaSlug') || 'default';

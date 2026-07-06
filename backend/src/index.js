@@ -117,6 +117,7 @@ setupWS(server);
 require('./metricsRecorder').start();
 require('./metricsAggregator').start();
 require('./alertEvaluator').start();
+require('./patchmonNotifier').start();
 // dockerMetricsRecorder entfernt — Docker-Stats kommen jetzt von Dockhand API
 try { require('./remoteMetricsRecorder').start(); } catch (e) { console.warn('Remote-Metriken deaktiviert:', e.message); }
 

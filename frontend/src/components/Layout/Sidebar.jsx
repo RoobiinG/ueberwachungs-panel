@@ -22,8 +22,8 @@ const navItems = [
   { to: '/agents',      icon: ServerCog,    label: 'Server' },
 
   { section: 'Dienste' },
-  { to: '/uptime-kuma', icon: MonitorCheck, label: 'Uptime Kuma' },
-  { to: '/patchmon',    icon: PackageCheck, label: 'PatchMon' },
+  { to: '/uptime-kuma', icon: MonitorCheck, label: 'Uptime Kuma', permission: 'uptimekuma.view' },
+  { to: '/patchmon',    icon: PackageCheck, label: 'PatchMon',    permission: 'patchmon.view' },
   { to: '/alerts',      icon: Bell,         label: 'Benachrichtigungen' },
   { to: '/webhooks',    icon: Webhook,      label: 'Webhooks',   permission: 'webhooks.view' },
   { to: '/hetzner',     icon: Cloud,        label: 'Hetzner',    permission: 'hetzner.view' },

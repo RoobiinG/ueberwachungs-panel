@@ -1,7 +1,7 @@
 const router      = require('express').Router();
 const axios       = require('axios');
 const db          = require('../db');
-const requireRole = require('../middleware/roles');
+const { requirePermission } = require('../middleware/requirePermission');
 const { validatePublicUrl } = require('../utils/validateUrl');
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -214,15 +214,15 @@ async function fetchHostSystem(url, tokenKey, tokenSecret, id) {
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
 // GET /api/patchmon/config
-router.get('/config', (req, res) => {
+router.get('/config', requirePermission('patchmon.view'), (req, res) => {
   res.json({
     url:      getSetting('patchmonUrl') || '',
     hasToken: !!(getSetting('patchmonTokenKey') && getSetting('patchmonTokenSecret')),
   });
 });
 
-// POST /api/patchmon/config  (nur Admins dürfen die Verbindung ändern)
-router.post('/config', requireRole('admin'), (req, res) => {
+// POST /api/patchmon/config  (Verbindung ändern erfordert Verwaltungsrecht)
+router.post('/config', requirePermission('patchmon.manage'), (req, res) => {
   const { url, tokenKey, tokenSecret } = req.body;
   if (url !== undefined) {
     try { validatePublicUrl(url); } catch (e) { return res.status(400).json({ error: e.message }); }
@@ -235,7 +235,7 @@ router.post('/config', requireRole('admin'), (req, res) => {
 });
 
 // GET /api/patchmon/hosts
-router.get('/hosts', async (req, res) => {
+router.get('/hosts', requirePermission('patchmon.view'), async (req, res) => {
   const url         = getSetting('patchmonUrl');
   const tokenKey    = getSetting('patchmonTokenKey');
   const tokenSecret = getSetting('patchmonTokenSecret');
@@ -264,7 +264,7 @@ router.get('/hosts', async (req, res) => {
 });
 
 // GET /api/patchmon/hosts/:id/system — nur Kernel/Reboot-Grund (fail-soft)
-router.get('/hosts/:id/system', async (req, res) => {
+router.get('/hosts/:id/system', requirePermission('patchmon.view'), async (req, res) => {
   const url         = getSetting('patchmonUrl');
   const tokenKey    = getSetting('patchmonTokenKey');
   const tokenSecret = getSetting('patchmonTokenSecret');
@@ -286,4 +286,26 @@ router.get('/hosts/:id/system', async (req, res) => {
   }
 });
 
+// ─── Update-Benachrichtigung (Config) ────────────────────────────────────────
+
+// GET /api/patchmon/notify-config
+router.get('/notify-config', requirePermission('alerts.view'), (req, res) => {
+  res.json({
+    enabled:      getSetting('patchmonNotifyEnabled') === '1',
+    webhookId:    getSetting('patchmonNotifyWebhookId') || '',
+    securityOnly: getSetting('patchmonNotifySecurityOnly') === '1',
+  });
+});
+
+// POST /api/patchmon/notify-config
+router.post('/notify-config', requirePermission('alerts.manage'), (req, res) => {
+  const { enabled, webhookId, securityOnly } = req.body;
+  if (enabled      !== undefined) setSetting('patchmonNotifyEnabled',      enabled ? '1' : '0');
+  if (webhookId    !== undefined) setSetting('patchmonNotifyWebhookId',    webhookId ? String(webhookId) : '');
+  if (securityOnly !== undefined) setSetting('patchmonNotifySecurityOnly', securityOnly ? '1' : '0');
+  res.json({ ok: true });
+});
+
 module.exports = router;
+// Für den Hintergrund-Notifier (patchmonNotifier.js) wiederverwendbar machen.
+module.exports.fetchHosts = fetchHosts;
