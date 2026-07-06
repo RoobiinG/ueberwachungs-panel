@@ -378,27 +378,33 @@ export default function AgentDetail() {
       {pmHost && (
         <Card title="PatchMon — Updates">
           <div className="space-y-3">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <OverviewBox icon={Package} label="Ausstehend" value={pmHost.updatesCount ?? 0}
                 color={pmHost.updatesAvailable ? 'text-panel-orange' : 'text-panel-green'} />
               <OverviewBox icon={CircleAlert} label="Security" value={pmHost.securityCount ?? 0}
                 color={pmHost.securityCount > 0 ? 'text-panel-red' : 'text-panel-muted'} />
               <OverviewBox icon={Server} label="Pakete" value={pmHost.totalPackages || '—'}
                 color="text-panel-accent" />
-              <OverviewBox icon={RotateCcw} label="Neustart" value={pmHost.needsReboot ? 'Ja' : 'Nein'}
-                color={pmHost.needsReboot ? 'text-panel-accent' : 'text-panel-muted'} />
             </div>
 
-            {/* Kernel: laufend vs. installiert + Reboot-Grund (aus PatchMon /system) */}
-            {pmSystem && (pmSystem.kernelRunning || pmSystem.kernelInstalled) && (
-              <div className="text-xs text-panel-muted">
-                Kernel: läuft <span className="text-panel-text font-mono">{pmSystem.kernelRunning || '—'}</span>
-                {pmSystem.kernelInstalled && pmSystem.kernelInstalled !== pmSystem.kernelRunning && (
-                  <> · installiert <span className="text-panel-orange font-mono">{pmSystem.kernelInstalled}</span></>
-                )}
-                {(pmSystem.needsReboot || (pmSystem.kernelInstalled && pmSystem.kernelInstalled !== pmSystem.kernelRunning)) && (
-                  <span className="text-panel-accent"> — Neustart{pmSystem.rebootReason ? `: ${pmSystem.rebootReason}` : ' für neuen Kernel'}</span>
-                )}
+            {/* Neustart-Status + Kernel (laufend vs. installiert) aus PatchMon /system */}
+            {(pmHost.needsReboot || (pmSystem && (pmSystem.kernelRunning || pmSystem.kernelInstalled))) && (
+              <div className="flex items-start gap-2 text-xs bg-panel-surface rounded-lg px-3 py-2">
+                <RotateCcw size={14} className={`flex-shrink-0 mt-0.5 ${pmHost.needsReboot ? 'text-panel-accent' : 'text-panel-muted'}`} />
+                <div className="min-w-0">
+                  <span className={pmHost.needsReboot ? 'text-panel-accent font-medium' : 'text-panel-muted'}>
+                    {pmHost.needsReboot ? 'Neustart erforderlich' : 'Kein Neustart nötig'}
+                  </span>
+                  {pmSystem && (pmSystem.kernelRunning || pmSystem.kernelInstalled) && (
+                    <div className="text-panel-muted mt-0.5">
+                      Kernel: läuft <span className="text-panel-text font-mono">{pmSystem.kernelRunning || '—'}</span>
+                      {pmSystem.kernelInstalled && pmSystem.kernelInstalled !== pmSystem.kernelRunning && (
+                        <> → installiert <span className="text-panel-orange font-mono">{pmSystem.kernelInstalled}</span></>
+                      )}
+                      {pmSystem.rebootReason && <span className="text-panel-muted/80"> ({pmSystem.rebootReason})</span>}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
