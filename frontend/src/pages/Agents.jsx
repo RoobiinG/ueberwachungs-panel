@@ -7,7 +7,7 @@ import { Modal } from '../components/ui/Modal';
 import {
   ServerCog, Plus, Trash2, Wifi, WifiOff, Eye, EyeOff,
   ChevronRight, Terminal, Lock, LockOpen, ShieldAlert, RefreshCw, Pencil, Container,
-  ArrowUpCircle, PackageX, Copy, Check, ChevronDown, ChevronUp, Wrench
+  ArrowUpCircle, PackageX, Copy, Check, ChevronDown, ChevronUp, Wrench, Package, RotateCw
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -41,6 +41,8 @@ export default function Agents() {
   const [showEditToken, setShowEditToken] = useState(false);
   const [editLoading,  setEditLoading]  = useState(false);
   const [editError,    setEditError]    = useState('');
+  const [patchmonHosts,      setPatchmonHosts]      = useState([]);
+  const [editPatchmonHostId, setEditPatchmonHostId] = useState('');
   const navigate = useNavigate();
 
   const load = useCallback(async () => {
@@ -57,6 +59,13 @@ export default function Agents() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // PatchMon-Hosts einmalig laden (für Verknüpfen-Dropdown + Update-Badges); fail-soft.
+  useEffect(() => {
+    axios.get('/api/patchmon/hosts')
+      .then(r => setPatchmonHosts(r.data.hosts || []))
+      .catch(() => setPatchmonHosts([]));
+  }, []);
 
   const pingAgent = async (id) => {
     try {
@@ -100,6 +109,16 @@ export default function Agents() {
     setEditName(agent.name);
     setEditUrl(agent.url);
     setEditToken('');
+    // Vorbelegung: bestehende Verknüpfung, sonst Vorschlag per Hostname-Match.
+    let pmId = agent.patchmon_host_id || '';
+    if (!pmId) {
+      const hn = (status[agent.id]?.hostname || '').toLowerCase();
+      const match = hn && patchmonHosts.find(
+        h => (h.hostname || '').toLowerCase() === hn || (h.name || '').toLowerCase() === hn
+      );
+      if (match) pmId = match.id;
+    }
+    setEditPatchmonHostId(pmId);
     setEditError('');
     setShowEditToken(false);
   };
@@ -112,6 +131,7 @@ export default function Agents() {
         name:  editName.trim(),
         url:   editUrl.trim(),
         token: editToken, // leer = unverändert lassen wenn Backend COALESCE nutzt
+        patchmon_host_id: editPatchmonHostId || null, // '' / null = Verknüpfung entfernen
       });
       setEditAgent(null);
       load();
@@ -342,6 +362,9 @@ export default function Agents() {
           const dk         = dockerInfo[agent.id];
           const agentVer   = agentVersions[agent.id];
           const hasUpdate  = agentVer && latestVersion && agentVer !== latestVersion;
+          const pmHost     = agent.patchmon_host_id
+            ? patchmonHosts.find(h => h.id === agent.patchmon_host_id)
+            : null;
 
           return (
             <div key={agent.id}
@@ -373,6 +396,33 @@ export default function Agents() {
                         )}
                         <span className="ml-1 text-panel-muted/60">· {dk.images ?? 0} images</span>
                       </span>
+                    </div>
+                  )}
+
+                  {/* PatchMon-Update-Status (nur wenn verknüpft & Host gefunden) */}
+                  {pmHost && (
+                    <div className="mt-1 flex items-center gap-1.5 text-xs flex-wrap">
+                      {pmHost.updatesAvailable ? (
+                        <span className="inline-flex items-center gap-1 text-panel-orange">
+                          <Package size={11} />
+                          <span className="font-medium">{pmHost.updatesCount}</span> Updates
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-panel-green">
+                          <Package size={11} /> aktuell
+                        </span>
+                      )}
+                      {pmHost.securityCount > 0 && (
+                        <span className="inline-flex items-center gap-1 text-panel-red">
+                          <ShieldAlert size={11} />
+                          <span className="font-medium">{pmHost.securityCount}</span> Security
+                        </span>
+                      )}
+                      {pmHost.needsReboot && (
+                        <span className="inline-flex items-center gap-1 text-panel-accent">
+                          <RotateCw size={11} /> Neustart
+                        </span>
+                      )}
                     </div>
                   )}
 
@@ -514,6 +564,28 @@ export default function Agents() {
               <p className="text-xs text-panel-muted mt-1">
                 Token findest du auf dem Server in: <code className="text-panel-text">/opt/panel-agent/.env</code>
               </p>
+            </div>
+            <div>
+              <label className="block text-xs text-panel-muted mb-1">
+                PatchMon-Host <span className="text-panel-muted font-normal">(optional — zeigt Update-Infos am Server)</span>
+              </label>
+              <select
+                className={inputCls}
+                value={editPatchmonHostId}
+                onChange={e => setEditPatchmonHostId(e.target.value)}
+              >
+                <option value="">Nicht verknüpft</option>
+                {patchmonHosts.map(h => (
+                  <option key={h.id} value={h.id}>
+                    {h.name}{h.hostname && h.hostname !== h.name ? ` (${h.hostname})` : ''}{h.ip ? ` · ${h.ip}` : ''}
+                  </option>
+                ))}
+              </select>
+              {patchmonHosts.length === 0 && (
+                <p className="text-xs text-panel-muted mt-1">
+                  Keine PatchMon-Hosts geladen (PatchMon nicht konfiguriert?).
+                </p>
+              )}
             </div>
           </div>
         </Modal>

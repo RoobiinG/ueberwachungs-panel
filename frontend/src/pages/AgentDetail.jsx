@@ -171,6 +171,9 @@ export default function AgentDetail() {
   const [latestVersion, setLatestVersion] = useState(null);
   const [updating, setUpdating]           = useState(false);
   const [showRecovery, setShowRecovery]   = useState(false);
+  const [agentPmId,  setAgentPmId]        = useState(null);
+  const [pmHost,     setPmHost]           = useState(null);
+  const [pmSystem,   setPmSystem]         = useState(null);
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -184,6 +187,7 @@ export default function AgentDetail() {
       ]);
       const agent = agentsRes.data.find(a => String(a.id) === String(id));
       if (agent) setAgentName(agent.name);
+      setAgentPmId(agent?.patchmon_host_id || null);
       setStats(statsRes.data);
       setServices(servicesRes.data);
 
@@ -208,6 +212,17 @@ export default function AgentDetail() {
     axios.get(`/api/agents/${id}/version`).then(r => setAgentVersion(r.data.version)).catch(() => {});
     axios.get('/api/agents/latest-version').then(r => setLatestVersion(r.data.version)).catch(() => {});
   }, [id]);
+
+  // PatchMon: verknüpften Host + Kernel-Info laden (fail-soft), sobald die Bindung bekannt ist.
+  useEffect(() => {
+    if (!agentPmId) { setPmHost(null); setPmSystem(null); return; }
+    axios.get('/api/patchmon/hosts')
+      .then(r => setPmHost((r.data.hosts || []).find(h => h.id === agentPmId) || null))
+      .catch(() => setPmHost(null));
+    axios.get(`/api/patchmon/hosts/${encodeURIComponent(agentPmId)}/system`)
+      .then(r => setPmSystem(r.data.system || null))
+      .catch(() => setPmSystem(null));
+  }, [agentPmId]);
 
   // Auto-refresh (konfigurierbares Intervall)
   useEffect(() => {
@@ -357,6 +372,47 @@ export default function AgentDetail() {
               color="text-panel-purple" />
           )}
         </div>
+      )}
+
+      {/* ── PatchMon-Updates (nur wenn Server mit PatchMon-Host verknüpft) ── */}
+      {pmHost && (
+        <Card title="PatchMon — Updates">
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <OverviewBox icon={Package} label="Ausstehend" value={pmHost.updatesCount ?? 0}
+                color={pmHost.updatesAvailable ? 'text-panel-orange' : 'text-panel-green'} />
+              <OverviewBox icon={CircleAlert} label="Security" value={pmHost.securityCount ?? 0}
+                color={pmHost.securityCount > 0 ? 'text-panel-red' : 'text-panel-muted'} />
+              <OverviewBox icon={Server} label="Pakete" value={pmHost.totalPackages || '—'}
+                color="text-panel-accent" />
+              <OverviewBox icon={RotateCcw} label="Neustart" value={pmHost.needsReboot ? 'Ja' : 'Nein'}
+                color={pmHost.needsReboot ? 'text-panel-accent' : 'text-panel-muted'} />
+            </div>
+
+            {/* Kernel: laufend vs. installiert + Reboot-Grund (aus PatchMon /system) */}
+            {pmSystem && (pmSystem.kernelRunning || pmSystem.kernelInstalled) && (
+              <div className="text-xs text-panel-muted">
+                Kernel: läuft <span className="text-panel-text font-mono">{pmSystem.kernelRunning || '—'}</span>
+                {pmSystem.kernelInstalled && pmSystem.kernelInstalled !== pmSystem.kernelRunning && (
+                  <> · installiert <span className="text-panel-orange font-mono">{pmSystem.kernelInstalled}</span></>
+                )}
+                {(pmSystem.needsReboot || (pmSystem.kernelInstalled && pmSystem.kernelInstalled !== pmSystem.kernelRunning)) && (
+                  <span className="text-panel-accent"> — Neustart{pmSystem.rebootReason ? `: ${pmSystem.rebootReason}` : ' für neuen Kernel'}</span>
+                )}
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-panel-muted truncate">
+                {pmHost.lastCheckIn ? `Letzter Check-in: ${new Date(pmHost.lastCheckIn).toLocaleString('de-DE')}` : ''}
+              </span>
+              <button disabled title="Update-Ausführung folgt in einem späteren Schritt"
+                className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded border border-panel-border text-panel-muted/50 cursor-not-allowed flex-shrink-0">
+                <ArrowUpCircle size={12} /> Update
+              </button>
+            </div>
+          </div>
+        </Card>
       )}
 
       {/* ── Tabs ───────────────────────────────────────────────────────── */}
