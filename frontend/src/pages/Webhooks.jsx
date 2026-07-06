@@ -107,7 +107,7 @@ export default function Webhooks() {
             {webhooks.map(w => {
               const parsed = w.type === 'telegram' ? parseTelegramUrl(w.url) : null;
               return (
-                <div key={w.id} className="flex items-center justify-between px-4 py-3 table-row">
+                <div key={w.id} className="flex items-center justify-between px-4 py-3 list-row">
                   <div className="flex-1 min-w-0 mr-3">
                     <div className="flex items-center gap-2">
                       <Badge color={w.type === 'discord' ? 'purple' : 'blue'}>{w.type}</Badge>
