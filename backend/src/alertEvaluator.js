@@ -41,12 +41,14 @@ async function getMetricValue(metric, agentId) {
 
   // PatchMon-Metriken: Wert kommt vom verknüpften PatchMon-Host des Servers.
   if (metric === 'patchmon_updates' || metric === 'patchmon_security') {
-    if (agentId == null) return null; // lokaler Server hat keine PatchMon-Bindung
-    const row = db.prepare('SELECT patchmon_host_id FROM remote_agents WHERE id = ?').get(agentId);
-    if (!row?.patchmon_host_id) return null;
+    // Lokaler Server: Bindung aus Settings; Remote-Agent: aus remote_agents.
+    const hostId = agentId == null
+      ? getSetting('patchmonLocalHostId')
+      : db.prepare('SELECT patchmon_host_id FROM remote_agents WHERE id = ?').get(agentId)?.patchmon_host_id;
+    if (!hostId) return null;
     const hosts = await getPatchmonHosts();
     if (!hosts) return null;
-    const host = hosts.find(h => h.id === row.patchmon_host_id);
+    const host = hosts.find(h => h.id === hostId);
     if (!host) return null;
     return metric === 'patchmon_security' ? (host.securityCount || 0) : (host.updatesCount || 0);
   }

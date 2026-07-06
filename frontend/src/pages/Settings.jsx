@@ -7,7 +7,7 @@ import {
   Cloud, Server, Eye, EyeOff, CheckCircle, XCircle,
   RefreshCw, Trash2, Lock, Mail, Key, ShieldCheck, Send,
   User, Settings2, Layers, Timer, Bell, Monitor, Smartphone,
-  Globe, LogOut, Laptop,
+  Globe, LogOut, Laptop, PackageCheck,
 } from 'lucide-react';
 import { invalidateLiveIntervalCache } from '../hooks/useLiveInterval';
 
@@ -323,6 +323,10 @@ export default function Settings() {
   const [dockhandEnvs,     setDockhandEnvs]     = useState([]); // [{id,name}] aus Dockhand
   const [dockhandAgents,   setDockhandAgents]   = useState([]); // remote_agents mit dockhand_env_id
   const [showDockhandToken, setShowDockhandToken] = useState(false);
+  // PatchMon-Verknüpfung
+  const [pmHosts,       setPmHosts]       = useState([]); // PatchMon-Hosts aus /api/patchmon/hosts
+  const [pmAgents,      setPmAgents]      = useState([]); // remote_agents mit patchmon_host_id
+  const [pmLocalHostId, setPmLocalHostId] = useState('');
 
   // ── Laden ─────────────────────────────────────────────────────────────────
 
@@ -364,6 +368,23 @@ export default function Settings() {
     } catch {}
   };
 
+  const loadPatchmonLinks = async () => {
+    if (!isAdmin) return;
+    try { const { data } = await axios.get('/api/patchmon/hosts'); setPmHosts(data.hosts || []); }
+    catch { setPmHosts([]); }
+    try { const { data } = await axios.get('/api/agents'); setPmAgents(data); } catch {}
+    try { const { data } = await axios.get('/api/patchmon/local-binding'); setPmLocalHostId(data.hostId || ''); } catch {}
+  };
+
+  const saveAgentPm = async (agentId, hostId) => {
+    setPmAgents(list => list.map(a => a.id === agentId ? { ...a, patchmon_host_id: hostId || null } : a));
+    try { await axios.put(`/api/agents/${agentId}`, { patchmon_host_id: hostId || null }); } catch {}
+  };
+  const saveLocalPm = async (hostId) => {
+    setPmLocalHostId(hostId);
+    try { await axios.post('/api/patchmon/local-binding', { hostId: hostId || '' }); } catch {}
+  };
+
   const loadPasskeys = async () => {
     try {
       const { data } = await axios.get('/api/passkeys');
@@ -383,6 +404,7 @@ export default function Settings() {
     loadPasskeys();
     loadEmail();
     loadDockhand();
+    loadPatchmonLinks();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin]);
 
@@ -936,6 +958,49 @@ export default function Settings() {
             )}
 
             <Msg msg={msgs.dockhand} />
+          </div>
+        </Card>
+
+        {/* ── PatchMon-Server-Verknüpfung ── */}
+        <Card title={<span className="flex items-center gap-2"><PackageCheck size={14} />PatchMon-Server-Verknüpfung</span>}>
+          <div className="space-y-3">
+            <p className="text-xs text-panel-muted">
+              Ordne jedem Panel-Server den passenden PatchMon-Host zu. Dann erscheinen Update-Infos am Server und PatchMon-Alerts funktionieren (inkl. lokalem Server).
+            </p>
+            {pmHosts.length === 0 ? (
+              <p className="text-xs text-panel-muted">
+                Keine PatchMon-Hosts geladen — zuerst unter „PatchMon" die Verbindung einrichten.
+              </p>
+            ) : (
+              <div className="border border-panel-border rounded-md overflow-hidden">
+                <div className="divide-y divide-panel-border">
+                  {/* Lokaler Server */}
+                  <div className="flex items-center justify-between px-3 py-2 gap-2">
+                    <span className="text-xs text-panel-text truncate">Lokaler Panel-Server</span>
+                    <select
+                      value={pmLocalHostId}
+                      onChange={e => saveLocalPm(e.target.value)}
+                      className="bg-panel-surface border border-panel-border rounded px-2 py-1 text-xs text-panel-text focus:outline-none focus:border-panel-accent max-w-[60%]">
+                      <option value="">— nicht verknüpft —</option>
+                      {pmHosts.map(h => <option key={h.id} value={h.id}>{h.name}{h.ip ? ` · ${h.ip}` : ''}</option>)}
+                    </select>
+                  </div>
+                  {/* Remote-Agents */}
+                  {pmAgents.map(a => (
+                    <div key={a.id} className="flex items-center justify-between px-3 py-2 gap-2">
+                      <span className="text-xs text-panel-text truncate">{a.name}</span>
+                      <select
+                        value={a.patchmon_host_id ?? ''}
+                        onChange={e => saveAgentPm(a.id, e.target.value)}
+                        className="bg-panel-surface border border-panel-border rounded px-2 py-1 text-xs text-panel-text focus:outline-none focus:border-panel-accent max-w-[60%]">
+                        <option value="">— nicht verknüpft —</option>
+                        {pmHosts.map(h => <option key={h.id} value={h.id}>{h.name}{h.ip ? ` · ${h.ip}` : ''}</option>)}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </Card>
 
