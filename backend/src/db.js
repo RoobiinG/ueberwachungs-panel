@@ -218,6 +218,12 @@ db.exec(`
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (user_id)
   );
+  CREATE TABLE IF NOT EXISTS home_layouts (
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    layout     TEXT    NOT NULL DEFAULT '[]',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id)
+  );
 `);
 // Metrics: server_id-Spalte für Multi-Server-Langzeit-Monitoring
 try {
