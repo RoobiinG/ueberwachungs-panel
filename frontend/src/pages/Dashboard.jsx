@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Cpu, WifiOff, Container, ChevronRight, Server, Activity,
   MemoryStick, HardDrive, Network, ArrowDownToLine, ArrowUpFromLine,
-  Clock, Monitor, Package, ShieldAlert, RotateCw,
+  Clock, Monitor, Package, ShieldAlert, RotateCw, Bell,
 } from 'lucide-react';
 import { LineChart, Line, YAxis, ResponsiveContainer } from 'recharts';
 import axios from 'axios';
@@ -284,6 +284,56 @@ function ServerCard({ name, stats, online, isLocal, docker, history, onNavigate 
 
 // ── Haupt-Komponente ──────────────────────────────────────────────────────────
 
+// ── KPI-Kachel ────────────────────────────────────────────────────────────────
+
+function KpiTile({ icon: Icon, value, label, color = 'text-panel-accent' }) {
+  return (
+    <div className="bg-panel-card border border-panel-border rounded-xl px-3.5 py-3 flex items-center gap-3">
+      <Icon size={20} className={`flex-shrink-0 ${color}`} />
+      <div className="min-w-0">
+        <div className="text-xl font-bold leading-none text-panel-text">{value}</div>
+        <div className="text-[11px] text-panel-muted mt-1 truncate">{label}</div>
+      </div>
+    </div>
+  );
+}
+
+// ── Aktivitäts-Feed ───────────────────────────────────────────────────────────
+
+const FEED_COLOR = {
+  danger:  'bg-panel-red',    success: 'bg-panel-green', warning: 'bg-panel-orange',
+  info:    'bg-panel-accent', login:   'bg-panel-purple',
+};
+
+const fmtAgo = (at) => {
+  if (!at) return '';
+  const s = Math.floor((Date.now() - at) / 1000);
+  if (s < 60)     return 'jetzt';
+  if (s < 3600)   return `${Math.floor(s / 60)} min`;
+  if (s < 86400)  return `${Math.floor(s / 3600)} h`;
+  return `${Math.floor(s / 86400)} d`;
+};
+
+function ActivityFeed({ events }) {
+  if (!events?.length) {
+    return <div className="text-xs text-panel-muted/70 px-4 py-8 text-center">Noch keine Ereignisse.</div>;
+  }
+  return (
+    <div className="px-4 pb-1">
+      {events.map((e, i) => (
+        <div key={i} className="flex gap-2.5 items-start py-2 border-t border-panel-border/40 first:border-t-0">
+          <span className={`w-2 h-2 rounded-full flex-shrink-0 mt-1.5 ${FEED_COLOR[e.severity] || 'bg-panel-muted'}`} />
+          <div className="min-w-0 flex-1">
+            <div className="text-xs text-panel-text truncate">{e.title}</div>
+            <div className="text-[11px] text-panel-muted truncate">{e.sub}</div>
+          </div>
+          <span className="text-[10px] text-panel-muted/70 flex-shrink-0 mt-0.5 tabular-nums">{fmtAgo(e.at)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Dashboard({ liveStats }) {
   const navigate  = useNavigate();
   const { hideLocal } = useAuth();
@@ -296,6 +346,9 @@ export default function Dashboard({ liveStats }) {
   const [agentDocker, setAgentDocker] = useState({});   // { [id]: containers[] }
   const [patchmonHosts, setPatchmonHosts] = useState([]);
   const [histories,   setHistories]   = useState({});   // { [serverKey]: [{cpu,mem}] } für Mini-Charts
+  const [activity,    setActivity]    = useState([]);   // Ereignis-Feed
+  const [uptime,      setUptime]      = useState(null);  // { up, total }
+  const [firewall,    setFirewall]    = useState(null);  // { active }
 
   // ── Initial-Daten ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -349,6 +402,29 @@ export default function Dashboard({ liveStats }) {
     return () => clearInterval(t);
   }, [loadHistories]);
 
+  // ── Aktivitäts-Feed (Alerts + Audit + PatchMon), alle 45s ───────────────────
+  useEffect(() => {
+    const load = () => axios.get('/api/dashboard/activity')
+      .then(r => setActivity(r.data.events || [])).catch(() => {});
+    load();
+    const t = setInterval(load, 45_000);
+    return () => clearInterval(t);
+  }, []);
+
+  // ── Status-Panel (Uptime-Kuma + Firewall), fail-soft, alle 60s ──────────────
+  useEffect(() => {
+    const load = () => {
+      axios.get('/api/uptime-kuma/monitors')
+        .then(r => { const m = r.data.monitors || []; setUptime({ up: m.filter(x => x.status === 1).length, total: m.length }); })
+        .catch(() => setUptime(null));
+      axios.get('/api/firewall/status')
+        .then(r => setFirewall({ active: !!r.data.active })).catch(() => setFirewall(null));
+    };
+    load();
+    const t = setInterval(load, 60_000);
+    return () => clearInterval(t);
+  }, []);
+
   // ── Lokaler Server: Live-Stats einmischen ──────────────────────────────────
   const localCpu    = liveStats?.cpu ?? localInfo?.cpu?.usage ?? 0;
   const localMemPct = liveStats?.memory?.usedPercent ?? localInfo?.memory?.usedPercent ?? 0;
@@ -368,95 +444,134 @@ export default function Dashboard({ liveStats }) {
     .flat()
     .filter(c => c?.state === 'running').length;
 
+  const unreachable = Object.values(agentOnline).filter(v => v === false).length;
+
   // ── PatchMon-Aggregat ──────────────────────────────────────────────────────
   const pmConfigured  = patchmonHosts.length > 0;
   const pmWithUpdates = patchmonHosts.filter(h => h.updatesAvailable).length;
   const pmSecurity    = patchmonHosts.reduce((s, h) => s + (h.securityCount || 0), 0);
   const pmReboot      = patchmonHosts.filter(h => h.needsReboot).length;
 
+  // ── KPI-Kennzahlen ──────────────────────────────────────────────────────────
+  const onlineStats = [
+    ...(hideLocal || !localStats ? [] : [{ cpu: localCpu, mem: localMemPct }]),
+    ...agents.filter(a => agentOnline[a.id]).map(a => ({
+      cpu: agentStats[a.id]?.cpu?.usage ?? 0,
+      mem: agentStats[a.id]?.memory?.usedPercent ?? 0,
+    })),
+  ];
+  const avg = (arr, k) => arr.length ? Math.round(arr.reduce((s, x) => s + (x[k] || 0), 0) / arr.length) : 0;
+  const avgCpu = avg(onlineStats, 'cpu');
+  const avgRam = avg(onlineStats, 'mem');
+
+  // Aktive Alerts: Regeln, deren jüngstes Ereignis "ausgelöst" (nicht "erholt") ist
+  const activeAlerts = (() => {
+    const seen = {};
+    for (const e of activity) {
+      if (e.kind !== 'alert') continue;
+      const key = e.title.replace(/^Alert (ausgelöst|erholt) — /, '') + '|' + e.sub;
+      if (!(key in seen)) seen[key] = e.severity === 'danger';
+    }
+    return Object.values(seen).filter(Boolean).length;
+  })();
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
 
-      {/* ── Status-Zeile ──────────────────────────────────────────────── */}
-      <div className="flex items-center gap-4 text-xs text-panel-muted flex-wrap">
-        <div className="flex items-center gap-1.5">
-          <Server size={13} className="text-panel-accent" />
-          <span>
-            <strong className="text-panel-text">{totalOnline}</strong>
-            {' / '}{totalServers} Server online
+      {/* ── Kopfzeile: Live-Status + Warnungen ─────────────────────────── */}
+      <div className="flex items-center gap-3 text-xs text-panel-muted">
+        {unreachable > 0 && (
+          <span className="flex items-center gap-1.5 text-panel-red">
+            <WifiOff size={13} />{unreachable} nicht erreichbar
           </span>
-        </div>
-        {totalContainerRunning > 0 && (
-          <div className="flex items-center gap-1.5">
-            <Container size={13} className="text-panel-green" />
-            <span>
-              <strong className="text-panel-text">{totalContainerRunning}</strong> Container running
-            </span>
-          </div>
         )}
-        {Object.values(agentOnline).includes(false) && (
-          <div className="flex items-center gap-1.5 text-panel-red">
-            <WifiOff size={13} />
-            <span>{Object.values(agentOnline).filter(v => !v).length} nicht erreichbar</span>
-          </div>
-        )}
-        <div className="flex items-center gap-1.5 ml-auto">
-          <Activity size={13} />
-          <span>Live · Auto-Refresh 15s</span>
-        </div>
+        <span className="flex items-center gap-1.5 ml-auto">
+          <Activity size={13} />Live · Auto-Refresh {Math.round(liveInterval / 1000)}s
+        </span>
       </div>
 
-      {/* ── PatchMon-Kachel (nur wenn PatchMon konfiguriert) ──────────── */}
-      {pmConfigured && (
-        <button onClick={() => navigate('/patchmon')}
-          className="w-full flex items-center gap-4 text-xs bg-panel-card border border-panel-border rounded-lg px-4 py-2.5 hover:border-panel-accent/40 transition-colors flex-wrap">
-          <span className="flex items-center gap-1.5 text-panel-text font-medium">
-            <Package size={13} className="text-panel-accent" /> PatchMon
-          </span>
-          <span className="text-panel-muted">
-            <strong className={pmWithUpdates > 0 ? 'text-panel-orange' : 'text-panel-text'}>{pmWithUpdates}</strong>
-            {' '}von {patchmonHosts.length} Servern mit Updates
-          </span>
-          {pmSecurity > 0 && (
-            <span className="flex items-center gap-1.5 text-panel-red">
-              <ShieldAlert size={13} /> <strong>{pmSecurity}</strong> Security-Updates
-            </span>
-          )}
-          {pmReboot > 0 && (
-            <span className="flex items-center gap-1.5 text-panel-accent">
-              <RotateCw size={13} /> <strong>{pmReboot}</strong> Neustart nötig
-            </span>
-          )}
-          <ChevronRight size={13} className="ml-auto text-panel-muted" />
-        </button>
-      )}
-
-      {/* ── Server-Grid ───────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-        {!hideLocal && (
-          <ServerCard
-            name="Panel-Server"
-            stats={localStats}
-            online={true}
-            isLocal={true}
-            docker={null}
-            history={histories.local}
-          />
-        )}
-        {agents.map(agent => (
-          <ServerCard
-            key={agent.id}
-            name={agent.name}
-            stats={agentStats[agent.id] ?? null}
-            online={agentOnline[agent.id]}
-            isLocal={false}
-            docker={agentDocker[agent.id] ?? null}
-            history={histories[String(agent.id)]}
-            onNavigate={() => navigate(`/agents/${agent.id}`)}
-          />
-        ))}
+      {/* ── KPI-Leiste ─────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5">
+        <KpiTile icon={Server}      value={`${totalOnline}/${totalServers}`} label="Server online"
+          color={totalOnline < totalServers ? 'text-panel-orange' : 'text-panel-green'} />
+        <KpiTile icon={Container}   value={totalContainerRunning} label="Container" />
+        <KpiTile icon={Cpu}         value={`${avgCpu}%`} label="Ø CPU" />
+        <KpiTile icon={MemoryStick} value={`${avgRam}%`} label="Ø RAM" color="text-panel-green" />
+        <KpiTile icon={Bell}        value={activeAlerts} label="Aktive Alerts"
+          color={activeAlerts > 0 ? 'text-panel-red' : 'text-panel-muted'} />
+        <KpiTile icon={Package}     value={pmConfigured ? pmWithUpdates : '–'} label="Server m. Updates"
+          color={pmWithUpdates > 0 ? 'text-panel-orange' : 'text-panel-muted'} />
       </div>
 
+      {/* ── Zwei Spalten: Server-Karten | Aktivität + Status ──────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+
+        {/* Server-Karten */}
+        <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4 content-start">
+          {!hideLocal && (
+            <ServerCard name="Panel-Server" stats={localStats} online={true}
+              isLocal={true} docker={null} history={histories.local} />
+          )}
+          {agents.map(agent => (
+            <ServerCard key={agent.id} name={agent.name}
+              stats={agentStats[agent.id] ?? null} online={agentOnline[agent.id]}
+              isLocal={false} docker={agentDocker[agent.id] ?? null}
+              history={histories[String(agent.id)]}
+              onNavigate={() => navigate(`/agents/${agent.id}`)} />
+          ))}
+        </div>
+
+        {/* Aktivität + Status */}
+        <div className="space-y-4">
+          <div className="bg-panel-card border border-panel-border rounded-xl overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-panel-border/60 flex items-center gap-2">
+              <Activity size={13} className="text-panel-accent" />
+              <span className="text-xs font-semibold text-panel-text">Aktivität</span>
+            </div>
+            <ActivityFeed events={activity} />
+          </div>
+
+          <div className="bg-panel-card border border-panel-border rounded-xl overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-panel-border/60 flex items-center gap-2">
+              <ShieldAlert size={13} className="text-panel-accent" />
+              <span className="text-xs font-semibold text-panel-text">Status</span>
+            </div>
+            <div className="px-4 py-3 space-y-2.5 text-xs">
+              {pmConfigured && (
+                <button onClick={() => navigate('/patchmon')}
+                  className="w-full flex items-center justify-between gap-2 group">
+                  <span className="text-panel-muted flex items-center gap-2"><Package size={12} />PatchMon</span>
+                  <span className={pmWithUpdates > 0 ? 'text-panel-orange' : 'text-panel-green'}>
+                    {pmWithUpdates > 0
+                      ? `${pmWithUpdates} Server · ${pmSecurity} Security${pmReboot > 0 ? ` · ${pmReboot} Neustart` : ''}`
+                      : 'alles aktuell'}
+                  </span>
+                </button>
+              )}
+              {uptime && (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-panel-muted flex items-center gap-2"><Activity size={12} />Uptime Kuma</span>
+                  <span className={uptime.up < uptime.total ? 'text-panel-orange' : 'text-panel-green'}>
+                    {uptime.up}/{uptime.total} up
+                  </span>
+                </div>
+              )}
+              {firewall && (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-panel-muted flex items-center gap-2"><ShieldAlert size={12} />Firewall</span>
+                  <span className={firewall.active ? 'text-panel-green' : 'text-panel-muted'}>
+                    {firewall.active ? 'aktiv' : 'inaktiv'}
+                  </span>
+                </div>
+              )}
+              {!pmConfigured && !uptime && !firewall && (
+                <div className="text-panel-muted/70 text-center py-2">Keine Status-Dienste verbunden.</div>
+              )}
+            </div>
+          </div>
+        </div>
+
+      </div>
     </div>
   );
 }
