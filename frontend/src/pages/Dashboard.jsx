@@ -11,15 +11,23 @@ import { useAuth } from '../context/AuthContext';
 import { useLiveInterval } from '../hooks/useLiveInterval';
 
 // Recharts-Farben (an Panel-Palette angelehnt)
-const C_CPU = '#388bfd';
-const C_RAM = '#3fb950';
+const C_CPU  = '#388bfd';
+const C_RAM  = '#3fb950';
+const C_DISK = '#e3b341';
+const C_NET  = '#a371f7';
+
+const LegendDot = ({ color, label }) => (
+  <span className="flex items-center gap-1">
+    <span className="inline-block w-2.5 h-0.5 rounded" style={{ backgroundColor: color }} />{label}
+  </span>
+);
 
 // Zeitreihe auf ~48 Punkte ausdünnen (für kompakte Sparklines)
 const decimate = (rows, max = 48) => {
   const clean = (rows || []).filter(r => r && r.cpu != null);
   const src = clean.length <= max ? clean
     : clean.filter((_, i) => i % Math.ceil(clean.length / max) === 0);
-  return src.map(r => ({ cpu: r.cpu, mem: r.mem }));
+  return src.map(r => ({ cpu: r.cpu, mem: r.mem, disk: r.disk, rx: r.net_rx, tx: r.net_tx }));
 };
 
 // ── Hilfsfunktionen ──────────────────────────────────────────────────────────
@@ -108,20 +116,31 @@ function MiniChart({ data }) {
   return (
     <div>
       <div className="flex items-center gap-3 text-[10px] text-panel-muted/70 mb-0.5">
-        <span className="flex items-center gap-1">
-          <span className="inline-block w-2.5 h-0.5 rounded" style={{ backgroundColor: C_CPU }} />CPU
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="inline-block w-2.5 h-0.5 rounded" style={{ backgroundColor: C_RAM }} />RAM
-        </span>
+        <LegendDot color={C_CPU} label="CPU" />
+        <LegendDot color={C_RAM} label="RAM" />
+        <LegendDot color={C_DISK} label="Disk" />
         <span className="ml-auto">letzte 15 min</span>
       </div>
       <div className="h-14 -mx-1">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ top: 4, right: 4, bottom: 0, left: 4 }}>
             <YAxis hide domain={[0, 100]} />
-            <Line type="monotone" dataKey="cpu" stroke={C_CPU} strokeWidth={1.5} dot={false} isAnimationActive={false} />
-            <Line type="monotone" dataKey="mem" stroke={C_RAM} strokeWidth={1.5} dot={false} isAnimationActive={false} />
+            <Line type="monotone" dataKey="cpu"  stroke={C_CPU}  strokeWidth={1.5} dot={false} isAnimationActive={false} />
+            <Line type="monotone" dataKey="mem"  stroke={C_RAM}  strokeWidth={1.5} dot={false} isAnimationActive={false} />
+            <Line type="monotone" dataKey="disk" stroke={C_DISK} strokeWidth={1.5} dot={false} isAnimationActive={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="flex items-center gap-3 text-[10px] text-panel-muted/70 mt-1.5 mb-0.5">
+        <LegendDot color={C_NET} label="Netzwerk ↓↑" />
+        <span className="ml-auto">KB/s</span>
+      </div>
+      <div className="h-8 -mx-1">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 2, right: 4, bottom: 0, left: 4 }}>
+            <YAxis hide domain={[0, 'auto']} />
+            <Line type="monotone" dataKey={(d) => (d.rx || 0) + (d.tx || 0)} name="net"
+              stroke={C_NET} strokeWidth={1.5} dot={false} isAnimationActive={false} />
           </LineChart>
         </ResponsiveContainer>
       </div>
