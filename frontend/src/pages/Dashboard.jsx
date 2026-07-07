@@ -1,9 +1,10 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Cpu, WifiOff, Container, ChevronRight, Server, Activity,
   MemoryStick, HardDrive, Network, ArrowDownToLine, ArrowUpFromLine,
   Clock, Monitor, Package, ShieldAlert, RotateCw, Bell,
+  GripVertical, X, Plus, Settings2, Check,
 } from 'lucide-react';
 import { LineChart, Line, YAxis, ResponsiveContainer } from 'recharts';
 import axios from 'axios';
@@ -21,6 +22,27 @@ const LegendDot = ({ color, label }) => (
     <span className="inline-block w-2.5 h-0.5 rounded" style={{ backgroundColor: color }} />{label}
   </span>
 );
+
+// ── Anpassbares Widget-Layout ─────────────────────────────────────────────────
+const W_COL   = { 1: 'lg:col-span-1', 2: 'lg:col-span-2', 3: 'lg:col-span-3' };
+const W_LABEL = { kpi: 'Kennzahlen', activity: 'Aktivität', status: 'Status', server: 'Server' };
+
+// Standard-Anordnung: KPI (voll), Server-Karten, Aktivität, Status
+const mkDefaultLayout = (serverKeys) => ([
+  { id: 'kpi', type: 'kpi', w: 3 },
+  ...serverKeys.map(k => ({ id: 'server:' + k, type: 'server', serverKey: k, w: 1 })),
+  { id: 'activity', type: 'activity', w: 1 },
+  { id: 'status',   type: 'status',   w: 1 },
+]);
+
+// Gespeichertes Layout mit aktueller Serverliste abgleichen (neue anhängen, entfernte raus)
+const reconcileLayout = (list, serverKeys) => {
+  const keySet = new Set(serverKeys);
+  const out = (list || []).filter(w => w.type !== 'server' || keySet.has(w.serverKey));
+  const have = new Set(out.filter(w => w.type === 'server').map(w => w.serverKey));
+  for (const k of serverKeys) if (!have.has(k)) out.push({ id: 'server:' + k, type: 'server', serverKey: k, w: 1 });
+  return out;
+};
 
 // Zeitreihe auf ~48 Punkte ausdünnen (für kompakte Sparklines)
 const decimate = (rows, max = 48) => {
@@ -368,6 +390,11 @@ export default function Dashboard({ liveStats }) {
   const [activity,    setActivity]    = useState([]);   // Ereignis-Feed
   const [uptime,      setUptime]      = useState(null);  // { up, total }
   const [firewall,    setFirewall]    = useState(null);  // { active }
+  const [layout,      setLayout]      = useState(null);  // Widget-Layout (null = Standard)
+  const [editMode,    setEditMode]    = useState(false);
+  const [dragIdx,     setDragIdx]     = useState(null);
+  const [dragOverIdx, setDragOverIdx] = useState(null);
+  const [savedOk,     setSavedOk]     = useState(false);
 
   // ── Initial-Daten ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -444,6 +471,13 @@ export default function Dashboard({ liveStats }) {
     return () => clearInterval(t);
   }, []);
 
+  // ── Gespeichertes Widget-Layout laden ──────────────────────────────────────
+  useEffect(() => {
+    axios.get('/api/dashboard/home-layout')
+      .then(r => setLayout(Array.isArray(r.data.layout) && r.data.layout.length ? r.data.layout : null))
+      .catch(() => setLayout(null));
+  }, []);
+
   // ── Lokaler Server: Live-Stats einmischen ──────────────────────────────────
   const localCpu    = liveStats?.cpu ?? localInfo?.cpu?.usage ?? 0;
   const localMemPct = liveStats?.memory?.usedPercent ?? localInfo?.memory?.usedPercent ?? 0;
@@ -494,23 +528,37 @@ export default function Dashboard({ liveStats }) {
     return Object.values(seen).filter(Boolean).length;
   })();
 
-  return (
-    <div className="space-y-4">
+  // ── Effektives Widget-Layout (Standard/gespeichert, mit Servern abgeglichen) ─
+  const serverKeys = [...(hideLocal ? [] : ['local']), ...agents.map(a => String(a.id))];
+  const effLayout = useMemo(
+    () => reconcileLayout(layout ?? mkDefaultLayout(serverKeys), serverKeys),
+    [layout, serverKeys.join(',')], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
-      {/* ── Kopfzeile: Live-Status + Warnungen ─────────────────────────── */}
-      <div className="flex items-center gap-3 text-xs text-panel-muted">
-        {unreachable > 0 && (
-          <span className="flex items-center gap-1.5 text-panel-red">
-            <WifiOff size={13} />{unreachable} nicht erreichbar
-          </span>
-        )}
-        <span className="flex items-center gap-1.5 ml-auto">
-          <Activity size={13} />Live · Auto-Refresh {Math.round(liveInterval / 1000)}s
-        </span>
-      </div>
+  const setWidth     = (id, w)  => setLayout(effLayout.map(x => (x.id === id ? { ...x, w } : x)));
+  const removeWidget = (id)     => setLayout(effLayout.filter(x => x.id !== id));
+  const addWidget    = (type)   => setLayout([...effLayout, { id: type, type, w: type === 'kpi' ? 3 : 1 }]);
+  const resetLayout  = () => { setLayout(null); axios.put('/api/dashboard/home-layout', { layout: [] }).catch(() => {}); setEditMode(false); };
+  const saveLayout   = async () => {
+    try { await axios.put('/api/dashboard/home-layout', { layout: effLayout }); setSavedOk(true); setTimeout(() => setSavedOk(false), 2000); } catch {}
+  };
 
-      {/* ── KPI-Leiste ─────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5">
+  const onDragStart = (e, idx) => { if (!editMode) return; setDragIdx(idx); e.dataTransfer.effectAllowed = 'move'; };
+  const onDragOver  = (e, idx) => { if (!editMode) return; e.preventDefault(); setDragOverIdx(idx); };
+  const onDrop      = (e, idx) => {
+    if (!editMode || dragIdx === null || dragIdx === idx) return;
+    e.preventDefault();
+    const nl = [...effLayout]; const [m] = nl.splice(dragIdx, 1); nl.splice(idx, 0, m);
+    setLayout(nl); setDragIdx(null); setDragOverIdx(null);
+  };
+  const onDragEnd = () => { setDragIdx(null); setDragOverIdx(null); };
+
+  const missing    = ['kpi', 'activity', 'status'].filter(t => !effLayout.some(w => w.type === t));
+  const serverName = (key) => (key === 'local' ? 'Panel-Server' : (agents.find(a => String(a.id) === key)?.name || 'Server'));
+
+  const renderWidget = (w) => {
+    if (w.type === 'kpi') return (
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2.5">
         <KpiTile icon={Server}      value={`${totalOnline}/${totalServers}`} label="Server online"
           color={totalOnline < totalServers ? 'text-panel-orange' : 'text-panel-green'} />
         <KpiTile icon={Container}   value={totalContainerRunning} label="Container" />
@@ -521,75 +569,146 @@ export default function Dashboard({ liveStats }) {
         <KpiTile icon={Package}     value={pmConfigured ? pmWithUpdates : '–'} label="Server m. Updates"
           color={pmWithUpdates > 0 ? 'text-panel-orange' : 'text-panel-muted'} />
       </div>
-
-      {/* ── Zwei Spalten: Server-Karten | Aktivität + Status ──────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-
-        {/* Server-Karten */}
-        <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4 content-start">
-          {!hideLocal && (
-            <ServerCard name="Panel-Server" stats={localStats} online={true}
-              isLocal={true} docker={null} history={histories.local} />
+    );
+    if (w.type === 'activity') return (
+      <div className="bg-panel-card border border-panel-border rounded-xl overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-panel-border/60 flex items-center gap-2">
+          <Activity size={13} className="text-panel-accent" />
+          <span className="text-xs font-semibold text-panel-text">Aktivität</span>
+        </div>
+        <ActivityFeed events={activity} />
+      </div>
+    );
+    if (w.type === 'status') return (
+      <div className="bg-panel-card border border-panel-border rounded-xl overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-panel-border/60 flex items-center gap-2">
+          <ShieldAlert size={13} className="text-panel-accent" />
+          <span className="text-xs font-semibold text-panel-text">Status</span>
+        </div>
+        <div className="px-4 py-3 space-y-2.5 text-xs">
+          {pmConfigured && (
+            <button onClick={() => navigate('/patchmon')} className="w-full flex items-center justify-between gap-2">
+              <span className="text-panel-muted flex items-center gap-2"><Package size={12} />PatchMon</span>
+              <span className={pmWithUpdates > 0 ? 'text-panel-orange' : 'text-panel-green'}>
+                {pmWithUpdates > 0
+                  ? `${pmWithUpdates} Server · ${pmSecurity} Security${pmReboot > 0 ? ` · ${pmReboot} Neustart` : ''}`
+                  : 'alles aktuell'}
+              </span>
+            </button>
           )}
-          {agents.map(agent => (
-            <ServerCard key={agent.id} name={agent.name}
-              stats={agentStats[agent.id] ?? null} online={agentOnline[agent.id]}
-              isLocal={false} docker={agentDocker[agent.id] ?? null}
-              history={histories[String(agent.id)]}
-              onNavigate={() => navigate(`/agents/${agent.id}`)} />
-          ))}
+          {uptime && (
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-panel-muted flex items-center gap-2"><Activity size={12} />Uptime Kuma</span>
+              <span className={uptime.up < uptime.total ? 'text-panel-orange' : 'text-panel-green'}>{uptime.up}/{uptime.total} up</span>
+            </div>
+          )}
+          {firewall && (
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-panel-muted flex items-center gap-2"><ShieldAlert size={12} />Firewall</span>
+              <span className={firewall.active ? 'text-panel-green' : 'text-panel-muted'}>{firewall.active ? 'aktiv' : 'inaktiv'}</span>
+            </div>
+          )}
+          {!pmConfigured && !uptime && !firewall && (
+            <div className="text-panel-muted/70 text-center py-2">Keine Status-Dienste verbunden.</div>
+          )}
         </div>
+      </div>
+    );
+    if (w.type === 'server') {
+      const k = w.serverKey;
+      if (k === 'local') return (
+        <ServerCard name="Panel-Server" stats={localStats} online={true} isLocal={true} docker={null} history={histories.local} />
+      );
+      const a = agents.find(x => String(x.id) === k);
+      if (!a) return null;
+      return (
+        <ServerCard name={a.name} stats={agentStats[a.id] ?? null} online={agentOnline[a.id]}
+          isLocal={false} docker={agentDocker[a.id] ?? null} history={histories[k]}
+          onNavigate={() => navigate(`/agents/${a.id}`)} />
+      );
+    }
+    return null;
+  };
 
-        {/* Aktivität + Status */}
-        <div className="space-y-4">
-          <div className="bg-panel-card border border-panel-border rounded-xl overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-panel-border/60 flex items-center gap-2">
-              <Activity size={13} className="text-panel-accent" />
-              <span className="text-xs font-semibold text-panel-text">Aktivität</span>
-            </div>
-            <ActivityFeed events={activity} />
-          </div>
+  return (
+    <div className="space-y-4">
 
-          <div className="bg-panel-card border border-panel-border rounded-xl overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-panel-border/60 flex items-center gap-2">
-              <ShieldAlert size={13} className="text-panel-accent" />
-              <span className="text-xs font-semibold text-panel-text">Status</span>
-            </div>
-            <div className="px-4 py-3 space-y-2.5 text-xs">
-              {pmConfigured && (
-                <button onClick={() => navigate('/patchmon')}
-                  className="w-full flex items-center justify-between gap-2 group">
-                  <span className="text-panel-muted flex items-center gap-2"><Package size={12} />PatchMon</span>
-                  <span className={pmWithUpdates > 0 ? 'text-panel-orange' : 'text-panel-green'}>
-                    {pmWithUpdates > 0
-                      ? `${pmWithUpdates} Server · ${pmSecurity} Security${pmReboot > 0 ? ` · ${pmReboot} Neustart` : ''}`
-                      : 'alles aktuell'}
-                  </span>
+      {/* ── Kopfzeile: Live-Status + Anpassen-Steuerung ────────────────── */}
+      <div className="flex items-center gap-3 text-xs text-panel-muted flex-wrap">
+        {unreachable > 0 && (
+          <span className="flex items-center gap-1.5 text-panel-red">
+            <WifiOff size={13} />{unreachable} nicht erreichbar
+          </span>
+        )}
+        <span className="flex items-center gap-1.5 ml-auto">
+          <Activity size={13} />Live · Auto-Refresh {Math.round(liveInterval / 1000)}s
+        </span>
+        {editMode ? (
+          <>
+            {savedOk && <span className="text-panel-green">gespeichert ✓</span>}
+            <button onClick={resetLayout} className="hover:text-panel-text transition-colors">Zurücksetzen</button>
+            <button onClick={saveLayout} className="px-2 py-1 rounded bg-panel-accent text-white flex items-center gap-1 hover:bg-panel-accent/80">
+              <Check size={12} />Speichern
+            </button>
+            <button onClick={() => setEditMode(false)} className="hover:text-panel-text transition-colors">Fertig</button>
+          </>
+        ) : (
+          <button onClick={() => setEditMode(true)} className="flex items-center gap-1 hover:text-panel-text transition-colors">
+            <Settings2 size={12} />Anpassen
+          </button>
+        )}
+      </div>
+
+      {editMode && (
+        <div className="flex items-center gap-2 text-xs flex-wrap bg-panel-surface/40 border border-panel-border/60 rounded-lg px-3 py-2">
+          <span className="text-panel-muted">Ziehen zum Umordnen · 1/3–3/3 = Breite.</span>
+          {missing.length > 0 && (
+            <span className="flex items-center gap-2 ml-auto flex-wrap">
+              <span className="text-panel-muted">Hinzufügen:</span>
+              {missing.map(t => (
+                <button key={t} onClick={() => addWidget(t)}
+                  className="px-2 py-1 rounded border border-panel-border text-panel-muted hover:text-panel-text flex items-center gap-1">
+                  <Plus size={11} />{W_LABEL[t]}
                 </button>
-              )}
-              {uptime && (
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-panel-muted flex items-center gap-2"><Activity size={12} />Uptime Kuma</span>
-                  <span className={uptime.up < uptime.total ? 'text-panel-orange' : 'text-panel-green'}>
-                    {uptime.up}/{uptime.total} up
-                  </span>
-                </div>
-              )}
-              {firewall && (
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-panel-muted flex items-center gap-2"><ShieldAlert size={12} />Firewall</span>
-                  <span className={firewall.active ? 'text-panel-green' : 'text-panel-muted'}>
-                    {firewall.active ? 'aktiv' : 'inaktiv'}
-                  </span>
-                </div>
-              )}
-              {!pmConfigured && !uptime && !firewall && (
-                <div className="text-panel-muted/70 text-center py-2">Keine Status-Dienste verbunden.</div>
-              )}
-            </div>
-          </div>
+              ))}
+            </span>
+          )}
         </div>
+      )}
 
+      {/* ── Widget-Raster ─────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+        {effLayout.map((w, idx) => (
+          <div key={w.id}
+            className={`${W_COL[w.w] || 'lg:col-span-1'} transition-opacity ${dragIdx === idx ? 'opacity-30' : ''} ${dragOverIdx === idx && dragIdx !== idx ? 'ring-1 ring-panel-accent/50 rounded-xl' : ''}`}
+            draggable={editMode}
+            onDragStart={e => onDragStart(e, idx)}
+            onDragOver={e => onDragOver(e, idx)}
+            onDrop={e => onDrop(e, idx)}
+            onDragEnd={onDragEnd}
+          >
+            {editMode && (
+              <div className="flex items-center gap-1.5 px-2 py-1 mb-1 bg-panel-surface border border-panel-border rounded text-xs select-none">
+                <GripVertical size={12} className="text-panel-muted cursor-grab flex-shrink-0" />
+                <span className="flex-1 truncate text-panel-muted">
+                  {w.type === 'server' ? serverName(w.serverKey) : W_LABEL[w.type]}
+                </span>
+                <div className="flex items-center">
+                  {[1, 2, 3].map(n => (
+                    <button key={n} onClick={() => setWidth(w.id, n)}
+                      className={`px-1.5 py-0.5 text-[10px] rounded transition-colors ${w.w === n ? 'bg-panel-accent text-white' : 'text-panel-muted hover:text-panel-text'}`}>
+                      {n}/3
+                    </button>
+                  ))}
+                </div>
+                {w.type !== 'server' && (
+                  <button onClick={() => removeWidget(w.id)} className="text-panel-muted hover:text-panel-red ml-1"><X size={11} /></button>
+                )}
+              </div>
+            )}
+            {renderWidget(w)}
+          </div>
+        ))}
       </div>
     </div>
   );
