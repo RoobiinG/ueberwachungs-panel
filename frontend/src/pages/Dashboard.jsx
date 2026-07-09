@@ -39,14 +39,17 @@ const widgetTitle = (id, serverName) => {
 };
 
 // Standard-Anordnung: KPI voll oben, Server-Karten links (2 je Reihe), Aktivität + Status rechts
+// Höhe (in Grid-Zeilen) so, dass eine Server-Karte komplett passt (rowHeight 30 + margin 14 → ~514px)
+const SERVER_H = 12;
+
 const mkDefaultRgl = (serverKeys) => {
   const items = [
-    { i: 'kpi',      x: 0, y: 0,  w: 12, h: 2,  minW: 4, minH: 2 },
-    { i: 'activity', x: 8, y: 2,  w: 4,  h: 11, minW: 3, minH: 5 },
-    { i: 'status',   x: 8, y: 13, w: 4,  h: 5,  minW: 3, minH: 3 },
+    { i: 'kpi',      x: 0, y: 0,             w: 12, h: 2,        minW: 4, minH: 2 },
+    { i: 'activity', x: 8, y: 2,             w: 4,  h: SERVER_H, minW: 3, minH: 5 },
+    { i: 'status',   x: 8, y: 2 + SERVER_H,  w: 4,  h: 6,        minW: 3, minH: 3 },
   ];
   serverKeys.forEach((k, idx) => {
-    items.push({ i: 'server:' + k, x: (idx % 2) * 4, y: 2 + Math.floor(idx / 2) * 9, w: 4, h: 9, minW: 3, minH: 7 });
+    items.push({ i: 'server:' + k, x: (idx % 2) * 4, y: 2 + Math.floor(idx / 2) * SERVER_H, w: 4, h: SERVER_H, minW: 3, minH: 6 });
   });
   return items;
 };
@@ -59,11 +62,11 @@ const reconcileRgl = (list, serverKeys) => {
   let y = out.reduce((m, it) => Math.max(m, (it.y || 0) + (it.h || 1)), 0);
   for (const k of serverKeys) {
     const id = 'server:' + k;
-    if (!have.has(id)) { out.push({ i: id, x: 0, y, w: 4, h: 9, minW: 3, minH: 7 }); have.add(id); y += 9; }
+    if (!have.has(id)) { out.push({ i: id, x: 0, y, w: 4, h: SERVER_H, minW: 3, minH: 6 }); have.add(id); y += SERVER_H; }
   }
-  if (!have.has('kpi'))      { out.push({ i: 'kpi',      x: 0, y, w: 12, h: 2,  minW: 4, minH: 2 }); y += 2; }
-  if (!have.has('activity')) { out.push({ i: 'activity', x: 0, y, w: 4,  h: 10, minW: 3, minH: 5 }); y += 10; }
-  if (!have.has('status'))   { out.push({ i: 'status',   x: 0, y, w: 4,  h: 5,  minW: 3, minH: 3 }); }
+  if (!have.has('kpi'))      { out.push({ i: 'kpi',      x: 0, y, w: 12, h: 2,        minW: 4, minH: 2 }); y += 2; }
+  if (!have.has('activity')) { out.push({ i: 'activity', x: 0, y, w: 4,  h: SERVER_H, minW: 3, minH: 5 }); y += SERVER_H; }
+  if (!have.has('status'))   { out.push({ i: 'status',   x: 0, y, w: 4,  h: 6,        minW: 3, minH: 3 }); }
   return out;
 };
 
@@ -637,12 +640,12 @@ export default function Dashboard({ liveStats }) {
     if (id.startsWith('server:')) {
       const k = id.slice(7);
       if (k === 'local') return (
-        <ServerCard className="h-full" name="Panel-Server" stats={localStats} online={true} isLocal={true} docker={null} history={histories.local} />
+        <ServerCard name="Panel-Server" stats={localStats} online={true} isLocal={true} docker={null} history={histories.local} />
       );
       const a = agents.find(x => String(x.id) === k);
       if (!a) return <div className="h-full bg-panel-card border border-panel-border/70 rounded-2xl" />;
       return (
-        <ServerCard className="h-full" name={a.name} stats={agentStats[a.id] ?? null} online={agentOnline[a.id]}
+        <ServerCard name={a.name} stats={agentStats[a.id] ?? null} online={agentOnline[a.id]}
           isLocal={false} docker={agentDocker[a.id] ?? null} history={histories[k]}
           onNavigate={() => navigate(`/agents/${a.id}`)} />
       );
