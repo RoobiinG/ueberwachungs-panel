@@ -1,10 +1,13 @@
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import RGLBase, { WidthProvider } from 'react-grid-layout';
+import 'react-grid-layout/css/styles.css';
+import 'react-resizable/css/styles.css';
 import {
   Cpu, WifiOff, Container, ChevronRight, Server, Activity,
   MemoryStick, HardDrive, Network, ArrowDownToLine, ArrowUpFromLine,
   Clock, Monitor, Package, ShieldAlert, RotateCw, Bell,
-  GripVertical, X, Plus, Settings2, Check,
+  GripVertical, RotateCcw,
 } from 'lucide-react';
 import { LineChart, Line, YAxis, ResponsiveContainer } from 'recharts';
 import axios from 'axios';
@@ -23,24 +26,44 @@ const LegendDot = ({ color, label }) => (
   </span>
 );
 
-// ── Anpassbares Widget-Layout ─────────────────────────────────────────────────
-const W_COL   = { 1: 'lg:col-span-1', 2: 'lg:col-span-2', 3: 'lg:col-span-3' };
-const W_LABEL = { kpi: 'Kennzahlen', activity: 'Aktivität', status: 'Status', server: 'Server' };
+// ── Frei anordbares Widget-Raster (react-grid-layout) ────────────────────────
+const GridLayout = WidthProvider(RGLBase);
+const GRID_COLS = 12;
 
-// Standard-Anordnung: KPI (voll), Server-Karten, Aktivität, Status
-const mkDefaultLayout = (serverKeys) => ([
-  { id: 'kpi', type: 'kpi', w: 3 },
-  ...serverKeys.map(k => ({ id: 'server:' + k, type: 'server', serverKey: k, w: 1 })),
-  { id: 'activity', type: 'activity', w: 1 },
-  { id: 'status',   type: 'status',   w: 1 },
-]);
+const widgetTitle = (id, serverName) => {
+  if (id === 'kpi')      return 'Übersicht';
+  if (id === 'activity') return 'Aktivität';
+  if (id === 'status')   return 'Status';
+  if (id.startsWith('server:')) return serverName(id.slice(7));
+  return '';
+};
 
-// Gespeichertes Layout mit aktueller Serverliste abgleichen (neue anhängen, entfernte raus)
-const reconcileLayout = (list, serverKeys) => {
-  const keySet = new Set(serverKeys);
-  const out = (list || []).filter(w => w.type !== 'server' || keySet.has(w.serverKey));
-  const have = new Set(out.filter(w => w.type === 'server').map(w => w.serverKey));
-  for (const k of serverKeys) if (!have.has(k)) out.push({ id: 'server:' + k, type: 'server', serverKey: k, w: 1 });
+// Standard-Anordnung: KPI voll oben, Server-Karten links (2 je Reihe), Aktivität + Status rechts
+const mkDefaultRgl = (serverKeys) => {
+  const items = [
+    { i: 'kpi',      x: 0, y: 0,  w: 12, h: 2,  minW: 4, minH: 2 },
+    { i: 'activity', x: 8, y: 2,  w: 4,  h: 11, minW: 3, minH: 5 },
+    { i: 'status',   x: 8, y: 13, w: 4,  h: 5,  minW: 3, minH: 3 },
+  ];
+  serverKeys.forEach((k, idx) => {
+    items.push({ i: 'server:' + k, x: (idx % 2) * 4, y: 2 + Math.floor(idx / 2) * 9, w: 4, h: 9, minW: 3, minH: 7 });
+  });
+  return items;
+};
+
+// Gespeichertes RGL-Layout mit aktueller Serverliste abgleichen
+const reconcileRgl = (list, serverKeys) => {
+  const wantServer = new Set(serverKeys.map(k => 'server:' + k));
+  const out = (list || []).filter(it => !String(it.i).startsWith('server:') || wantServer.has(it.i));
+  const have = new Set(out.map(it => it.i));
+  let y = out.reduce((m, it) => Math.max(m, (it.y || 0) + (it.h || 1)), 0);
+  for (const k of serverKeys) {
+    const id = 'server:' + k;
+    if (!have.has(id)) { out.push({ i: id, x: 0, y, w: 4, h: 9, minW: 3, minH: 7 }); have.add(id); y += 9; }
+  }
+  if (!have.has('kpi'))      { out.push({ i: 'kpi',      x: 0, y, w: 12, h: 2,  minW: 4, minH: 2 }); y += 2; }
+  if (!have.has('activity')) { out.push({ i: 'activity', x: 0, y, w: 4,  h: 10, minW: 3, minH: 5 }); y += 10; }
+  if (!have.has('status'))   { out.push({ i: 'status',   x: 0, y, w: 4,  h: 5,  minW: 3, minH: 3 }); }
   return out;
 };
 
@@ -172,7 +195,7 @@ function MiniChart({ data }) {
 
 // ── Server-Karte ──────────────────────────────────────────────────────────────
 
-function ServerCard({ name, stats, online, isLocal, docker, history, onNavigate }) {
+function ServerCard({ name, stats, online, isLocal, docker, history, onNavigate, className = '' }) {
   const cpu     = stats?.cpu?.usage ?? 0;
   const memPct  = stats?.memory?.usedPercent ?? 0;
   const diskPct = stats?.disk?.[0]?.usedPercent ?? 0;
@@ -197,7 +220,7 @@ function ServerCard({ name, stats, online, isLocal, docker, history, onNavigate 
 
   return (
     <div
-      className={`border rounded-xl flex flex-col overflow-hidden transition-all duration-200 ${cardCls}`}
+      className={`border rounded-2xl flex flex-col overflow-hidden transition-all duration-200 ${cardCls} ${className}`}
       onClick={!isLocal && online ? onNavigate : undefined}
       style={{ cursor: !isLocal && online ? 'pointer' : 'default' }}
     >
@@ -329,10 +352,12 @@ function ServerCard({ name, stats, online, isLocal, docker, history, onNavigate 
 
 function KpiTile({ icon: Icon, value, label, color = 'text-panel-accent' }) {
   return (
-    <div className="bg-panel-card border border-panel-border rounded-xl px-3.5 py-3 flex items-center gap-3">
-      <Icon size={20} className={`flex-shrink-0 ${color}`} />
+    <div className="bg-panel-card border border-panel-border/70 rounded-2xl px-3.5 py-3 flex items-center gap-3">
+      <div className={`w-9 h-9 rounded-xl bg-panel-surface flex items-center justify-center flex-shrink-0 ${color}`}>
+        <Icon size={18} />
+      </div>
       <div className="min-w-0">
-        <div className="text-xl font-bold leading-none text-panel-text">{value}</div>
+        <div className="text-xl font-bold leading-none text-panel-text tabular-nums">{value}</div>
         <div className="text-[11px] text-panel-muted mt-1 truncate">{label}</div>
       </div>
     </div>
@@ -390,11 +415,9 @@ export default function Dashboard({ liveStats }) {
   const [activity,    setActivity]    = useState([]);   // Ereignis-Feed
   const [uptime,      setUptime]      = useState(null);  // { up, total }
   const [firewall,    setFirewall]    = useState(null);  // { active }
-  const [layout,      setLayout]      = useState(null);  // Widget-Layout (null = Standard)
-  const [editMode,    setEditMode]    = useState(false);
-  const [dragIdx,     setDragIdx]     = useState(null);
-  const [dragOverIdx, setDragOverIdx] = useState(null);
-  const [savedOk,     setSavedOk]     = useState(false);
+  const [rgl, setRgl] = useState(null);   // gespeichertes RGL-Layout (null = Standard)
+  const persistRef    = useRef(null);
+  const readyRef      = useRef(false);    // erst nach dem Laden darf persistiert werden
 
   // ── Initial-Daten ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -471,11 +494,16 @@ export default function Dashboard({ liveStats }) {
     return () => clearInterval(t);
   }, []);
 
-  // ── Gespeichertes Widget-Layout laden ──────────────────────────────────────
+  // ── Gespeichertes Widget-Layout laden (nur echtes RGL-Format) ───────────────
   useEffect(() => {
     axios.get('/api/dashboard/home-layout')
-      .then(r => setLayout(Array.isArray(r.data.layout) && r.data.layout.length ? r.data.layout : null))
-      .catch(() => setLayout(null));
+      .then(r => {
+        const l = r.data.layout;
+        const isRgl = Array.isArray(l) && l.length && l[0]?.i !== undefined && l[0]?.h !== undefined;
+        setRgl(isRgl ? l : null);
+      })
+      .catch(() => setRgl(null))
+      .finally(() => { readyRef.current = true; });
   }, []);
 
   // ── Lokaler Server: Live-Stats einmischen ──────────────────────────────────
@@ -528,64 +556,56 @@ export default function Dashboard({ liveStats }) {
     return Object.values(seen).filter(Boolean).length;
   })();
 
-  // ── Effektives Widget-Layout (Standard/gespeichert, mit Servern abgeglichen) ─
+  // ── Frei anordbares Layout (react-grid-layout) ──────────────────────────────
   const serverKeys = [...(hideLocal ? [] : ['local']), ...agents.map(a => String(a.id))];
-  const effLayout = useMemo(
-    () => reconcileLayout(layout ?? mkDefaultLayout(serverKeys), serverKeys),
-    [layout, serverKeys.join(',')], // eslint-disable-line react-hooks/exhaustive-deps
+  const gridLayout = useMemo(
+    () => reconcileRgl(rgl ?? mkDefaultRgl(serverKeys), serverKeys),
+    [rgl, serverKeys.join(',')], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  const setWidth     = (id, w)  => setLayout(effLayout.map(x => (x.id === id ? { ...x, w } : x)));
-  const removeWidget = (id)     => setLayout(effLayout.filter(x => x.id !== id));
-  const addWidget    = (type)   => setLayout([...effLayout, { id: type, type, w: type === 'kpi' ? 3 : 1 }]);
-  const resetLayout  = () => { setLayout(null); axios.put('/api/dashboard/home-layout', { layout: [] }).catch(() => {}); setEditMode(false); };
-  const saveLayout   = async () => {
-    try { await axios.put('/api/dashboard/home-layout', { layout: effLayout }); setSavedOk(true); setTimeout(() => setSavedOk(false), 2000); } catch {}
+  const onLayoutChange = (l) => {
+    setRgl(l);
+    if (!readyRef.current) return; // gespeichertes Layout nicht überschreiben, bevor es geladen ist
+    clearTimeout(persistRef.current);
+    persistRef.current = setTimeout(() => { axios.put('/api/dashboard/home-layout', { layout: l }).catch(() => {}); }, 700);
   };
+  const resetLayout = () => { setRgl(null); axios.put('/api/dashboard/home-layout', { layout: [] }).catch(() => {}); };
 
-  const onDragStart = (e, idx) => { if (!editMode) return; setDragIdx(idx); e.dataTransfer.effectAllowed = 'move'; };
-  const onDragOver  = (e, idx) => { if (!editMode) return; e.preventDefault(); setDragOverIdx(idx); };
-  const onDrop      = (e, idx) => {
-    if (!editMode || dragIdx === null || dragIdx === idx) return;
-    e.preventDefault();
-    const nl = [...effLayout]; const [m] = nl.splice(dragIdx, 1); nl.splice(idx, 0, m);
-    setLayout(nl); setDragIdx(null); setDragOverIdx(null);
-  };
-  const onDragEnd = () => { setDragIdx(null); setDragOverIdx(null); };
-
-  const missing    = ['kpi', 'activity', 'status'].filter(t => !effLayout.some(w => w.type === t));
   const serverName = (key) => (key === 'local' ? 'Panel-Server' : (agents.find(a => String(a.id) === key)?.name || 'Server'));
 
-  const renderWidget = (w) => {
-    if (w.type === 'kpi') return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2.5">
-        <KpiTile icon={Server}      value={`${totalOnline}/${totalServers}`} label="Server online"
-          color={totalOnline < totalServers ? 'text-panel-orange' : 'text-panel-green'} />
-        <KpiTile icon={Container}   value={totalContainerRunning} label="Container" />
-        <KpiTile icon={Cpu}         value={`${avgCpu}%`} label="Ø CPU" />
-        <KpiTile icon={MemoryStick} value={`${avgRam}%`} label="Ø RAM" color="text-panel-green" />
-        <KpiTile icon={Bell}        value={activeAlerts} label="Aktive Alerts"
-          color={activeAlerts > 0 ? 'text-panel-red' : 'text-panel-muted'} />
-        <KpiTile icon={Package}     value={pmConfigured ? pmWithUpdates : '–'} label="Server m. Updates"
-          color={pmWithUpdates > 0 ? 'text-panel-orange' : 'text-panel-muted'} />
+  // Inhalt eines Widgets (füllt die Höhe der Kachel)
+  const widgetContent = (id) => {
+    if (id === 'kpi') return (
+      <div className="h-full flex items-center">
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2.5 w-full">
+          <KpiTile icon={Server}      value={`${totalOnline}/${totalServers}`} label="Server online"
+            color={totalOnline < totalServers ? 'text-panel-orange' : 'text-panel-green'} />
+          <KpiTile icon={Container}   value={totalContainerRunning} label="Container" />
+          <KpiTile icon={Cpu}         value={`${avgCpu}%`} label="Ø CPU" />
+          <KpiTile icon={MemoryStick} value={`${avgRam}%`} label="Ø RAM" color="text-panel-green" />
+          <KpiTile icon={Bell}        value={activeAlerts} label="Aktive Alerts"
+            color={activeAlerts > 0 ? 'text-panel-red' : 'text-panel-muted'} />
+          <KpiTile icon={Package}     value={pmConfigured ? pmWithUpdates : '–'} label="Server m. Updates"
+            color={pmWithUpdates > 0 ? 'text-panel-orange' : 'text-panel-muted'} />
+        </div>
       </div>
     );
-    if (w.type === 'activity') return (
-      <div className="bg-panel-card border border-panel-border rounded-xl overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-panel-border/60 flex items-center gap-2">
+    if (id === 'activity') return (
+      <div className="h-full flex flex-col bg-panel-card border border-panel-border/70 rounded-2xl overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-panel-border/50 flex items-center gap-2 flex-shrink-0">
           <Activity size={13} className="text-panel-accent" />
           <span className="text-xs font-semibold text-panel-text">Aktivität</span>
         </div>
-        <ActivityFeed events={activity} />
+        <div className="flex-1 overflow-auto"><ActivityFeed events={activity} /></div>
       </div>
     );
-    if (w.type === 'status') return (
-      <div className="bg-panel-card border border-panel-border rounded-xl overflow-hidden">
-        <div className="px-4 py-2.5 border-b border-panel-border/60 flex items-center gap-2">
+    if (id === 'status') return (
+      <div className="h-full flex flex-col bg-panel-card border border-panel-border/70 rounded-2xl overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-panel-border/50 flex items-center gap-2 flex-shrink-0">
           <ShieldAlert size={13} className="text-panel-accent" />
           <span className="text-xs font-semibold text-panel-text">Status</span>
         </div>
-        <div className="px-4 py-3 space-y-2.5 text-xs">
+        <div className="flex-1 overflow-auto px-4 py-3 space-y-2.5 text-xs">
           {pmConfigured && (
             <button onClick={() => navigate('/patchmon')} className="w-full flex items-center justify-between gap-2">
               <span className="text-panel-muted flex items-center gap-2"><Package size={12} />PatchMon</span>
@@ -614,15 +634,15 @@ export default function Dashboard({ liveStats }) {
         </div>
       </div>
     );
-    if (w.type === 'server') {
-      const k = w.serverKey;
+    if (id.startsWith('server:')) {
+      const k = id.slice(7);
       if (k === 'local') return (
-        <ServerCard name="Panel-Server" stats={localStats} online={true} isLocal={true} docker={null} history={histories.local} />
+        <ServerCard className="h-full" name="Panel-Server" stats={localStats} online={true} isLocal={true} docker={null} history={histories.local} />
       );
       const a = agents.find(x => String(x.id) === k);
-      if (!a) return null;
+      if (!a) return <div className="h-full bg-panel-card border border-panel-border/70 rounded-2xl" />;
       return (
-        <ServerCard name={a.name} stats={agentStats[a.id] ?? null} online={agentOnline[a.id]}
+        <ServerCard className="h-full" name={a.name} stats={agentStats[a.id] ?? null} online={agentOnline[a.id]}
           isLocal={false} docker={agentDocker[a.id] ?? null} history={histories[k]}
           onNavigate={() => navigate(`/agents/${a.id}`)} />
       );
@@ -633,7 +653,7 @@ export default function Dashboard({ liveStats }) {
   return (
     <div className="space-y-4">
 
-      {/* ── Kopfzeile: Live-Status + Anpassen-Steuerung ────────────────── */}
+      {/* ── Kopfzeile ──────────────────────────────────────────────────── */}
       <div className="flex items-center gap-3 text-xs text-panel-muted flex-wrap">
         {unreachable > 0 && (
           <span className="flex items-center gap-1.5 text-panel-red">
@@ -643,73 +663,41 @@ export default function Dashboard({ liveStats }) {
         <span className="flex items-center gap-1.5 ml-auto">
           <Activity size={13} />Live · Auto-Refresh {Math.round(liveInterval / 1000)}s
         </span>
-        {editMode ? (
-          <>
-            {savedOk && <span className="text-panel-green">gespeichert ✓</span>}
-            <button onClick={resetLayout} className="hover:text-panel-text transition-colors">Zurücksetzen</button>
-            <button onClick={saveLayout} className="px-2 py-1 rounded bg-panel-accent text-white flex items-center gap-1 hover:bg-panel-accent/80">
-              <Check size={12} />Speichern
-            </button>
-            <button onClick={() => setEditMode(false)} className="hover:text-panel-text transition-colors">Fertig</button>
-          </>
-        ) : (
-          <button onClick={() => setEditMode(true)} className="flex items-center gap-1 hover:text-panel-text transition-colors">
-            <Settings2 size={12} />Anpassen
-          </button>
-        )}
+        <button onClick={resetLayout} title="Auf Standard-Anordnung zurücksetzen"
+          className="flex items-center gap-1 hover:text-panel-text transition-colors">
+          <RotateCcw size={12} />Layout zurücksetzen
+        </button>
       </div>
 
-      {editMode && (
-        <div className="flex items-center gap-2 text-xs flex-wrap bg-panel-surface/40 border border-panel-border/60 rounded-lg px-3 py-2">
-          <span className="text-panel-muted">Ziehen zum Umordnen · 1/3–3/3 = Breite.</span>
-          {missing.length > 0 && (
-            <span className="flex items-center gap-2 ml-auto flex-wrap">
-              <span className="text-panel-muted">Hinzufügen:</span>
-              {missing.map(t => (
-                <button key={t} onClick={() => addWidget(t)}
-                  className="px-2 py-1 rounded border border-panel-border text-panel-muted hover:text-panel-text flex items-center gap-1">
-                  <Plus size={11} />{W_LABEL[t]}
-                </button>
-              ))}
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* ── Widget-Raster ─────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
-        {effLayout.map((w, idx) => (
-          <div key={w.id}
-            className={`${W_COL[w.w] || 'lg:col-span-1'} transition-opacity ${dragIdx === idx ? 'opacity-30' : ''} ${dragOverIdx === idx && dragIdx !== idx ? 'ring-1 ring-panel-accent/50 rounded-xl' : ''}`}
-            draggable={editMode}
-            onDragStart={e => onDragStart(e, idx)}
-            onDragOver={e => onDragOver(e, idx)}
-            onDrop={e => onDrop(e, idx)}
-            onDragEnd={onDragEnd}
-          >
-            {editMode && (
-              <div className="flex items-center gap-1.5 px-2 py-1 mb-1 bg-panel-surface border border-panel-border rounded text-xs select-none">
-                <GripVertical size={12} className="text-panel-muted cursor-grab flex-shrink-0" />
-                <span className="flex-1 truncate text-panel-muted">
-                  {w.type === 'server' ? serverName(w.serverKey) : W_LABEL[w.type]}
-                </span>
-                <div className="flex items-center">
-                  {[1, 2, 3].map(n => (
-                    <button key={n} onClick={() => setWidth(w.id, n)}
-                      className={`px-1.5 py-0.5 text-[10px] rounded transition-colors ${w.w === n ? 'bg-panel-accent text-white' : 'text-panel-muted hover:text-panel-text'}`}>
-                      {n}/3
-                    </button>
-                  ))}
-                </div>
-                {w.type !== 'server' && (
-                  <button onClick={() => removeWidget(w.id)} className="text-panel-muted hover:text-panel-red ml-1"><X size={11} /></button>
-                )}
-              </div>
-            )}
-            {renderWidget(w)}
+      {/* ── Frei anordbares Widget-Raster (Griff = verschieben, Kanten = Größe) ── */}
+      <GridLayout
+        className="layout"
+        layout={gridLayout}
+        cols={GRID_COLS}
+        rowHeight={30}
+        margin={[14, 14]}
+        containerPadding={[0, 0]}
+        isDraggable
+        isResizable
+        draggableHandle=".wdrag"
+        resizeHandles={['se', 'e', 's', 'sw']}
+        compactType="vertical"
+        onLayoutChange={onLayoutChange}
+        useCSSTransforms
+      >
+        {gridLayout.map(it => (
+          <div key={it.i} className="group relative">
+            <button type="button"
+              className="wdrag absolute top-2 right-2 z-10 p-1 rounded-md bg-panel-surface/90 border border-panel-border/60 text-panel-muted opacity-0 group-hover:opacity-100 transition-opacity cursor-move"
+              title={`${widgetTitle(it.i, serverName)} verschieben`}
+              aria-label="Widget verschieben"
+            >
+              <GripVertical size={13} />
+            </button>
+            {widgetContent(it.i)}
           </div>
         ))}
-      </div>
+      </GridLayout>
     </div>
   );
 }

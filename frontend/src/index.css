@@ -40,6 +40,17 @@ input, select, textarea {
     @apply border-b border-panel-border/50 last:border-0 hover:bg-panel-card/40 transition-colors duration-100;
   }
 
+  /* react-grid-layout: Dark-Mode-Theming für Platzhalter + Resize-Griffe */
+  .react-grid-item.react-grid-placeholder {
+    background: rgba(56, 139, 253, 0.15) !important;
+    border: 1px dashed rgba(56, 139, 253, 0.5);
+    border-radius: 16px;
+  }
+  .react-resizable-handle { opacity: 0.3; transition: opacity 0.15s; }
+  .react-grid-item:hover .react-resizable-handle { opacity: 0.85; }
+  .react-grid-item.react-grid-item--resizing,
+  .react-grid-item.react-draggable-dragging { z-index: 20; }
+
   /* Status-Dot animiert */
   .status-dot-live {
     @apply relative inline-flex h-2 w-2;
