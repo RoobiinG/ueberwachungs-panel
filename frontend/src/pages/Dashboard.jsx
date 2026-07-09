@@ -41,6 +41,8 @@ const widgetTitle = (id, serverName) => {
 // Standard-Anordnung: KPI voll oben, Server-Karten links (2 je Reihe), Aktivität + Status rechts
 // Höhe (in Grid-Zeilen) so, dass eine Server-Karte komplett passt (rowHeight 30 + margin 14 → ~514px)
 const SERVER_H = 12;
+// Layout-Schema-Version — bei Bump werden alte/kaputte gespeicherte Layouts verworfen
+const LAYOUT_VERSION = 2;
 
 const mkDefaultRgl = (serverKeys) => {
   const items = [
@@ -59,14 +61,19 @@ const reconcileRgl = (list, serverKeys) => {
   const wantServer = new Set(serverKeys.map(k => 'server:' + k));
   const out = (list || []).filter(it => !String(it.i).startsWith('server:') || wantServer.has(it.i));
   const have = new Set(out.map(it => it.i));
-  let y = out.reduce((m, it) => Math.max(m, (it.y || 0) + (it.h || 1)), 0);
+  // Neue Server auf zwei Spalten (x 0/4) verteilen, damit keine Spalte leer bleibt
+  let placed = out.filter(it => String(it.i).startsWith('server:')).length;
   for (const k of serverKeys) {
     const id = 'server:' + k;
-    if (!have.has(id)) { out.push({ i: id, x: 0, y, w: 4, h: SERVER_H, minW: 3, minH: 6 }); have.add(id); y += SERVER_H; }
+    if (!have.has(id)) {
+      out.push({ i: id, x: (placed % 2) * 4, y: 1000 + placed, w: 4, h: SERVER_H, minW: 3, minH: 6 });
+      have.add(id); placed++;
+    }
   }
+  let y = out.reduce((m, it) => Math.max(m, (it.y || 0) + (it.h || 1)), 0);
   if (!have.has('kpi'))      { out.push({ i: 'kpi',      x: 0, y, w: 12, h: 2,        minW: 4, minH: 2 }); y += 2; }
-  if (!have.has('activity')) { out.push({ i: 'activity', x: 0, y, w: 4,  h: SERVER_H, minW: 3, minH: 5 }); y += SERVER_H; }
-  if (!have.has('status'))   { out.push({ i: 'status',   x: 0, y, w: 4,  h: 6,        minW: 3, minH: 3 }); }
+  if (!have.has('activity')) { out.push({ i: 'activity', x: 8, y, w: 4,  h: SERVER_H, minW: 3, minH: 5 }); y += SERVER_H; }
+  if (!have.has('status'))   { out.push({ i: 'status',   x: 8, y, w: 4,  h: 6,        minW: 3, minH: 3 }); }
   return out;
 };
 
@@ -502,8 +509,10 @@ export default function Dashboard({ liveStats }) {
     axios.get('/api/dashboard/home-layout')
       .then(r => {
         const l = r.data.layout;
-        const isRgl = Array.isArray(l) && l.length && l[0]?.i !== undefined && l[0]?.h !== undefined;
-        setRgl(isRgl ? l : null);
+        // Nur aktuelles Schema übernehmen; ältere/kaputte Layouts verwerfen → Standard
+        const valid = Array.isArray(l) && l.length && l[0]?.i !== undefined
+          && l[0]?.h !== undefined && l[0]?.v === LAYOUT_VERSION;
+        setRgl(valid ? l : null);
       })
       .catch(() => setRgl(null))
       .finally(() => { readyRef.current = true; });
@@ -570,7 +579,8 @@ export default function Dashboard({ liveStats }) {
     setRgl(l);
     if (!readyRef.current) return; // gespeichertes Layout nicht überschreiben, bevor es geladen ist
     clearTimeout(persistRef.current);
-    persistRef.current = setTimeout(() => { axios.put('/api/dashboard/home-layout', { layout: l }).catch(() => {}); }, 700);
+    const stamped = l.map(it => ({ ...it, v: LAYOUT_VERSION }));
+    persistRef.current = setTimeout(() => { axios.put('/api/dashboard/home-layout', { layout: stamped }).catch(() => {}); }, 700);
   };
   const resetLayout = () => { setRgl(null); axios.put('/api/dashboard/home-layout', { layout: [] }).catch(() => {}); };
 
