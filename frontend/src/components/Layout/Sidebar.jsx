@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Container, Wrench, Shield,
   Webhook, Users, Cloud, Gamepad2, ChevronLeft, ChevronRight,
   Server, Settings, ServerCog, MonitorCheck, Bell, ShieldCheck, ClipboardList,
-  BarChart2, AlertCircle, Trash2, ScrollText, PackageCheck,
+  BarChart2, AlertCircle, Trash2, ScrollText, PackageCheck, Layers,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
@@ -16,6 +16,7 @@ const navItems = [
 
   { section: 'Infrastruktur' },
   { to: '/docker',      icon: Container,    label: 'Docker' },
+  { to: '/docker-resources', icon: Layers,  label: 'Docker-Ressourcen', permission: 'docker.view' },
   { to: '/services',    icon: Wrench,       label: 'Services' },
   { to: '/firewall',    icon: Shield,       label: 'Firewall' },
   { to: '/monitoring',  icon: BarChart2,    label: 'Monitoring' },
