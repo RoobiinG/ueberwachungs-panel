@@ -7,6 +7,13 @@ import { RefreshCw, Power, PowerOff, RotateCcw, HardDrive, ChevronDown, ChevronU
 import { useAuth } from '../context/AuthContext';
 
 const statusColor = (s) => s === 'running' ? 'green' : s === 'off' ? 'red' : 'orange';
+const boxStatusColor = (s) => s === 'active' ? 'green' : (s === 'locked' || s === 'disabled') ? 'red' : 'orange';
+const fmtBytes = (b, d = 1) => {
+  if (!b || b <= 0) return '0 B';
+  const k = 1024, u = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+  const i = Math.floor(Math.log(b) / Math.log(k));
+  return `${parseFloat((b / Math.pow(k, i)).toFixed(d))} ${u[i]}`;
+};
 
 export default function Hetzner() {
   const { hasPermission, isAdmin } = useAuth();
@@ -17,6 +24,7 @@ export default function Hetzner() {
   const canBackup  = isAdmin || hasPermission('hetzner.backup');
 
   const [servers, setServers] = useState([]);
+  const [boxes, setBoxes]     = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [actError, setActError] = useState('');
@@ -28,12 +36,14 @@ export default function Hetzner() {
     if (!canView) { setLoading(false); return; }
     setLoading(true);
     setError('');
-    try {
-      const { data } = await axios.get('/api/hetzner/servers');
-      setServers(data.servers || []);
-    } catch (err) {
-      setError(err.response?.data?.error || 'HETZNER_API_TOKEN nicht konfiguriert');
-    }
+    // Server + Storage Boxes parallel; ein Storage-Fehler blockiert die Server nicht.
+    const [srv, box] = await Promise.allSettled([
+      axios.get('/api/hetzner/servers'),
+      axios.get('/api/hetzner/storage_boxes'),
+    ]);
+    if (srv.status === 'fulfilled') setServers(srv.value.data.servers || []);
+    else setError(srv.reason?.response?.data?.error || 'HETZNER_API_TOKEN nicht konfiguriert');
+    setBoxes(box.status === 'fulfilled' ? (box.value.data.boxes || []) : []);
     setLoading(false);
   };
 
@@ -160,6 +170,57 @@ export default function Hetzner() {
                 )}
               </div>
             ))}
+          </div>
+        )}
+      </Card>
+
+      {/* ── Storage Boxes ─────────────────────────────────────────────── */}
+      <Card title={`Storage Boxes (${boxes.length})`}>
+        {loading ? (
+          <div className="text-panel-muted text-sm py-4 text-center">Lade...</div>
+        ) : boxes.length === 0 ? (
+          <div className="text-panel-muted text-sm py-4 text-center">Keine Storage Boxes vorhanden</div>
+        ) : (
+          <div className="divide-y divide-panel-border -mx-4 -mb-4">
+            {boxes.map(b => {
+              const pct = b.usagePct ?? (b.quotaBytes > 0 ? Math.round((b.usedBytes / b.quotaBytes) * 100) : 0);
+              const barColor = pct >= 90 ? 'bg-panel-red' : pct >= 75 ? 'bg-panel-orange' : 'bg-panel-accent';
+              return (
+                <div key={b.id} className="px-4 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Badge color={boxStatusColor(b.status)}>{b.status}</Badge>
+                      <span className="text-sm text-panel-text font-medium truncate">{b.name}</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-shrink-0 text-[10px] text-panel-muted">
+                      {b.ssh    && <span className="px-1.5 py-0.5 rounded bg-panel-surface">SSH</span>}
+                      {b.samba  && <span className="px-1.5 py-0.5 rounded bg-panel-surface">Samba</span>}
+                      {b.webdav && <span className="px-1.5 py-0.5 rounded bg-panel-surface">WebDAV</span>}
+                    </div>
+                  </div>
+                  <div className="text-xs text-panel-muted mt-0.5 truncate">
+                    {[b.type, b.location, b.server].filter(Boolean).join(' · ')}
+                  </div>
+                  {b.quotaBytes > 0 && (
+                    <div className="mt-2">
+                      <div className="flex justify-between text-[11px] text-panel-muted mb-1">
+                        <span>Belegt</span>
+                        <span className="tabular-nums text-panel-text">
+                          {fmtBytes(b.usedBytes)} / {fmtBytes(b.quotaBytes)} ({pct}%)
+                        </span>
+                      </div>
+                      <div className="h-2 bg-panel-surface rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full transition-all ${barColor}`}
+                          style={{ width: `${Math.min(pct, 100)}%` }} />
+                      </div>
+                      {b.snapshotBytes > 0 && (
+                        <p className="text-[10px] text-panel-muted/70 mt-1">davon Snapshots: {fmtBytes(b.snapshotBytes)}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </Card>

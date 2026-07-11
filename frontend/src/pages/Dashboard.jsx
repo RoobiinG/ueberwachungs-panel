@@ -31,9 +31,10 @@ const GridLayout = WidthProvider(RGLBase);
 const GRID_COLS = 12;
 
 const widgetTitle = (id, serverName) => {
-  if (id === 'kpi')      return 'Übersicht';
-  if (id === 'activity') return 'Aktivität';
-  if (id === 'status')   return 'Status';
+  if (id === 'kpi')             return 'Übersicht';
+  if (id === 'activity')        return 'Aktivität';
+  if (id === 'status')          return 'Status';
+  if (id === 'hetzner_storage') return 'Hetzner Storage Boxes';
   if (id.startsWith('server:')) return serverName(id.slice(7));
   return '';
 };
@@ -42,24 +43,29 @@ const widgetTitle = (id, serverName) => {
 // Höhe (in Grid-Zeilen) so, dass eine Server-Karte komplett passt (rowHeight 30 + margin 14 → ~514px)
 const SERVER_H = 12;
 // Layout-Schema-Version — bei Bump werden alte/kaputte gespeicherte Layouts verworfen
-const LAYOUT_VERSION = 2;
+const LAYOUT_VERSION = 3;
 
-const mkDefaultRgl = (serverKeys) => {
+const mkDefaultRgl = (serverKeys, wantStorage) => {
   const items = [
     { i: 'kpi',      x: 0, y: 0,             w: 12, h: 2,        minW: 4, minH: 2 },
     { i: 'activity', x: 8, y: 2,             w: 4,  h: SERVER_H, minW: 3, minH: 5 },
     { i: 'status',   x: 8, y: 2 + SERVER_H,  w: 4,  h: 6,        minW: 3, minH: 3 },
   ];
+  if (wantStorage) items.push({ i: 'hetzner_storage', x: 8, y: 8 + SERVER_H, w: 4, h: 6, minW: 3, minH: 3 });
   serverKeys.forEach((k, idx) => {
     items.push({ i: 'server:' + k, x: (idx % 2) * 4, y: 2 + Math.floor(idx / 2) * SERVER_H, w: 4, h: SERVER_H, minW: 3, minH: 6 });
   });
   return items;
 };
 
-// Gespeichertes RGL-Layout mit aktueller Serverliste abgleichen
-const reconcileRgl = (list, serverKeys) => {
+// Gespeichertes RGL-Layout mit aktueller Serverliste + Storage abgleichen
+const reconcileRgl = (list, serverKeys, wantStorage) => {
   const wantServer = new Set(serverKeys.map(k => 'server:' + k));
-  const out = (list || []).filter(it => !String(it.i).startsWith('server:') || wantServer.has(it.i));
+  const out = (list || []).filter(it => {
+    if (String(it.i).startsWith('server:')) return wantServer.has(it.i);
+    if (it.i === 'hetzner_storage')          return wantStorage;   // nur wenn Storage Boxes vorhanden
+    return true;
+  });
   const have = new Set(out.map(it => it.i));
   // Neue Server auf zwei Spalten (x 0/4) verteilen, damit keine Spalte leer bleibt
   let placed = out.filter(it => String(it.i).startsWith('server:')).length;
@@ -73,7 +79,8 @@ const reconcileRgl = (list, serverKeys) => {
   let y = out.reduce((m, it) => Math.max(m, (it.y || 0) + (it.h || 1)), 0);
   if (!have.has('kpi'))      { out.push({ i: 'kpi',      x: 0, y, w: 12, h: 2,        minW: 4, minH: 2 }); y += 2; }
   if (!have.has('activity')) { out.push({ i: 'activity', x: 8, y, w: 4,  h: SERVER_H, minW: 3, minH: 5 }); y += SERVER_H; }
-  if (!have.has('status'))   { out.push({ i: 'status',   x: 8, y, w: 4,  h: 6,        minW: 3, minH: 3 }); }
+  if (!have.has('status'))   { out.push({ i: 'status',   x: 8, y, w: 4,  h: 6,        minW: 3, minH: 3 }); y += 6; }
+  if (wantStorage && !have.has('hetzner_storage')) { out.push({ i: 'hetzner_storage', x: 8, y, w: 4, h: 6, minW: 3, minH: 3 }); }
   return out;
 };
 
@@ -421,6 +428,7 @@ export default function Dashboard({ liveStats }) {
   const [agentOnline, setAgentOnline] = useState({});   // { [id]: bool }
   const [agentDocker, setAgentDocker] = useState({});   // { [id]: containers[] }
   const [patchmonHosts, setPatchmonHosts] = useState([]);
+  const [hetznerBoxes,  setHetznerBoxes]  = useState([]);
   const [histories,   setHistories]   = useState({});   // { [serverKey]: [{cpu,mem}] } für Mini-Charts
   const [activity,    setActivity]    = useState([]);   // Ereignis-Feed
   const [uptime,      setUptime]      = useState(null);  // { up, total }
@@ -435,6 +443,15 @@ export default function Dashboard({ liveStats }) {
     axios.get('/api/agents').then(r => setAgents(r.data)).catch(() => {});
     // PatchMon-Gesamtübersicht (fail-soft — nicht konfiguriert = Kachel ausblenden)
     axios.get('/api/patchmon/hosts').then(r => setPatchmonHosts(r.data.hosts || [])).catch(() => setPatchmonHosts([]));
+  }, []);
+
+  // ── Hetzner Storage Boxes (fail-soft, alle 60s) ─────────────────────────────
+  useEffect(() => {
+    const load = () => axios.get('/api/hetzner/storage_boxes')
+      .then(r => setHetznerBoxes(r.data.boxes || [])).catch(() => setHetznerBoxes([]));
+    load();
+    const t = setInterval(load, 60_000);
+    return () => clearInterval(t);
   }, []);
 
   // ── Remote-Agent-Stats pollen ──────────────────────────────────────────────
@@ -570,9 +587,10 @@ export default function Dashboard({ liveStats }) {
 
   // ── Frei anordbares Layout (react-grid-layout) ──────────────────────────────
   const serverKeys = [...(hideLocal ? [] : ['local']), ...agents.map(a => String(a.id))];
+  const hasStorage = hetznerBoxes.length > 0;
   const gridLayout = useMemo(
-    () => reconcileRgl(rgl ?? mkDefaultRgl(serverKeys), serverKeys),
-    [rgl, serverKeys.join(',')], // eslint-disable-line react-hooks/exhaustive-deps
+    () => reconcileRgl(rgl ?? mkDefaultRgl(serverKeys, hasStorage), serverKeys, hasStorage),
+    [rgl, serverKeys.join(','), hasStorage], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const onLayoutChange = (l) => {
@@ -644,6 +662,33 @@ export default function Dashboard({ liveStats }) {
           {!pmConfigured && !uptime && !firewall && (
             <div className="text-panel-muted/70 text-center py-2">Keine Status-Dienste verbunden.</div>
           )}
+        </div>
+      </div>
+    );
+    if (id === 'hetzner_storage') return (
+      <div className="h-full flex flex-col bg-panel-card border border-panel-border/70 rounded-2xl overflow-hidden">
+        <div className="px-4 py-2.5 border-b border-panel-border/50 flex items-center gap-2 flex-shrink-0">
+          <HardDrive size={13} className="text-panel-accent" />
+          <span className="text-xs font-semibold text-panel-text">Hetzner Storage Boxes</span>
+        </div>
+        <div className="flex-1 overflow-auto px-4 py-3 space-y-3 text-xs">
+          {hetznerBoxes.length === 0 ? (
+            <div className="text-panel-muted/70 text-center py-2">Keine Storage Boxes.</div>
+          ) : hetznerBoxes.map(b => {
+            const pct = b.usagePct ?? (b.quotaBytes > 0 ? Math.round((b.usedBytes / b.quotaBytes) * 100) : 0);
+            const barColor = pct >= 90 ? 'bg-panel-red' : pct >= 75 ? 'bg-panel-orange' : 'bg-panel-accent';
+            return (
+              <button key={b.id} onClick={() => navigate('/hetzner')} className="w-full text-left">
+                <div className="flex justify-between gap-2">
+                  <span className="text-panel-text truncate">{b.name}</span>
+                  <span className="tabular-nums text-panel-muted flex-shrink-0">{fmtBytes(b.usedBytes)} / {fmtBytes(b.quotaBytes)}</span>
+                </div>
+                <div className="h-1.5 bg-panel-surface rounded-full overflow-hidden mt-1">
+                  <div className={`h-full rounded-full ${barColor}`} style={{ width: `${Math.min(pct, 100)}%` }} />
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
     );
