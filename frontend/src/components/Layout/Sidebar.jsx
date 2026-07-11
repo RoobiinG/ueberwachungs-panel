@@ -10,7 +10,7 @@ import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useErrors } from '../../context/ErrorContext';
 
-const navItems = [
+export const navItems = [
   { section: 'Übersicht' },
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
 

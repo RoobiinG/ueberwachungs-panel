@@ -13,6 +13,7 @@ import { LineChart, Line, YAxis, ResponsiveContainer } from 'recharts';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { useLiveInterval } from '../hooks/useLiveInterval';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 // Recharts-Farben (an Panel-Palette angelehnt)
 const C_CPU  = '#388bfd';
@@ -707,6 +708,20 @@ export default function Dashboard({ liveStats }) {
     }
     return null;
   };
+
+  // Mobil: einspaltig gestapelt (kein Drag/Resize) → schnelle, saubere Anzeige
+  const isMobile = useIsMobile();
+  if (isMobile) {
+    return (
+      <div className="space-y-3">
+        <div className="flex items-center gap-1.5 text-xs text-panel-muted">
+          {unreachable > 0 && <span className="flex items-center gap-1.5 text-panel-red"><WifiOff size={13} />{unreachable} nicht erreichbar</span>}
+          <span className="flex items-center gap-1.5 ml-auto"><Activity size={13} />Live · {Math.round(liveInterval / 1000)}s</span>
+        </div>
+        {gridLayout.map(it => <div key={it.i}>{widgetContent(it.i)}</div>)}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
