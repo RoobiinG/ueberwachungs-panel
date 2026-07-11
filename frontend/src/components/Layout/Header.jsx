@@ -7,6 +7,7 @@ import { useWSMessage } from '../../context/WSContext';
 const pageTitles = {
   '/': 'Dashboard',
   '/docker': 'Docker Container',
+  '/docker-resources': 'Docker-Ressourcen',
   '/services': 'Services',
   '/firewall': 'Firewall & Ports',
   '/network': 'Netzwerk',

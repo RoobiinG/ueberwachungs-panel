@@ -127,6 +127,96 @@ router.get('/images', requirePermission('docker.view'), async (req, res) => {
   } catch (err) { res.status(502).json({ error: err.message }); }
 });
 
+// Sicherheit: Image-Referenz streng validieren, bevor sie an Dockhand geht
+const validImageRef = (s) => typeof s === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,220}$/.test(s);
+
+// ── POST /api/docker/images/pull  { image } ───────────────────────────────────
+router.post('/images/pull', requirePermission('docker.control'), async (req, res) => {
+  const envId = requireEnv(res);
+  if (!envId) return;
+  const image = (req.body?.image || '').trim();
+  if (!validImageRef(image)) return res.status(400).json({ error: 'Ungültige Image-Referenz' });
+  try {
+    await dockhand.pullImage(envId, image);
+    auditLog(req, 'docker.image.pull', 'image', image);
+    res.json({ success: true });
+  } catch (err) { res.status(502).json({ error: err.message }); }
+});
+
+// ── POST /api/docker/images/prune ─────────────────────────────────────────────
+router.post('/images/prune', requirePermission('docker.control'), async (req, res) => {
+  const envId = requireEnv(res);
+  if (!envId) return;
+  try {
+    const { data } = await dockhand.pruneImages(envId);
+    auditLog(req, 'docker.image.prune', 'image', 'ungenutzte');
+    res.json(data ?? { success: true });
+  } catch (err) { res.status(502).json({ error: err.message }); }
+});
+
+// ── DELETE /api/docker/images/:id ─────────────────────────────────────────────
+router.delete('/images/:id', requirePermission('docker.control'), async (req, res) => {
+  const envId = requireEnv(res);
+  if (!envId) return;
+  try {
+    await dockhand.removeImage(envId, req.params.id);
+    auditLog(req, 'docker.image.delete', 'image', String(req.params.id).slice(0, 20));
+    res.json({ success: true });
+  } catch (err) { res.status(502).json({ error: err.message }); }
+});
+
+// ── Volumes ───────────────────────────────────────────────────────────────────
+router.get('/volumes', requirePermission('docker.view'), async (req, res) => {
+  const envId = requireEnv(res);
+  if (!envId) return;
+  try { res.json((await dockhand.getVolumes(envId)).data || []); }
+  catch (err) { res.status(502).json({ error: err.message }); }
+});
+router.delete('/volumes/:name', requirePermission('docker.control'), async (req, res) => {
+  const envId = requireEnv(res);
+  if (!envId) return;
+  try {
+    await dockhand.removeVolume(envId, req.params.name);
+    auditLog(req, 'docker.volume.delete', 'volume', String(req.params.name).slice(0, 40));
+    res.json({ success: true });
+  } catch (err) { res.status(502).json({ error: err.message }); }
+});
+router.post('/volumes/prune', requirePermission('docker.control'), async (req, res) => {
+  const envId = requireEnv(res);
+  if (!envId) return;
+  try {
+    const { data } = await dockhand.pruneVolumes(envId);
+    auditLog(req, 'docker.volume.prune', 'volume', 'ungenutzte');
+    res.json(data ?? { success: true });
+  } catch (err) { res.status(502).json({ error: err.message }); }
+});
+
+// ── Netzwerke ─────────────────────────────────────────────────────────────────
+router.get('/networks', requirePermission('docker.view'), async (req, res) => {
+  const envId = requireEnv(res);
+  if (!envId) return;
+  try { res.json((await dockhand.getNetworks(envId)).data || []); }
+  catch (err) { res.status(502).json({ error: err.message }); }
+});
+router.delete('/networks/:id', requirePermission('docker.control'), async (req, res) => {
+  const envId = requireEnv(res);
+  if (!envId) return;
+  try {
+    await dockhand.removeNetwork(envId, req.params.id);
+    auditLog(req, 'docker.network.delete', 'network', String(req.params.id).slice(0, 20));
+    res.json({ success: true });
+  } catch (err) { res.status(502).json({ error: err.message }); }
+});
+router.post('/networks/prune', requirePermission('docker.control'), async (req, res) => {
+  const envId = requireEnv(res);
+  if (!envId) return;
+  try {
+    const { data } = await dockhand.pruneNetworks(envId);
+    auditLog(req, 'docker.network.prune', 'network', 'ungenutzte');
+    res.json(data ?? { success: true });
+  } catch (err) { res.status(502).json({ error: err.message }); }
+});
+
 // ── GET /api/docker/info  (Dashboard-Stats) ───────────────────────────────────
 router.get('/info', requirePermission('docker.view'), async (req, res) => {
   try {

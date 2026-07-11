@@ -83,7 +83,22 @@ module.exports = {
   getContainerStats: (envId, id)    => call('GET', `/api/containers/${encodeURIComponent(id)}/stats?env=${encodeURIComponent(envId)}`),
   getContainerLogs:  (envId, id, n) => call('GET', `/api/containers/${encodeURIComponent(id)}/logs?env=${encodeURIComponent(envId)}&tail=${n || 100}`),
   containerAction:   (envId, id, a) => call('POST', `/api/containers/${encodeURIComponent(id)}/${encodeURIComponent(a)}?env=${encodeURIComponent(envId)}`),
-  getImages:         (envId)        => call('GET', `/api/images?env=${encodeURIComponent(envId)}`),
   getDashboardStats: ()             => call('GET', '/api/dashboard/stats'),
   getActivity:       (envId)        => call('GET', `/api/activity${envId ? `?environmentId=${encodeURIComponent(envId)}` : ''}`),
+
+  // ── Images ──
+  getImages:    (envId)         => call('GET',    `/api/images?env=${encodeURIComponent(envId)}`),
+  pullImage:    (envId, image)  => call('POST',   `/api/images/pull?env=${encodeURIComponent(envId)}`, { data: { image } }),
+  removeImage:  (envId, id)     => call('DELETE', `/api/images/${encodeURIComponent(id)}?env=${encodeURIComponent(envId)}`),
+  pruneImages:  (envId)         => call('POST',   `/api/images/prune?env=${encodeURIComponent(envId)}`),
+
+  // ── Volumes ──
+  getVolumes:   (envId)         => call('GET',    `/api/volumes?env=${encodeURIComponent(envId)}`),
+  removeVolume: (envId, name)   => call('DELETE', `/api/volumes/${encodeURIComponent(name)}?env=${encodeURIComponent(envId)}`),
+  pruneVolumes: (envId)         => call('POST',   `/api/volumes/prune?env=${encodeURIComponent(envId)}`),
+
+  // ── Netzwerke ──
+  getNetworks:   (envId)        => call('GET',    `/api/networks?env=${encodeURIComponent(envId)}`),
+  removeNetwork: (envId, id)    => call('DELETE', `/api/networks/${encodeURIComponent(id)}?env=${encodeURIComponent(envId)}`),
+  pruneNetworks: (envId)        => call('POST',   `/api/networks/prune?env=${encodeURIComponent(envId)}`),
 };
