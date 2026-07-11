@@ -2,6 +2,7 @@ const db              = require('./db');
 const { sendWebhook } = require('./utils/sendWebhook');
 const { fetchAgentStats } = require('./utils/agentFetch');
 const patchmon        = require('./routes/patchmon');   // .fetchHosts (30s-Cache intern)
+const hetzner         = require('./routes/hetzner');    // .getStorageBoxes (45s-Cache intern)
 
 const getSetting = (k) => db.prepare('SELECT value FROM settings WHERE key = ?').get(k)?.value ?? null;
 
@@ -13,6 +14,11 @@ async function getPatchmonHosts() {
   if (!url || !key || !sec) return null;
   try { const { hosts } = await patchmon.fetchHosts(url, key, sec); return hosts; }
   catch { return null; }
+}
+
+// Hetzner Storage Boxes holen (fail-soft; eigener 45s-Cache)
+async function getStorageBoxesSafe() {
+  try { return await hetzner.getStorageBoxes(); } catch { return null; }
 }
 
 // broadcast wird lazy geladen (zirkuläre Abhängigkeit vermeiden)
@@ -32,12 +38,22 @@ const getState = (key) => {
   return state.get(key);
 };
 
-const METRIC_LABELS = { cpu: 'CPU', memory: 'RAM', disk: 'Disk', net_rx: 'Netz ↓', net_tx: 'Netz ↑', action: 'Aktion', patchmon_updates: 'PatchMon Updates', patchmon_security: 'PatchMon Security' };
-const METRIC_UNIT   = { cpu: '%', memory: '%', disk: '%', net_rx: ' MB/s', net_tx: ' MB/s', action: '', patchmon_updates: '', patchmon_security: '' };
+const METRIC_LABELS = { cpu: 'CPU', memory: 'RAM', disk: 'Disk', net_rx: 'Netz ↓', net_tx: 'Netz ↑', action: 'Aktion', patchmon_updates: 'PatchMon Updates', patchmon_security: 'PatchMon Security', hetzner_storage_usage: 'Storage Box' };
+const METRIC_UNIT   = { cpu: '%', memory: '%', disk: '%', net_rx: ' MB/s', net_tx: ' MB/s', action: '', patchmon_updates: '', patchmon_security: '', hetzner_storage_usage: '%' };
 
 // ─── Metrik-Wert abrufen ─────────────────────────────────────────────────────
-async function getMetricValue(metric, agentId) {
+async function getMetricValue(metric, agentId, targetRef) {
   if (metric === 'action') return null; // Aktions-Alerts werden in actionNotify gehandelt
+
+  // Hetzner Storage Box: Auslastung % der per target_ref gebundenen Box (server-unabhängig).
+  if (metric === 'hetzner_storage_usage') {
+    if (!targetRef) return null;
+    const boxes = await getStorageBoxesSafe();
+    if (!boxes) return null;
+    const box = boxes.find(b => String(b.id) === String(targetRef));
+    if (!box) return null;
+    return box.usagePct ?? (box.quotaBytes > 0 ? (box.usedBytes / box.quotaBytes) * 100 : null);
+  }
 
   // PatchMon-Metriken: Wert kommt vom verknüpften PatchMon-Host des Servers.
   if (metric === 'patchmon_updates' || metric === 'patchmon_security') {
@@ -107,11 +123,11 @@ function getServerList(rule) {
 }
 
 // ─── Alle Metrik-Werte für eine Bedingungsliste holen ────────────────────────
-async function evaluateConditions(conditions, agentId) {
+async function evaluateConditions(conditions, agentId, targetRef) {
   const results = [];
   for (const cond of conditions) {
     let value;
-    try { value = await getMetricValue(cond.metric, agentId); } catch { value = null; }
+    try { value = await getMetricValue(cond.metric, agentId, targetRef); } catch { value = null; }
     if (value == null) { results.push(null); continue; }
     const met = cond.condition === 'gt' ? value > cond.threshold : value < cond.threshold;
     results.push({ met, value, cond });
@@ -139,11 +155,15 @@ async function evaluate() {
       conditions = [{ metric: rule.metric, condition: rule.condition, threshold: rule.threshold }];
     }
 
-    const logic   = rule.logic || 'and';
-    const servers = getServerList(rule);
+    const logic     = rule.logic || 'and';
+    // Storage-Box-Regeln sind nicht server-gebunden → einmalig über die gebundene Box auswerten.
+    const isStorage = conditions.some(c => c.metric === 'hetzner_storage_usage');
+    const servers   = isStorage
+      ? [{ key: 'sbox:' + (rule.target_ref || 'none'), name: 'Storage Box', agentId: null }]
+      : getServerList(rule);
 
     for (const srv of servers) {
-      const results = await evaluateConditions(conditions, srv.agentId);
+      const results = await evaluateConditions(conditions, srv.agentId, rule.target_ref);
       if (results.some(r => r === null)) continue; // Metrik nicht verfügbar
 
       const conditionMet = logic === 'or'

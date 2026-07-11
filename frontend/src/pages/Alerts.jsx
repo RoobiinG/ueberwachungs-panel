@@ -9,19 +9,19 @@ import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { useAuth } from '../context/AuthContext';
 
-const METRIC_LABELS  = { cpu: 'CPU', memory: 'RAM', disk: 'Disk', net_rx: 'Netzwerk ↓ (RX)', net_tx: 'Netzwerk ↑ (TX)', action: 'Server-Aktionen', patchmon_updates: 'PatchMon Updates', patchmon_security: 'PatchMon Security' };
-const METRIC_COLORS  = { cpu: 'text-blue-400', memory: 'text-green-400', disk: 'text-yellow-400', net_rx: 'text-purple-400', net_tx: 'text-purple-400', action: 'text-panel-accent', patchmon_updates: 'text-panel-orange', patchmon_security: 'text-panel-red' };
-const METRIC_UNIT    = { cpu: '%', memory: '%', disk: '%', net_rx: ' MB/s', net_tx: ' MB/s', action: '', patchmon_updates: '', patchmon_security: '' };
+const METRIC_LABELS  = { cpu: 'CPU', memory: 'RAM', disk: 'Disk', net_rx: 'Netzwerk ↓ (RX)', net_tx: 'Netzwerk ↑ (TX)', action: 'Server-Aktionen', patchmon_updates: 'PatchMon Updates', patchmon_security: 'PatchMon Security', hetzner_storage_usage: 'Storage Box' };
+const METRIC_COLORS  = { cpu: 'text-blue-400', memory: 'text-green-400', disk: 'text-yellow-400', net_rx: 'text-purple-400', net_tx: 'text-purple-400', action: 'text-panel-accent', patchmon_updates: 'text-panel-orange', patchmon_security: 'text-panel-red', hetzner_storage_usage: 'text-panel-accent' };
+const METRIC_UNIT    = { cpu: '%', memory: '%', disk: '%', net_rx: ' MB/s', net_tx: ' MB/s', action: '', patchmon_updates: '', patchmon_security: '', hetzner_storage_usage: '%' };
 const CONDITION_LABELS = { gt: 'über', lt: 'unter' };
 
-const THRESHOLD_MAX  = { cpu: 100, memory: 100, disk: 100, net_rx: 1000, net_tx: 1000, patchmon_updates: 9999, patchmon_security: 9999 };
-const THRESHOLD_STEP = { cpu: 1, memory: 1, disk: 1, net_rx: 0.5, net_tx: 0.5, patchmon_updates: 1, patchmon_security: 1 };
+const THRESHOLD_MAX  = { cpu: 100, memory: 100, disk: 100, net_rx: 1000, net_tx: 1000, patchmon_updates: 9999, patchmon_security: 9999, hetzner_storage_usage: 100 };
+const THRESHOLD_STEP = { cpu: 1, memory: 1, disk: 1, net_rx: 0.5, net_tx: 0.5, patchmon_updates: 1, patchmon_security: 1, hetzner_storage_usage: 1 };
 
 const emptyCondition = () => ({ metric: 'cpu', condition: 'gt', threshold: 80 });
 
 const defaultForm = {
   name: '', metric: 'cpu', duration_seconds: 60, cooldown_minutes: 30, webhook_id: '',
-  agent_ids: [], conditions: [emptyCondition()], logic: 'and', notify_resolved: false,
+  agent_ids: [], conditions: [emptyCondition()], logic: 'and', notify_resolved: false, target_ref: '',
 };
 
 // ─── Bedingungs-Zeile ──────────────────────────────────────────────────────────
@@ -87,10 +87,17 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
     setError('');
   }, [open, initial]);
 
+  const [storageBoxes, setStorageBoxes] = useState([]);
+  useEffect(() => {
+    if (!open) return;
+    axios.get('/api/hetzner/storage_boxes').then(r => setStorageBoxes(r.data.boxes || [])).catch(() => setStorageBoxes([]));
+  }, [open]);
+
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const isAction   = form.metric === 'action';
   const isPatchmon = form.metric === 'patchmon_updates' || form.metric === 'patchmon_security';
-  const activeType = isAction ? 'action' : isPatchmon ? 'patchmon' : 'threshold';
+  const isStorage  = form.metric === 'hetzner_storage_usage';
+  const activeType = isAction ? 'action' : isPatchmon ? 'patchmon' : isStorage ? 'storage' : 'threshold';
 
   // Typ umschalten: Metric + passende Bedingungen setzen
   const selectType = (type) => {
@@ -98,9 +105,11 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
       set('metric', 'action');
     } else if (type === 'patchmon') {
       setForm(f => ({ ...f, metric: 'patchmon_updates', conditions: [{ metric: 'patchmon_updates', condition: 'gt', threshold: 0 }] }));
+    } else if (type === 'storage') {
+      setForm(f => ({ ...f, metric: 'hetzner_storage_usage', conditions: [{ metric: 'hetzner_storage_usage', condition: 'gt', threshold: 80 }] }));
     } else {
       setForm(f => {
-        const keep = (f.conditions || []).filter(c => !String(c.metric).startsWith('patchmon'));
+        const keep = (f.conditions || []).filter(c => !String(c.metric).startsWith('patchmon') && c.metric !== 'hetzner_storage_usage');
         return { ...f, metric: 'cpu', conditions: keep.length ? keep : [emptyCondition()] };
       });
     }
@@ -112,6 +121,12 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
     const next = { ...cur, condition: 'gt', ...patch };
     return { ...f, metric: next.metric, conditions: [next] };
   });
+
+  // Storage-Feld: Schwelle ändern
+  const setStorageThreshold = (t) => setForm(f => ({
+    ...f, metric: 'hetzner_storage_usage',
+    conditions: [{ metric: 'hetzner_storage_usage', condition: 'gt', threshold: t }],
+  }));
 
   const toggleServer = (id) => {
     const ids = form.agent_ids || [];
@@ -131,6 +146,7 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
     if (!form.webhook_id)  return setError('Webhook auswählen');
     if (!isAction && (!form.conditions || form.conditions.length === 0))
       return setError('Mindestens eine Bedingung erforderlich');
+    if (isStorage && !form.target_ref) return setError('Storage Box auswählen');
     setSaving(true);
     setError('');
     try {
@@ -139,10 +155,11 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
         metric:           isAction ? 'action' : (form.conditions?.[0]?.metric || 'cpu'),
         conditions:       isAction ? [] : (form.conditions || []),
         logic:            form.logic || 'and',
-        duration_seconds: (isAction || isPatchmon) ? 0 : parseInt(form.duration_seconds) || 0,
+        duration_seconds: (isAction || isPatchmon || isStorage) ? 0 : parseInt(form.duration_seconds) || 0,
         cooldown_minutes: parseInt(form.cooldown_minutes) || 30,
         webhook_id:       parseInt(form.webhook_id),
         agent_ids:        form.agent_ids || [],
+        target_ref:       isStorage ? (form.target_ref || null) : null,
       });
       onClose();
     } catch (e) {
@@ -169,15 +186,16 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
         {/* Typ */}
         <div>
           <label className="text-xs text-panel-muted block mb-2">Typ</label>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {[
               { key: 'threshold', label: '📊 Schwellenwert' },
               { key: 'patchmon',  label: '🔧 PatchMon-Updates' },
+              { key: 'storage',   label: '💾 Storage-Box' },
               { key: 'action',    label: '⚡ Server-Aktionen' },
             ].map(t => (
               <button key={t.key} type="button"
                 onClick={() => selectType(t.key)}
-                className={`flex-1 px-3 py-2 rounded-lg border text-xs font-medium transition-all ${
+                className={`flex-1 min-w-[130px] px-3 py-2 rounded-lg border text-xs font-medium transition-all ${
                   t.key === activeType
                     ? 'border-panel-accent bg-panel-accent/10 text-panel-accent'
                     : 'border-panel-border text-panel-muted hover:border-panel-muted/50 hover:text-panel-text'
@@ -188,7 +206,8 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
           </div>
         </div>
 
-        {/* Server */}
+        {/* Server (bei Storage-Box irrelevant) */}
+        {!isStorage && (
         <div>
           <label className="text-xs text-panel-muted block mb-1">
             Server <span className="text-panel-muted/60 font-normal">(keiner = alle)</span>
@@ -208,6 +227,37 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
             })}
           </div>
         </div>
+        )}
+
+        {/* Storage-Box-Feld (nur für Storage-Typ) */}
+        {isStorage && (
+          <div>
+            <label className="text-xs text-panel-muted block mb-1">Storage Box + Schwelle</label>
+            <div className="flex items-center gap-2 flex-wrap bg-panel-bg/60 rounded-lg px-3 py-2.5 border border-panel-border/60">
+              <select
+                value={form.target_ref || ''}
+                onChange={e => set('target_ref', e.target.value)}
+                className="flex-1 min-w-[140px] bg-panel-surface border border-panel-border rounded px-2 py-1 text-xs text-panel-text focus:outline-none focus:border-panel-accent"
+              >
+                <option value="">— Box wählen —</option>
+                {storageBoxes.map(b => (
+                  <option key={b.id} value={b.id}>{b.name}{b.type ? ` (${b.type})` : ''}</option>
+                ))}
+              </select>
+              <span className="text-xs text-panel-muted">Auslastung über</span>
+              <input
+                type="number" min="0" max="100"
+                value={form.conditions?.[0]?.threshold ?? 80}
+                onChange={e => setStorageThreshold(parseInt(e.target.value) || 0)}
+                className="w-16 bg-panel-surface border border-panel-border rounded px-2 py-1 text-xs text-panel-text text-right focus:outline-none focus:border-panel-accent"
+              />
+              <span className="text-xs text-panel-muted">%</span>
+            </div>
+            {storageBoxes.length === 0 && (
+              <p className="text-xs text-panel-muted mt-1">Keine Storage Boxes geladen (Hetzner-Token nötig).</p>
+            )}
+          </div>
+        )}
 
         {/* PatchMon-Feld (nur für PatchMon-Typ) */}
         {isPatchmon && (
