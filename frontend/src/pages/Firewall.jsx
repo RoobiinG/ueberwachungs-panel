@@ -312,8 +312,8 @@ export default function Firewall() {
         ) : (
           <>
             {/* Spalten-Header */}
-            <div className={`grid gap-3 px-4 py-2 border-b border-panel-border text-[10px] font-semibold text-panel-muted uppercase tracking-wide
-              ${canWrite ? 'grid-cols-[3rem_1fr_5rem_5rem_1fr_5rem]' : 'grid-cols-[3rem_1fr_5rem_5rem_1fr]'}`}>
+            <div className={`hidden sm:grid gap-3 px-4 py-2 border-b border-panel-border text-[10px] font-semibold text-panel-muted uppercase tracking-wide
+              ${canWrite ? 'sm:grid-cols-[3rem_1fr_5rem_5rem_1fr_5rem]' : 'sm:grid-cols-[3rem_1fr_5rem_5rem_1fr]'}`}>
               <span>#</span>
               <span>Port / Ziel</span>
               <span>Protokoll</span>
@@ -332,42 +332,65 @@ export default function Firewall() {
               return (
                 <div
                   key={i}
-                  className={`grid gap-3 items-center px-4 py-2.5 border-b border-panel-border/30 last:border-0
+                  className={`flex flex-col sm:grid gap-2 sm:gap-3 sm:items-center px-4 py-3 sm:py-2.5 border-b border-panel-border/30 last:border-0
                     hover:bg-panel-surface/50 transition-colors
-                    ${canWrite ? 'grid-cols-[3rem_1fr_5rem_5rem_1fr_5rem]' : 'grid-cols-[3rem_1fr_5rem_5rem_1fr]'}`}
+                    ${canWrite ? 'sm:grid-cols-[3rem_1fr_5rem_5rem_1fr_5rem]' : 'sm:grid-cols-[3rem_1fr_5rem_5rem_1fr]'}`}
                 >
-                  {/* ID */}
-                  <span className="text-[11px] text-panel-muted tabular-nums font-mono">{displayId}</span>
+                  {/* Obere Reihe Mobil / ID */}
+                  <div className="flex items-center justify-between sm:contents">
+                    <span className="text-[11px] text-panel-muted tabular-nums font-mono">
+                      <span className="sm:hidden mr-1 font-sans text-[10px] uppercase">ID:</span>{displayId}
+                    </span>
+                    {/* Aktionen auf Mobil oben rechts, auf Desktop am Ende */}
+                    {canWrite && (
+                      <div className="flex sm:hidden items-center gap-1">
+                        <button onClick={() => openEdit(r, displayId)} title="Bearbeiten"
+                          className="text-panel-muted hover:text-panel-accent p-1 rounded hover:bg-panel-accent/10 transition-colors">
+                          <Pencil size={12} />
+                        </button>
+                        <button onClick={() => deleteRule(displayId)} title="Löschen"
+                          className="text-panel-muted hover:text-panel-red p-1 rounded hover:bg-panel-red/10 transition-colors">
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
 
                   {/* Port */}
-                  <span className="text-xs font-mono truncate">
+                  <span className="text-xs font-mono truncate flex items-center justify-between sm:contents">
+                    <span className="sm:hidden text-[10px] text-panel-muted uppercase font-sans">Port:</span>
                     {displayPort
                       ? <span className="text-panel-text">{displayPort}</span>
                       : <span className="text-panel-muted italic text-[11px]">alle Ports</span>}
                   </span>
 
                   {/* Protokoll */}
-                  <span>
+                  <span className="flex items-center justify-between sm:contents">
+                    <span className="sm:hidden text-[10px] text-panel-muted uppercase">Proto:</span>
                     {displayProto
                       ? <span className="text-[11px] px-1.5 py-0.5 rounded bg-panel-surface border border-panel-border text-panel-muted font-mono">{displayProto}</span>
                       : <span className="text-[11px] text-panel-muted/50">—</span>}
                   </span>
 
                   {/* Aktion */}
-                  <span className={`inline-flex items-center gap-1 text-xs font-semibold ${isAllow ? 'text-panel-green' : 'text-panel-red'}`}>
-                    {isAllow ? '✓ Erlaubt' : '✗ Gesperrt'}
+                  <span className={`flex items-center justify-between sm:contents`}>
+                    <span className="sm:hidden text-[10px] text-panel-muted uppercase">Aktion:</span>
+                    <span className={`inline-flex items-center gap-1 text-xs font-semibold ${isAllow ? 'text-panel-green' : 'text-panel-red'}`}>
+                      {isAllow ? '✓ Erlaubt' : '✗ Gesperrt'}
+                    </span>
                   </span>
 
                   {/* Quelle */}
-                  <span className="text-xs font-mono truncate">
+                  <span className="text-xs font-mono truncate flex items-center justify-between sm:contents">
+                    <span className="sm:hidden text-[10px] text-panel-muted uppercase font-sans">Quelle:</span>
                     {displayFrom
                       ? <span className="text-panel-text">{displayFrom}</span>
                       : <span className="text-panel-muted/50 text-[11px]">alle</span>}
                   </span>
 
-                  {/* Aktionen */}
+                  {/* Aktionen Desktop */}
                   {canWrite && (
-                    <div className="flex items-center gap-1 justify-end">
+                    <div className="hidden sm:flex items-center gap-1 justify-end">
                       <button onClick={() => openEdit(r, displayId)} title="Bearbeiten"
                         className="text-panel-muted hover:text-panel-accent p-1 rounded hover:bg-panel-accent/10 transition-colors">
                         <Pencil size={11} />

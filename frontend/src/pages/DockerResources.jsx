@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { Layers, HardDrive, Network, Trash2, RefreshCw, DownloadCloud, Wand2 } from 'lucide-react';
+import { Layers, HardDrive, Network, Trash2, RefreshCw, DownloadCloud, Wand2, Package, Play, Square } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const fmtBytes = (b, d = 1) => {
@@ -21,6 +21,7 @@ const TABS = [
   { key: 'images',   label: 'Images',    icon: Layers,    endpoint: '/api/docker/images' },
   { key: 'volumes',  label: 'Volumes',   icon: HardDrive, endpoint: '/api/docker/volumes' },
   { key: 'networks', label: 'Netzwerke', icon: Network,   endpoint: '/api/docker/networks' },
+  { key: 'stacks',   label: 'Stacks',    icon: Package,   endpoint: '/api/docker/stacks' },
 ];
 
 export default function DockerResources() {
@@ -57,6 +58,7 @@ export default function DockerResources() {
   const prune  = () => act(() => axios.post(`${cfg.endpoint}/prune`));
   const remove = (id) => { if (confirm('Wirklich entfernen?')) act(() => axios.delete(`${cfg.endpoint}/${encodeURIComponent(id)}`)); };
   const pull   = () => { if (pullImg.trim()) act(async () => { await axios.post('/api/docker/images/pull', { image: pullImg.trim() }); setPullImg(''); }); };
+  const stackAction = (id, action) => act(() => axios.post(`${cfg.endpoint}/${encodeURIComponent(id)}/${action}`));
 
   if (!canView) {
     return <div className="bg-panel-orange/10 border border-panel-orange/30 text-panel-orange text-sm rounded-md px-4 py-3">
@@ -82,7 +84,7 @@ export default function DockerResources() {
           <Button size="sm" variant="ghost" onClick={load} disabled={loading}>
             <RefreshCw size={13} className={`mr-1 ${loading ? 'animate-spin' : ''}`} />Aktualisieren
           </Button>
-          {canControl && (
+          {canControl && tab !== 'stacks' && (
             <Button size="sm" variant="danger" onClick={prune} disabled={busy}>
               <Wand2 size={13} className="mr-1" />Ungenutzte entfernen
             </Button>
@@ -118,6 +120,8 @@ export default function DockerResources() {
                 ? [fmtBytes(r.size ?? r.Size), r.created && new Date(r.created).toLocaleDateString('de-DE')].filter(Boolean).join(' · ')
                 : tab === 'volumes'
                 ? [r.driver || r.Driver, fmtBytes(r.size ?? r.Size), r.mountpoint || r.Mountpoint].filter(Boolean).join(' · ')
+                : tab === 'stacks'
+                ? [r.status || r.Status, r.path || r.Path].filter(Boolean).join(' · ')
                 : [r.driver || r.Driver, r.scope || r.Scope].filter(Boolean).join(' · ');
               return (
                 <div key={id} className="flex items-center justify-between gap-2 px-4 py-2.5">
@@ -125,7 +129,14 @@ export default function DockerResources() {
                     <div className="text-sm text-panel-text truncate font-mono">{primary}</div>
                     {sub && <div className="text-[11px] text-panel-muted truncate">{sub}</div>}
                   </div>
-                  {canControl && (
+                  {canControl && tab === 'stacks' && (
+                    <div className="flex items-center gap-1">
+                      <Button size="sm" variant="ghost" onClick={() => stackAction(id, 'start')} disabled={busy} title="Start"><Play size={14} /></Button>
+                      <Button size="sm" variant="ghost" onClick={() => stackAction(id, 'stop')} disabled={busy} title="Stop"><Square size={14} /></Button>
+                      <Button size="sm" variant="danger" onClick={() => remove(id)} disabled={busy} title="Löschen"><Trash2 size={14} /></Button>
+                    </div>
+                  )}
+                  {canControl && tab !== 'stacks' && (
                     <Button size="sm" variant="danger" onClick={() => remove(id)} disabled={busy}>
                       <Trash2 size={12} />
                     </Button>

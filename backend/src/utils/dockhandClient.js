@@ -101,4 +101,10 @@ module.exports = {
   getNetworks:   (envId)        => call('GET',    `/api/networks?env=${encodeURIComponent(envId)}`),
   removeNetwork: (envId, id)    => call('DELETE', `/api/networks/${encodeURIComponent(id)}?env=${encodeURIComponent(envId)}`),
   pruneNetworks: (envId)        => call('POST',   `/api/networks/prune?env=${encodeURIComponent(envId)}`),
+
+  // ── Stacks ──
+  getStacks:    (envId)         => call('GET',    `/api/stacks?env=${encodeURIComponent(envId)}`),
+  removeStack:  (envId, id)     => call('DELETE', `/api/stacks/${encodeURIComponent(id)}?env=${encodeURIComponent(envId)}`),
+  startStack:   (envId, id)     => call('POST',   `/api/stacks/${encodeURIComponent(id)}/start?env=${encodeURIComponent(envId)}`),
+  stopStack:    (envId, id)     => call('POST',   `/api/stacks/${encodeURIComponent(id)}/stop?env=${encodeURIComponent(envId)}`),
 };
