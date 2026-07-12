@@ -16,7 +16,7 @@ export const navItems = [
 
   { section: 'Infrastruktur' },
   { to: '/docker',      icon: Container,    label: 'Docker' },
-  { to: '/docker-resources', icon: Layers,  label: 'Docker-Ressourcen', permission: 'docker.resources.view' },
+  { to: '/docker-resources', icon: Layers,  label: 'Docker-Ressourcen', permission: ['docker.images.view', 'docker.volumes.view', 'docker.networks.view', 'docker.stacks.view'] },
   { to: '/services',    icon: Wrench,       label: 'Services' },
   { to: '/firewall',    icon: Shield,       label: 'Firewall' },
   { to: '/monitoring',  icon: BarChart2,    label: 'Monitoring' },
@@ -75,7 +75,7 @@ export const Sidebar = () => {
             return <span key={i} className="section-label">{item.section}</span>;
           }
           if (item.adminOnly && !isAdmin) return null;
-          if (item.permission && !hasPermission(item.permission)) return null;
+          if (item.permission && !(Array.isArray(item.permission) ? item.permission.some(hasPermission) : hasPermission(item.permission))) return null;
           return (
             <NavLink
               key={item.to}
