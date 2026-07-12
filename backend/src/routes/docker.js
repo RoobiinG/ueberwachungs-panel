@@ -217,6 +217,35 @@ router.post('/networks/prune', requirePermission('docker.control'), async (req, 
   } catch (err) { res.status(502).json({ error: err.message }); }
 });
 
+// ── Stacks ────────────────────────────────────────────────────────────────────
+router.get('/stacks', requirePermission('docker.view'), async (req, res) => {
+  const envId = requireEnv(res);
+  if (!envId) return;
+  try { res.json((await dockhand.getStacks(envId)).data || []); }
+  catch (err) { res.status(502).json({ error: err.message }); }
+});
+router.delete('/stacks/:id', requirePermission('docker.control'), async (req, res) => {
+  const envId = requireEnv(res);
+  if (!envId) return;
+  try {
+    await dockhand.removeStack(envId, req.params.id);
+    auditLog(req, 'docker.stack.delete', 'stack', String(req.params.id).slice(0, 40));
+    res.json({ success: true });
+  } catch (err) { res.status(502).json({ error: err.message }); }
+});
+router.post('/stacks/:id/:action', requirePermission('docker.control'), async (req, res) => {
+  const envId = requireEnv(res);
+  if (!envId) return;
+  const { id, action } = req.params;
+  if (!['start', 'stop'].includes(action)) return res.status(400).json({ error: 'Invalid action' });
+  try {
+    if (action === 'start') await dockhand.startStack(envId, id);
+    else await dockhand.stopStack(envId, id);
+    auditLog(req, `docker.stack.${action}`, 'stack', String(id).slice(0, 40));
+    res.json({ success: true });
+  } catch (err) { res.status(502).json({ error: err.message }); }
+});
+
 // ── GET /api/docker/info  (Dashboard-Stats) ───────────────────────────────────
 router.get('/info', requirePermission('docker.view'), async (req, res) => {
   try {

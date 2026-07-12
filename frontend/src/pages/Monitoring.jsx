@@ -772,8 +772,8 @@ export default function Monitoring({ liveStats }) {
               {interfaces.length === 0
                 ? <p className="text-xs text-gray-600 text-center py-4">Keine Interfaces</p>
                 : interfaces.slice(0, 8).map((iface, i) => (
-                  <div key={i} className="flex items-center justify-between px-4 py-2.5 text-xs">
-                    <div className="flex items-center gap-2">
+                  <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 sm:gap-2 px-4 py-2.5 text-xs">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium text-gray-300">{iface.iface}</span>
                       {iface.ip4 && <span className="text-gray-600 font-mono">{iface.ip4}</span>}
                     </div>
