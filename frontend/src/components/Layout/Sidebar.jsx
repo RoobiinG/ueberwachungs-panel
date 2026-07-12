@@ -16,7 +16,7 @@ export const navItems = [
 
   { section: 'Infrastruktur' },
   { to: '/docker',      icon: Container,    label: 'Docker' },
-  { to: '/docker-resources', icon: Layers,  label: 'Docker-Ressourcen', permission: 'docker.view' },
+  { to: '/docker-resources', icon: Layers,  label: 'Docker-Ressourcen', permission: 'docker.resources.view' },
   { to: '/services',    icon: Wrench,       label: 'Services' },
   { to: '/firewall',    icon: Shield,       label: 'Firewall' },
   { to: '/monitoring',  icon: BarChart2,    label: 'Monitoring' },
