@@ -37,7 +37,8 @@
       "Bash(grep -n \"ssh\\\\|sftp\\\\|SSH\\\\|SFTP\" frontend/src/App.jsx)",
       "Bash(grep -n \"ssh\\\\|sftp\\\\|SSH\\\\|SFTP\" frontend/src/main.jsx)",
       "Bash(git pull *)",
-      "Bash(git stash *)"
+      "Bash(git stash *)",
+      "WebFetch(domain:docs.patchmon.net)"
     ]
   }
 }
