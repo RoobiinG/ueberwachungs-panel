@@ -237,10 +237,11 @@ router.post('/stacks/:id/:action', requirePermission('docker.control'), async (r
   const envId = requireEnv(res);
   if (!envId) return;
   const { id, action } = req.params;
-  if (!['start', 'stop'].includes(action)) return res.status(400).json({ error: 'Invalid action' });
+  if (!['start', 'stop', 'pull'].includes(action)) return res.status(400).json({ error: 'Invalid action' });
   try {
     if (action === 'start') await dockhand.startStack(envId, id);
-    else await dockhand.stopStack(envId, id);
+    else if (action === 'stop') await dockhand.stopStack(envId, id);
+    else if (action === 'pull') await dockhand.pullStack(envId, id);
     auditLog(req, `docker.stack.${action}`, 'stack', String(id).slice(0, 40));
     res.json({ success: true });
   } catch (err) { res.status(502).json({ error: err.message }); }

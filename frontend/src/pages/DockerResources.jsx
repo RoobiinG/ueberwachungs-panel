@@ -17,6 +17,14 @@ const imageName = (r) =>
   (r.repository ? `${r.repository}:${r.tag || 'latest'}` : null) ||
   r.name || (r.id || '').replace(/^sha256:/, '').slice(0, 19) || '—';
 
+const parseDate = (d) => {
+  if (!d) return null;
+  if (typeof d === 'number') {
+    return new Date(d < 100000000000 ? d * 1000 : d);
+  }
+  return new Date(d);
+};
+
 const TABS = [
   { key: 'images',   label: 'Images',    icon: Layers,    endpoint: '/api/docker/images' },
   { key: 'volumes',  label: 'Volumes',   icon: HardDrive, endpoint: '/api/docker/volumes' },
@@ -113,11 +121,19 @@ export default function DockerResources() {
           <div className="text-panel-muted text-sm py-4 text-center">Keine {cfg.label} vorhanden</div>
         ) : (
           <div className="divide-y divide-panel-border -mx-4 -mb-4">
-            {items.map((r, i) => {
+            {[...items].sort((a, b) => {
+              const aTime = parseDate(a.created)?.getTime() || 0;
+              const bTime = parseDate(b.created)?.getTime() || 0;
+              if (aTime !== bTime) return bTime - aTime;
+              const aName = a.name || a.Name || (a.id || '').toString();
+              const bName = b.name || b.Name || (b.id || '').toString();
+              return aName.localeCompare(bName);
+            }).map((r, i) => {
               const id = r.id ?? r.name ?? r.Id ?? r.Name ?? i;
               const primary = tab === 'images' ? imageName(r) : (r.name || r.Name || id);
+              const cDate = parseDate(r.created);
               const sub = tab === 'images'
-                ? [fmtBytes(r.size ?? r.Size), r.created && new Date(r.created).toLocaleDateString('de-DE')].filter(Boolean).join(' · ')
+                ? [fmtBytes(r.size ?? r.Size), cDate && cDate.toLocaleDateString('de-DE')].filter(Boolean).join(' · ')
                 : tab === 'volumes'
                 ? [r.driver || r.Driver, fmtBytes(r.size ?? r.Size), r.mountpoint || r.Mountpoint].filter(Boolean).join(' · ')
                 : tab === 'stacks'
@@ -131,6 +147,7 @@ export default function DockerResources() {
                   </div>
                   {canControl && tab === 'stacks' && (
                     <div className="flex items-center gap-1">
+                      <Button size="sm" variant="ghost" onClick={() => stackAction(id, 'pull')} disabled={busy} title="Pull (Neu laden)"><DownloadCloud size={14} /></Button>
                       <Button size="sm" variant="ghost" onClick={() => stackAction(id, 'start')} disabled={busy} title="Start"><Play size={14} /></Button>
                       <Button size="sm" variant="ghost" onClick={() => stackAction(id, 'stop')} disabled={busy} title="Stop"><Square size={14} /></Button>
                       <Button size="sm" variant="danger" onClick={() => remove(id)} disabled={busy} title="Löschen"><Trash2 size={14} /></Button>
