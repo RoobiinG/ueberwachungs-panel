@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
+import { ServerSelector } from '../components/ui/ServerSelector';
 import { Layers, HardDrive, Network, Trash2, RefreshCw, DownloadCloud, Wand2, Package, Play, Square } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -34,9 +35,11 @@ const TABS = [
 ];
 
 export default function DockerResources() {
-  const { hasPermission, isAdmin } = useAuth();
+  const { hasPermission, isAdmin, hideLocal } = useAuth();
   
   const availableTabs = TABS.filter(t => isAdmin || hasPermission(`docker.${t.key}.view`));
+  
+  const [selectedServer, setSelectedServer] = useState(null);
   
   const [tab, setTab] = useState(() => {
     if (availableTabs.some(t => t.key === 'images')) return 'images';
@@ -63,15 +66,22 @@ export default function DockerResources() {
   const canView = availableTabs.length > 0;
   const canControl = isAdmin || (cfg && hasPermission(`docker.${cfg.key}.control`));
 
+  const getUrl = (base) => selectedServer ? `/api/agents/${selectedServer}${base.replace('/api', '')}` : base;
+
   const load = useCallback(async () => {
     if (!canView || !cfg) return;
     setLoading(true); setError('');
-    try { const { data } = await axios.get(cfg.endpoint); setItems(Array.isArray(data) ? data : (data.items || [])); }
+    try { const { data } = await axios.get(getUrl(cfg.endpoint)); setItems(Array.isArray(data) ? data : (data.items || [])); }
     catch (e) { setError(e.response?.data?.error || 'Laden fehlgeschlagen'); setItems([]); }
     setLoading(false);
-  }, [cfg.endpoint, canView]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfg.endpoint, canView, selectedServer]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (hideLocal && selectedServer === null) return;
+    setItems([]);
+    load();
+  }, [load, hideLocal, selectedServer, tab]);
 
   const act = async (fn) => {
     setBusy(true); setError('');
@@ -80,10 +90,10 @@ export default function DockerResources() {
     setBusy(false);
   };
 
-  const prune  = () => act(() => axios.post(`${cfg.endpoint}/prune`));
-  const remove = (id) => { if (confirm('Wirklich entfernen?')) act(() => axios.delete(`${cfg.endpoint}/${encodeURIComponent(id)}`)); };
-  const pull   = () => { if (pullImg.trim()) act(async () => { await axios.post('/api/docker/images/pull', { image: pullImg.trim() }); setPullImg(''); }); };
-  const stackAction = (id, action) => act(() => axios.post(`${cfg.endpoint}/${encodeURIComponent(id)}/${action}`));
+  const prune  = () => act(() => axios.post(`${getUrl(cfg.endpoint)}/prune`));
+  const remove = (id) => { if (confirm('Wirklich entfernen?')) act(() => axios.delete(`${getUrl(cfg.endpoint)}/${encodeURIComponent(id)}`)); };
+  const pull   = () => { if (pullImg.trim()) act(async () => { await axios.post(getUrl('/api/docker/images/pull'), { image: pullImg.trim() }); setPullImg(''); }); };
+  const stackAction = (id, action) => act(() => axios.post(`${getUrl(cfg.endpoint)}/${encodeURIComponent(id)}/${action}`));
 
   const openRedeploy = (id) => {
     setRedeployId(id); setOptPull(true); setOptBuild(false); setOptForce(false);
@@ -91,7 +101,7 @@ export default function DockerResources() {
   const doRedeploy = () => {
     if (!redeployId) return;
     const id = redeployId; setRedeployId(null);
-    act(() => axios.post(`${cfg.endpoint}/${encodeURIComponent(id)}/update`, { pullImages: optPull, buildImages: optBuild, forceRecreate: optForce }));
+    act(() => axios.post(`${getUrl(cfg.endpoint)}/${encodeURIComponent(id)}/update`, { pullImages: optPull, buildImages: optBuild, forceRecreate: optForce }));
   };
 
   if (!canView) {
@@ -102,6 +112,10 @@ export default function DockerResources() {
 
   return (
     <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <ServerSelector selected={selectedServer} onChange={setSelectedServer} />
+      </div>
+
       {/* Tabs + Aktionen */}
       <div className="flex items-center gap-2 flex-wrap">
         <div className="flex gap-1 bg-panel-surface border border-panel-border rounded-lg p-1">
