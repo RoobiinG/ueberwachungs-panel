@@ -18,6 +18,8 @@ const PERMISSIONS = [
   { key: 'docker.control',      category: 'Docker',             label: 'Container steuern',               description: 'Container starten, stoppen, neustarten, pausieren' },
   { key: 'docker.logs',         category: 'Docker',             label: 'Container-Logs einsehen',         description: 'Logs von laufenden und gestoppten Containern abrufen (können sensible Daten enthalten)' },
   { key: 'docker.label',        category: 'Docker',             label: 'Spitznamen / Tags vergeben',       description: 'Container-Spitznamen und Tags anlegen oder ändern' },
+  { key: 'docker.resources.view', category: 'Docker',           label: 'Ressourcen anzeigen',             description: 'Images, Volumes, Netzwerke und Stacks einsehen' },
+  { key: 'docker.resources.control', category: 'Docker',        label: 'Ressourcen verwalten',            description: 'Ressourcen (Images, Volumes, Netzwerke, Stacks) löschen, pullen und aufräumen' },
 
   // ─── Systemd-Services ────────────────────────────────────────────────────
   { key: 'services.view',       category: 'Systemd-Services',   label: 'Services anzeigen',               description: 'Systemd-Services einsehen' },
@@ -88,6 +90,7 @@ const OPERATOR_PERMISSIONS = [
   'dashboard.view',
   'agents.view', 'agents.add', 'agents.edit', 'agents.update',
   'docker.view', 'docker.control', 'docker.logs', 'docker.label',
+  'docker.resources.view', 'docker.resources.control',
   'services.view', 'services.control',
   'firewall.view',
   'webhooks.view', 'webhooks.test',
@@ -106,6 +109,7 @@ const GUEST_PERMISSIONS = [
   'dashboard.view',
   'agents.view',
   'docker.view',
+  'docker.resources.view',
   'services.view',
   'firewall.view',
   'webhooks.view',

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
+import { Modal } from '../components/ui/Modal';
 import { Layers, HardDrive, Network, Trash2, RefreshCw, DownloadCloud, Wand2, Package, Play, Square } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -34,8 +35,8 @@ const TABS = [
 
 export default function DockerResources() {
   const { hasPermission, isAdmin } = useAuth();
-  const canView    = isAdmin || hasPermission('docker.view');
-  const canControl = isAdmin || hasPermission('docker.control');
+  const canView    = isAdmin || hasPermission('docker.resources.view');
+  const canControl = isAdmin || hasPermission('docker.resources.control');
 
   const [tab, setTab]         = useState('images');
   const [items, setItems]     = useState([]);
@@ -43,6 +44,10 @@ export default function DockerResources() {
   const [error, setError]     = useState('');
   const [busy, setBusy]       = useState(false);
   const [pullImg, setPullImg] = useState('');
+  const [redeployId, setRedeployId] = useState(null);
+  const [optPull, setOptPull] = useState(true);
+  const [optBuild, setOptBuild] = useState(false);
+  const [optForce, setOptForce] = useState(false);
 
   const cfg = TABS.find(t => t.key === tab);
 
@@ -67,6 +72,15 @@ export default function DockerResources() {
   const remove = (id) => { if (confirm('Wirklich entfernen?')) act(() => axios.delete(`${cfg.endpoint}/${encodeURIComponent(id)}`)); };
   const pull   = () => { if (pullImg.trim()) act(async () => { await axios.post('/api/docker/images/pull', { image: pullImg.trim() }); setPullImg(''); }); };
   const stackAction = (id, action) => act(() => axios.post(`${cfg.endpoint}/${encodeURIComponent(id)}/${action}`));
+
+  const openRedeploy = (id) => {
+    setRedeployId(id); setOptPull(true); setOptBuild(false); setOptForce(false);
+  };
+  const doRedeploy = () => {
+    if (!redeployId) return;
+    const id = redeployId; setRedeployId(null);
+    act(() => axios.post(`${cfg.endpoint}/${encodeURIComponent(id)}/update`, { pullImages: optPull, buildImages: optBuild, forceRecreate: optForce }));
+  };
 
   if (!canView) {
     return <div className="bg-panel-orange/10 border border-panel-orange/30 text-panel-orange text-sm rounded-md px-4 py-3">
@@ -147,7 +161,7 @@ export default function DockerResources() {
                   </div>
                   {canControl && tab === 'stacks' && (
                     <div className="flex items-center gap-1">
-                      <Button size="sm" variant="ghost" onClick={() => stackAction(id, 'pull')} disabled={busy} title="Pull (Neu laden)"><DownloadCloud size={14} /></Button>
+                      <Button size="sm" variant="ghost" onClick={() => openRedeploy(id)} disabled={busy} title="Redeploy / Pull"><DownloadCloud size={14} /></Button>
                       <Button size="sm" variant="ghost" onClick={() => stackAction(id, 'start')} disabled={busy} title="Start"><Play size={14} /></Button>
                       <Button size="sm" variant="ghost" onClick={() => stackAction(id, 'stop')} disabled={busy} title="Stop"><Square size={14} /></Button>
                       <Button size="sm" variant="danger" onClick={() => remove(id)} disabled={busy} title="Löschen"><Trash2 size={14} /></Button>
@@ -164,6 +178,31 @@ export default function DockerResources() {
           </div>
         )}
       </Card>
+      {/* Modal: Redeploy Stack */}
+      {redeployId && (
+        <Modal open={!!redeployId} onClose={() => setRedeployId(null)}
+          title="Redeploy Stack"
+          footer={<>
+            <Button variant="ghost" size="sm" onClick={() => setRedeployId(null)}>Abbrechen</Button>
+            <Button size="sm" onClick={doRedeploy} disabled={busy}>Deploy</Button>
+          </>}>
+          <div className="space-y-4">
+            <p className="text-sm text-panel-muted">Stack <span className="font-mono text-panel-text">{redeployId}</span> neu deployen.</p>
+            <label className="flex items-center gap-3 cursor-pointer group">
+              <input type="checkbox" checked={optPull} onChange={e => setOptPull(e.target.checked)} className="accent-panel-accent w-4 h-4" />
+              <span className="text-sm text-panel-text group-hover:text-panel-accent transition-colors">Pull images</span>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer group">
+              <input type="checkbox" checked={optBuild} onChange={e => setOptBuild(e.target.checked)} className="accent-panel-accent w-4 h-4" />
+              <span className="text-sm text-panel-text group-hover:text-panel-accent transition-colors">Build images</span>
+            </label>
+            <label className="flex items-center gap-3 cursor-pointer group">
+              <input type="checkbox" checked={optForce} onChange={e => setOptForce(e.target.checked)} className="accent-panel-accent w-4 h-4" />
+              <span className="text-sm text-panel-text group-hover:text-panel-accent transition-colors">Force recreate</span>
+            </label>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

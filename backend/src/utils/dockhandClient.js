@@ -107,5 +107,5 @@ module.exports = {
   removeStack:  (envId, id)     => call('DELETE', `/api/stacks/${encodeURIComponent(id)}?env=${encodeURIComponent(envId)}`),
   startStack:   (envId, id)     => call('POST',   `/api/stacks/${encodeURIComponent(id)}/start?env=${encodeURIComponent(envId)}`),
   stopStack:    (envId, id)     => call('POST',   `/api/stacks/${encodeURIComponent(id)}/stop?env=${encodeURIComponent(envId)}`),
-  pullStack:    (envId, id)     => call('POST',   `/api/stacks/${encodeURIComponent(id)}/pull?env=${encodeURIComponent(envId)}`),
+  updateStack:  (envId, id, body) => call('POST', `/api/stacks/${encodeURIComponent(id)}/update?env=${encodeURIComponent(envId)}`, body),
 };
