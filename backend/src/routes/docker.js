@@ -118,7 +118,7 @@ router.post('/containers/:id/:action', requirePermission('docker.control'), asyn
 });
 
 // ── GET /api/docker/images ────────────────────────────────────────────────────
-router.get('/images', requirePermission('docker.resources.view'), async (req, res) => {
+router.get('/images', requirePermission('docker.images.view'), async (req, res) => {
   const envId = requireEnv(res);
   if (!envId) return;
   try {
@@ -131,7 +131,7 @@ router.get('/images', requirePermission('docker.resources.view'), async (req, re
 const validImageRef = (s) => typeof s === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,220}$/.test(s);
 
 // ── POST /api/docker/images/pull  { image } ───────────────────────────────────
-router.post('/images/pull', requirePermission('docker.resources.control'), async (req, res) => {
+router.post('/images/pull', requirePermission('docker.images.control'), async (req, res) => {
   const envId = requireEnv(res);
   if (!envId) return;
   const image = (req.body?.image || '').trim();
@@ -144,7 +144,7 @@ router.post('/images/pull', requirePermission('docker.resources.control'), async
 });
 
 // ── POST /api/docker/images/prune ─────────────────────────────────────────────
-router.post('/images/prune', requirePermission('docker.resources.control'), async (req, res) => {
+router.post('/images/prune', requirePermission('docker.images.control'), async (req, res) => {
   const envId = requireEnv(res);
   if (!envId) return;
   try {
@@ -155,7 +155,7 @@ router.post('/images/prune', requirePermission('docker.resources.control'), asyn
 });
 
 // ── DELETE /api/docker/images/:id ─────────────────────────────────────────────
-router.delete('/images/:id', requirePermission('docker.resources.control'), async (req, res) => {
+router.delete('/images/:id', requirePermission('docker.images.control'), async (req, res) => {
   const envId = requireEnv(res);
   if (!envId) return;
   try {
@@ -166,13 +166,13 @@ router.delete('/images/:id', requirePermission('docker.resources.control'), asyn
 });
 
 // ── Volumes ───────────────────────────────────────────────────────────────────
-router.get('/volumes', requirePermission('docker.resources.view'), async (req, res) => {
+router.get('/volumes', requirePermission('docker.volumes.view'), async (req, res) => {
   const envId = requireEnv(res);
   if (!envId) return;
   try { res.json((await dockhand.getVolumes(envId)).data || []); }
   catch (err) { res.status(502).json({ error: err.message }); }
 });
-router.delete('/volumes/:name', requirePermission('docker.resources.control'), async (req, res) => {
+router.delete('/volumes/:name', requirePermission('docker.volumes.control'), async (req, res) => {
   const envId = requireEnv(res);
   if (!envId) return;
   try {
@@ -181,7 +181,7 @@ router.delete('/volumes/:name', requirePermission('docker.resources.control'), a
     res.json({ success: true });
   } catch (err) { res.status(502).json({ error: err.message }); }
 });
-router.post('/volumes/prune', requirePermission('docker.resources.control'), async (req, res) => {
+router.post('/volumes/prune', requirePermission('docker.volumes.control'), async (req, res) => {
   const envId = requireEnv(res);
   if (!envId) return;
   try {
@@ -192,13 +192,13 @@ router.post('/volumes/prune', requirePermission('docker.resources.control'), asy
 });
 
 // ── Netzwerke ─────────────────────────────────────────────────────────────────
-router.get('/networks', requirePermission('docker.resources.view'), async (req, res) => {
+router.get('/networks', requirePermission('docker.networks.view'), async (req, res) => {
   const envId = requireEnv(res);
   if (!envId) return;
   try { res.json((await dockhand.getNetworks(envId)).data || []); }
   catch (err) { res.status(502).json({ error: err.message }); }
 });
-router.delete('/networks/:id', requirePermission('docker.resources.control'), async (req, res) => {
+router.delete('/networks/:id', requirePermission('docker.networks.control'), async (req, res) => {
   const envId = requireEnv(res);
   if (!envId) return;
   try {
@@ -207,7 +207,7 @@ router.delete('/networks/:id', requirePermission('docker.resources.control'), as
     res.json({ success: true });
   } catch (err) { res.status(502).json({ error: err.message }); }
 });
-router.post('/networks/prune', requirePermission('docker.resources.control'), async (req, res) => {
+router.post('/networks/prune', requirePermission('docker.networks.control'), async (req, res) => {
   const envId = requireEnv(res);
   if (!envId) return;
   try {
@@ -218,13 +218,13 @@ router.post('/networks/prune', requirePermission('docker.resources.control'), as
 });
 
 // ── Stacks ────────────────────────────────────────────────────────────────────
-router.get('/stacks', requirePermission('docker.resources.view'), async (req, res) => {
+router.get('/stacks', requirePermission('docker.stacks.view'), async (req, res) => {
   const envId = requireEnv(res);
   if (!envId) return;
   try { res.json((await dockhand.getStacks(envId)).data || []); }
   catch (err) { res.status(502).json({ error: err.message }); }
 });
-router.delete('/stacks/:id', requirePermission('docker.resources.control'), async (req, res) => {
+router.delete('/stacks/:id', requirePermission('docker.stacks.control'), async (req, res) => {
   const envId = requireEnv(res);
   if (!envId) return;
   try {
@@ -233,7 +233,7 @@ router.delete('/stacks/:id', requirePermission('docker.resources.control'), asyn
     res.json({ success: true });
   } catch (err) { res.status(502).json({ error: err.message }); }
 });
-router.post('/stacks/:id/:action', requirePermission('docker.resources.control'), async (req, res) => {
+router.post('/stacks/:id/:action', requirePermission('docker.stacks.control'), async (req, res) => {
   const envId = requireEnv(res);
   if (!envId) return;
   const { id, action } = req.params;

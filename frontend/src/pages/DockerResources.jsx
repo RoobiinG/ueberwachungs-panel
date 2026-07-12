@@ -35,10 +35,14 @@ const TABS = [
 
 export default function DockerResources() {
   const { hasPermission, isAdmin } = useAuth();
-  const canView    = isAdmin || hasPermission('docker.resources.view');
-  const canControl = isAdmin || hasPermission('docker.resources.control');
+  
+  const availableTabs = TABS.filter(t => isAdmin || hasPermission(`docker.${t.key}.view`));
+  
+  const [tab, setTab] = useState(() => {
+    if (availableTabs.some(t => t.key === 'images')) return 'images';
+    return availableTabs.length > 0 ? availableTabs[0].key : 'images';
+  });
 
-  const [tab, setTab]         = useState('images');
   const [items, setItems]     = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState('');
@@ -49,10 +53,18 @@ export default function DockerResources() {
   const [optBuild, setOptBuild] = useState(false);
   const [optForce, setOptForce] = useState(false);
 
-  const cfg = TABS.find(t => t.key === tab);
+  useEffect(() => {
+    if (availableTabs.length > 0 && !availableTabs.some(t => t.key === tab)) {
+      setTab(availableTabs[0].key);
+    }
+  }, [availableTabs, tab]);
+
+  const cfg = TABS.find(t => t.key === tab) || availableTabs[0];
+  const canView = availableTabs.length > 0;
+  const canControl = isAdmin || (cfg && hasPermission(`docker.${cfg.key}.control`));
 
   const load = useCallback(async () => {
-    if (!canView) return;
+    if (!canView || !cfg) return;
     setLoading(true); setError('');
     try { const { data } = await axios.get(cfg.endpoint); setItems(Array.isArray(data) ? data : (data.items || [])); }
     catch (e) { setError(e.response?.data?.error || 'Laden fehlgeschlagen'); setItems([]); }
@@ -93,7 +105,7 @@ export default function DockerResources() {
       {/* Tabs + Aktionen */}
       <div className="flex items-center gap-2 flex-wrap">
         <div className="flex gap-1 bg-panel-surface border border-panel-border rounded-lg p-1">
-          {TABS.map(t => (
+          {availableTabs.map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                 tab === t.key ? 'bg-panel-card text-panel-text' : 'text-panel-muted hover:text-panel-text'
