@@ -50,8 +50,25 @@ class AgentsViewModel(app: Application) : AndroidViewModel(app) {
     fun loadAgent(id: Int) {
         viewModelScope.launch {
             try {
-                val resp = api.getAgent(id)
-                if (resp.isSuccessful) _selectedAgent.value = resp.body()
+                val agentsResp = api.getAgents()
+                val baseAgent = agentsResp.body()?.find { it.id == id }
+                if (baseAgent != null) {
+                    val statsResp = api.getAgentStats(id)
+                    if (statsResp.isSuccessful && statsResp.body() != null) {
+                        val stats = statsResp.body()!!
+                        _selectedAgent.value = baseAgent.copy(
+                            online = true,
+                            cpu = stats.cpu?.usage,
+                            memory = stats.memory?.usedPercent,
+                            disk = stats.disk?.firstOrNull()?.usedPercent,
+                            uptime = stats.os?.uptime,
+                            hostname = stats.os?.hostname,
+                            os = stats.os?.distro
+                        )
+                    } else {
+                        _selectedAgent.value = baseAgent.copy(online = false)
+                    }
+                }
             } catch (e: Exception) {
                 _error.value = e.message
             }
@@ -61,8 +78,20 @@ class AgentsViewModel(app: Application) : AndroidViewModel(app) {
     fun loadMetrics(agentId: Int, range: String = "1h") {
         viewModelScope.launch {
             try {
-                val resp = api.getAgentMetrics(agentId, range)
-                if (resp.isSuccessful) _metrics.value = resp.body() ?: emptyList()
+                val resp = api.getMetrics(range, "agent:$agentId")
+                if (resp.isSuccessful && resp.body() != null) {
+                    val mapped = resp.body()!!.rows.map { row ->
+                        MetricPoint(
+                            ts = row.t,
+                            cpu = row.cpu,
+                            memory = row.mem,
+                            disk = row.disk
+                        )
+                    }
+                    _metrics.value = mapped
+                } else {
+                    _metrics.value = emptyList()
+                }
             } catch (e: Exception) {
                 _error.value = e.message
             }

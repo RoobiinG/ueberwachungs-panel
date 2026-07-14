@@ -124,3 +124,53 @@ data class WebSocketMessage(
     val type: String,
     val data: Any?
 )
+
+data class SystemStats(
+    val cpu: CpuStats?,
+    val memory: MemoryStats?,
+    val disk: List<DiskStats>?,
+    val os: OsStats?
+)
+
+data class CpuStats(
+    val usage: Double,
+    val cores: Int
+)
+
+data class MemoryStats(
+    val total: Long,
+    val used: Long,
+    val free: Long,
+    val usedPercent: Double
+)
+
+data class DiskStats(
+    val fs: String,
+    val size: Long,
+    val used: Long,
+    val free: Long,
+    val usedPercent: Double,
+    val mount: String
+)
+
+data class OsStats(
+    val distro: String?,
+    val release: String?,
+    val arch: String?,
+    val hostname: String?,
+    val uptime: Long?
+)
+
+data class MetricsResponse(
+    val range: String,
+    val rows: List<MetricRow>
+)
+
+data class MetricRow(
+    val t: Long,
+    val cpu: Double?,
+    val mem: Double?,
+    val disk: Double?,
+    @SerializedName("net_rx") val netRx: Double?,
+    @SerializedName("net_tx") val netTx: Double?
+)

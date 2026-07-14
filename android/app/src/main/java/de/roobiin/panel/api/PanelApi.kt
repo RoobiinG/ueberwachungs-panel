@@ -13,22 +13,16 @@ interface PanelApi {
     @GET("api/auth/me")
     suspend fun getMe(): Response<UserInfo>
 
-    // Dashboard
-    @GET("api/dashboard")
-    suspend fun getDashboard(): Response<DashboardData>
+    // Dashboard (verwendet jetzt SystemStats für lokales Panel)
+    @GET("api/system/stats")
+    suspend fun getSystemStats(): Response<SystemStats>
 
     // Agents
     @GET("api/agents")
     suspend fun getAgents(): Response<List<Agent>>
 
-    @GET("api/agents/{id}")
-    suspend fun getAgent(@Path("id") id: Int): Response<Agent>
-
-    @GET("api/agents/{id}/metrics")
-    suspend fun getAgentMetrics(
-        @Path("id") id: Int,
-        @Query("range") range: String = "1h"
-    ): Response<List<MetricPoint>>
+    @GET("api/agents/{id}/stats")
+    suspend fun getAgentStats(@Path("id") id: Int): Response<SystemStats>
 
     // Alerts
     @GET("api/alerts/rules")
@@ -50,8 +44,8 @@ interface PanelApi {
     @GET("api/metrics")
     suspend fun getMetrics(
         @Query("range") range: String = "1h",
-        @Query("agent_id") agentId: Int? = null
-    ): Response<List<MetricPoint>>
+        @Query("server") serverId: String = "local"
+    ): Response<MetricsResponse>
 
     // Docker (lokal via Agent-Proxy)
     @GET("api/agents/{id}/docker/containers")
