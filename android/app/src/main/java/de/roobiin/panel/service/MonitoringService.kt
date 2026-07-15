@@ -39,7 +39,7 @@ class MonitoringService : Service() {
         NotificationHelper.createChannels(this)
         startForeground(
             NotificationHelper.NOTIF_MONITORING_SERVICE,
-            NotificationHelper.buildServiceNotification(this)
+            NotificationHelper.buildServiceNotification(this),
         )
         isRunning = true
     }
@@ -82,10 +82,12 @@ class MonitoringService : Service() {
             .addHeader("Authorization", "Bearer $token")
             .build()
 
-        webSocket = wsClient.newWebSocket(request, object : WebSocketListener() {
-            override fun onMessage(webSocket: WebSocket, text: String) {
-                handleWsMessage(text)
-            }
+        webSocket = wsClient.newWebSocket(
+            request,
+            object : WebSocketListener() {
+                override fun onMessage(webSocket: WebSocket, text: String) {
+                    handleWsMessage(text)
+                }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.w("MonitoringService", "WebSocket-Fehler: ${t.message}")
@@ -101,7 +103,7 @@ class MonitoringService : Service() {
         try {
             val obj = gson.fromJson(text, JsonObject::class.java)
             val type = obj.get("type")?.asString ?: return
-            if (type == "alert" || type == "alert_triggered") {
+            if ((type == "alert") || (type == "alert_triggered")) {
                 val data = obj.getAsJsonObject("data")
                 val ruleName = data?.get("rule_name")?.asString ?: "Alarm"
                 val metric = data?.get("metric")?.asString ?: ""

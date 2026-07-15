@@ -1,6 +1,7 @@
 package de.roobiin.panel.ui
 
 import android.Manifest
+import android.app.Activity.RESULT_OK
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -82,6 +83,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         intent.getStringExtra("navigate_to")?.let { dest ->
             if (dest == "alerts") {
                 val navHost = supportFragmentManager.findFragmentById(R.id.nav_host_fragment) as NavHostFragment
@@ -106,7 +108,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun startMonitoringService() {
         if (session.isMonitoringEnabled() && !MonitoringService.isRunning) {
-            startForegroundService(
+            ContextCompat.startForegroundService(
+                this,
                 Intent(this, MonitoringService::class.java)
                     .setAction(MonitoringService.ACTION_START)
             )
