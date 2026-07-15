@@ -6,12 +6,12 @@ plugins {
 
 android {
     namespace = "de.roobiin.panel"
-    compileSdk = 36
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "de.roobiin.panel"
         minSdk = 26
-        targetSdk = 36
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -38,6 +38,7 @@ android {
 }
 
 kotlin {
+    jvmToolchain(17)
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
