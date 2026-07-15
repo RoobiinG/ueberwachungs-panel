@@ -89,14 +89,15 @@ class MonitoringService : Service() {
                     handleWsMessage(text)
                 }
 
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                Log.w("MonitoringService", "WebSocket-Fehler: ${t.message}")
-                scope.launch {
-                    delay(15_000)
-                    if (isActive) connectWebSocket(session)
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                    Log.w("MonitoringService", "WebSocket-Fehler: ${t.message}")
+                    scope.launch {
+                        delay(15_000)
+                        if (isActive) connectWebSocket(session)
+                    }
                 }
-            }
-        })
+            },
+        )
     }
 
     private fun handleWsMessage(text: String) {
