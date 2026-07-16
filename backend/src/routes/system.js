@@ -13,7 +13,7 @@ const { requirePermission } = require('../middleware/requirePermission');
 router.get('/stats', requirePermission('metrics.view'), async (req, res) => {
   try {
     // Parallelisierte Abfragen mit individuellem Error-Handling
-    const wrap = (promise, fallback) => promise.catch(err => {
+    const wrap = (promise, fallback) => Promise.resolve(promise).catch(err => {
       console.warn(`[SystemStats] Teilfehler: ${err.message}`);
       return fallback;
     });
