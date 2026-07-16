@@ -8,6 +8,7 @@ import {
   RefreshCw, Trash2, Lock, Mail, Key, ShieldCheck, Send,
   User, Settings2, Layers, Timer, Bell, Monitor, Smartphone,
   Globe, LogOut, Laptop, PackageCheck,
+  Download, Upload, Database
 } from 'lucide-react';
 import { invalidateLiveIntervalCache } from '../hooks/useLiveInterval';
 
@@ -275,7 +276,7 @@ function SessionsSection({ isAdmin }) {
 }
 
 export default function Settings() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, hasPermission } = useAuth();
   const [tab, setTab]     = useState('profile'); // 'profile' | 'system'
 
   const [status,  setStatus]  = useState({});
@@ -323,10 +324,16 @@ export default function Settings() {
   const [dockhandEnvs,     setDockhandEnvs]     = useState([]); // [{id,name}] aus Dockhand
   const [dockhandAgents,   setDockhandAgents]   = useState([]); // remote_agents mit dockhand_env_id
   const [showDockhandToken, setShowDockhandToken] = useState(false);
-  // PatchMon-Verknüpfung
   const [pmHosts,       setPmHosts]       = useState([]); // PatchMon-Hosts aus /api/patchmon/hosts
   const [pmAgents,      setPmAgents]      = useState([]); // remote_agents mit patchmon_host_id
   const [pmLocalHostId, setPmLocalHostId] = useState('');
+
+  // Backup & Migration
+  const [migrationTab, setMigrationTab] = useState('send');
+  const [migrationTargetUrl, setMigrationTargetUrl] = useState('');
+  const [migrationUsername, setMigrationUsername] = useState('');
+  const [migrationPassword, setMigrationPassword] = useState('');
+  const [migrationFile, setMigrationFile] = useState(null);
 
   // ── Laden ─────────────────────────────────────────────────────────────────
 
@@ -620,6 +627,53 @@ export default function Settings() {
     } catch (err) {
       feedback('dockhand', 'err', err.response?.data?.error || 'Fehler beim Speichern');
     }
+  };
+
+  // ── Backup & Migration Aktionen ───────────────────────────────────────────
+  const handleBackupDownload = () => {
+    // Öffnet den Download im gleichen Fenster
+    window.location.href = '/api/system/backup';
+  };
+
+  const handleMigrationImport = async () => {
+    if (!migrationFile) return;
+    busy('migration', true);
+    try {
+      const buffer = await migrationFile.arrayBuffer();
+      await axios.post('/api/system/migrate/import', buffer, {
+        headers: { 'Content-Type': 'application/octet-stream' },
+        timeout: 120000
+      });
+      feedback('migration', 'ok', 'Datenbank importiert! Lade Seite neu…');
+      setTimeout(() => window.location.reload(), 3000);
+    } catch (err) {
+      feedback('migration', 'err', err.response?.data?.error || 'Fehler beim Import');
+    }
+    busy('migration', false);
+  };
+
+  const handleMigrationPush = async () => {
+    if (!migrationTargetUrl || !migrationUsername || !migrationPassword) return;
+    busy('migration', true);
+    try {
+      const { data } = await axios.post('/api/system/migrate/push', {
+        targetUrl: migrationTargetUrl,
+        username: migrationUsername,
+        password: migrationPassword
+      }, { timeout: 120000 });
+      
+      let extra = '';
+      if (data.agents && data.agents.length > 0) {
+        const okCount = data.agents.filter(a => a.success).length;
+        extra = ` (${okCount}/${data.agents.length} Agents geupdatet)`;
+      }
+      
+      feedback('migration', 'ok', (data.message || 'Erfolgreich migriert') + extra);
+      setMigrationPassword('');
+    } catch (err) {
+      feedback('migration', 'err', err.response?.data?.error || 'Fehler bei der Migration');
+    }
+    busy('migration', false);
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -1151,6 +1205,72 @@ export default function Settings() {
               )}
             </div>
             <Msg msg={msgs.claude} />
+          </div>
+        </Card>
+      )}
+
+      {/* ── Backup & Migration ──────────────────────────────────────────────── */}
+      {hasPermission('system.backup') && (
+        <Card title={<span className="flex items-center gap-2"><Database size={14} />Backup & Migration</span>}>
+          <div className="space-y-4">
+            <div className="pb-3 border-b border-panel-border">
+              <p className="text-xs text-panel-muted mb-2">Erstelle ein komplettes Backup der aktuellen Datenbank (inkl. User, Einstellungen, Server).</p>
+              <Button onClick={handleBackupDownload} size="sm" variant="ghost">
+                <Download size={13} className="mr-1" /> Backup herunterladen
+              </Button>
+            </div>
+            
+            <div>
+              <p className="text-sm font-medium text-panel-text mb-2">Migration auf einen anderen Server</p>
+              
+              <div className="flex gap-1 bg-panel-surface border border-panel-border rounded-lg p-1 mb-3">
+                <button onClick={() => setMigrationTab('send')}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs transition-colors ${migrationTab === 'send' ? 'bg-panel-card text-panel-text font-medium' : 'text-panel-muted hover:text-panel-text'}`}>
+                  <Upload size={12} /> Senden (Export)
+                </button>
+                <button onClick={() => setMigrationTab('receive')}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs transition-colors ${migrationTab === 'receive' ? 'bg-panel-card text-panel-text font-medium' : 'text-panel-muted hover:text-panel-text'}`}>
+                  <Download size={12} /> Empfangen (Import)
+                </button>
+              </div>
+
+              {migrationTab === 'send' && (
+                <div className="space-y-3 p-3 bg-panel-surface rounded-md border border-panel-border">
+                  <p className="text-[11px] text-panel-muted leading-relaxed">
+                    Kopiert die gesamte Datenbank auf ein neues, frisches Panel. Loggt sich dort ein, überträgt die Daten und updated alle angebundenen Agents auf die neue Adresse.
+                  </p>
+                  <div>
+                    <label className="block text-[11px] text-panel-muted mb-1">Neue API-Adresse (Ziel-Panel)</label>
+                    <input type="url" value={migrationTargetUrl} onChange={e => setMigrationTargetUrl(e.target.value)} placeholder="https://neu.example.com" className={inputCls} />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-panel-muted mb-1">Admin-Benutzername (Ziel-Panel)</label>
+                    <input type="text" value={migrationUsername} onChange={e => setMigrationUsername(e.target.value)} placeholder="Admin" className={inputCls} />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-panel-muted mb-1">Admin-Passwort (Ziel-Panel)</label>
+                    <input type="password" value={migrationPassword} onChange={e => setMigrationPassword(e.target.value)} placeholder="••••••••" className={inputCls} />
+                  </div>
+                  <Button onClick={handleMigrationPush} disabled={!migrationTargetUrl || !migrationUsername || !migrationPassword || loading.migration} size="sm">
+                    {loading.migration ? 'Migriere...' : 'Migration starten'}
+                  </Button>
+                </div>
+              )}
+
+              {migrationTab === 'receive' && (
+                <div className="space-y-3 p-3 bg-panel-surface rounded-md border border-panel-border">
+                  <p className="text-[11px] text-panel-muted leading-relaxed">
+                    Lade ein Datenbank-Backup (`.db`) hoch, um dieses Panel mit einem alten Stand zu überschreiben. **Der Server startet danach neu!**
+                  </p>
+                  <input type="file" accept=".db,application/octet-stream" onChange={e => setMigrationFile(e.target.files[0])} className="text-xs text-panel-text file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-panel-accent/10 file:text-panel-accent hover:file:bg-panel-accent/20" />
+                  <Button onClick={handleMigrationImport} disabled={!migrationFile || loading.migration} size="sm" variant="danger">
+                    {loading.migration ? 'Importiere...' : 'Backup importieren & überschreiben'}
+                  </Button>
+                </div>
+              )}
+              
+              <Msg msg={msgs.migration} />
+            </div>
           </div>
         </Card>
       )}

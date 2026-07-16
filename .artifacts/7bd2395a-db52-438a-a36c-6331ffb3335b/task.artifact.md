@@ -1,0 +1,5 @@
+- [ ] Version im Projekt aktualisieren (`version.json`)
+- [ ] Debug-APK bauen (`./gradlew assembleDebug`)
+- [ ] Fehlerbehebung (falls notwendig)
+- [ ] APK in den Ordner `Coding` kopieren
+- [ ] Abschlussbericht erstellen (Walkthrough)
