@@ -6,6 +6,7 @@ const path   = require('path');
 const express= require('express');
 const axios  = require('axios');
 const db     = require('../db');
+const crypto = require('crypto');
 const { getHostDisks } = require('../hostUtils');
 const { requirePermission } = require('../middleware/requirePermission');
 
@@ -157,12 +158,35 @@ router.post('/migrate/push', requirePermission('system.backup'), async (req, res
       maxContentLength: Infinity
     });
     
-    // 4. Agents updaten (PANEL_URL setzen)
+    // 4. Agents updaten (Script + PANEL_URL setzen)
     const agents = db.prepare('SELECT id, name, url, token FROM remote_agents').all();
     const results = [];
+    
+    // Script lokal laden, um es an die Agents zu pushen
+    const scriptPath = path.resolve(__dirname, '../../../agent/panel-agent.js');
+    let script = '';
+    try { script = fs.readFileSync(scriptPath, 'utf8'); } catch (e) {}
+
     for (const agent of agents) {
       try {
         const agentUrl = agent.url.replace(/\/$/, '');
+        
+        // Zuerst versuchen wir, den Agent zu updaten, damit er den /config Endpunkt sicher kennt
+        if (script) {
+          try {
+            const hmac = crypto.createHmac('sha256', agent.token).update(script).digest('hex');
+            await axios.post(`${agentUrl}/update`, { script, hmac }, {
+              headers: { 'x-agent-token': agent.token },
+              timeout: 10000
+            });
+            // Agent startet sich in 1.5s neu. Wir warten 4 Sekunden.
+            await new Promise(r => setTimeout(r, 4000));
+          } catch (updateErr) {
+            console.warn(`[Migration] Agent-Update für ${agent.name} fehlgeschlagen:`, updateErr.message);
+          }
+        }
+
+        // Dann rufen wir /config auf
         await axios.post(`${agentUrl}/config`, { panelUrl: target }, {
           headers: { 'x-agent-token': agent.token },
           timeout: 5000
