@@ -83,6 +83,7 @@ const PERMISSIONS = [
   // ─── Einstellungen ────────────────────────────────────────────────────────
   { key: 'settings.view',       category: 'Einstellungen',      label: 'Einstellungen anzeigen',          description: 'System-Einstellungen einsehen' },
   { key: 'settings.manage',     category: 'Einstellungen',      label: 'Einstellungen ändern',            description: 'SMTP, Integrationen und Systemparameter konfigurieren' },
+  { key: 'system.backup',       category: 'Einstellungen',      label: 'Backup & Migration',              description: 'Datenbank sichern, importieren und Server migrieren' },
 
   // ─── Aktionen ─────────────────────────────────────────────────────────────
   { key: 'actions.silent',      category: 'Aktionen',           label: 'Still agieren (kein Notify)',     description: 'Aktionen werden nur im Audit-Log gespeichert — keine Browser- oder Webhook-Benachrichtigung wird ausgelöst. Standardmäßig für Admin-Rollen.' },

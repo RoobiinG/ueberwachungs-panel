@@ -6,6 +6,7 @@ set -e
 PANEL_SOURCE="${PANEL_SOURCE:-https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master}"
 AGENT_PORT="${PANEL_AGENT_PORT:-7331}"
 AGENT_TOKEN="${PANEL_AGENT_TOKEN:-$(openssl rand -hex 32 2>/dev/null || tr -dc 'a-f0-9' < /dev/urandom | head -c 64)}"
+PANEL_URL="${PANEL_URL:-}"
 INSTALL_DIR="/opt/panel-agent"
 SERVICE_FILE="/etc/systemd/system/panel-agent.service"
 
@@ -73,12 +74,14 @@ if [ ! -f "$INSTALL_DIR/.env" ]; then
   cat > "$INSTALL_DIR/.env" <<EOF
 PANEL_AGENT_PORT=$AGENT_PORT
 PANEL_AGENT_TOKEN=$AGENT_TOKEN
+PANEL_URL=$PANEL_URL
 EOF
   chmod 600 "$INSTALL_DIR/.env"
 else
   echo "Bestehende .env beibehalten"
   AGENT_TOKEN=$(grep PANEL_AGENT_TOKEN "$INSTALL_DIR/.env" | cut -d= -f2-)
   AGENT_PORT=$(grep PANEL_AGENT_PORT  "$INSTALL_DIR/.env" | cut -d= -f2-)
+  PANEL_URL=$(grep PANEL_URL "$INSTALL_DIR/.env" | cut -d= -f2- || true)
 fi
 
 cat > "$SERVICE_FILE" <<EOF

@@ -390,6 +390,25 @@ async function handler(req, res) {
     } else if (url === '/version' && req.method === 'GET') {
       respond(res, 200, { version: VERSION, nodeVersion: process.version });
 
+    } else if (url === '/config' && req.method === 'POST') {
+      const body = await new Promise((resolve) => {
+        let d = ''; req.on('data', c => { d += c; });
+        req.on('end', () => { try { resolve(JSON.parse(d || '{}')); } catch { resolve({}); } });
+      });
+      if (body.panelUrl !== undefined) {
+        const envPath = path.join(DIR, '.env');
+        let envContent = '';
+        try { envContent = fs.readFileSync(envPath, 'utf8'); } catch {}
+        
+        const lines = envContent.split('\n').filter(l => l.trim() && !l.startsWith('PANEL_URL='));
+        lines.push(`PANEL_URL=${body.panelUrl}`);
+        fs.writeFileSync(envPath, lines.join('\n') + '\n', 'utf8');
+        
+        respond(res, 200, { success: true, message: 'PANEL_URL aktualisiert' });
+      } else {
+        respond(res, 400, { error: 'panelUrl fehlt im Body' });
+      }
+
     } else if (url === '/update' && req.method === 'POST') {
       const tmpPath  = path.join(DIR, '_panel-agent.new.js');
       const selfPath = path.join(DIR, 'panel-agent.js');
