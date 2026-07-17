@@ -181,6 +181,19 @@ router.put('/:id', requirePermission('agents.edit'), async (req, res) => {
 router.delete('/:id', requirePermission('agents.delete'), (req, res) => {
   const delAgent = getOne(req.params.id);
   db.prepare('DELETE FROM remote_agents WHERE id = ?').run(req.params.id);
+  
+  // Clean up alert_rules agent_ids
+  const rules = db.prepare('SELECT id, agent_ids FROM alert_rules').all();
+  for (const rule of rules) {
+    try {
+      let ids = JSON.parse(rule.agent_ids || '[]');
+      if (ids.includes(req.params.id) || ids.includes(String(req.params.id))) {
+        ids = ids.filter(id => String(id) !== String(req.params.id));
+        db.prepare('UPDATE alert_rules SET agent_ids = ? WHERE id = ?').run(JSON.stringify(ids), rule.id);
+      }
+    } catch {}
+  }
+
   auditLog(req, 'agent.delete', 'agent', delAgent?.name || req.params.id);
   res.json({ success: true });
 });
@@ -678,6 +691,19 @@ router.post('/:id/uninstall', requirePermission('agents.delete'), async (req, re
   }
   // Agent aus Panel-DB entfernen
   db.prepare('DELETE FROM remote_agents WHERE id = ?').run(agent.id);
+
+  // Clean up alert_rules agent_ids
+  const rules = db.prepare('SELECT id, agent_ids FROM alert_rules').all();
+  for (const rule of rules) {
+    try {
+      let ids = JSON.parse(rule.agent_ids || '[]');
+      if (ids.includes(agent.id) || ids.includes(String(agent.id))) {
+        ids = ids.filter(id => String(id) !== String(agent.id));
+        db.prepare('UPDATE alert_rules SET agent_ids = ? WHERE id = ?').run(JSON.stringify(ids), rule.id);
+      }
+    } catch {}
+  }
+
   auditLog(req, 'agent.uninstall', 'agent', agent.name, { url: agent.url });
   res.json({ success: true, message: 'Agent deinstalliert und aus Panel entfernt' });
 });

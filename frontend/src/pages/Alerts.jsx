@@ -225,6 +225,12 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
                 </button>
               );
             })}
+            {(form.agent_ids || []).filter(id => !allServers.find(s => s.id === id)).map(id => (
+              <button key={id} type="button" onClick={() => toggleServer(id)}
+                className="text-xs px-2 py-1 rounded border transition-all bg-panel-red/15 border-panel-red text-panel-red">
+                {`#${id} (gelöscht)`}
+              </button>
+            ))}
           </div>
         </div>
         )}
