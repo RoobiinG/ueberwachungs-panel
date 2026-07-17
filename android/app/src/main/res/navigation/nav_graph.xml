@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/dashboardFragment">
+
+    <fragment
+        android:id="@+id/dashboardFragment"
+        android:name="de.roobiin.panel.ui.dashboard.DashboardFragment"
+        android:label="Dashboard" />
+
+    <fragment
+        android:id="@+id/agentsFragment"
+        android:name="de.roobiin.panel.ui.agents.AgentsFragment"
+        android:label="Agents">
+        <action
+            android:id="@+id/action_agents_to_agentDetail"
+            app:destination="@id/agentDetailFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/agentDetailFragment"
+        android:name="de.roobiin.panel.ui.agents.AgentDetailFragment"
+        android:label="Agent-Details">
+        <argument
+            android:name="agentId"
+            app:argType="integer" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/alertsFragment"
+        android:name="de.roobiin.panel.ui.alerts.AlertsFragment"
+        android:label="Alarme" />
+
+    <fragment
+        android:id="@+id/settingsFragment"
+        android:name="de.roobiin.panel.ui.settings.SettingsFragment"
+        android:label="Einstellungen" />
+
+</navigation>

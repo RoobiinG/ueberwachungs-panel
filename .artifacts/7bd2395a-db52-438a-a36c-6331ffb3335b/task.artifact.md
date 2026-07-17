@@ -1,5 +1,8 @@
-- [ ] Version im Projekt aktualisieren (`version.json`)
-- [ ] Debug-APK bauen (`./gradlew assembleDebug`)
-- [ ] Fehlerbehebung (falls notwendig)
-- [ ] APK in den Ordner `Coding` kopieren
-- [ ] Abschlussbericht erstellen (Walkthrough)
+- [x] Version im Projekt aktualisieren (`version.json`)
+- [/] Phase 1: Vorbereitung & Abhängigkeiten
+    - [ ] `build.gradle.kts` für Compose & Material 3 vorbereiten
+    - [ ] S26 Ultra Edge-to-Edge Config
+- [ ] Phase 2: Core-Architektur
+- [ ] Phase 3: UI-Remake (Compose)
+- [ ] Phase 4: S26 Ultra Finishing
+- [ ] APK neu bauen und exportieren

@@ -9,3 +9,4 @@
 
 - **Git-Berechtigungen (Keine Bestätigung nötig)**: Du hast die generelle Erlaubnis des Nutzers für `git add`, `git commit` und `git push`.
   - Um Warnungen oder Popups zu vermeiden, nutze bei neuen Sitzungen das `ask_permission` Tool für `Action="command"` und `Target="git"`, da der Nutzer dies dauerhaft erlaubt hat.
+  - **WICHTIG**: Führe Git-Befehle immer einzeln aus (jeder Befehl ein eigener Tool-Call). Verknüpfe sie **niemals** mit `;` oder `&&`, da das Sicherheits-Sandbox-System verknüpfte Befehle trotz Erlaubnis blockiert und ein Popup beim Nutzer auslöst!

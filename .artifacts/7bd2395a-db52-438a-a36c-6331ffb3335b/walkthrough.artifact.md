@@ -1,23 +1,21 @@
-# Walkthrough - APK Erstellung und Fehlerbehebung
+# Walkthrough - Behebung der Server-Offline-Anzeige
 
-Die APK-Datei für das Überwachungs-Panel wurde erfolgreich erstellt und im Zielordner gespeichert. Während des Prozesses wurden mehrere Build-Fehler identifiziert und behoben.
+Die Probleme bei der Anzeige der Server-Status wurden behoben. Die App sollte nun die Daten korrekt laden und die Server als online anzeigen.
 
 ## Durchgeführte Änderungen
 
-### Projektkonfiguration
-- **Versionierung**: Die Build-Nummer in `version.json` wurde auf `235` erhöht.
-- **SDK-Update**: `compileSdk` und `targetSdk` wurden in `app/build.gradle.kts` auf Version `36` angehoben, um Kompatibilität mit den neuesten AndroidX-Bibliotheken zu gewährleisten.
-- **Toolchain**: Die Java-Toolchain wurde auf Version `21` umgestellt, um das im Android Studio integrierte JDK optimal zu nutzen.
+### Backend-Optimierung
+- **Robusteres Monitoring**: In `backend/src/routes/system.js` wurde ein verbessertes Error-Handling implementiert. Wenn einzelne Hardware-Informationen (z.B. Festplatten-Stats via `nsenter`) fehlschlagen, liefert der Server nun trotzdem die restlichen verfügbaren Daten (CPU, RAM, OS), anstatt die gesamte Anfrage mit einem Fehler abzubrechen.
 
-### Build-Fixes
-1. **JDK-Konflikt**: Der Build wurde so konfiguriert, dass er das Java 21 JDK von Android Studio verwendet, anstatt des veralteten System-Javas (Version 8).
-2. **Umgebungsvariablen**: Ein Konflikt zwischen `ANDROID_PREFS_ROOT` und `ANDROID_USER_HOME` wurde gelöst, indem redundante Variablen vor dem Build entfernt wurden.
-3. **Abhängigkeiten**: Die Versionen von AGP (Android Gradle Plugin) und Kotlin wurden synchronisiert, um Build-Fehler bei der AAR-Metadatenprüfung zu vermeiden.
+### Android-App Verbesserungen
+- **Parallelisierung**: In `DashboardViewModel.kt` werden die Status-Abfragen für alle Agents nun parallel (`async/awaitAll`) ausgeführt. Dies verhindert, dass ein langsamer oder nicht erreichbarer Server den gesamten Ladevorgang blockiert oder zu Timeouts führt.
+- **Detailliertes Logging**: Bei Fehlern werden nun die exakten HTTP-Statuscodes und Fehlermeldungen in das Android Logcat geschrieben, was die Diagnose zukünftiger Probleme erleichtert.
+- **Fehlerbehandlung**: Die App zeigt nun eine Fehlermeldung an, wenn die Verbindung zum Server komplett fehlschlägt, anstatt stillschweigend Platzhalter anzuzeigen.
 
 ## Ergebnisse
 
-- **Build-Status**: `BUILD SUCCESSFUL`
-- **Datei**: `Ueberwachungs-Panel-debug.apk`
-- **Speicherort**: [Coding/Ueberwachungs-Panel-debug.apk](file:///C:/Users/Shadow/Nextcloud/Coding/Ueberwachungs-Panel-debug.apk)
+- **APK-Export**: Die aktualisierte APK wurde erfolgreich erstellt.
+- **Dateipfad**: [Coding/Ueberwachungs-Panel-debug.apk](file:///C:/Users/Shadow/Nextcloud/Coding/Ueberwachungs-Panel-debug.apk)
 
-Die Datei steht nun im übergeordneten `Coding` Ordner zur Verfügung.
+> [!TIP]
+> Sollten die Server weiterhin als offline angezeigt werden, prüfe bitte in den Server-Einstellungen der App, ob der Nutzer über die Berechtigung `metrics.view` verfügt. Die App loggt nun im Hintergrund detaillierte Fehlercodes, falls der Zugriff verweigert wird.
