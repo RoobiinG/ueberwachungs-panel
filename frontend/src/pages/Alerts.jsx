@@ -149,7 +149,12 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
     next[i] = val;
     set('conditions', next);
   };
-  const addCond    = () => set('conditions', [...(form.conditions || []), emptyCondition()]);
+  const addCond    = () => {
+    const m = activeType === 'storage' ? 'hetzner_storage_usage' : activeType === 'mchost' ? 'mchost_runtime' : 'cpu';
+    const c = activeType === 'mchost' ? 'lt' : 'gt';
+    const t = activeType === 'mchost' ? 7 : 80;
+    set('conditions', [...(form.conditions || []), { metric: m, condition: c, threshold: t }]);
+  };
   const removeCond = (i) => set('conditions', (form.conditions || []).filter((_, idx) => idx !== i));
 
   const handleSave = async () => {
