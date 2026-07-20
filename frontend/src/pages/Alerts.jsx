@@ -9,13 +9,13 @@ import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { useAuth } from '../context/AuthContext';
 
-const METRIC_LABELS  = { cpu: 'CPU', memory: 'RAM', disk: 'Disk', net_rx: 'Netzwerk ↓ (RX)', net_tx: 'Netzwerk ↑ (TX)', action: 'Server-Aktionen', patchmon_updates: 'PatchMon Updates', patchmon_security: 'PatchMon Security', hetzner_storage_usage: 'Storage Box' };
-const METRIC_COLORS  = { cpu: 'text-blue-400', memory: 'text-green-400', disk: 'text-yellow-400', net_rx: 'text-purple-400', net_tx: 'text-purple-400', action: 'text-panel-accent', patchmon_updates: 'text-panel-orange', patchmon_security: 'text-panel-red', hetzner_storage_usage: 'text-panel-accent' };
-const METRIC_UNIT    = { cpu: '%', memory: '%', disk: '%', net_rx: ' MB/s', net_tx: ' MB/s', action: '', patchmon_updates: '', patchmon_security: '', hetzner_storage_usage: '%' };
+const METRIC_LABELS  = { cpu: 'CPU', memory: 'RAM', disk: 'Disk', net_rx: 'Netzwerk ↓ (RX)', net_tx: 'Netzwerk ↑ (TX)', action: 'Server-Aktionen', patchmon_updates: 'PatchMon Updates', patchmon_security: 'PatchMon Security', hetzner_storage_usage: 'Storage Box', mchost_runtime: 'MC-Host Laufzeit' };
+const METRIC_COLORS  = { cpu: 'text-blue-400', memory: 'text-green-400', disk: 'text-yellow-400', net_rx: 'text-purple-400', net_tx: 'text-purple-400', action: 'text-panel-accent', patchmon_updates: 'text-panel-orange', patchmon_security: 'text-panel-red', hetzner_storage_usage: 'text-panel-accent', mchost_runtime: 'text-panel-green' };
+const METRIC_UNIT    = { cpu: '%', memory: '%', disk: '%', net_rx: ' MB/s', net_tx: ' MB/s', action: '', patchmon_updates: '', patchmon_security: '', hetzner_storage_usage: '%', mchost_runtime: ' Tage' };
 const CONDITION_LABELS = { gt: 'über', lt: 'unter' };
 
-const THRESHOLD_MAX  = { cpu: 100, memory: 100, disk: 100, net_rx: 1000, net_tx: 1000, patchmon_updates: 9999, patchmon_security: 9999, hetzner_storage_usage: 100 };
-const THRESHOLD_STEP = { cpu: 1, memory: 1, disk: 1, net_rx: 0.5, net_tx: 0.5, patchmon_updates: 1, patchmon_security: 1, hetzner_storage_usage: 1 };
+const THRESHOLD_MAX  = { cpu: 100, memory: 100, disk: 100, net_rx: 1000, net_tx: 1000, patchmon_updates: 9999, patchmon_security: 9999, hetzner_storage_usage: 100, mchost_runtime: 365 };
+const THRESHOLD_STEP = { cpu: 1, memory: 1, disk: 1, net_rx: 0.5, net_tx: 0.5, patchmon_updates: 1, patchmon_security: 1, hetzner_storage_usage: 1, mchost_runtime: 1 };
 
 const emptyCondition = () => ({ metric: 'cpu', condition: 'gt', threshold: 80 });
 
@@ -88,16 +88,19 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
   }, [open, initial]);
 
   const [storageBoxes, setStorageBoxes] = useState([]);
+  const [mchostServers, setMchostServers] = useState([]);
   useEffect(() => {
     if (!open) return;
     axios.get('/api/hetzner/storage_boxes').then(r => setStorageBoxes(r.data.boxes || [])).catch(() => setStorageBoxes([]));
+    axios.get('/api/mchost/vserver').then(r => setMchostServers(Array.isArray(r.data) ? r.data : [])).catch(() => setMchostServers([]));
   }, [open]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const isAction   = form.metric === 'action';
   const isPatchmon = form.metric === 'patchmon_updates' || form.metric === 'patchmon_security';
   const isStorage  = form.metric === 'hetzner_storage_usage';
-  const activeType = isAction ? 'action' : isPatchmon ? 'patchmon' : isStorage ? 'storage' : 'threshold';
+  const isMCHost   = form.metric === 'mchost_runtime';
+  const activeType = isAction ? 'action' : isPatchmon ? 'patchmon' : isStorage ? 'storage' : isMCHost ? 'mchost' : 'threshold';
 
   // Typ umschalten: Metric + passende Bedingungen setzen
   const selectType = (type) => {
@@ -107,9 +110,11 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
       setForm(f => ({ ...f, metric: 'patchmon_updates', conditions: [{ metric: 'patchmon_updates', condition: 'gt', threshold: 0 }] }));
     } else if (type === 'storage') {
       setForm(f => ({ ...f, metric: 'hetzner_storage_usage', conditions: [{ metric: 'hetzner_storage_usage', condition: 'gt', threshold: 80 }] }));
+    } else if (type === 'mchost') {
+      setForm(f => ({ ...f, metric: 'mchost_runtime', conditions: [{ metric: 'mchost_runtime', condition: 'lt', threshold: 7 }] }));
     } else {
       setForm(f => {
-        const keep = (f.conditions || []).filter(c => !String(c.metric).startsWith('patchmon') && c.metric !== 'hetzner_storage_usage');
+        const keep = (f.conditions || []).filter(c => !String(c.metric).startsWith('patchmon') && c.metric !== 'hetzner_storage_usage' && c.metric !== 'mchost_runtime');
         return { ...f, metric: 'cpu', conditions: keep.length ? keep : [emptyCondition()] };
       });
     }
@@ -147,6 +152,7 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
     if (!isAction && (!form.conditions || form.conditions.length === 0))
       return setError('Mindestens eine Bedingung erforderlich');
     if (isStorage && !form.target_ref) return setError('Storage Box auswählen');
+    if (isMCHost && !form.target_ref) return setError('VServer auswählen');
     setSaving(true);
     setError('');
     try {
@@ -155,11 +161,11 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
         metric:           isAction ? 'action' : (form.conditions?.[0]?.metric || 'cpu'),
         conditions:       isAction ? [] : (form.conditions || []),
         logic:            form.logic || 'and',
-        duration_seconds: (isAction || isPatchmon || isStorage) ? 0 : parseInt(form.duration_seconds) || 0,
+        duration_seconds: (isAction || isPatchmon || isStorage || isMCHost) ? 0 : parseInt(form.duration_seconds) || 0,
         cooldown_minutes: parseInt(form.cooldown_minutes) || 30,
         webhook_id:       parseInt(form.webhook_id),
         agent_ids:        form.agent_ids || [],
-        target_ref:       isStorage ? (form.target_ref || null) : null,
+        target_ref:       (isStorage || isMCHost) ? (form.target_ref || null) : null,
       });
       onClose();
     } catch (e) {
@@ -191,6 +197,7 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
               { key: 'threshold', label: '📊 Schwellenwert' },
               { key: 'patchmon',  label: '🔧 PatchMon-Updates' },
               { key: 'storage',   label: '💾 Storage-Box' },
+              { key: 'mchost',    label: '🎮 MC-Host24' },
               { key: 'action',    label: '⚡ Server-Aktionen' },
             ].map(t => (
               <button key={t.key} type="button"
@@ -206,8 +213,8 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
           </div>
         </div>
 
-        {/* Server (bei Storage-Box irrelevant) */}
-        {!isStorage && (
+        {/* Server (bei Storage-Box/MCHost irrelevant) */}
+        {!isStorage && !isMCHost && (
         <div>
           <label className="text-xs text-panel-muted block mb-1">
             Server <span className="text-panel-muted/60 font-normal">(keiner = alle)</span>
@@ -261,6 +268,39 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
             </div>
             {storageBoxes.length === 0 && (
               <p className="text-xs text-panel-muted mt-1">Keine Storage Boxes geladen (Hetzner-Token nötig).</p>
+            )}
+          </div>
+        )}
+
+        {/* MC-Host24-Feld (nur für MCHost-Typ) */}
+        {isMCHost && (
+          <div>
+            <label className="text-xs text-panel-muted block mb-1">VServer + Schwelle</label>
+            <div className="flex items-center gap-2 flex-wrap bg-panel-bg/60 rounded-lg px-3 py-2.5 border border-panel-border/60">
+              <select
+                value={form.target_ref || ''}
+                onChange={e => set('target_ref', e.target.value)}
+                className="flex-1 min-w-[140px] bg-panel-surface border border-panel-border rounded px-2 py-1 text-xs text-panel-text focus:outline-none focus:border-panel-accent"
+              >
+                <option value="">— VServer wählen —</option>
+                {mchostServers.map(s => (
+                  <option key={s.id} value={s.id}>{s.name || s.hostname || `VServer ${s.id}`}</option>
+                ))}
+              </select>
+              <span className="text-xs text-panel-muted">Laufzeit unter</span>
+              <input
+                type="number" min="0" max="365"
+                value={form.conditions?.[0]?.threshold ?? 7}
+                onChange={e => setForm(f => ({
+                  ...f, metric: 'mchost_runtime',
+                  conditions: [{ metric: 'mchost_runtime', condition: 'lt', threshold: parseInt(e.target.value) || 0 }],
+                }))}
+                className="w-16 bg-panel-surface border border-panel-border rounded px-2 py-1 text-xs text-panel-text text-right focus:outline-none focus:border-panel-accent"
+              />
+              <span className="text-xs text-panel-muted">Tage</span>
+            </div>
+            {mchostServers.length === 0 && (
+              <p className="text-xs text-panel-muted mt-1">Keine VServer gefunden (MC-Host24-Token nötig).</p>
             )}
           </div>
         )}
