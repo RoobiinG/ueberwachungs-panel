@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import {
   Bell, Plus, Trash2, Play, ToggleLeft, ToggleRight,
-  AlertTriangle, Clock, CheckCircle, XCircle, Server, Monitor,
+  AlertTriangle, Clock, CheckCircle, XCircle, Server, Monitor, Info
 } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -21,27 +21,35 @@ const emptyCondition = () => ({ metric: 'cpu', condition: 'gt', threshold: 80 })
 
 const defaultForm = {
   name: '', metric: 'cpu', duration_seconds: 60, cooldown_minutes: 30, webhook_id: '',
-  agent_ids: [], conditions: [emptyCondition()], logic: 'and', notify_resolved: false, target_ref: '',
+  agent_ids: [], conditions: [emptyCondition()], logic: 'and', notify_resolved: false, target_ref: [],
 };
 
 // ─── Bedingungs-Zeile ──────────────────────────────────────────────────────────
-function ConditionRow({ cond, onChange, onRemove, canRemove }) {
+function ConditionRow({ cond, onChange, onRemove, canRemove, activeType }) {
   const inputCls = 'bg-panel-surface border border-panel-border rounded px-2 py-1 text-xs text-panel-text focus:outline-none focus:border-panel-accent';
   const isNet = cond.metric === 'net_rx' || cond.metric === 'net_tx';
   const unit  = METRIC_UNIT[cond.metric] ?? '%';
   return (
     <div className="flex items-center gap-2 bg-panel-bg/60 rounded-lg px-3 py-2.5 border border-panel-border/60">
       {/* Metrik */}
-      <select value={cond.metric} onChange={e => onChange({ ...cond, metric: e.target.value })} className={inputCls}>
-        <optgroup label="System">
-          <option value="cpu">CPU</option>
-          <option value="memory">RAM</option>
-          <option value="disk">Disk</option>
-        </optgroup>
-        <optgroup label="Netzwerk">
-          <option value="net_rx">Netz ↓</option>
-          <option value="net_tx">Netz ↑</option>
-        </optgroup>
+      <select value={cond.metric} onChange={e => onChange({ ...cond, metric: e.target.value })} className={inputCls} disabled={activeType === 'storage' || activeType === 'mchost'}>
+        {activeType === 'storage' ? (
+          <option value="hetzner_storage_usage">Storage Box</option>
+        ) : activeType === 'mchost' ? (
+          <option value="mchost_runtime">MC-Host Laufzeit</option>
+        ) : (
+          <>
+            <optgroup label="System">
+              <option value="cpu">CPU</option>
+              <option value="memory">RAM</option>
+              <option value="disk">Disk</option>
+            </optgroup>
+            <optgroup label="Netzwerk">
+              <option value="net_rx">Netz ↓</option>
+              <option value="net_tx">Netz ↑</option>
+            </optgroup>
+          </>
+        )}
       </select>
       {/* Bedingung */}
       <select value={cond.condition} onChange={e => onChange({ ...cond, condition: e.target.value })} className={inputCls + ' w-20'}>
@@ -80,7 +88,11 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
       if (conds.length === 0) conds = [{ metric: initial.metric || 'cpu', condition: initial.condition || 'gt', threshold: initial.threshold ?? 80 }];
       let agentIds = [];
       try { agentIds = JSON.parse(initial.agent_ids || '[]'); } catch {}
-      setForm({ ...initial, conditions: conds, agent_ids: agentIds, logic: initial.logic || 'and', notify_resolved: !!initial.notify_resolved });
+      let targetRefArr = [];
+      try { targetRefArr = JSON.parse(initial.target_ref || '[]'); } catch {
+        if (initial.target_ref) targetRefArr = [String(initial.target_ref)];
+      }
+      setForm({ ...initial, conditions: conds, agent_ids: agentIds, target_ref: targetRefArr, logic: initial.logic || 'and', notify_resolved: !!initial.notify_resolved });
     } else {
       setForm(defaultForm);
     }
@@ -127,12 +139,6 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
     return { ...f, metric: next.metric, conditions: [next] };
   });
 
-  // Storage-Feld: Schwelle ändern
-  const setStorageThreshold = (t) => setForm(f => ({
-    ...f, metric: 'hetzner_storage_usage',
-    conditions: [{ metric: 'hetzner_storage_usage', condition: 'gt', threshold: t }],
-  }));
-
   const toggleServer = (id) => {
     const ids = form.agent_ids || [];
     set('agent_ids', ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]);
@@ -151,8 +157,6 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
     if (!form.webhook_id)  return setError('Webhook auswählen');
     if (!isAction && (!form.conditions || form.conditions.length === 0))
       return setError('Mindestens eine Bedingung erforderlich');
-    if (isStorage && !form.target_ref) return setError('Storage Box auswählen');
-    if (isMCHost && !form.target_ref) return setError('VServer auswählen');
     setSaving(true);
     setError('');
     try {
@@ -165,7 +169,7 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
         cooldown_minutes: parseInt(form.cooldown_minutes) || 30,
         webhook_id:       parseInt(form.webhook_id),
         agent_ids:        form.agent_ids || [],
-        target_ref:       (isStorage || isMCHost) ? (form.target_ref || null) : null,
+        target_ref:       (isStorage || isMCHost) ? JSON.stringify(form.target_ref || []) : null,
       });
       onClose();
     } catch (e) {
@@ -213,96 +217,69 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
           </div>
         </div>
 
-        {/* Server (bei Storage-Box/MCHost irrelevant) */}
-        {!isStorage && !isMCHost && (
+        {/* Server / Target Auswahl */}
+        {!isAction && !isPatchmon && (
         <div>
           <label className="text-xs text-panel-muted block mb-1">
-            Server <span className="text-panel-muted/60 font-normal">(keiner = alle)</span>
+            {isStorage ? 'Storage Boxes' : isMCHost ? 'MC-Host24 VServer' : 'Server'} <span className="text-panel-muted/60 font-normal">(keine Auswahl = alle automatisch)</span>
           </label>
           <div className="flex flex-wrap gap-1.5 p-2 bg-panel-surface border border-panel-border rounded-md">
-            {allServers.map(s => {
-              const checked = (form.agent_ids || []).includes(s.id);
-              return (
-                <button key={s.id} type="button" onClick={() => toggleServer(s.id)}
-                  className={`text-xs px-2 py-1 rounded border transition-all ${
-                    checked ? 'bg-panel-accent/15 border-panel-accent text-panel-accent'
-                            : 'border-panel-border text-panel-muted hover:border-panel-muted/60 hover:text-panel-text'
-                  }`}>
-                  {s.name}
-                </button>
-              );
-            })}
-            {(form.agent_ids || []).filter(id => !allServers.find(s => s.id === id)).map(id => (
-              <button key={id} type="button" onClick={() => toggleServer(id)}
-                className="text-xs px-2 py-1 rounded border transition-all bg-panel-red/15 border-panel-red text-panel-red">
-                {`#${id} (gelöscht)`}
-              </button>
-            ))}
+            {isStorage ? (
+              storageBoxes.map(s => {
+                const checked = (form.target_ref || []).includes(String(s.id));
+                return (
+                  <button key={s.id} type="button" onClick={() => {
+                    const arr = form.target_ref || [];
+                    set('target_ref', checked ? arr.filter(x => x !== String(s.id)) : [...arr, String(s.id)]);
+                  }}
+                    className={`text-xs px-2 py-1 rounded border transition-all ${
+                      checked ? 'bg-panel-accent/15 border-panel-accent text-panel-accent'
+                              : 'border-panel-border text-panel-muted hover:border-panel-muted/60 hover:text-panel-text'
+                    }`}>
+                    {s.name}
+                  </button>
+                );
+              })
+            ) : isMCHost ? (
+              mchostServers.map(s => {
+                const checked = (form.target_ref || []).includes(String(s.id));
+                return (
+                  <button key={s.id} type="button" onClick={() => {
+                    const arr = form.target_ref || [];
+                    set('target_ref', checked ? arr.filter(x => x !== String(s.id)) : [...arr, String(s.id)]);
+                  }}
+                    className={`text-xs px-2 py-1 rounded border transition-all ${
+                      checked ? 'bg-panel-accent/15 border-panel-accent text-panel-accent'
+                              : 'border-panel-border text-panel-muted hover:border-panel-muted/60 hover:text-panel-text'
+                    }`}>
+                    {s.name || s.hostname || `VServer ${s.id}`}
+                  </button>
+                );
+              })
+            ) : (
+              <>
+                {allServers.map(s => {
+                  const checked = (form.agent_ids || []).includes(s.id);
+                  return (
+                    <button key={s.id} type="button" onClick={() => toggleServer(s.id)}
+                      className={`text-xs px-2 py-1 rounded border transition-all ${
+                        checked ? 'bg-panel-accent/15 border-panel-accent text-panel-accent'
+                                : 'border-panel-border text-panel-muted hover:border-panel-muted/60 hover:text-panel-text'
+                      }`}>
+                      {s.name}
+                    </button>
+                  );
+                })}
+                {(form.agent_ids || []).filter(id => !allServers.find(s => s.id === id)).map(id => (
+                  <button key={id} type="button" onClick={() => toggleServer(id)}
+                    className="text-xs px-2 py-1 rounded border transition-all bg-panel-red/15 border-panel-red text-panel-red">
+                    {`#${id} (gelöscht)`}
+                  </button>
+                ))}
+              </>
+            )}
           </div>
         </div>
-        )}
-
-        {/* Storage-Box-Feld (nur für Storage-Typ) */}
-        {isStorage && (
-          <div>
-            <label className="text-xs text-panel-muted block mb-1">Storage Box + Schwelle</label>
-            <div className="flex items-center gap-2 flex-wrap bg-panel-bg/60 rounded-lg px-3 py-2.5 border border-panel-border/60">
-              <select
-                value={form.target_ref || ''}
-                onChange={e => set('target_ref', e.target.value)}
-                className="flex-1 min-w-[140px] bg-panel-surface border border-panel-border rounded px-2 py-1 text-xs text-panel-text focus:outline-none focus:border-panel-accent"
-              >
-                <option value="">— Box wählen —</option>
-                {storageBoxes.map(b => (
-                  <option key={b.id} value={b.id}>{b.name}{b.type ? ` (${b.type})` : ''}</option>
-                ))}
-              </select>
-              <span className="text-xs text-panel-muted">Auslastung über</span>
-              <input
-                type="number" min="0" max="100"
-                value={form.conditions?.[0]?.threshold ?? 80}
-                onChange={e => setStorageThreshold(parseInt(e.target.value) || 0)}
-                className="w-16 bg-panel-surface border border-panel-border rounded px-2 py-1 text-xs text-panel-text text-right focus:outline-none focus:border-panel-accent"
-              />
-              <span className="text-xs text-panel-muted">%</span>
-            </div>
-            {storageBoxes.length === 0 && (
-              <p className="text-xs text-panel-muted mt-1">Keine Storage Boxes geladen (Hetzner-Token nötig).</p>
-            )}
-          </div>
-        )}
-
-        {/* MC-Host24-Feld (nur für MCHost-Typ) */}
-        {isMCHost && (
-          <div>
-            <label className="text-xs text-panel-muted block mb-1">VServer + Schwelle</label>
-            <div className="flex items-center gap-2 flex-wrap bg-panel-bg/60 rounded-lg px-3 py-2.5 border border-panel-border/60">
-              <select
-                value={form.target_ref || ''}
-                onChange={e => set('target_ref', e.target.value)}
-                className="flex-1 min-w-[140px] bg-panel-surface border border-panel-border rounded px-2 py-1 text-xs text-panel-text focus:outline-none focus:border-panel-accent"
-              >
-                <option value="">— VServer wählen —</option>
-                {mchostServers.map(s => (
-                  <option key={s.id} value={s.id}>{s.name || s.hostname || `VServer ${s.id}`}</option>
-                ))}
-              </select>
-              <span className="text-xs text-panel-muted">Laufzeit unter</span>
-              <input
-                type="number" min="0" max="365"
-                value={form.conditions?.[0]?.threshold ?? 7}
-                onChange={e => setForm(f => ({
-                  ...f, metric: 'mchost_runtime',
-                  conditions: [{ metric: 'mchost_runtime', condition: 'lt', threshold: parseInt(e.target.value) || 0 }],
-                }))}
-                className="w-16 bg-panel-surface border border-panel-border rounded px-2 py-1 text-xs text-panel-text text-right focus:outline-none focus:border-panel-accent"
-              />
-              <span className="text-xs text-panel-muted">Tage</span>
-            </div>
-            {mchostServers.length === 0 && (
-              <p className="text-xs text-panel-muted mt-1">Keine VServer gefunden (MC-Host24-Token nötig).</p>
-            )}
-          </div>
         )}
 
         {/* PatchMon-Feld (nur für PatchMon-Typ) */}
@@ -336,7 +313,7 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
         )}
 
         {/* Bedingungen (nur für Schwellenwert) */}
-        {activeType === 'threshold' && (
+        {(activeType === 'threshold' || activeType === 'storage' || activeType === 'mchost') && (
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="text-xs text-panel-muted">Bedingungen</label>
@@ -360,6 +337,7 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
                   onChange={val => updateCond(i, val)}
                   onRemove={() => removeCond(i)}
                   canRemove={(form.conditions || []).length > 1}
+                  activeType={activeType}
                 />
               ))}
             </div>
@@ -378,15 +356,23 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
 
         {/* Dauer + Cooldown */}
         <div className="grid grid-cols-2 gap-3">
-          {activeType === 'threshold' && (
+          {(activeType === 'threshold' || activeType === 'storage' || activeType === 'mchost') && (
             <div>
               <label className="text-xs text-panel-muted block mb-1">Dauer (Sek.) bis Auslösung</label>
               <input type="number" min="0" max="3600" className={inputCls}
                 value={form.duration_seconds} onChange={e => set('duration_seconds', e.target.value)} />
             </div>
           )}
-          <div className={activeType !== 'threshold' ? 'col-span-2' : ''}>
-            <label className="text-xs text-panel-muted block mb-1">Cooldown (Min.)</label>
+          <div className={(activeType === 'action' || activeType === 'patchmon') ? 'col-span-2' : ''}>
+            <label className="text-xs text-panel-muted mb-1 flex items-center gap-1 group relative">
+              Cooldown (Min.)
+              <div className="relative">
+                <Info size={12} className="text-panel-muted/70 hover:text-panel-text cursor-help" />
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 w-48 p-2 bg-panel-card border border-panel-border rounded shadow-lg text-[10px] text-panel-muted opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-10">
+                  Verhindert Spam: Nach einer Benachrichtigung wird für diese Dauer (in Minuten) keine weitere Warnung für denselben Server gesendet, selbst wenn das Problem weiterhin besteht.
+                </div>
+              </div>
+            </label>
             <input type="number" min="1" max="1440" className={inputCls}
               value={form.cooldown_minutes} onChange={e => set('cooldown_minutes', e.target.value)} />
           </div>
