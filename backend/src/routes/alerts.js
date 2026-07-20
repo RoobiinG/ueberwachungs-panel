@@ -18,7 +18,7 @@ router.get('/rules', requirePermission('alerts.view'), (req, res) => {
   res.json(rules);
 });
 
-const VALID_METRICS    = ['cpu', 'memory', 'disk', 'net_rx', 'net_tx', 'action', 'patchmon_updates', 'patchmon_security', 'hetzner_storage_usage'];
+const VALID_METRICS    = ['cpu', 'memory', 'disk', 'net_rx', 'net_tx', 'action', 'patchmon_updates', 'patchmon_security', 'hetzner_storage_usage', 'mchost_runtime'];
 const VALID_CONDITIONS = ['gt', 'lt'];
 
 router.post('/rules', requirePermission('alerts.manage'), (req, res) => {
