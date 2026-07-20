@@ -244,8 +244,17 @@ export default function MCHost() {
                         </div>
                       )}
                     </div>
-                    <div className="text-xs text-panel-muted mt-0.5">
-                      {[s.ip, s.os].filter(Boolean).join(' · ')}
+                    <div className="text-xs text-panel-muted mt-0.5 space-y-1">
+                      <div>
+                        {[s.ip || (s.addresses && s.addresses[0]?.ip), s.os].filter(Boolean).join(' · ')}
+                      </div>
+                      <div className="flex gap-3 text-[11px] opacity-80 flex-wrap">
+                        {s.expire_at && <span>Laufzeit: {new Date(s.expire_at > 1e11 ? s.expire_at : s.expire_at * 1000).toLocaleDateString('de-DE')}</span>}
+                        {s.cores && <span>{s.cores} Cores</span>}
+                        {s.memory && <span>{s.memory} MB RAM</span>}
+                        {s.disk_size && <span>{s.disk_size} GB Disk</span>}
+                        {s.traffic !== undefined && s.curr_traffic !== undefined && <span>Traffic: {s.curr_traffic} / {s.traffic} GB</span>}
+                      </div>
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
