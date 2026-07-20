@@ -26,6 +26,20 @@ const TAG_COLORS = {
   gray:   'bg-panel-card text-panel-muted border-panel-border',
 };
 
+// ─── Laufzeit-Formatierung ─────────────────────────────────────────────────────
+function formatRuntime(expireTimestamp) {
+  if (!expireTimestamp) return '';
+  const expireSec = expireTimestamp > 1e11 ? Math.floor(expireTimestamp / 1000) : expireTimestamp;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const diffSec = expireSec - nowSec;
+  if (diffSec <= 0) return 'Abgelaufen';
+  const days = Math.floor(diffSec / 86400);
+  const hours = Math.floor((diffSec % 86400) / 3600);
+  if (days > 0) return `noch ${days} T., ${hours} Std.`;
+  const mins = Math.floor((diffSec % 3600) / 60);
+  return `noch ${hours} Std., ${mins} Min.`;
+}
+
 // ─── Tag-Chip ──────────────────────────────────────────────────────────────────
 function TagChip({ tag, color, onRemove }) {
   return (
@@ -249,7 +263,7 @@ export default function MCHost() {
                         {[s.ip || (s.addresses && s.addresses[0]?.ip), s.os].filter(Boolean).join(' · ')}
                       </div>
                       <div className="flex gap-3 text-[11px] opacity-80 flex-wrap">
-                        {s.expire_at && <span>Laufzeit: {new Date(s.expire_at > 1e11 ? s.expire_at : s.expire_at * 1000).toLocaleDateString('de-DE')}</span>}
+                        {s.expire_at && <span>Laufzeit: {new Date(s.expire_at > 1e11 ? s.expire_at : s.expire_at * 1000).toLocaleDateString('de-DE')} ({formatRuntime(s.expire_at)})</span>}
                         {s.cores && <span>{s.cores} Cores</span>}
                         {s.memory && <span>{s.memory} MB RAM</span>}
                         {s.disk_size && <span>{s.disk_size} GB Disk</span>}

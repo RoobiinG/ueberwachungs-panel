@@ -235,4 +235,13 @@ router.put('/access/:roleId', requirePermission('mchost.view'), (req, res) => {
   res.json({ ok: true });
 });
 
-module.exports = router;
+const getVserversSafe = async () => {
+  try {
+    const body = (await (await api()).get('/vserver')).data;
+    return Array.isArray(body?.data) ? body.data : Array.isArray(body) ? body : [];
+  } catch {
+    return null;
+  }
+};
+
+module.exports = Object.assign(router, { getVserversSafe });

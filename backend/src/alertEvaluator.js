@@ -3,6 +3,7 @@ const { sendWebhook } = require('./utils/sendWebhook');
 const { fetchAgentStats } = require('./utils/agentFetch');
 const patchmon        = require('./routes/patchmon');   // .fetchHosts (30s-Cache intern)
 const hetzner         = require('./routes/hetzner');    // .getStorageBoxes (45s-Cache intern)
+const mchost          = require('./routes/mchost');     // .getVserversSafe
 
 const getSetting = (k) => db.prepare('SELECT value FROM settings WHERE key = ?').get(k)?.value ?? null;
 
@@ -19,6 +20,11 @@ async function getPatchmonHosts() {
 // Hetzner Storage Boxes holen (fail-soft; eigener 45s-Cache)
 async function getStorageBoxesSafe() {
   try { return await hetzner.getStorageBoxes(); } catch { return null; }
+}
+
+// MC-Host24 VServers holen (fail-soft)
+async function getMCHostServersSafe() {
+  try { return await mchost.getVserversSafe(); } catch { return null; }
 }
 
 // broadcast wird lazy geladen (zirkuläre Abhängigkeit vermeiden)
@@ -38,8 +44,8 @@ const getState = (key) => {
   return state.get(key);
 };
 
-const METRIC_LABELS = { cpu: 'CPU', memory: 'RAM', disk: 'Disk', net_rx: 'Netz ↓', net_tx: 'Netz ↑', action: 'Aktion', patchmon_updates: 'PatchMon Updates', patchmon_security: 'PatchMon Security', hetzner_storage_usage: 'Storage Box' };
-const METRIC_UNIT   = { cpu: '%', memory: '%', disk: '%', net_rx: ' MB/s', net_tx: ' MB/s', action: '', patchmon_updates: '', patchmon_security: '', hetzner_storage_usage: '%' };
+const METRIC_LABELS = { cpu: 'CPU', memory: 'RAM', disk: 'Disk', net_rx: 'Netz ↓', net_tx: 'Netz ↑', action: 'Aktion', patchmon_updates: 'PatchMon Updates', patchmon_security: 'PatchMon Security', hetzner_storage_usage: 'Storage Box', mchost_runtime: 'MC-Host Laufzeit' };
+const METRIC_UNIT   = { cpu: '%', memory: '%', disk: '%', net_rx: ' MB/s', net_tx: ' MB/s', action: '', patchmon_updates: '', patchmon_security: '', hetzner_storage_usage: '%', mchost_runtime: ' Tage' };
 
 // ─── Metrik-Wert abrufen ─────────────────────────────────────────────────────
 async function getMetricValue(metric, agentId, targetRef) {
@@ -53,6 +59,18 @@ async function getMetricValue(metric, agentId, targetRef) {
     const box = boxes.find(b => String(b.id) === String(targetRef));
     if (!box) return null;
     return box.usagePct ?? (box.quotaBytes > 0 ? (box.usedBytes / box.quotaBytes) * 100 : null);
+  }
+
+  // MC-Host24 Laufzeit: Restlaufzeit in Tagen des per target_ref gebundenen VServers
+  if (metric === 'mchost_runtime') {
+    if (!targetRef) return null;
+    const servers = await getMCHostServersSafe();
+    if (!servers) return null;
+    const srv = servers.find(s => String(s.id) === String(targetRef));
+    if (!srv || !srv.expire_at) return null;
+    const expireSec = srv.expire_at > 1e11 ? Math.floor(srv.expire_at / 1000) : srv.expire_at;
+    const nowSec = Math.floor(Date.now() / 1000);
+    return (expireSec - nowSec) / 86400; // in Tagen
   }
 
   // PatchMon-Metriken: Wert kommt vom verknüpften PatchMon-Host des Servers.
@@ -156,10 +174,13 @@ async function evaluate() {
     }
 
     const logic     = rule.logic || 'and';
-    // Storage-Box-Regeln sind nicht server-gebunden → einmalig über die gebundene Box auswerten.
+    // Storage-Box und MC-Host24 Regeln sind nicht server-gebunden → einmalig über target_ref auswerten.
     const isStorage = conditions.some(c => c.metric === 'hetzner_storage_usage');
+    const isMCHost  = conditions.some(c => c.metric === 'mchost_runtime');
     const servers   = isStorage
       ? [{ key: 'sbox:' + (rule.target_ref || 'none'), name: 'Storage Box', agentId: null }]
+      : isMCHost
+      ? [{ key: 'mchost:' + (rule.target_ref || 'none'), name: 'MC-Host24 VServer', agentId: null }]
       : getServerList(rule);
 
     for (const srv of servers) {
