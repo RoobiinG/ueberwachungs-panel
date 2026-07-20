@@ -174,17 +174,28 @@ async function evaluate() {
     }
 
     const logic     = rule.logic || 'and';
-    // Storage-Box und MC-Host24 Regeln sind nicht server-gebunden → einmalig über target_ref auswerten.
+    let targetRefs = [];
+    try { targetRefs = JSON.parse(rule.target_ref || '[]'); } catch {
+      if (rule.target_ref) targetRefs = [String(rule.target_ref)];
+    }
+
     const isStorage = conditions.some(c => c.metric === 'hetzner_storage_usage');
     const isMCHost  = conditions.some(c => c.metric === 'mchost_runtime');
-    const servers   = isStorage
-      ? [{ key: 'sbox:' + (rule.target_ref || 'none'), name: 'Storage Box', agentId: null }]
-      : isMCHost
-      ? [{ key: 'mchost:' + (rule.target_ref || 'none'), name: 'MC-Host24 VServer', agentId: null }]
-      : getServerList(rule);
+    const servers = [];
+    if (isStorage) {
+      const boxes = (await getStorageBoxesSafe()) || [];
+      const relevant = targetRefs.length > 0 ? boxes.filter(b => targetRefs.includes(String(b.id))) : boxes;
+      for (const b of relevant) servers.push({ key: 'sbox:' + b.id, name: b.name, agentId: null, targetRef: String(b.id) });
+    } else if (isMCHost) {
+      const mcs = (await getMCHostServersSafe()) || [];
+      const relevant = targetRefs.length > 0 ? mcs.filter(m => targetRefs.includes(String(m.id))) : mcs;
+      for (const m of relevant) servers.push({ key: 'mchost:' + m.id, name: m.name || `VServer ${m.id}`, agentId: null, targetRef: String(m.id) });
+    } else {
+      for (const s of getServerList(rule)) servers.push({ ...s, targetRef: null });
+    }
 
     for (const srv of servers) {
-      const results = await evaluateConditions(conditions, srv.agentId, rule.target_ref);
+      const results = await evaluateConditions(conditions, srv.agentId, srv.targetRef);
       if (results.some(r => r === null)) continue; // Metrik nicht verfügbar
 
       const conditionMet = logic === 'or'
