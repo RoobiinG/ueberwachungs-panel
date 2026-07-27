@@ -19,8 +19,8 @@ COPY backend/ ./
 FROM node:20-alpine
 WORKDIR /app/backend
 
-# sqlite-libs: SQLite runtime; util-linux: nsenter für Host-Namespace-Zugriff
-RUN apk add --no-cache sqlite-libs util-linux
+# sqlite-libs: SQLite runtime; util-linux: nsenter für Host-Namespace-Zugriff; git + curl für Updater
+RUN apk add --no-cache sqlite-libs util-linux git curl
 
 COPY --from=backend-builder /app/backend ./
 COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist

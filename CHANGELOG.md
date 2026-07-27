@@ -4,13 +4,13 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
-## [1.48.0] - 2026-07-27 (Build 249) — *Smart Updater, Changelog & 2FA Security*
+## [1.48.0] - 2026-07-27 (Build 250) — *Docker Auto-Update & Robust 2FA*
 
 ### ✨ Neue Funktionen & Features
-- **Automatischer Panel-Updater (`POST /api/update/run`)**:
-  - Direktes Auslösen von `git pull` aus dem Panel heraus (Einstellungen & Sidebar-Banner).
-  - Nutzt das in den Einstellungen konfigurierte GitHub Personal Access Token (`github_token`), um geschützte private Repositories zu synchronisieren.
-  - Automatisches Erfassen der alten und neuen Version (`version.json`) sowie der letzten Git-Commits.
+- **Automatischer Panel-Updater für Docker-Container & Git (`POST /api/update/run`)**:
+  - **Docker-Support**: Erkennt automatisch, wenn kein `.git`-Verzeichnis vorhanden ist (z. B. im Docker-Image `ghcr.io/roobiing/ueberwachungs-panel:latest`) und führt über `nsenter` auf dem Host automatisch `docker pull` und `docker compose up -d --force-recreate` bzw. `docker restart` aus.
+  - **Git-Support**: Für Git-Installationen wird weiterhin `git pull` ausgeführt.
+  - `git` und `curl` sind ab sofort im finalen Docker-Image vorinstalliert (`Dockerfile`).
   - Automatischer Server-Neustart (`process.exit(0)`) nach dem Pull für eine unterbrechungsfreie Aktualisierung.
 - **Update-Log Modal (`UpdateLogModal.jsx`)**:
   - Nach einem automatischen Update lädt der Browser die Seite neu und zeigt ein interaktives Modal-Fenster mit dem Changelog und den System-Auswirkungen an.
@@ -24,6 +24,8 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
   - Zweistufiger Login-Prozess mit geschütztem Zwischen-JWT (`tempToken`).
 
 ### 🐛 Bugfixes & Optimierungen
+- **E-Mail-2FA Bestätigungscode (`/api/auth/2fa/enable` & `/login/2fa`)**: Gültigkeitsdauer auf 20 Minuten erhöht, toleranter String/Trim-Vergleich, präzise Fehlermeldungen und Konsolen-Logging für generierte E-Mail-Codes.
+- **Docker Auto-Updater Bugfix (`/bin/sh: git: not found`)**: Erkennung von Docker-Umgebungen ohne `.git`-Verzeichnis in `update.js` — führt stattdessen ein Docker Image Update per `nsenter` auf dem Host aus.
 - **ReferenceError Behebung**: Fehler beim Löschen externer Token oder nach Einstellungs-Änderungen (`load is not defined` → Nutzung von `loadAdmin`) in `Settings.jsx` behoben.
 - **IP-Kopierfunktion für Server**: Bei Hetzner Cloud API und MC-Host24 können IPs nun direkt mit visuellem Klick-Feedback (`✓ Kopiert`) kopiert werden.
 - **Webhook-Konfiguration in Benachrichtigungen**: Schneller Absprung über „Webhooks als Einstellung“-Button in `Alerts.jsx`.

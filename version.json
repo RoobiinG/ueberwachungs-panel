@@ -1,6 +1,6 @@
 {
   "version": "1.48.0",
-  "build": 249,
+  "build": 250,
   "date": "2026-07-27",
-  "codename": "Changelog & System Impact"
+  "codename": "Docker Auto-Update & Robust 2FA"
 }

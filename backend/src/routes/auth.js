@@ -98,11 +98,13 @@ router.post('/login', loginLimiter, async (req, res) => {
         return res.status(400).json({ error: 'E-Mail-2FA ist aktiviert, aber im Profil ist keine E-Mail hinterlegt.' });
       }
       const code = String(Math.floor(100000 + Math.random() * 900000));
-      const expires = Date.now() + 10 * 60_000;
+      const expires = Date.now() + 20 * 60_000;
       db.prepare('UPDATE users SET twofa_code = ?, twofa_expires = ? WHERE id = ?').run(code, expires, user.id);
+      console.log(`[2FA Login] Neuer E-Mail-Code für User ${user.username}: ${code}`);
       try {
         await send2faMail(user.email, code);
       } catch (err) {
+        console.warn('[2FA Login] E-Mail Versand fehlgeschlagen:', err.message);
         return res.status(500).json({ error: 'E-Mail konnte nicht gesendet werden: ' + err.message });
       }
     }
@@ -148,8 +150,11 @@ router.post('/2fa/verify', loginLimiter, (req, res) => {
   const { verifyTOTP } = require('../utils/totp');
 
   if (user.twofa_type === 'email') {
-    if (!user.twofa_code || user.twofa_code !== String(code).trim() || Date.now() > user.twofa_expires) {
-      return res.status(401).json({ error: 'Ungültiger oder abgelaufener Code' });
+    const storedCode = String(user.twofa_code || '').trim();
+    const inputCode  = String(code || '').trim();
+    if (!storedCode || storedCode !== inputCode || Date.now() > (user.twofa_expires || 0)) {
+      console.warn(`[2FA Login] E-Mail Code fehlerhaft für ${user.username}: DB='${storedCode}' vs Input='${inputCode}', Expired=${Date.now() > (user.twofa_expires || 0)}`);
+      return res.status(401).json({ error: 'Ungültiger oder abgelaufener E-Mail-Code (Gültigkeit: 20 Minuten)' });
     }
     db.prepare('UPDATE users SET twofa_code = NULL, twofa_expires = NULL WHERE id = ?').run(user.id);
   } else if (user.twofa_type === 'totp') {
@@ -276,12 +281,14 @@ router.post('/2fa/setup', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'Bitte zuerst eine E-Mail-Adresse im Profil hinterlegen' });
     }
     const code = String(Math.floor(100000 + Math.random() * 900000));
-    const expires = Date.now() + 10 * 60_000;
+    const expires = Date.now() + 20 * 60_000;
     db.prepare('UPDATE users SET twofa_code = ?, twofa_expires = ? WHERE id = ?').run(code, expires, user.id);
+    console.log(`[2FA Setup] Neuer E-Mail-Code für User ${user.username}: ${code}`);
     try {
       await send2faMail(user.email, code);
       return res.json({ ok: true, type: 'email', message: 'Bestätigungscode an deine E-Mail-Adresse gesendet.' });
     } catch (err) {
+      console.warn('[2FA Setup] E-Mail Versand fehlgeschlagen:', err.message);
       return res.status(500).json({ error: 'E-Mail konnte nicht gesendet werden: ' + err.message });
     }
   } else if (type === 'totp') {
@@ -302,8 +309,17 @@ router.post('/2fa/enable', authMiddleware, (req, res) => {
   if (!user) return res.status(404).json({ error: 'Benutzer nicht gefunden' });
 
   if (type === 'email') {
-    if (!user.twofa_code || user.twofa_code !== String(code).trim() || Date.now() > user.twofa_expires) {
-      return res.status(400).json({ error: 'Ungültiger oder abgelaufener E-Mail-Code' });
+    const storedCode = String(user.twofa_code || '').trim();
+    const inputCode  = String(code || '').trim();
+    if (!storedCode) {
+      return res.status(400).json({ error: 'Kein E-Mail-Code angefordert. Bitte Setup erneut starten.' });
+    }
+    if (Date.now() > (user.twofa_expires || 0)) {
+      return res.status(400).json({ error: 'E-Mail-Code ist abgelaufen (Gültig: 20 Min). Bitte Setup neu starten.' });
+    }
+    if (storedCode !== inputCode) {
+      console.warn(`[2FA Enable] E-Mail Code fehlerhaft für ${user.username}: Erwartet='${storedCode}', Erhalten='${inputCode}'`);
+      return res.status(400).json({ error: 'Der eingegebene 6-stellige Code ist nicht korrekt.' });
     }
     db.prepare("UPDATE users SET twofa_type = 'email', twofa_code = NULL, twofa_expires = NULL WHERE id = ?").run(user.id);
     auditLog(req, '2fa.enable_email', 'user', user.username);
