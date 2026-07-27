@@ -15,20 +15,19 @@ export const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
 
   { section: 'Infrastruktur' },
-  { to: '/docker',      icon: Container,    label: 'Docker' },
-  { to: '/docker-resources', icon: Layers,  label: 'Docker-Ressourcen', permission: ['docker.images.view', 'docker.volumes.view', 'docker.networks.view', 'docker.stacks.view'] },
+  { to: '/docker',      icon: Container,    label: 'Docker',            moduleKey: 'docker' },
+  { to: '/docker-resources', icon: Layers,  label: 'Docker-Ressourcen', moduleKey: 'docker', permission: ['docker.images.view', 'docker.volumes.view', 'docker.networks.view', 'docker.stacks.view'] },
   { to: '/services',    icon: Wrench,       label: 'Services' },
   { to: '/firewall',    icon: Shield,       label: 'Firewall' },
   { to: '/monitoring',  icon: BarChart2,    label: 'Monitoring' },
   { to: '/agents',      icon: ServerCog,    label: 'Server' },
 
   { section: 'Dienste' },
-  { to: '/uptime-kuma', icon: MonitorCheck, label: 'Uptime Kuma', permission: 'uptimekuma.view' },
-  { to: '/patchmon',    icon: PackageCheck, label: 'PatchMon',    permission: 'patchmon.view' },
+  { to: '/uptime-kuma', icon: MonitorCheck, label: 'Uptime Kuma',       moduleKey: 'uptimekuma', permission: 'uptimekuma.view' },
+  { to: '/patchmon',    icon: PackageCheck, label: 'PatchMon',          moduleKey: 'patchmon',   permission: 'patchmon.view' },
   { to: '/alerts',      icon: Bell,         label: 'Benachrichtigungen' },
-  { to: '/webhooks',    icon: Webhook,      label: 'Webhooks',   permission: 'webhooks.view' },
-  { to: '/hetzner',     icon: Cloud,        label: 'Hetzner',    permission: 'hetzner.view' },
-  { to: '/mchost',      icon: Gamepad2,     label: 'MC-Host24',  permission: 'mchost.view'  },
+  { to: '/hetzner',     icon: Cloud,        label: 'Hetzner',           moduleKey: 'hetzner',    permission: 'hetzner.view' },
+  { to: '/mchost',      icon: Gamepad2,     label: 'MC-Host24',         moduleKey: 'mchost',     permission: 'mchost.view'  },
 
   { section: 'Verwaltung' },
   { to: '/users',      icon: Users,         label: 'Benutzer',        adminOnly: true },
@@ -42,10 +41,14 @@ export const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
   const { user, isAdmin, hasPermission } = useAuth();
   const [version, setVersion] = useState(null);
+  const [modules, setModules] = useState({});
+  const [updateStatus, setUpdateStatus] = useState(null);
   const { errors, clearErrors } = useErrors();
 
   useEffect(() => {
     axios.get('/api/version').then(r => setVersion(r.data)).catch(() => {});
+    axios.get('/api/settings/modules').then(r => setModules(r.data)).catch(() => {});
+    axios.get('/api/update/status').then(r => setUpdateStatus(r.data)).catch(() => {});
   }, []);
 
   return (
@@ -76,6 +79,7 @@ export const Sidebar = () => {
           }
           if (item.adminOnly && !isAdmin) return null;
           if (item.permission && !(Array.isArray(item.permission) ? item.permission.some(hasPermission) : hasPermission(item.permission))) return null;
+          if (item.moduleKey && modules[item.moduleKey] === false) return null;
           return (
             <NavLink
               key={item.to}
@@ -140,6 +144,16 @@ export const Sidebar = () => {
           <div className={`mt-1 text-[10px] text-panel-muted/50 ${collapsed ? 'text-center' : ''}`}
             title={`Build ${version.build} · ${version.date}`}>
             {collapsed ? `v${version.version}` : `v${version.version} · Build ${version.build}`}
+          </div>
+        )}
+        {updateStatus?.panel?.available && !collapsed && (
+          <div className="mt-1.5 flex items-center gap-1 text-[11px] text-yellow-400 font-medium" title="Neues Panel-Update auf GitHub verfügbar">
+            <span>⚡ Update v{updateStatus.panel.remoteVersion} verfügbar</span>
+          </div>
+        )}
+        {updateStatus?.agent?.available && !collapsed && (
+          <div className="mt-1 flex items-center gap-1 text-[11px] text-yellow-400 font-medium" title="Agent-Update auf GitHub verfügbar">
+            <span>⚡ Agent v{updateStatus.agent.remoteVersion} verfügbar</span>
           </div>
         )}
       </div>

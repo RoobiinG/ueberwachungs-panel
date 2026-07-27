@@ -4,7 +4,7 @@ const db = require('../db');
 const requireRole = require('../middleware/roles');
 const { auditLog } = require('../utils/audit');
 
-const SENSITIVE = ['hetzner_api_token', 'mchost_password', 'mchost_api_token', 'smtp_pass', 'claude_api_key'];
+const SENSITIVE = ['hetzner_api_token', 'mchost_password', 'mchost_api_token', 'smtp_pass', 'claude_api_key', 'github_token'];
 
 const get = (key) => db.prepare('SELECT value FROM settings WHERE key = ?').get(key)?.value || '';
 const set = (key, value) => db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)').run(key, value);
@@ -25,6 +25,7 @@ router.get('/', requireRole('admin'), (req, res) => {
     smtp_secure:       get('smtp_secure') || 'false',
     claude_api_key:    get('claude_api_key') ? '***gesetzt***' : '',
     claude_model:      get('claude_model') || 'claude-haiku-4-5',
+    github_token:      get('github_token') ? '***gesetzt***' : '',
   });
 });
 
@@ -201,6 +202,52 @@ router.put('/notifications', requireRole('admin'), (req, res) => {
   if (actionWebhookId !== undefined)
     set('action_webhook_id', actionWebhookId ? String(actionWebhookId) : '');
   res.json({ success: true });
+});
+
+// ── GitHub Personal Access Token (für Update-Check im privaten Repo) ─────────
+router.put('/github', requireRole('admin'), (req, res) => {
+  const { token } = req.body;
+  if (!token) return res.status(400).json({ error: 'Token erforderlich' });
+  set('github_token', token.trim());
+  auditLog(req, 'settings.github', 'settings', 'github_token');
+  res.json({ success: true });
+});
+router.delete('/github', requireRole('admin'), (req, res) => {
+  del('github_token');
+  res.json({ success: true });
+});
+
+// ── Aktive Module & Funktionen ────────────────────────────────────────────────
+const defaultModules = {
+  docker: true,
+  patchmon: true,
+  uptimekuma: true,
+  hetzner: true,
+  mchost: true,
+};
+
+router.get('/modules', (req, res) => {
+  try {
+    const raw = get('enabled_modules');
+    const parsed = raw ? JSON.parse(raw) : {};
+    res.json({ ...defaultModules, ...parsed });
+  } catch {
+    res.json(defaultModules);
+  }
+});
+
+router.put('/modules', requireRole('admin'), (req, res) => {
+  try {
+    const { modules } = req.body;
+    const raw = get('enabled_modules');
+    const existing = raw ? JSON.parse(raw) : {};
+    const updated = { ...defaultModules, ...existing, ...(modules || {}) };
+    set('enabled_modules', JSON.stringify(updated));
+    auditLog(req, 'settings.modules_save', 'settings', 'enabled_modules');
+    res.json({ success: true, modules: updated });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = (req, res, next) => router(req, res, next);

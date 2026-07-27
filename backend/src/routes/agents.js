@@ -371,6 +371,9 @@ router.get('/:id/docker/containers/:containerId/stats', requirePermission('docke
     const { data } = await dockhand.getContainerStats(agent.dockhand_env_id, req.params.containerId);
     res.json(data ?? {});
   } catch (err) {
+    if (err.message?.includes('Ressource nicht gefunden') || err.message?.includes('404')) {
+      return res.json({ cpu_percent: 0, memory_usage: 0, not_running: true });
+    }
     res.status(502).json({ error: err.message });
   }
 });
@@ -385,6 +388,9 @@ router.get('/:id/docker/containers/:containerId/logs', requirePermission('docker
     const { data } = await dockhand.getContainerLogs(agent.dockhand_env_id, req.params.containerId, tail);
     res.json(data ?? []);
   } catch (err) {
+    if (err.message?.includes('Ressource nicht gefunden') || err.message?.includes('404')) {
+      return res.json([]);
+    }
     res.status(502).json({ error: err.message });
   }
 });

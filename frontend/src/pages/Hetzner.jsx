@@ -3,7 +3,7 @@ import axios from 'axios';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
-import { RefreshCw, Power, PowerOff, RotateCcw, HardDrive, ChevronDown, ChevronUp } from 'lucide-react';
+import { RefreshCw, Power, PowerOff, RotateCcw, HardDrive, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const statusColor = (s) => s === 'running' ? 'green' : s === 'off' ? 'red' : 'orange';
@@ -31,6 +31,14 @@ export default function Hetzner() {
   const [busy, setBusy] = useState({});
   const [expanded, setExpanded] = useState({});
   const [backups, setBackups] = useState({});
+  const [copied, setCopied] = useState({});
+
+  const copyIp = (id, ip) => {
+    if (!ip) return;
+    navigator.clipboard.writeText(ip);
+    setCopied(prev => ({ ...prev, [id]: true }));
+    setTimeout(() => setCopied(prev => ({ ...prev, [id]: false })), 2000);
+  };
 
   const load = async () => {
     if (!canView) { setLoading(false); return; }
@@ -119,8 +127,27 @@ export default function Hetzner() {
                       <Badge color={statusColor(s.status)}>{s.status}</Badge>
                       <span className="text-sm text-panel-text font-medium">{s.name}</span>
                     </div>
-                    <div className="text-xs text-panel-muted mt-0.5">
-                      {s.server_type?.name} · {s.datacenter?.location?.name} · {s.public_net?.ipv4?.ip}
+                    <div className="flex items-center gap-1 text-xs text-panel-muted mt-0.5">
+                      <span>{s.server_type?.name} · {s.datacenter?.location?.name} · {s.public_net?.ipv4?.ip}</span>
+                      {s.public_net?.ipv4?.ip && (
+                        <button
+                          onClick={() => copyIp(s.id, s.public_net?.ipv4?.ip)}
+                          className="inline-flex items-center gap-1 ml-1 px-1.5 py-0.5 rounded text-[10px] bg-panel-bg border border-panel-border hover:border-panel-accent text-panel-muted hover:text-panel-text transition-colors"
+                          title="IP-Adresse kopieren"
+                        >
+                          {copied[s.id] ? (
+                            <>
+                              <Check size={11} className="text-panel-green" />
+                              <span className="text-panel-green font-medium">✓ Kopiert</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy size={11} />
+                              <span>IP kopieren</span>
+                            </>
+                          )}
+                        </button>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-1">

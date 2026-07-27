@@ -130,6 +130,143 @@ const Msg = ({ msg }) => msg ? (
   <p className={`text-xs mt-2 ${msg.type === 'ok' ? 'text-panel-green' : 'text-panel-red'}`}>{msg.text}</p>
 ) : null;
 
+// ── GitHub Token Card (für Update Check bei privaten Repos) ───────────────────
+function GitHubTokenCard({ status, onReload }) {
+  const [token, setToken]   = useState('');
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg]       = useState('');
+
+  const save = async () => {
+    if (!token.trim()) return;
+    setSaving(true);
+    setMsg('');
+    try {
+      await axios.put('/api/settings/github', { token });
+      setToken('');
+      setMsg('✓ GitHub-Token erfolgreich gespeichert');
+      onReload();
+    } catch (err) {
+      setMsg('❌ ' + (err.response?.data?.error || 'Fehler beim Speichern'));
+    }
+    setSaving(false);
+  };
+
+  const remove = async () => {
+    if (!confirm('GitHub-Token wirklich löschen?')) return;
+    setSaving(true);
+    try {
+      await axios.delete('/api/settings/github');
+      setMsg('✓ Token gelöscht');
+      onReload();
+    } catch (err) {
+      setMsg('❌ Fehler beim Löschen');
+    }
+    setSaving(false);
+  };
+
+  const isSet = !!status?.github_token;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <StatusBadge set={isSet} />
+        {isSet && (
+          <button onClick={remove} disabled={saving} className="text-xs text-panel-red hover:underline flex items-center gap-1">
+            <Trash2 size={12} />Token löschen
+          </button>
+        )}
+      </div>
+      <p className="text-xs text-panel-muted leading-relaxed">
+        Personal Access Token (PAT) von GitHub, damit das Panel automatisch im privaten Repository nach Updates (version.json & Agent) suchen kann.
+      </p>
+      <div className="flex gap-2">
+        <input
+          type="password"
+          value={token}
+          onChange={e => setToken(e.target.value)}
+          placeholder="ghp_xxxx..."
+          className="w-full bg-panel-surface border border-panel-border rounded-md px-3 py-1.5 text-sm text-panel-text focus:outline-none focus:border-panel-accent"
+        />
+        <button
+          onClick={save}
+          disabled={saving || !token.trim()}
+          className="px-3 py-1.5 text-xs bg-panel-accent text-white rounded-md hover:bg-blue-500 transition-colors disabled:opacity-50 whitespace-nowrap"
+        >
+          {saving ? '…' : 'Speichern'}
+        </button>
+      </div>
+      {msg && <p className={`text-xs ${msg.startsWith('✓') ? 'text-panel-green' : 'text-panel-red'}`}>{msg}</p>}
+    </div>
+  );
+}
+
+// ── Modul-Aktivierung Card ────────────────────────────────────────────────────
+function ModulesToggleCard() {
+  const [modules, setModules] = useState({
+    docker: true,
+    patchmon: true,
+    uptimekuma: true,
+    hetzner: true,
+    mchost: true,
+  });
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg]       = useState('');
+
+  useEffect(() => {
+    axios.get('/api/settings/modules').then(r => setModules(r.data)).catch(() => {});
+  }, []);
+
+  const toggle = (key) => setModules(m => ({ ...m, [key]: !m[key] }));
+
+  const save = async () => {
+    setSaving(true);
+    setMsg('');
+    try {
+      await axios.put('/api/settings/modules', { modules });
+      setMsg('✓ Module gespeichert! Navigation wird aktualisiert...');
+      setTimeout(() => window.location.reload(), 1200);
+    } catch (err) {
+      setMsg('❌ ' + (err.response?.data?.error || 'Fehler beim Speichern'));
+      setSaving(false);
+    }
+  };
+
+  const list = [
+    { key: 'docker',     label: 'Docker & Docker-Ressourcen', desc: 'Container, Images, Volumes, Networks & Stacks' },
+    { key: 'patchmon',   label: 'PatchMon',                   desc: 'Linux Sicherheits- und System-Updates' },
+    { key: 'uptimekuma', label: 'Uptime Kuma',                desc: 'Web-Monitoring & Ping-Status' },
+    { key: 'hetzner',    label: 'Hetzner',                    desc: 'Cloud-Server und Storage Boxes' },
+    { key: 'mchost',     label: 'MC-Host24',                  desc: 'vServer / Rootserver Management' },
+  ];
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-panel-muted leading-relaxed">
+        Deaktiviere nicht genutzte Module, um sie aus der Seitenleiste auszublenden.
+      </p>
+      <div className="space-y-2.5 pt-1">
+        {list.map(item => (
+          <div key={item.key} className="flex items-center justify-between py-1 border-b border-panel-border/40 last:border-0">
+            <div>
+              <div className="text-xs font-medium text-panel-text">{item.label}</div>
+              <div className="text-[11px] text-panel-muted">{item.desc}</div>
+            </div>
+            <Toggle on={!!modules[item.key]} onToggle={() => toggle(item.key)} disabled={saving} />
+          </div>
+        ))}
+      </div>
+      <button
+        onClick={save}
+        disabled={saving}
+        className="mt-2 px-3 py-1.5 text-xs bg-panel-accent text-white rounded-md hover:bg-blue-500 transition-colors disabled:opacity-50"
+      >
+        {saving ? 'Speichern...' : 'Auswahl speichern'}
+      </button>
+      {msg && <p className={`text-xs ${msg.startsWith('✓') ? 'text-panel-green' : 'text-panel-red'}`}>{msg}</p>}
+    </div>
+  );
+}
+
 // ── UA-Hilfsfunktionen ─────────────────────────────────────────────────────────
 function parseBrowser(ua = '') {
   if (!ua) return 'Unbekannt';
@@ -1061,6 +1198,16 @@ export default function Settings() {
         {/* ── Benachrichtigungen ── */}
         <Card title={<span className="flex items-center gap-2"><Bell size={14} />Benachrichtigungen</span>}>
           <ActionNotificationsToggle />
+        </Card>
+
+        {/* ── Aktive Module & Funktionen ── */}
+        <Card title={<span className="flex items-center gap-2"><Layers size={14} />Aktive Module</span>}>
+          <ModulesToggleCard />
+        </Card>
+
+        {/* ── GitHub Personal Access Token ── */}
+        <Card title={<span className="flex items-center gap-2"><Key size={14} />GitHub Update-Token</span>}>
+          <GitHubTokenCard status={status} onReload={load} />
         </Card>
 
         {/* ── Live-Refresh-Intervall ── */}

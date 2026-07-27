@@ -145,7 +145,7 @@ export default function Webhooks() {
       </Card>
 
       {/* ── Webhook hinzufügen ─────────────────────────────────────────── */}
-      <Modal open={showAdd} onClose={() => { setShowAdd(false); resetForm(); }} title="Webhook hinzufügen"
+      <Modal open={showAdd} onClose={() => { setShowAdd(false); resetForm(); }} title="Webhook hinzufügen" zIndex="z-[60]"
         footer={<>
           <Button variant="ghost" size="sm" onClick={() => { setShowAdd(false); resetForm(); }}>Abbrechen</Button>
           <Button size="sm" onClick={save} disabled={!canSave()}>Speichern</Button>

@@ -10,7 +10,7 @@ const getSetting = k =>
 
 // ─── Axios-Instance on-demand ─────────────────────────────────────────────────
 
-function client() {
+function client(timeoutMs = 30000) {
   const token = getSetting('dockhandApiToken');
   const base  = (getSetting('dockhandUrl') || '').replace(/\/$/, '');
   if (!base)  throw new Error('Dockhand URL nicht konfiguriert (Einstellungen → Dockhand)');
@@ -18,14 +18,15 @@ function client() {
   return axios.create({
     baseURL: base,
     headers: { Authorization: `Bearer ${token}` },
-    timeout: 12000,
+    timeout: timeoutMs,
   });
 }
 
 // ─── Zentraler Aufruf mit sprechenden Fehlermeldungen ────────────────────────
 
 async function call(method, path, opts = {}) {
-  const inst = client(); // wirft direkt wenn nicht konfiguriert
+  const timeoutMs = opts.timeout ?? 30000;
+  const inst = client(timeoutMs); // wirft direkt wenn nicht konfiguriert
   try {
     return await inst({ method, url: path, ...opts });
   } catch (err) {
@@ -88,9 +89,9 @@ module.exports = {
 
   // ── Images ──
   getImages:    (envId)         => call('GET',    `/api/images?env=${encodeURIComponent(envId)}`),
-  pullImage:    (envId, image)  => call('POST',   `/api/images/pull?env=${encodeURIComponent(envId)}`, { data: { image } }),
+  pullImage:    (envId, image)  => call('POST',   `/api/images/pull?env=${encodeURIComponent(envId)}`, { data: { image }, timeout: 120000 }),
   removeImage:  (envId, id)     => call('DELETE', `/api/images/${encodeURIComponent(id)}?env=${encodeURIComponent(envId)}`),
-  pruneImages:  (envId)         => call('POST',   `/api/images/prune?env=${encodeURIComponent(envId)}`),
+  pruneImages:  (envId)         => call('POST',   `/api/images/prune?env=${encodeURIComponent(envId)}`, { timeout: 120000 }),
 
   // ── Volumes ──
   getVolumes:   (envId)         => call('GET',    `/api/volumes?env=${encodeURIComponent(envId)}`),
@@ -105,7 +106,7 @@ module.exports = {
   // ── Stacks ──
   getStacks:    (envId)         => call('GET',    `/api/stacks?env=${encodeURIComponent(envId)}`),
   removeStack:  (envId, id)     => call('DELETE', `/api/stacks/${encodeURIComponent(id)}?env=${encodeURIComponent(envId)}`),
-  startStack:   (envId, id)     => call('POST',   `/api/stacks/${encodeURIComponent(id)}/start?env=${encodeURIComponent(envId)}`),
-  stopStack:    (envId, id)     => call('POST',   `/api/stacks/${encodeURIComponent(id)}/stop?env=${encodeURIComponent(envId)}`),
-  updateStack:  (envId, id, body) => call('POST', `/api/stacks/${encodeURIComponent(id)}/deploy?env=${encodeURIComponent(envId)}`, { data: body }),
+  startStack:   (envId, id)     => call('POST',   `/api/stacks/${encodeURIComponent(id)}/start?env=${encodeURIComponent(envId)}`, { timeout: 120000 }),
+  stopStack:    (envId, id)     => call('POST',   `/api/stacks/${encodeURIComponent(id)}/stop?env=${encodeURIComponent(envId)}`, { timeout: 60000 }),
+  updateStack:  (envId, id, body) => call('POST', `/api/stacks/${encodeURIComponent(id)}/deploy?env=${encodeURIComponent(envId)}`, { data: body, timeout: 120000 }),
 };
