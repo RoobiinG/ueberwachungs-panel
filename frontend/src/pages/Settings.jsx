@@ -1207,7 +1207,7 @@ export default function Settings() {
 
         {/* ── GitHub Personal Access Token ── */}
         <Card title={<span className="flex items-center gap-2"><Key size={14} />GitHub Update-Token</span>}>
-          <GitHubTokenCard status={status} onReload={load} />
+          <GitHubTokenCard status={status} onReload={loadAdmin} />
         </Card>
 
         {/* ── Live-Refresh-Intervall ── */}
