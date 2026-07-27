@@ -338,6 +338,47 @@ function ModulesToggleCard() {
   );
 }
 
+// ── Pride Flag Anzeige in der Sidebar Toggle ──────────────────────────────────
+function PrideFlagToggleCard() {
+  const [enabled, setEnabled] = useState(() => localStorage.getItem('show_pride_flag') !== 'false');
+  const [msg, setMsg] = useState('');
+
+  const toggle = () => {
+    const next = !enabled;
+    setEnabled(next);
+    localStorage.setItem('show_pride_flag', next ? 'true' : 'false');
+    window.dispatchEvent(new Event('pride_flag_change'));
+    setMsg(`✓ Einstellung gespeichert! Pride Flag in Sidebar ist jetzt ${next ? 'aktiviert' : 'deaktiviert'}.`);
+    setTimeout(() => setMsg(''), 3000);
+  };
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-panel-muted leading-relaxed">
+        Steuere, ob das Progress Pride Flag Symbol unten in der Seitenleiste (neben deinem Benutzernamen) angezeigt werden soll.
+      </p>
+      <div className="flex items-center justify-between py-1.5 border-t border-panel-border/40">
+        <div className="flex items-center gap-2">
+          <span
+            className="inline-flex items-center justify-center w-6 h-4 rounded-[3px] shadow-sm border border-white/10 text-white text-[10px]"
+            style={{
+              background: 'linear-gradient(90deg, #FF0018 0%, #FFA52C 16%, #FFFF41 33%, #008018 50%, #0000F9 66%, #86007D 83%, #5BCEFA 90%, #F5A9B8 100%)'
+            }}
+          >
+            🏳️‍🌈
+          </span>
+          <div>
+            <div className="text-xs font-medium text-panel-text">Pride Flag in der Sidebar anzeigen</div>
+            <div className="text-[11px] text-panel-muted">Zeigt ein dezentes Progress Pride Symbol neben dem Benutzernamen</div>
+          </div>
+        </div>
+        <Toggle on={enabled} onToggle={toggle} />
+      </div>
+      {msg && <p className="text-xs text-panel-green">{msg}</p>}
+    </div>
+  );
+}
+
 // ── UA-Hilfsfunktionen ─────────────────────────────────────────────────────────
 function parseBrowser(ua = '') {
   if (!ua) return 'Unbekannt';
@@ -1454,6 +1495,11 @@ export default function Settings() {
         {/* ── Aktive Module & Funktionen ── */}
         <Card title={<span className="flex items-center gap-2"><Layers size={14} />Aktive Module</span>}>
           <ModulesToggleCard />
+        </Card>
+
+        {/* ── Darstellung & Design ── */}
+        <Card title={<span className="flex items-center gap-2"><Eye size={14} />Darstellung & Design</span>}>
+          <PrideFlagToggleCard />
         </Card>
 
         {/* ── GitHub Personal Access Token ── */}

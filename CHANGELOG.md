@@ -4,6 +4,23 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.48.8] - 2026-07-27 (Build 256) — *Progress Pride Sidebar Flag (Deaktivierbar)*
+
+### ✨ Neue Funktionen & Features
+- **Progress Pride Flag Badge in der Seitenleiste (`Sidebar.jsx`)**:
+  - Unten in der Seitenleiste (direkt rechts neben dem Benutzernamen im Footer-Bereich) wird ab sofort ein elegantes Progress Pride Flag Symbol (`🏳️‍🌈`) mit 11-farbigem Gradient-Hintergrund angezeigt.
+  - Im eingeklappten Zustand der Sidebar erscheint das Symbol kompakt im Footer.
+- **Benutzer-Einstellung zum Deaktivieren (`Settings.jsx`)**:
+  - Unter **Einstellungen** wurde die neue Kategorie **Darstellung & Design** hinzugefügt.
+  - Dort kann das Pride Flag Symbol in der Seitenleiste über einen Schalter ("Pride Flag in der Sidebar anzeigen") jederzeit von jedem Nutzer einzeln aktiviert oder deaktiviert werden.
+  - Die Änderung wirkt **sofort live** in der Seitenleiste ohne Neuladen der Seite (`localStorage` + `pride_flag_change` Event).
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- `version.json` synchron auf **`1.48.8` (Build 256)** erhöht.
+- Keine Backend-Datenbankmigrationen erforderlich, da die Anzeigepräferenz individuell pro Browser im `localStorage` hinterlegt wird (`show_pride_flag`).
+
+---
+
 ## [1.48.7] - 2026-07-27 (Build 255) — *Remove Top Accent Bar*
 
 ### 🎨 Design & Layout Anpassungen

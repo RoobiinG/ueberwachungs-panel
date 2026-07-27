@@ -44,6 +44,19 @@ export const Sidebar = () => {
   const [modules, setModules] = useState({});
   const [updateStatus, setUpdateStatus] = useState(null);
   const { errors, clearErrors } = useErrors();
+  const [showPrideFlag, setShowPrideFlag] = useState(() => localStorage.getItem('show_pride_flag') !== 'false');
+
+  useEffect(() => {
+    const handleStorage = () => {
+      setShowPrideFlag(localStorage.getItem('show_pride_flag') !== 'false');
+    };
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener('pride_flag_change', handleStorage);
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('pride_flag_change', handleStorage);
+    };
+  }, []);
 
   useEffect(() => {
     axios.get('/api/version').then(r => setVersion(r.data)).catch(() => {});
@@ -135,15 +148,31 @@ export const Sidebar = () => {
       {/* ── Benutzer-Info + Version ───────────────────────────────────────── */}
       <div className="px-3 py-3 border-t border-panel-border">
         {!collapsed && user && (
-          <div className="text-xs text-panel-muted truncate">
-            <span className="text-panel-text font-medium">{user.username}</span>
-            <span className="ml-1 opacity-60">({user.roleLabel || user.role})</span>
+          <div className="flex items-center justify-between text-xs text-panel-muted">
+            <div className="truncate">
+              <span className="text-panel-text font-medium">{user.username}</span>
+              <span className="ml-1 opacity-60">({user.roleLabel || user.role})</span>
+            </div>
+            {showPrideFlag && (
+              <span
+                title="Progress Pride Flag (In den Einstellungen deaktivierbar)"
+                className="inline-flex items-center justify-center px-1.5 py-0.5 rounded-[3px] text-[10px] text-white shadow-sm flex-shrink-0 ml-1.5 cursor-help transition-transform hover:scale-105 border border-white/10"
+                style={{
+                  background: 'linear-gradient(90deg, #FF0018 0%, #FFA52C 16%, #FFFF41 33%, #008018 50%, #0000F9 66%, #86007D 83%, #5BCEFA 90%, #F5A9B8 100%)'
+                }}
+              >
+                <span>🏳️‍🌈</span>
+              </span>
+            )}
           </div>
         )}
         {version && (
-          <div className={`mt-1 text-[10px] text-panel-muted/50 ${collapsed ? 'text-center' : ''}`}
+          <div className={`mt-1 flex items-center justify-between text-[10px] text-panel-muted/50 ${collapsed ? 'justify-center' : ''}`}
             title={`Build ${version.build} · ${version.date}`}>
-            {collapsed ? `v${version.version}` : `v${version.version} · Build ${version.build}`}
+            <span>{collapsed ? `v${version.version}` : `v${version.version} · Build ${version.build}`}</span>
+            {showPrideFlag && collapsed && (
+              <span title="Progress Pride Flag" className="text-[10px] ml-1">🏳️‍🌈</span>
+            )}
           </div>
         )}
         {updateStatus?.panel?.available && !collapsed && (
