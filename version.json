@@ -1,6 +1,6 @@
 {
-  "version": "1.48.9",
-  "build": 257,
+  "version": "1.48.10",
+  "build": 258,
   "date": "2026-07-28",
-  "codename": "Repo-Hygiene & Gemeinsame Agenten-Regeln"
+  "codename": "Workflow-Actions auf Node 24"
 }
