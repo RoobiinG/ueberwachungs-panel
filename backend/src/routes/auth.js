@@ -59,15 +59,61 @@ async function sendResetMail(toEmail, resetUrl) {
   });
 }
 
+async function send2faMail(toEmail, code) {
+  const nodemailer = require('nodemailer');
+  const smtp = getSmtp();
+  if (!smtp.host) throw new Error('SMTP nicht konfiguriert');
+  const transporter = nodemailer.createTransport({
+    host: smtp.host, port: smtp.port, secure: smtp.secure,
+    auth: smtp.user ? { user: smtp.user, pass: smtp.pass } : undefined,
+  });
+  await transporter.sendMail({
+    from:    smtp.from,
+    to:      toEmail,
+    subject: '2FA-Bestätigungscode — Überwachungs-Panel',
+    text:    `Dein 2FA Bestätigungscode für das Überwachungs-Panel lautet: ${code}\n\nDer Code ist 10 Minuten gültig.`,
+    html:    `<p>Dein 2FA Bestätigungscode für das Überwachungs-Panel lautet:</p><h2 style="font-size:24px;letter-spacing:4px;color:#3b82f6;">${code}</h2><p>Der Code ist 10 Minuten gültig.</p>`,
+  });
+}
+
 // ─── Login ────────────────────────────────────────────────────────────────────
 
-router.post('/login', loginLimiter, (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Benutzername und Passwort erforderlich' });
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
   if (!user || !bcrypt.compareSync(password, user.password)) {
     return res.status(401).json({ error: 'Ungültige Anmeldedaten' });
   }
+
+  // 2FA Prüfung
+  if (user.twofa_type && user.twofa_type !== 'none') {
+    const tempToken = jwt.sign(
+      { id: user.id, username: user.username, is2fa: true },
+      process.env.JWT_SECRET,
+      { expiresIn: '10m' }
+    );
+    if (user.twofa_type === 'email') {
+      if (!user.email) {
+        return res.status(400).json({ error: 'E-Mail-2FA ist aktiviert, aber im Profil ist keine E-Mail hinterlegt.' });
+      }
+      const code = String(Math.floor(100000 + Math.random() * 900000));
+      const expires = Date.now() + 10 * 60_000;
+      db.prepare('UPDATE users SET twofa_code = ?, twofa_expires = ? WHERE id = ?').run(code, expires, user.id);
+      try {
+        await send2faMail(user.email, code);
+      } catch (err) {
+        return res.status(500).json({ error: 'E-Mail konnte nicht gesendet werden: ' + err.message });
+      }
+    }
+    return res.json({
+      require2FA: true,
+      twofaType: user.twofa_type,
+      tempToken,
+      message: user.twofa_type === 'email' ? '6-stelliger Code per E-Mail gesendet.' : '6-stelligen Authenticator-Code eingeben.'
+    });
+  }
+
   const token = jwt.sign(
     { id: user.id, username: user.username, role: user.role },
     process.env.JWT_SECRET,
@@ -78,6 +124,52 @@ router.post('/login', loginLimiter, (req, res) => {
   const hideLocal = roleRow?.is_admin ? false : !!roleRow?.hide_local;
   storeSession(token, user.id, req);
   auditLog(req, 'login', 'user', user.username);
+  res.json({ token, user: { id: user.id, username: user.username, role: user.role }, permissions, hideLocal });
+});
+
+// ─── 2FA Verify (Login Schritt 2) ─────────────────────────────────────────────
+router.post('/2fa/verify', loginLimiter, (req, res) => {
+  const { tempToken, code } = req.body;
+  if (!tempToken || !code) return res.status(400).json({ error: 'Token und Code erforderlich' });
+
+  let decoded;
+  try {
+    decoded = jwt.verify(tempToken, process.env.JWT_SECRET);
+  } catch {
+    return res.status(401).json({ error: 'Abgelaufene oder ungültige Sitzung. Bitte neu einloggen.' });
+  }
+  if (!decoded.is2fa || !decoded.id) {
+    return res.status(401).json({ error: 'Ungültiges 2FA-Token' });
+  }
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(decoded.id);
+  if (!user) return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+
+  const { verifyTOTP } = require('../utils/totp');
+
+  if (user.twofa_type === 'email') {
+    if (!user.twofa_code || user.twofa_code !== String(code).trim() || Date.now() > user.twofa_expires) {
+      return res.status(401).json({ error: 'Ungültiger oder abgelaufener Code' });
+    }
+    db.prepare('UPDATE users SET twofa_code = NULL, twofa_expires = NULL WHERE id = ?').run(user.id);
+  } else if (user.twofa_type === 'totp') {
+    if (!verifyTOTP(user.twofa_secret, code)) {
+      return res.status(401).json({ error: 'Ungültiger Authenticator-Code' });
+    }
+  } else {
+    return res.status(400).json({ error: '2FA ist für dieses Konto nicht aktiv' });
+  }
+
+  const token = jwt.sign(
+    { id: user.id, username: user.username, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
+  );
+  const permissions = getPermissions(user.role);
+  const roleRow = db.prepare('SELECT hide_local, is_admin FROM roles WHERE name = ?').get(user.role);
+  const hideLocal = roleRow?.is_admin ? false : !!roleRow?.hide_local;
+  storeSession(token, user.id, req);
+  auditLog(req, 'login.2fa', 'user', user.username);
   res.json({ token, user: { id: user.id, username: user.username, role: user.role }, permissions, hideLocal });
 });
 
@@ -136,7 +228,7 @@ router.post('/reset-password', async (req, res) => {
 // ─── Auth-pflichtiger Bereich ─────────────────────────────────────────────────
 
 router.get('/me', authMiddleware, (req, res) => {
-  const user = db.prepare('SELECT id, username, role, email, created_at FROM users WHERE id = ?').get(req.user.id);
+  const user = db.prepare('SELECT id, username, role, email, twofa_type, created_at FROM users WHERE id = ?').get(req.user.id);
   if (!user) return res.status(404).json({ error: 'Benutzer nicht gefunden' });
   const permissions = getPermissions(user.role);
   // Rollenbezeichnung + hide_local-Flag aus der roles-Tabelle holen
@@ -164,4 +256,83 @@ router.put('/me/email', authMiddleware, (req, res) => {
   res.json({ success: true });
 });
 
+// ─── 2FA Verwaltung (Konto) ───────────────────────────────────────────────────
+
+router.get('/2fa/status', authMiddleware, (req, res) => {
+  const user = db.prepare('SELECT twofa_type, email FROM users WHERE id = ?').get(req.user.id);
+  res.json({
+    twofa_type: user?.twofa_type || 'none',
+    hasEmail: !!user?.email,
+  });
+});
+
+router.post('/2fa/setup', authMiddleware, async (req, res) => {
+  const { type } = req.body;
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!user) return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+
+  if (type === 'email') {
+    if (!user.email) {
+      return res.status(400).json({ error: 'Bitte zuerst eine E-Mail-Adresse im Profil hinterlegen' });
+    }
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const expires = Date.now() + 10 * 60_000;
+    db.prepare('UPDATE users SET twofa_code = ?, twofa_expires = ? WHERE id = ?').run(code, expires, user.id);
+    try {
+      await send2faMail(user.email, code);
+      return res.json({ ok: true, type: 'email', message: 'Bestätigungscode an deine E-Mail-Adresse gesendet.' });
+    } catch (err) {
+      return res.status(500).json({ error: 'E-Mail konnte nicht gesendet werden: ' + err.message });
+    }
+  } else if (type === 'totp') {
+    const { generateSecret, getOtpAuthUrl, generateQrSvg } = require('../utils/totp');
+    const secret = generateSecret();
+    const otpauthUrl = getOtpAuthUrl('Ueberwachungs-Panel', user.username, secret);
+    const qrSvg = generateQrSvg(otpauthUrl);
+    return res.json({ ok: true, type: 'totp', secret, qrSvg, otpauthUrl });
+  }
+  res.status(400).json({ error: 'Ungültiger 2FA-Typ' });
+});
+
+router.post('/2fa/enable', authMiddleware, (req, res) => {
+  const { type, secret, code } = req.body;
+  if (!code) return res.status(400).json({ error: 'Bestätigungscode erforderlich' });
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!user) return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+
+  if (type === 'email') {
+    if (!user.twofa_code || user.twofa_code !== String(code).trim() || Date.now() > user.twofa_expires) {
+      return res.status(400).json({ error: 'Ungültiger oder abgelaufener E-Mail-Code' });
+    }
+    db.prepare("UPDATE users SET twofa_type = 'email', twofa_code = NULL, twofa_expires = NULL WHERE id = ?").run(user.id);
+    auditLog(req, '2fa.enable_email', 'user', user.username);
+    return res.json({ ok: true, twofa_type: 'email' });
+  } else if (type === 'totp') {
+    const { verifyTOTP } = require('../utils/totp');
+    if (!secret || !verifyTOTP(secret, code)) {
+      return res.status(400).json({ error: 'Ungültiger Authenticator-Code' });
+    }
+    db.prepare("UPDATE users SET twofa_type = 'totp', twofa_secret = ?, twofa_code = NULL, twofa_expires = NULL WHERE id = ?").run(secret, user.id);
+    auditLog(req, '2fa.enable_totp', 'user', user.username);
+    return res.json({ ok: true, twofa_type: 'totp' });
+  }
+  res.status(400).json({ error: 'Ungültiger 2FA-Typ' });
+});
+
+router.post('/2fa/disable', authMiddleware, (req, res) => {
+  const { password } = req.body;
+  if (!password) return res.status(400).json({ error: 'Passwort zur Bestätigung erforderlich' });
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!user || !bcrypt.compareSync(password, user.password)) {
+    return res.status(401).json({ error: 'Falsches Passwort' });
+  }
+
+  db.prepare("UPDATE users SET twofa_type = 'none', twofa_secret = NULL, twofa_code = NULL, twofa_expires = NULL WHERE id = ?").run(user.id);
+  auditLog(req, '2fa.disable', 'user', user.username);
+  res.json({ ok: true, twofa_type: 'none' });
+});
+
 module.exports = router;
+

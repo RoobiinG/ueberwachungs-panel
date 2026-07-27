@@ -51,6 +51,15 @@ export const AuthProvider = ({ children }) => {
 
   const login = useCallback(async (username, password) => {
     const { data } = await axios.post('/api/auth/login', { username, password });
+    if (data.require2FA) {
+      return data;
+    }
+    saveSession(data.user, data.token, data.permissions || [], !!data.hideLocal);
+    return data;
+  }, [saveSession]);
+
+  const verify2FA = useCallback(async (tempToken, code) => {
+    const { data } = await axios.post('/api/auth/2fa/verify', { tempToken, code });
     saveSession(data.user, data.token, data.permissions || [], !!data.hideLocal);
     return data;
   }, [saveSession]);
@@ -78,7 +87,7 @@ export const AuthProvider = ({ children }) => {
   return (
     <AuthContext.Provider value={{
       user, token, permissions,
-      login, logout, saveSession,
+      login, verify2FA, logout, saveSession,
       isAdmin, isOperator, canWrite,
       hasPermission, hideLocal,
     }}>

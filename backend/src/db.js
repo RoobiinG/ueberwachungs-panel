@@ -126,6 +126,10 @@ try { db.exec('ALTER TABLE remote_agents ADD COLUMN fingerprint TEXT NOT NULL DE
 try { db.exec('ALTER TABLE users ADD COLUMN email TEXT'); } catch {}
 try { db.exec('ALTER TABLE users ADD COLUMN reset_token TEXT'); } catch {}
 try { db.exec('ALTER TABLE users ADD COLUMN reset_expires INTEGER'); } catch {}
+try { db.exec("ALTER TABLE users ADD COLUMN twofa_type TEXT NOT NULL DEFAULT 'none'"); } catch {}
+try { db.exec('ALTER TABLE users ADD COLUMN twofa_secret TEXT'); } catch {}
+try { db.exec('ALTER TABLE users ADD COLUMN twofa_code TEXT'); } catch {}
+try { db.exec('ALTER TABLE users ADD COLUMN twofa_expires INTEGER'); } catch {}
 // Alte 'viewer'-Rolle auf 'guest' migrieren
 try { db.exec("UPDATE users SET role = 'guest' WHERE role = 'viewer'"); } catch {}
 // Username 'admin' → 'Admin' (Großschreibung)

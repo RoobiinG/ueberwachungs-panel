@@ -8,7 +8,7 @@ import {
   RefreshCw, Trash2, Lock, Mail, Key, ShieldCheck, Send,
   User, Settings2, Layers, Timer, Bell, Monitor, Smartphone,
   Globe, LogOut, Laptop, PackageCheck,
-  Download, Upload, Database
+  Download, Upload, Database, QrCode, Copy, Check, ShieldAlert
 } from 'lucide-react';
 import { invalidateLiveIntervalCache } from '../hooks/useLiveInterval';
 
@@ -451,6 +451,13 @@ export default function Settings() {
   const [passkeys,     setPasskeys]     = useState([]);
   const [passkeyName,  setPasskeyName]  = useState('');
 
+  // 2FA
+  const [twoFaStatus, setTwoFaStatus] = useState({ twofa_type: 'none', hasEmail: false });
+  const [twoFaSetup, setTwoFaSetup]   = useState(null);
+  const [twoFaCode, setTwoFaCode]     = useState('');
+  const [twoFaPw, setTwoFaPw]         = useState('');
+  const [copied2FA, setCopied2FA]     = useState(false);
+
   // Live-Refresh-Interval
   const [liveInterval,    setLiveInterval]    = useState(15);
 
@@ -543,10 +550,18 @@ export default function Settings() {
     } catch {}
   };
 
+  const loadTwoFA = async () => {
+    try {
+      const { data } = await axios.get('/api/auth/2fa/status');
+      setTwoFaStatus(data);
+    } catch {}
+  };
+
   useEffect(() => {
     loadAdmin();
     loadPasskeys();
     loadEmail();
+    loadTwoFA();
     loadDockhand();
     loadPatchmonLinks();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -617,6 +632,52 @@ export default function Settings() {
       await loadPasskeys();
       feedback('passkey', 'ok', 'Passkey gelöscht');
     } catch { feedback('passkey', 'err', 'Fehler beim Löschen'); }
+  };
+
+  const start2faSetup = async (type) => {
+    busy('twofa', true);
+    try {
+      const { data } = await axios.post('/api/auth/2fa/setup', { type });
+      setTwoFaSetup(data);
+      setTwoFaCode('');
+      feedback('twofa', 'ok', data.message || 'Setup gestartet');
+    } catch (err) {
+      feedback('twofa', 'err', err.response?.data?.error || 'Fehler beim Setup');
+    }
+    busy('twofa', false);
+  };
+
+  const enable2fa = async () => {
+    if (!twoFaCode || twoFaCode.length !== 6) return feedback('twofa', 'err', 'Bitte 6-stelligen Code eingeben');
+    busy('twofa', true);
+    try {
+      await axios.post('/api/auth/2fa/enable', {
+        type: twoFaSetup.type,
+        secret: twoFaSetup.secret,
+        code: twoFaCode
+      });
+      setTwoFaSetup(null);
+      setTwoFaCode('');
+      await loadTwoFA();
+      feedback('twofa', 'ok', '2FA erfolgreich aktiviert');
+    } catch (err) {
+      feedback('twofa', 'err', err.response?.data?.error || 'Ungültiger Code');
+    }
+    busy('twofa', false);
+  };
+
+  const disable2fa = async () => {
+    if (!twoFaPw) return feedback('twofa', 'err', 'Bitte Passwort zur Bestätigung eingeben');
+    busy('twofa', true);
+    try {
+      await axios.post('/api/auth/2fa/disable', { password: twoFaPw });
+      setTwoFaPw('');
+      await loadTwoFA();
+      feedback('twofa', 'ok', '2FA deaktiviert');
+    } catch (err) {
+      feedback('twofa', 'err', err.response?.data?.error || 'Passwort falsch');
+    }
+    busy('twofa', false);
   };
 
   // ── System-Aktionen (Admin) ───────────────────────────────────────────────
@@ -956,6 +1017,125 @@ export default function Settings() {
               </Button>
             </div>
             <Msg msg={msgs.passkey} />
+          </div>
+        </Card>
+
+        {/* ── 2FA ── */}
+        <Card title={<span className="flex items-center gap-2"><ShieldAlert size={14} />Zwei-Faktor-Authentifizierung (2FA)</span>}>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-panel-muted">Aktueller Status:</span>
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                twoFaStatus.twofa_type !== 'none'
+                  ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/30'
+                  : 'bg-panel-border/40 text-panel-muted border border-panel-border'
+              }`}>
+                {twoFaStatus.twofa_type === 'email' ? 'Aktiv (E-Mail)' :
+                 twoFaStatus.twofa_type === 'totp' ? 'Aktiv (Authenticator-App)' : 'Deaktiviert'}
+              </span>
+            </div>
+
+            {twoFaStatus.twofa_type === 'none' && !twoFaSetup && (
+              <div className="space-y-3 pt-1">
+                <p className="text-xs text-panel-muted leading-relaxed">
+                  Schütze dein Konto zusätzlich durch eine 6-stellige PIN-Abfrage bei jeder Anmeldung.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={() => start2faSetup('totp')} disabled={loading.twofa} size="sm">
+                    <QrCode size={13} className="mr-1.5" />
+                    Mit App einrichten (TOTP)
+                  </Button>
+                  <Button onClick={() => start2faSetup('email')} disabled={loading.twofa} size="sm" variant="secondary">
+                    <Mail size={13} className="mr-1.5" />
+                    Mit E-Mail einrichten
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {twoFaSetup && (
+              <div className="space-y-4 rounded-lg border border-panel-border bg-panel-surface/50 p-3.5">
+                {twoFaSetup.type === 'totp' ? (
+                  <div className="space-y-3">
+                    <p className="text-xs font-medium text-panel-text">1. QR-Code mit Authenticator-App scannen:</p>
+                    <div className="flex justify-center bg-white p-3 rounded-lg shadow-sm border border-panel-border/20 w-fit mx-auto">
+                      <div className="w-40 h-40" dangerouslySetInnerHTML={{ __html: twoFaSetup.qrSvg }} />
+                    </div>
+                    <div className="text-center">
+                      <span className="text-[11px] text-panel-muted block mb-1">Oder manuellen Sicherheitsschlüssel eingeben:</span>
+                      <div className="inline-flex items-center gap-1.5 bg-panel-card border border-panel-border rounded px-2.5 py-1">
+                        <code className="text-xs font-mono font-semibold tracking-wider text-panel-accent select-all">
+                          {twoFaSetup.secret}
+                        </code>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(twoFaSetup.secret);
+                            setCopied2FA(true);
+                            setTimeout(() => setCopied2FA(false), 2000);
+                          }}
+                          className="text-panel-muted hover:text-panel-text transition-colors p-0.5"
+                          title="Geheimsymbol kopieren"
+                        >
+                          {copied2FA ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-panel-text">1. Bestätigungscode prüfen</p>
+                    <p className="text-xs text-panel-muted leading-relaxed">
+                      Wir haben dir einen 6-stelligen Code an <span className="text-panel-text font-medium">{email}</span> gesendet.
+                    </p>
+                  </div>
+                )}
+
+                <div className="space-y-2 pt-1 border-t border-panel-border/50">
+                  <label className="block text-xs font-medium text-panel-text">
+                    {twoFaSetup.type === 'totp' ? '2. 6-stelligen Code eingeben:' : '2. E-Mail Code eingeben:'}
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={twoFaCode}
+                      onChange={e => setTwoFaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="123456"
+                      maxLength={6}
+                      className="w-32 bg-panel-card border border-panel-border rounded-md px-3 py-1.5 text-center text-sm font-mono tracking-widest text-panel-text focus:outline-none focus:border-panel-accent"
+                    />
+                    <Button onClick={enable2fa} disabled={loading.twofa || twoFaCode.length !== 6} size="sm">
+                      Aktivieren
+                    </Button>
+                    <Button onClick={() => { setTwoFaSetup(null); setTwoFaCode(''); }} variant="secondary" size="sm">
+                      Abbrechen
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {twoFaStatus.twofa_type !== 'none' && (
+              <div className="space-y-3 pt-2 border-t border-panel-border/40">
+                <p className="text-xs text-panel-muted">
+                  Um die Zwei-Faktor-Authentifizierung zu deaktivieren, bestätige bitte dein aktuelles Passwort:
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="password"
+                    value={twoFaPw}
+                    onChange={e => setTwoFaPw(e.target.value)}
+                    placeholder="Passwort"
+                    className="flex-1 bg-panel-surface border border-panel-border rounded-md px-3 py-1.5 text-sm text-panel-text focus:outline-none focus:border-panel-accent"
+                  />
+                  <Button onClick={disable2fa} disabled={loading.twofa || !twoFaPw} size="sm" variant="danger">
+                    2FA Deaktivieren
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            <Msg msg={msgs.twofa} />
           </div>
         </Card>
 

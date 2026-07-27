@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Server, Eye, EyeOff, KeyRound } from 'lucide-react';
+import { Server, Eye, EyeOff, KeyRound, Shield, ArrowLeft } from 'lucide-react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 
@@ -11,7 +11,9 @@ export default function Login() {
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(false);
   const [pkLoading, setPkLoading] = useState(false);
-  const { login, saveSession }  = useAuth();
+  const [step2FA, setStep2FA]   = useState(null);
+  const [code2FA, setCode2FA]   = useState('');
+  const { login, verify2FA, saveSession } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
@@ -19,10 +21,33 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      await login(username, password);
-      navigate('/');
+      const res = await login(username, password);
+      if (res.require2FA) {
+        setStep2FA({
+          twofaType: res.twofaType,
+          tempToken: res.tempToken,
+          message: res.message
+        });
+        setCode2FA('');
+      } else {
+        navigate('/');
+      }
     } catch (err) {
       setError(err.response?.data?.error || 'Anmeldung fehlgeschlagen');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerify2FA = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      await verify2FA(step2FA.tempToken, code2FA);
+      navigate('/');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Ungültiger 2FA-Code');
     } finally {
       setLoading(false);
     }
@@ -32,10 +57,8 @@ export default function Login() {
     setError('');
     setPkLoading(true);
     try {
-      // WebAuthn-Browser-Paket dynamisch importieren
       const { startAuthentication } = await import('@simplewebauthn/browser');
       const optRes  = await axios.post('/api/auth/passkey/login/start');
-      // v12 API: { optionsJSON: ... }
       const assertion = await startAuthentication({ optionsJSON: optRes.data });
       const finRes  = await axios.post('/api/auth/passkey/login/finish', assertion);
       saveSession(finRes.data.user, finRes.data.token);
@@ -58,75 +81,125 @@ export default function Login() {
           <p className="text-sm text-panel-muted mt-1">Anmelden um fortzufahren</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-panel-card border border-panel-border rounded-lg p-6 space-y-4">
-          {error && (
-            <div className="bg-panel-red/10 border border-panel-red/30 text-panel-red text-sm rounded-md px-3 py-2">
-              {error}
+        {step2FA ? (
+          <form onSubmit={handleVerify2FA} className="bg-panel-card border border-panel-border rounded-lg p-6 space-y-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-panel-text mb-1">
+              <Shield size={18} className="text-panel-accent" />
+              Zwei-Faktor-Authentifizierung
             </div>
-          )}
+            <p className="text-xs text-panel-muted leading-relaxed">
+              {step2FA.message || (step2FA.twofaType === 'email'
+                ? 'Wir haben dir einen 6-stelligen Bestätigungscode per E-Mail gesendet.'
+                : 'Bitte gib den 6-stelligen Code aus deiner Authenticator-App ein.')}
+            </p>
 
-          <div>
-            <label className="block text-xs font-medium text-panel-muted mb-1">Benutzername</label>
-            <input
-              type="text"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
-              className="w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:border-panel-accent transition-colors"
-              placeholder="admin"
-              autoFocus
-            />
-          </div>
+            {error && (
+              <div className="bg-panel-red/10 border border-panel-red/30 text-panel-red text-sm rounded-md px-3 py-2">
+                {error}
+              </div>
+            )}
 
-          <div>
-            <label className="block text-xs font-medium text-panel-muted mb-1">Passwort</label>
-            <div className="relative">
+            <div>
+              <label className="block text-xs font-medium text-panel-muted mb-1.5">6-stelliger Code</label>
               <input
-                type={showPw ? 'text' : 'password'}
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                className="w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 pr-9 text-sm text-panel-text focus:outline-none focus:border-panel-accent transition-colors"
-                placeholder="••••••••"
+                type="text"
+                value={code2FA}
+                onChange={e => setCode2FA(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                className="w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-center text-lg font-mono tracking-widest text-panel-text focus:outline-none focus:border-panel-accent transition-colors"
+                placeholder="123456"
+                autoFocus
+                maxLength={6}
               />
-              <button type="button" onClick={() => setShowPw(v => !v)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
-                {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
-              </button>
             </div>
-          </div>
 
-          <button
-            type="submit"
-            disabled={loading || !username || !password}
-            className="w-full bg-panel-accent hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium py-2 rounded-md transition-colors"
-          >
-            {loading ? 'Anmelden...' : 'Anmelden'}
-          </button>
+            <button
+              type="submit"
+              disabled={loading || code2FA.length !== 6}
+              className="w-full bg-panel-accent hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium py-2 rounded-md transition-colors"
+            >
+              {loading ? 'Prüfe Code...' : 'Code bestätigen'}
+            </button>
 
-          {/* Trennlinie */}
-          <div className="flex items-center gap-3">
-            <div className="flex-1 h-px bg-panel-border" />
-            <span className="text-xs text-panel-muted">oder</span>
-            <div className="flex-1 h-px bg-panel-border" />
-          </div>
+            <button
+              type="button"
+              onClick={() => { setStep2FA(null); setCode2FA(''); setError(''); }}
+              className="w-full flex items-center justify-center gap-1.5 text-xs text-panel-muted hover:text-panel-text pt-1 transition-colors"
+            >
+              <ArrowLeft size={13} />Zurück zur Anmeldung
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={handleSubmit} className="bg-panel-card border border-panel-border rounded-lg p-6 space-y-4">
+            {error && (
+              <div className="bg-panel-red/10 border border-panel-red/30 text-panel-red text-sm rounded-md px-3 py-2">
+                {error}
+              </div>
+            )}
 
-          {/* Passkey-Login */}
-          <button
-            type="button"
-            onClick={handlePasskeyLogin}
-            disabled={pkLoading}
-            className="w-full flex items-center justify-center gap-2 border border-panel-border hover:border-panel-accent bg-panel-surface hover:bg-panel-card text-panel-text text-sm font-medium py-2 rounded-md transition-colors disabled:opacity-50"
-          >
-            <KeyRound size={15} className="text-panel-accent" />
-            {pkLoading ? 'Warte auf Passkey...' : 'Mit Passkey anmelden'}
-          </button>
+            <div>
+              <label className="block text-xs font-medium text-panel-muted mb-1">Benutzername</label>
+              <input
+                type="text"
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                className="w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:border-panel-accent transition-colors"
+                placeholder="admin"
+                autoFocus
+              />
+            </div>
 
-          <div className="text-center">
-            <Link to="/forgot-password" className="text-xs text-panel-muted hover:text-panel-accent transition-colors">
-              Passwort vergessen?
-            </Link>
-          </div>
-        </form>
+            <div>
+              <label className="block text-xs font-medium text-panel-muted mb-1">Passwort</label>
+              <div className="relative">
+                <input
+                  type={showPw ? 'text' : 'password'}
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  className="w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 pr-9 text-sm text-panel-text focus:outline-none focus:border-panel-accent transition-colors"
+                  placeholder="••••••••"
+                />
+                <button type="button" onClick={() => setShowPw(v => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
+                  {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || !username || !password}
+              className="w-full bg-panel-accent hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium py-2 rounded-md transition-colors"
+            >
+              {loading ? 'Anmelden...' : 'Anmelden'}
+            </button>
+
+            {/* Trennlinie */}
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px bg-panel-border" />
+              <span className="text-xs text-panel-muted">oder</span>
+              <div className="flex-1 h-px bg-panel-border" />
+            </div>
+
+            {/* Passkey-Login */}
+            <button
+              type="button"
+              onClick={handlePasskeyLogin}
+              disabled={pkLoading}
+              className="w-full flex items-center justify-center gap-2 border border-panel-border hover:border-panel-accent bg-panel-surface hover:bg-panel-card text-panel-text text-sm font-medium py-2 rounded-md transition-colors disabled:opacity-50"
+            >
+              <KeyRound size={15} className="text-panel-accent" />
+              {pkLoading ? 'Warte auf Passkey...' : 'Mit Passkey anmelden'}
+            </button>
+
+            <div className="text-center">
+              <Link to="/forgot-password" className="text-xs text-panel-muted hover:text-panel-accent transition-colors">
+                Passwort vergessen?
+              </Link>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );
 }
+
