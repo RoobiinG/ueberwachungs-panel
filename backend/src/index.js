@@ -95,6 +95,7 @@ app.use('/api/audit',       auth, require('./routes/audit'));
 app.get('/api/logs/share/:token', require('./routes/panelLogsPublic'));
 app.use('/api/logs',        auth, require('./routes/panelLogs'));
 app.use('/api/version',          require('./routes/version'));
+app.use('/api/update',      auth, require('./routes/update'));
 
 // Serve React frontend in production
 const frontendDist = path.join(__dirname, '../../frontend/dist');
@@ -119,6 +120,7 @@ require('./metricsAggregator').start();
 require('./alertEvaluator').start();
 // dockerMetricsRecorder entfernt — Docker-Stats kommen jetzt von Dockhand API
 try { require('./remoteMetricsRecorder').start(); } catch (e) { console.warn('Remote-Metriken deaktiviert:', e.message); }
+try { require('./utils/updateCheck').startPeriodicCheck(); } catch (e) { console.warn('UpdateCheck deaktiviert:', e.message); }
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => console.log(`Überwachungs-Panel running on port ${PORT}`));

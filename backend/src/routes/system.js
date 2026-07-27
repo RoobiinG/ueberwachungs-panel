@@ -36,27 +36,33 @@ router.get('/stats', requirePermission('metrics.view'), async (req, res) => {
     }
 
     if (!disk || disk.length === 0) {
-      disk = siDisk.map(d => ({
-        fs: d.fs, size: d.size, used: d.used, free: d.available, usedPercent: d.use, mount: d.mount,
+      disk = (Array.isArray(siDisk) ? siDisk : []).map(d => ({
+        fs: d.fs || '', size: d.size || 0, used: d.used || 0, free: d.available || 0, usedPercent: d.use || 0, mount: d.mount || '',
       }));
     }
 
     res.json({
-      cpu: { usage: Math.round(cpu.currentLoad || 0), cores: cpu.cpus?.length || 0 },
+      cpu: { usage: Math.round(cpu?.currentLoad || 0), cores: cpu?.cpus?.length || 0 },
       memory: {
-        total: mem.total || 0,
-        used: (mem.total || 0) - (mem.available || 0),
-        free: mem.free || 0,
-        usedPercent: mem.total > 0 ? Math.round(((mem.total - mem.available) / mem.total) * 100) : 0,
+        total: mem?.total || 0,
+        used: (mem?.total || 0) - (mem?.available || 0),
+        free: mem?.free || 0,
+        usedPercent: (mem?.total > 0) ? Math.round(((mem.total - mem.available) / mem.total) * 100) : 0,
       },
       disk: disk || [],
-      network: (network || []).map(n => ({ iface: n.iface, rxBytes: n.rx_bytes, txBytes: n.tx_bytes, rxSec: n.rx_sec, txSec: n.tx_sec })),
+      network: (Array.isArray(network) ? network : []).map(n => ({
+        iface: n.iface || 'eth0',
+        rxBytes: n.rx_bytes || 0,
+        txBytes: n.tx_bytes || 0,
+        rxSec: n.rx_sec || 0,
+        txSec: n.tx_sec || 0,
+      })),
       os: {
-        distro: os.distro,
-        release: os.release,
-        arch: os.arch,
-        hostname: process.env.SERVER_HOSTNAME || os.hostname,
-        uptime: time.uptime,
+        distro: os?.distro || 'Unknown',
+        release: os?.release || '',
+        arch: os?.arch || '',
+        hostname: process.env.SERVER_HOSTNAME || os?.hostname || 'Panel',
+        uptime: time?.uptime || 0,
       },
     });
   } catch (err) {

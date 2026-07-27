@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import {
   Bell, Plus, Trash2, Play, ToggleLeft, ToggleRight,
-  AlertTriangle, Clock, CheckCircle, XCircle, Server, Monitor, Info
+  AlertTriangle, Clock, CheckCircle, XCircle, Server, Monitor, Info, Webhook
 } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { useAuth } from '../context/AuthContext';
+import Webhooks from './Webhooks';
 
 const METRIC_LABELS  = { cpu: 'CPU', memory: 'RAM', disk: 'Disk', net_rx: 'Netzwerk ↓ (RX)', net_tx: 'Netzwerk ↑ (TX)', action: 'Server-Aktionen', patchmon_updates: 'PatchMon Updates', patchmon_security: 'PatchMon Security', hetzner_storage_usage: 'Storage Box', mchost_runtime: 'MC-Host Laufzeit' };
 const METRIC_COLORS  = { cpu: 'text-blue-400', memory: 'text-green-400', disk: 'text-yellow-400', net_rx: 'text-purple-400', net_tx: 'text-purple-400', action: 'text-panel-accent', patchmon_updates: 'text-panel-orange', patchmon_security: 'text-panel-red', hetzner_storage_usage: 'text-panel-accent', mchost_runtime: 'text-panel-green' };
@@ -422,6 +423,7 @@ export default function Alerts() {
   const [agents, setAgents]     = useState([]);
   const [loading, setLoading]   = useState(true);
   const [modalOpen, setModalOpen]   = useState(false);
+  const [webhooksModalOpen, setWebhooksModalOpen] = useState(false);
   const [editRule, setEditRule]     = useState(null);
   const [testStatus, setTestStatus] = useState({});
 
@@ -500,15 +502,17 @@ export default function Alerts() {
       />
 
       {/* ── Alert-Regeln ──────────────────────────────────────────────────────── */}
-      <Card title={
-        <div className="flex items-center justify-between w-full">
-          <span>Alert-Regeln</span>
-          {isAdmin && (
+      <Card title="Alert-Regeln" action={
+        isAdmin && (
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="ghost" onClick={() => setWebhooksModalOpen(true)}>
+              <Webhook size={14} className="mr-1" />Webhooks verwalten
+            </Button>
             <Button size="sm" onClick={() => { setEditRule(null); setModalOpen(true); }}>
               <Plus size={14} className="mr-1" />Neue Regel
             </Button>
-          )}
-        </div>
+          </div>
+        )
       }>
         {loading ? (
           <p className="text-panel-muted text-sm py-4 text-center">Lade...</p>
@@ -682,6 +686,14 @@ export default function Alerts() {
           </div>
         )}
       </Card>
+
+      <Modal open={webhooksModalOpen} onClose={() => { setWebhooksModalOpen(false); load(); }} title="Webhooks verwalten"
+        footer={<Button size="sm" onClick={() => { setWebhooksModalOpen(false); load(); }}>Schließen</Button>}
+      >
+        <div className="max-h-[70vh] overflow-y-auto -mx-2 px-2">
+          <Webhooks />
+        </div>
+      </Modal>
     </div>
   );
 }
