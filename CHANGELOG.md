@@ -4,6 +4,19 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.48.6] - 2026-07-27 (Build 254) — *Docker Background Updater (No HTTP 504 Timeout)*
+
+### 🐛 Bugfixes & Optimierungen
+- **HTTP 504 Gateway Timeout beim Docker-Update (`POST /api/update/run`) behoben**:
+  - Wenn ein Docker-Container ohne `.git`-Verzeichnis aktualisiert wird (`isDockerUpdate = true`), wartet die API nicht mehr synchron auf den potenziell langen `docker pull` Befehl (der bei Reverse-Proxies wie Nginx nach 60 Sekunden zu HTTP 504 führt).
+  - Der Endpunkt antwortet ab sofort in < 10ms mit `HTTP 200 OK` und startet das Ziehen des Images sowie das Neuladen des Containers (`docker pull ... && docker compose up -d`) asynchron im Hintergrund über den Host-Namespace (`nsenter`).
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- `version.json` auf **`1.48.6` (Build 254)** erhöht.
+- Das Web-UI erhält beim Klick auf den Update-Button sofortige Bestätigung ohne Timeout.
+
+---
+
 ## [1.48.5] - 2026-07-27 (Build 253) — *New Rainbow Flag (Progress Pride)*
 
 ### ✨ Neue Funktionen & Features

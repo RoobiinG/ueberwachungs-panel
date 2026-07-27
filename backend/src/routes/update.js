@@ -51,14 +51,9 @@ router.post('/run', requireRole('admin'), async (req, res) => {
         await execPromise('git pull', { cwd: repoDir, timeout: 45000 });
       }
     } else {
-      // Kein .git-Repository (z. B. Docker Container via ghcr.io): Update über Host via nsenter
+      // Kein .git-Repository (z. B. Docker Container via ghcr.io): Update über Host im Hintergrund
       isDockerUpdate = true;
-      console.log('[Update] Docker-Umgebung ohne .git erkannt. Führe Docker-Update über Host (nsenter) aus...');
-      try {
-        await execPromise('nsenter --target 1 --mount --uts --ipc --net --pid -- docker pull ghcr.io/roobiing/ueberwachungs-panel:latest', { timeout: 120_000 });
-      } catch (nsErr) {
-        console.warn('[Update] Docker pull über nsenter Hinweis:', nsErr.message);
-      }
+      console.log('[Update] Docker-Umgebung ohne .git erkannt. Update wird im Hintergrund nach der API-Antwort ausgeführt...');
     }
   } catch (pullErr) {
     console.error('[Update] Update-Fehler:', pullErr.message);
@@ -81,9 +76,9 @@ router.post('/run', requireRole('admin'), async (req, res) => {
   if (isDockerUpdate) {
     log = [{
       hash: 'docker',
-      subject: 'Docker Image Update via ghcr.io/roobiing/ueberwachungs-panel:latest',
+      subject: 'Docker Image Update im Hintergrund gestartet (ghcr.io/roobiing/ueberwachungs-panel:latest)',
       time: 'gerade eben',
-      author: 'Docker'
+      author: 'Docker Auto-Updater'
     }];
   } else {
     try {
@@ -115,26 +110,32 @@ router.post('/run', requireRole('admin'), async (req, res) => {
     console.warn('[Update] CHANGELOG.md nicht lesbar:', e.message);
   }
 
-  // 6. Erfolg melden & anschließend Prozess / Container für Neustart beenden
+  // 6. Erfolg sofort an den Client melden (kein HTTP 504 Gateway Timeout bei langen Docker Pulls)
   res.json({
     success: true,
-    message: isDockerUpdate ? 'Docker Image erfolgreich aktualisiert!' : 'Panel erfolgreich aktualisiert!',
+    message: isDockerUpdate
+      ? 'Docker-Update im Hintergrund gestartet! Der Container wird in ca. 20-30 Sekunden automatisch neu geladen.'
+      : 'Panel erfolgreich aktualisiert!',
     oldVersion: oldVersionStr,
     newVersion: newVersionStr,
     log,
     changelogEntry
   });
 
+  // 7. Im Hintergrund Server neu starten bzw. Docker Pull & Container-Neustart ausführen
   setTimeout(() => {
-    console.log('[Update] Server startet nach automatischem Update neu...');
     if (isDockerUpdate) {
-      exec('nsenter --target 1 --mount --uts --ipc --net --pid -- sh -c "for d in /root /home/* /opt /var/docker /srv/* /app $(pwd); do if [ -f \\"$d/docker-compose.yml\\" ] || [ -f \\"$d/docker-compose.prod.yml\\" ]; then cd \\"$d\\" && docker compose up -d --force-recreate; exit 0; fi; done; docker restart ueberwachungs-panel"', () => {
-        process.exit(0);
+      console.log('[Update] Starte Docker Image Pull und Container-Recreate über Host (nsenter)...');
+      const dockerCmd = 'nsenter --target 1 --mount --uts --ipc --net --pid -- sh -c "docker pull ghcr.io/roobiing/ueberwachungs-panel:latest && (for d in /root /home/* /opt /var/docker /srv/* /app $(pwd); do if [ -f \\"$d/docker-compose.yml\\" ] || [ -f \\"$d/docker-compose.prod.yml\\" ]; then cd \\"$d\\" && docker compose up -d --force-recreate; exit 0; fi; done; docker restart ueberwachungs-panel)"';
+      exec(dockerCmd, (err, stdout, stderr) => {
+        if (err) console.error('[Update] Hintergrund Docker-Update Fehler:', err.message);
+        else console.log('[Update] Docker-Container erfolgreich aktualisiert und neu gestartet.');
       });
     } else {
+      console.log('[Update] Server startet nach automatischem Git-Update neu...');
       process.exit(0);
     }
-  }, 1500);
+  }, 500);
 });
 
 // Vollständigen CHANGELOG.md (Update-Log & Nachwirken) abrufen
