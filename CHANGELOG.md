@@ -4,6 +4,18 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.48.7] - 2026-07-27 (Build 255) — *Remove Top Accent Bar*
+
+### 🎨 Design & Layout Anpassungen
+- **Horizontale Regenbogen-Akzentlinie entfernt (`Layout.jsx` & `Sidebar.jsx`)**:
+  - Die horizontale Linie am oberen Bildschirmrand und im Sidebar-Header wurde auf Nutzer-Feedback wieder entfernt, damit das gewohnte, saubere Dark-Mode-Layout nicht durch einen farbigen Querbalken gestört wird.
+  - Das SVG-Favicon für den Browser-Tab (`favicon.svg`) bleibt unverändert erhalten.
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- `version.json` synchron auf **`1.48.7` (Build 255)** erhöht.
+
+---
+
 ## [1.48.6] - 2026-07-27 (Build 254) — *Docker Background Updater (No HTTP 504 Timeout)*
 
 ### 🐛 Bugfixes & Optimierungen

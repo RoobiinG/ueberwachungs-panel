@@ -1,6 +1,6 @@
 {
-  "version": "1.48.6",
-  "build": 254,
+  "version": "1.48.7",
+  "build": 255,
   "date": "2026-07-27",
-  "codename": "Docker Background Updater"
+  "codename": "Remove Top Accent Bar"
 }
