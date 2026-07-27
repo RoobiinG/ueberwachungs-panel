@@ -4,42 +4,60 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
-## [1.48.0] - 2026-07-27 (Build 251) — *Full Changelog History & Docker Auto-Update*
+## [1.48.4] - 2026-07-27 (Build 252) — *Retroactive Versioning & Version Sync Rule*
 
 ### ✨ Neue Funktionen & Features
-- **Automatischer Panel-Updater für Docker-Container & Git (`POST /api/update/run`)**:
-  - **Docker-Support**: Erkennt automatisch, wenn kein `.git`-Verzeichnis vorhanden ist (z. B. im Docker-Image `ghcr.io/roobiing/ueberwachungs-panel:latest`) und führt über `nsenter` auf dem Host automatisch `docker pull` und `docker compose up -d --force-recreate` bzw. `docker restart` aus.
-  - **Git-Support**: Für Git-Installationen wird weiterhin `git pull` ausgeführt.
-  - `git` und `curl` sind ab sofort im finalen Docker-Image vorinstalliert (`Dockerfile`).
-  - Automatischer Server-Neustart (`process.exit(0)`) nach dem Pull für eine unterbrechungsfreie Aktualisierung.
-- **Update-Log Modal (`UpdateLogModal.jsx`)**:
-  - Nach einem automatischen Update lädt der Browser die Seite neu und zeigt ein interaktives Modal-Fenster mit dem Changelog und den System-Auswirkungen an.
-- **GitHub-Token Erklärung & Anleitung (`Settings.jsx`)**:
-  - Schritt-für-Schritt-Anleitung in der Karte *GitHub Update-Token*, wie ein Fine-Grained Personal Access Token auf GitHub mit `Contents` (Read-only) und `Metadata` (Read-only) für das private Repository erstellt wird.
+- **Verpflichtende SemVer-Synchronisation (`AGENTS.md`)**: Bei jeder Erhöhung der Build-Nummer muss ab sofort auch die SemVer-Versionsnummer (`version.json`) zwingend erhöht werden (Patch-Release bei Fixes/Chores, Minor-Release bei neuen Features).
+- **Rückwirkende Versionierung**: Alle neueren Builds im `CHANGELOG.md` und in `version.json` wurden rückwirkend getrennt versioniert (`1.48.0` für Build 248 bis `1.48.4` für Build 252).
 
-### 🔒 Sicherheit & 2FA (Build 247 Integration)
-- **Zwei-Faktor-Authentifizierung (2FA / MFA)** für alle Konten verfügbar:
-  - **Authenticator-App (TOTP / RFC 6238)**: Zero-Dependency QR-Code-Generator (`qr.js`) liefert reines SVG, Verifikation offline via HMAC-SHA1 (`totp.js`).
-  - **E-Mail-2FA**: Versendet einen temporären 6-stelligen Bestätigungscode per SMTP (10 Minuten gültig).
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- `version.json` auf `1.48.4` (Build 252) aktualisiert.
+
+---
+
+## [1.48.3] - 2026-07-27 (Build 251) — *Full Changelog History v1.0.0 – v1.48.0*
+
+### ✨ Neue Funktionen & Features
+- **Vollständiges Release-Log**: Gesamte Projektgeschichte seit Mai 2026 (`v1.0.0` / Build 1) inklusive aller Meilensteine in `CHANGELOG.md` übernommen.
+- **Regel zur ständigen Changelog-Pflege (`AGENTS.md`)**: In `.agents/AGENTS.md` verankert, dass `CHANGELOG.md` vor jedem Commit und Push dokumentiert werden muss.
+
+---
+
+## [1.48.2] - 2026-07-27 (Build 250) — *Docker Auto-Update per Host nsenter & Robuste E-Mail-2FA*
+
+### 🐛 Bugfixes & Optimierungen
+- **Docker Auto-Updater (`POST /api/update/run`)**: Erkennt Docker-Umgebungen ohne `.git`-Verzeichnis in `update.js` — führt stattdessen ein Docker Image Update (`docker pull ghcr.io/roobiing/ueberwachungs-panel:latest` und Container-Restart) per `nsenter` auf dem Host aus.
+- **E-Mail-2FA Bestätigungscode (`/api/auth/2fa/enable` & `/login/2fa`)**: Gültigkeitsdauer auf 20 Minuten erhöht, toleranter String/Trim-Vergleich, präzise Fehlermeldungen und Konsolen-Logging für generierte E-Mail-Codes.
+
+---
+
+## [1.48.1] - 2026-07-27 (Build 249) — *GitHub Update-Log & System Impact Analysis*
+
+### ✨ Neue Funktionen & Features
+- **Update-Log Modal (`UpdateLogModal.jsx`)**: Tab-Ansicht zwischen Changelog und Git-Commits sowie direkter Link auf GitHub.
+- **Bugfix (`Sidebar.jsx`)**: Syntaxfehler (Zeile 148) bei der Rendering-Bedingung behoben.
+
+---
+
+## [1.48.0] - 2026-07-27 (Build 248) — *Automatischer Panel-Updater & 2FA Security*
+
+### ✨ Neue Funktionen & Features
+- **Automatischer Panel-Updater (`POST /api/update/run`)**: Direktes Auslösen von `git pull` aus dem Panel heraus.
+- **GitHub-Token Erklärung & Anleitung (`Settings.jsx`)**: Schritt-für-Schritt-Anleitung für Fine-Grained PATs mit Read-only Berechtigungen.
+- **Zwei-Faktor-Authentifizierung (2FA / MFA)** (Build 247 Integration):
+  - **Authenticator-App (TOTP / RFC 6238)** via offline SVG QR-Code (`qr.js`).
+  - **E-Mail-2FA**: Temporärer 6-stelliger Bestätigungscode per SMTP.
   - Zweistufiger Login-Prozess mit geschütztem Zwischen-JWT (`tempToken`).
 
 ### 🐛 Bugfixes & Optimierungen
-- **E-Mail-2FA Bestätigungscode (`/api/auth/2fa/enable` & `/login/2fa`)**: Gültigkeitsdauer auf 20 Minuten erhöht, toleranter String/Trim-Vergleich, präzise Fehlermeldungen und Konsolen-Logging für generierte E-Mail-Codes.
-- **Docker Auto-Updater Bugfix (`/bin/sh: git: not found`)**: Erkennung von Docker-Umgebungen ohne `.git`-Verzeichnis in `update.js` — führt stattdessen ein Docker Image Update per `nsenter` auf dem Host aus.
 - **ReferenceError Behebung**: Fehler beim Löschen externer Token oder nach Einstellungs-Änderungen (`load is not defined` → Nutzung von `loadAdmin`) in `Settings.jsx` behoben.
 - **IP-Kopierfunktion für Server**: Bei Hetzner Cloud API und MC-Host24 können IPs nun direkt mit visuellem Klick-Feedback (`✓ Kopiert`) kopiert werden.
 - **Webhook-Konfiguration in Benachrichtigungen**: Schneller Absprung über „Webhooks als Einstellung“-Button in `Alerts.jsx`.
 
 ### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
-- **Datenbank-Migration (SQLite)**:
-  - Folgende Spalten wurden der Tabelle `users` automatisch beim Start hinzugefügt: `twofa_type` (TEXT), `twofa_secret` (TEXT), `twofa_code` (TEXT), `twofa_expires` (INTEGER).
-  - *Admin-Aufwand*: **Keiner**. Alle Migrationen erfolgen verlustfrei und abwärtskompatibel beim Booten des Backends.
-- **Agenten-Kompatibilität (`remote_agents`)**:
-  - Build 248 ist vollständig abwärtskompatibel zu bestehenden v1.4x Agenten.
-  - *Empfehlung*: Überprüfe im System-Tab gelegentlich den Status veralteter Agenten (`outdatedAgents`).
-- **Server-Neustart & Sitzungen**:
-  - Nach einem automatischen Update über den Button beendet das Panel seinen Prozess. Der Service (Docker / PM2 / systemd / Nodemon) startet die Instanz innerhalb von ~1,5 Sekunden neu.
-  - *Aktive Benutzer-Sitzungen*: Bestehende JWT-Sitzungen bleiben erhalten und müssen nicht erneuert werden, es sei denn, ein Benutzer aktiviert 2FA.
+- **Datenbank-Migration (SQLite)**: Spalten `twofa_type`, `twofa_secret`, `twofa_code`, `twofa_expires` in Tabelle `users` ergänzt.
+- **Agenten-Kompatibilität (`remote_agents`)**: Vollständig abwärtskompatibel zu bestehenden v1.4x Agenten.
+- **Server-Neustart & Sitzungen**: Automatischer Prozess-Neustart (~1,5 Sekunden) nach Update. Bestehende JWT-Sitzungen bleiben erhalten.
 
 ---
 
