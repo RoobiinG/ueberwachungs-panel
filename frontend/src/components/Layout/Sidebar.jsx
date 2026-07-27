@@ -145,6 +145,7 @@ export const Sidebar = () => {
             title={`Build ${version.build} · ${version.date}`}>
             {collapsed ? `v${version.version}` : `v${version.version} · Build ${version.build}`}
           </div>
+        )}
         {updateStatus?.panel?.available && !collapsed && (
           <button
             type="button"

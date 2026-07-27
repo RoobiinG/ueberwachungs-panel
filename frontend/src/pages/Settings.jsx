@@ -8,7 +8,8 @@ import {
   RefreshCw, Trash2, Lock, Mail, Key, ShieldCheck, Send,
   User, Settings2, Layers, Timer, Bell, Monitor, Smartphone,
   Globe, LogOut, Laptop, PackageCheck,
-  Download, Upload, Database, QrCode, Copy, Check, ShieldAlert
+  Download, Upload, Database, QrCode, Copy, Check, ShieldAlert,
+  FileText, ExternalLink
 } from 'lucide-react';
 import { invalidateLiveIntervalCache } from '../hooks/useLiveInterval';
 
@@ -243,15 +244,27 @@ function GitHubTokenCard({ status, onReload }) {
               Aktualisiert das Panel automatisch vom GitHub-Repository auf die neueste Version, lädt die Seite neu und zeigt den Update-Log.
             </p>
           </div>
-          <Button
-            onClick={runPanelUpdate}
-            disabled={updating}
-            size="sm"
-            className="bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-1.5 whitespace-nowrap"
-          >
-            <Download size={13} />
-            {updating ? 'Aktualisiere...' : 'Jetzt aktualisieren'}
-          </Button>
+          <div className="flex items-center gap-2">
+            <a
+              href="https://github.com/RoobiinG/ueberwachungs-panel/blob/master/CHANGELOG.md"
+              target="_blank"
+              rel="noreferrer"
+              className="px-2.5 py-1.5 text-xs bg-panel-surface border border-panel-border hover:border-panel-accent text-panel-text rounded-md flex items-center gap-1.5 transition-colors whitespace-nowrap"
+              title="Release-Historie, Bugfixes & Nachwirken auf GitHub ansehen"
+            >
+              <FileText size={13} className="text-panel-accent" />
+              Update-Log & Nachwirken (GitHub)
+            </a>
+            <Button
+              onClick={runPanelUpdate}
+              disabled={updating}
+              size="sm"
+              className="bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-1.5 whitespace-nowrap"
+            >
+              <Download size={13} />
+              {updating ? 'Aktualisiere...' : 'Jetzt aktualisieren'}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

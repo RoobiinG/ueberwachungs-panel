@@ -79,13 +79,27 @@ router.post('/run', requireRole('admin'), async (req, res) => {
     log = [{ hash: '', subject: 'Update-Log konnte nicht geladen werden', time: '', author: '' }];
   }
 
-  // 5. Erfolg melden & anschließend Prozess für Neustart beenden
+  // 5. Neuesten Eintrag aus CHANGELOG.md (Nachwirken & Features) lesen
+  let changelogEntry = '';
+  try {
+    const clPath = path.join(repoDir, 'CHANGELOG.md');
+    if (fs.existsSync(clPath)) {
+      const fullCl = fs.readFileSync(clPath, 'utf8');
+      const match = fullCl.match(/## \[[^\]]+\][\s\S]*?(?=(## \[|$))/);
+      if (match) changelogEntry = match[0].trim();
+    }
+  } catch (e) {
+    console.warn('[Update] CHANGELOG.md nicht lesbar:', e.message);
+  }
+
+  // 6. Erfolg melden & anschließend Prozess für Neustart beenden
   res.json({
     success: true,
     message: 'Panel erfolgreich aktualisiert!',
     oldVersion: oldVersionStr,
     newVersion: newVersionStr,
-    log
+    log,
+    changelogEntry
   });
 
   setTimeout(() => {
@@ -94,5 +108,21 @@ router.post('/run', requireRole('admin'), async (req, res) => {
   }, 1500);
 });
 
+// Vollständigen CHANGELOG.md (Update-Log & Nachwirken) abrufen
+router.get('/changelog', async (req, res) => {
+  try {
+    const clPath = path.join(__dirname, '../../../CHANGELOG.md');
+    if (fs.existsSync(clPath)) {
+      const content = fs.readFileSync(clPath, 'utf8');
+      res.json({ success: true, changelog: content });
+    } else {
+      res.json({ success: false, changelog: 'Kein CHANGELOG.md im Repository gefunden.' });
+    }
+  } catch (err) {
+    res.status(500).json({ error: 'Changelog konnte nicht geladen werden: ' + err.message });
+  }
+});
+
 module.exports = router;
+
 
