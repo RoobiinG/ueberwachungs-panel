@@ -4,6 +4,36 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.48.11] - 2026-07-28 (Build 259) — *Bereinigte Git-Historie*
+
+### 🔐 Sicherheit & Repository-Hygiene
+- **Git-Historie vollständig umgeschrieben** (`git filter-branch` über alle Branches und Tags). Aus **jedem** Commit
+  der Projektgeschichte wurden entfernt:
+  - `.claude/`, `.artifacts/` und `.agents/` — Arbeitsdaten der KI-Werkzeuge. Darin lag mit
+    `.claude/settings.local.json` die einzige Datei, die je die produktive Panel-Domain enthielt
+    (eingebracht in Build 71). Die Domain ist damit aus der gesamten Historie verschwunden, nicht nur aus dem
+    aktuellen Stand wie noch in v1.48.9.
+  - `android/` — die eingestellte Kotlin-App, endgültig auch aus der Vergangenheit entfernt.
+- **Verwaisten Branch `pre-session-5` gelöscht** (lokal und auf GitHub). Er stammte vom 26.05.2026, enthielt nie
+  nach `master` übernommene Commits und hätte die entfernten Inhalte weiterhin auf GitHub zugänglich gemacht.
+- **Alle 47 Versions-Tags** (`v1.0.0` … `v1.22.0`) zeigen nach dem Rewrite auf die bereinigten Commits.
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- `version.json` synchron auf **`1.48.11` (Build 259)** erhöht.
+- **Keine** inhaltliche Änderung an Backend, Frontend, Agent, Datenbank oder Docker-Image. Der Dateibaum des
+  neuesten Commits ist identisch zu v1.48.10 — es wurde ausschließlich die Historie bereinigt.
+- **Alle Commit-Hashes haben sich geändert.** Der Projektstand zählt jetzt 237 statt 256 Commits: 19 Commits
+  bestanden ausschließlich aus den entfernten Verzeichnissen und sind dadurch leer geworden und entfallen.
+- **Bestehende Klone des Repositories passen nicht mehr zur Historie** und müssen einmalig nachgezogen werden:
+  `git fetch origin && git reset --hard origin/master`. Der Produktivbetrieb ist nicht betroffen, da das Panel
+  im Docker-Betrieb über das Image `ghcr.io/roobiing/ueberwachungs-panel:latest` aktualisiert wird und kein
+  Git-Repository auf dem Server benötigt.
+- Ältere Container-Images mit SHA-Tags aus der alten Historie bleiben in der Registry bestehen; das `latest`-Tag
+  wird durch den nächsten Workflow-Lauf regulär neu gebaut.
+- **Sicherung**: Vor dem Eingriff wurde ein vollständiges Bundle aller Refs außerhalb des Repositories abgelegt.
+
+---
+
 ## [1.48.10] - 2026-07-28 (Build 258) — *Workflow-Actions auf Node 24*
 
 ### 🧹 Aufräumen & Struktur
