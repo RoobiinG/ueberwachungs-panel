@@ -9,14 +9,18 @@ npm-debug.log*
 # Produktions-Config mit echten Secrets/Domains — nie auf GitHub!
 docker-compose.prod.yml
 
-# IDE & AI
+# IDE, KI-Werkzeuge & lokale Arbeitsdaten — gehören nicht ins Repo
 .idea/
+.vscode/
 .claude/
 .artifacts/
 .agents/
-agent/
+*.local.json
 
-# Android & Gradle
+# Eingestellte Android-App (entfernt in v1.48.9) — nicht wieder einchecken
+android/
 .gradle_home/
-android/app/build/
-android/.gradle/
+.kotlin/
+
+# Hinweis: agent/ gehört bewusst INS Repo — der Dockerfile kopiert
+# agent/panel-agent.js und agent/install.sh ins Image.
