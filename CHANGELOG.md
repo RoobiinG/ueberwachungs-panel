@@ -4,6 +4,18 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.48.5] - 2026-07-27 (Build 253) — *New Rainbow Flag (Progress Pride)*
+
+### ✨ Neue Funktionen & Features
+- **New Rainbow Flag (Progress Pride) Akzentleiste**: 11-farbiger Regenbogen-Gradient am oberen Fensterrand (`Layout.jsx`) und an der Oberkante des Sidebar-Headers (`Sidebar.jsx`).
+- **Custom SVG Favicon (`favicon.svg`)**: Reines Vektorgrafik-Favicon für den Browser-Tab (`index.html`) mit der New Rainbow Flag (Progress Pride) Linie und dem Panel-Emblem statt generischer Browser-Standardicons.
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- `version.json` synchron auf **`1.48.5` (Build 253)** erhöht.
+- Das neue SVG-Favicon wird im Browser automatisch als Tab-Icon gerendert.
+
+---
+
 ## [1.48.4] - 2026-07-27 (Build 252) — *Retroactive Versioning & Version Sync Rule*
 
 ### ✨ Neue Funktionen & Features

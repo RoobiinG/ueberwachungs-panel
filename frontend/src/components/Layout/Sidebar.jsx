@@ -55,7 +55,9 @@ export const Sidebar = () => {
     <aside className={`flex flex-col bg-panel-surface border-r border-panel-border transition-all duration-200 flex-shrink-0 ${collapsed ? 'w-14' : 'w-56'}`}>
 
       {/* ── Kopfzeile ────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-3 py-4 border-b border-panel-border min-h-[57px]">
+      <div className="flex items-center justify-between px-3 py-4 border-b border-panel-border min-h-[57px] relative overflow-hidden">
+        {/* New Rainbow Flag (Progress Pride) Akzentlinie im Header */}
+        <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-gradient-to-r from-[#FF0018] via-[#FFA52C] via-[#FFFF41] via-[#008018] via-[#0000F9] via-[#86007D] via-[#5BCEFA] via-[#F5A9B8] via-[#FFFFFF] via-[#613915] to-[#000000]" />
         {!collapsed && (
           <div className="flex items-center gap-2 min-w-0">
             <Server size={15} className="text-panel-accent flex-shrink-0" />

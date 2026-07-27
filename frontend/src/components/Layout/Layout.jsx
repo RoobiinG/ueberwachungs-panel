@@ -10,6 +10,8 @@ export const Layout = ({ children, connected }) => {
   if (isMobile) {
     return (
       <div className="flex flex-col h-screen bg-panel-bg">
+        {/* ── New Rainbow Flag (Progress Pride) Top Accent Bar ─────────────── */}
+        <div className="h-[3px] w-full bg-gradient-to-r from-[#FF0018] via-[#FFA52C] via-[#FFFF41] via-[#008018] via-[#0000F9] via-[#86007D] via-[#5BCEFA] via-[#F5A9B8] via-[#FFFFFF] via-[#613915] to-[#000000] flex-shrink-0 z-50 shadow-sm" />
         <Header connected={connected} />
         <main className="flex-1 overflow-y-auto p-3 pb-20">
           {children}
@@ -21,13 +23,17 @@ export const Layout = ({ children, connected }) => {
   }
 
   return (
-    <div className="flex h-screen bg-panel-bg overflow-hidden">
-      <Sidebar />
-      <div className="flex flex-col flex-1 overflow-hidden">
-        <Header connected={connected} />
-        <main className="flex-1 overflow-y-auto p-4">
-          {children}
-        </main>
+    <div className="flex flex-col h-screen bg-panel-bg overflow-hidden">
+      {/* ── New Rainbow Flag (Progress Pride) Top Accent Bar ──────────────── */}
+      <div className="h-[3px] w-full bg-gradient-to-r from-[#FF0018] via-[#FFA52C] via-[#FFFF41] via-[#008018] via-[#0000F9] via-[#86007D] via-[#5BCEFA] via-[#F5A9B8] via-[#FFFFFF] via-[#613915] to-[#000000] flex-shrink-0 z-50 shadow-sm" />
+      <div className="flex flex-1 overflow-hidden">
+        <Sidebar />
+        <div className="flex flex-col flex-1 overflow-hidden">
+          <Header connected={connected} />
+          <main className="flex-1 overflow-y-auto p-4">
+            {children}
+          </main>
+        </div>
       </div>
       <UpdateLogModal />
     </div>

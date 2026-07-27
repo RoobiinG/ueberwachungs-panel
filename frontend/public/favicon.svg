@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="newRainbow" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#FF0018"/>
+      <stop offset="10%" stop-color="#FFA52C"/>
+      <stop offset="20%" stop-color="#FFFF41"/>
+      <stop offset="30%" stop-color="#008018"/>
+      <stop offset="40%" stop-color="#0000F9"/>
+      <stop offset="50%" stop-color="#86007D"/>
+      <stop offset="60%" stop-color="#5BCEFA"/>
+      <stop offset="70%" stop-color="#F5A9B8"/>
+      <stop offset="80%" stop-color="#FFFFFF"/>
+      <stop offset="90%" stop-color="#613915"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </linearGradient>
+  </defs>
+  <!-- Hintergrund-Karte -->
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="#0d1117" stroke="#30363d" stroke-width="2"/>
+  <!-- Regenbogenflagge (New Rainbow Flag) Akzentlinie oben -->
+  <rect x="4" y="4" width="56" height="7" rx="4" fill="url(#newRainbow)"/>
+  <rect x="4" y="8" width="56" height="3" fill="url(#newRainbow)"/>
+  <!-- Server / Panel Emblem -->
+  <path d="M20 24 h24 v6 H20 z M20 34 h24 v6 H20 z M20 44 h24 v6 H20 z" fill="#388bfd" rx="2"/>
+  <circle cx="24" cy="27" r="1.5" fill="#22C55E"/>
+  <circle cx="24" cy="37" r="1.5" fill="#22C55E"/>
+  <circle cx="24" cy="47" r="1.5" fill="#22C55E"/>
+</svg>
