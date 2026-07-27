@@ -4,6 +4,42 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.48.10] - 2026-07-28 (Build 258) — *Workflow-Actions auf Node 24*
+
+### 🧹 Aufräumen & Struktur
+- **GitHub-Actions im Build-Workflow auf ihre aktuellen Major-Versionen gehoben** (`.github/workflows/docker-build.yml`).
+  GitHub hatte bei jedem Lauf die Annotation *„Node.js 20 is deprecated. The following actions target Node.js 20 but
+  are being forced to run on Node.js 24"* gemeldet, weil alle vier eingesetzten Actions noch auf der abgekündigten
+  Node-20-Laufzeit basierten und vom Runner notgedrungen auf Node 24 gezwungen wurden:
+
+  | Action | vorher | jetzt |
+  |---|---|---|
+  | `actions/checkout` | `v4` | **`v7`** |
+  | `docker/login-action` | `v3` | **`v4`** |
+  | `docker/metadata-action` | `v5` | **`v6`** |
+  | `docker/build-push-action` | `v5` | **`v7`** |
+
+  Alle vier Ziel-Majors laufen nativ auf Node 24, damit verschwindet die Annotation vollständig.
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- `version.json` synchron auf **`1.48.10` (Build 258)** erhöht.
+- **Keine** Auswirkungen auf Backend, Frontend, Datenbank oder Agenten — geändert wurde ausschließlich die
+  CI-Konfiguration. **Keine** DB-Migration, **keine** Agent-Aktualisierung, **kein** Einfluss auf laufende
+  Sessions oder Neustart-Verhalten. Das Panel selbst ist identisch zu v1.48.9.
+- **Image-Ergebnis unverändert**: Registry, Tags (`latest` + Kurz-SHA) und Build-Kontext bleiben exakt gleich.
+  Auf dem Server genügt weiterhin `docker compose pull && up -d`.
+- **Breaking Changes der neuen Majors geprüft, keine betrifft diesen Workflow**: `actions/checkout@v6` legt die
+  Zugangsdaten in einer separaten Datei ab, `@v7` blockiert das Auschecken von Fork-PRs bei `pull_request_target`
+  und `workflow_run` — der Workflow läuft nur auf `push` und `workflow_dispatch`.
+  `docker/metadata-action@v6` ändert die `#`-Behandlung in Listen-Eingaben; die hier genutzten Tag-Regeln
+  (`type=raw`, `type=sha`) enthalten kein `#`. `docker/build-push-action@v7` entfernt die veralteten Variablen
+  `DOCKER_BUILD_NO_SUMMARY` und `DOCKER_BUILD_EXPORT_RETENTION_DAYS`, die hier nie gesetzt waren.
+- **Runner-Anforderung**: Alle vier Majors setzen Actions-Runner **v2.327.1** oder neuer voraus. Auf den von
+  GitHub gehosteten `ubuntu-latest`-Runnern ist das erfüllt; ein späterer Wechsel auf einen selbst gehosteten
+  Runner müsste diese Mindestversion mitbringen.
+
+---
+
 ## [1.48.9] - 2026-07-28 (Build 257) — *Repo-Hygiene & Gemeinsame Agenten-Regeln*
 
 ### 🧹 Aufräumen & Struktur
