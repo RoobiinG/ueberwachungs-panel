@@ -132,9 +132,10 @@ const Msg = ({ msg }) => msg ? (
 
 // ── GitHub Token Card (für Update Check bei privaten Repos) ───────────────────
 function GitHubTokenCard({ status, onReload }) {
-  const [token, setToken]   = useState('');
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg]       = useState('');
+  const [token, setToken]       = useState('');
+  const [saving, setSaving]     = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const [msg, setMsg]           = useState('');
 
   const save = async () => {
     if (!token.trim()) return;
@@ -164,10 +165,32 @@ function GitHubTokenCard({ status, onReload }) {
     setSaving(false);
   };
 
+  const runPanelUpdate = async () => {
+    if (!confirm('Möchtest du das Panel jetzt automatisch aus dem privaten GitHub-Repository aktualisieren und neu starten?')) return;
+    setUpdating(true);
+    setMsg('⏳ Starte automatisches Panel-Update...');
+    try {
+      const { data } = await axios.post('/api/update/run');
+      localStorage.setItem('panel_update_result', JSON.stringify({
+        timestamp: Date.now(),
+        oldVersion: data.oldVersion,
+        newVersion: data.newVersion,
+        log: data.log
+      }));
+      setMsg('✓ ' + data.message + ' Starte Seite neu...');
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    } catch (err) {
+      setMsg('❌ ' + (err.response?.data?.error || 'Update fehlgeschlagen'));
+      setUpdating(false);
+    }
+  };
+
   const isSet = !!status?.github_token;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
         <StatusBadge set={isSet} />
         {isSet && (
@@ -179,6 +202,18 @@ function GitHubTokenCard({ status, onReload }) {
       <p className="text-xs text-panel-muted leading-relaxed">
         Personal Access Token (PAT) von GitHub, damit das Panel automatisch im privaten Repository nach Updates (version.json & Agent) suchen kann.
       </p>
+
+      {/* Erklärung: So erstellst du ein GitHub Token */}
+      <div className="rounded-md border border-panel-accent/30 bg-panel-accent/5 px-3.5 py-2.5 space-y-1.5">
+        <p className="text-[11px] font-semibold text-panel-accent">So erstellst du ein GitHub-Token für dein privates Repository:</p>
+        <ol className="text-[11px] text-panel-muted leading-relaxed list-decimal list-inside space-y-0.5">
+          <li>Auf GitHub zu <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noreferrer" className="text-panel-text underline hover:text-panel-accent">Settings → Developer settings → Personal access tokens (Fine-grained)</a> gehen.</li>
+          <li>Auf <strong>Generate new token</strong> klicken und dein privates Repository <code className="text-panel-text font-mono bg-panel-surface px-1 py-0.5 rounded">ueberwachungs-panel</code> auswählen.</li>
+          <li>Unter <strong>Repository permissions</strong> bei <strong>Contents</strong> und <strong>Metadata</strong> auf <strong>Read-only</strong> (Lesezugriff) stellen.</li>
+          <li>Token generieren, hier in das Feld einfügen und speichern.</li>
+        </ol>
+      </div>
+
       <div className="flex gap-2">
         <input
           type="password"
@@ -195,7 +230,30 @@ function GitHubTokenCard({ status, onReload }) {
           {saving ? '…' : 'Speichern'}
         </button>
       </div>
-      {msg && <p className={`text-xs ${msg.startsWith('✓') ? 'text-panel-green' : 'text-panel-red'}`}>{msg}</p>}
+      {msg && <p className={`text-xs ${msg.startsWith('✓') ? 'text-panel-green' : msg.startsWith('⏳') ? 'text-panel-accent' : 'text-panel-red'}`}>{msg}</p>}
+
+      {/* ── Automatischen Panel-Updater starten ── */}
+      <div className="pt-3 border-t border-panel-border/40 space-y-2">
+        <div className="flex items-center justify-between">
+          <div>
+            <h4 className="text-xs font-semibold text-panel-text flex items-center gap-1.5">
+              <RefreshCw size={13} className="text-panel-accent" /> Panel-Updater (Git Pull & Neustart)
+            </h4>
+            <p className="text-[11px] text-panel-muted">
+              Aktualisiert das Panel automatisch vom GitHub-Repository auf die neueste Version, lädt die Seite neu und zeigt den Update-Log.
+            </p>
+          </div>
+          <Button
+            onClick={runPanelUpdate}
+            disabled={updating}
+            size="sm"
+            className="bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-1.5 whitespace-nowrap"
+          >
+            <Download size={13} />
+            {updating ? 'Aktualisiere...' : 'Jetzt aktualisieren'}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

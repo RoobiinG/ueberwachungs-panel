@@ -2,6 +2,7 @@ import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { MobileNav } from './MobileNav';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { UpdateLogModal } from '../UpdateLogModal';
 
 export const Layout = ({ children, connected }) => {
   const isMobile = useIsMobile();
@@ -14,6 +15,7 @@ export const Layout = ({ children, connected }) => {
           {children}
         </main>
         <MobileNav />
+        <UpdateLogModal />
       </div>
     );
   }
@@ -27,6 +29,8 @@ export const Layout = ({ children, connected }) => {
           {children}
         </main>
       </div>
+      <UpdateLogModal />
     </div>
   );
 };
+

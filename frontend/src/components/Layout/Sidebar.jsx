@@ -145,11 +145,29 @@ export const Sidebar = () => {
             title={`Build ${version.build} · ${version.date}`}>
             {collapsed ? `v${version.version}` : `v${version.version} · Build ${version.build}`}
           </div>
-        )}
         {updateStatus?.panel?.available && !collapsed && (
-          <div className="mt-1.5 flex items-center gap-1 text-[11px] text-yellow-400 font-medium" title="Neues Panel-Update auf GitHub verfügbar">
-            <span>⚡ Update v{updateStatus.panel.remoteVersion} verfügbar</span>
-          </div>
+          <button
+            type="button"
+            onClick={async () => {
+              if (!confirm(`Möchtest du das Panel jetzt automatisch auf v${updateStatus.panel.remoteVersion} aktualisieren und neu starten?`)) return;
+              try {
+                const { data } = await axios.post('/api/update/run');
+                localStorage.setItem('panel_update_result', JSON.stringify({
+                  timestamp: Date.now(),
+                  oldVersion: data.oldVersion,
+                  newVersion: data.newVersion,
+                  log: data.log
+                }));
+                window.location.reload();
+              } catch (err) {
+                alert('Update fehlgeschlagen: ' + (err.response?.data?.error || 'Fehler'));
+              }
+            }}
+            className="mt-1.5 flex items-center gap-1 text-[11px] text-yellow-400 hover:text-yellow-300 font-medium transition-colors cursor-pointer text-left w-full"
+            title="Klicken, um das Panel automatisch zu aktualisieren und neu zu starten"
+          >
+            <span>⚡ Update v{updateStatus.panel.remoteVersion} jetzt installieren</span>
+          </button>
         )}
         {updateStatus?.agent?.available && !collapsed && (
           <div className="mt-1 flex items-center gap-1 text-[11px] text-yellow-400 font-medium" title="Agent-Update auf GitHub verfügbar">
