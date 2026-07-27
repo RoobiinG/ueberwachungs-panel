@@ -8,3 +8,11 @@
 .git
 .gitignore
 SETUP.md
+
+# IDE- und KI-Arbeitsdaten gehören nicht in den Build-Kontext
+.idea
+.vscode
+.claude
+.agents
+.artifacts
+docker-compose.prod.yml

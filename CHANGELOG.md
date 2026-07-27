@@ -4,6 +4,39 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.48.9] - 2026-07-28 (Build 257) — *Repo-Hygiene & Gemeinsame Agenten-Regeln*
+
+### 🧹 Aufräumen & Struktur
+- **Android-App endgültig entfernt**: Der Ordner `android/` (Kotlin-App, Package `de.roobiin.panel`) war nach der
+  bewussten Entfernung in v1.45.0 durch einen späteren Commit versehentlich wieder ins Repository gelangt.
+  Er wurde jetzt vollständig gelöscht (77 Dateien) und über `.gitignore` dauerhaft ausgeschlossen. Das nie
+  fertiggestellte Jetpack-Compose-Remake wird nicht weiterverfolgt.
+- **Arbeitsdaten der KI-Werkzeuge aus dem Repository genommen**: `.claude/`, `.artifacts/` und `.agents/` werden
+  nicht mehr versioniert (lokal bleiben sie erhalten). Damit verschwindet auch die Panel-Domain aus dem
+  aktuellen Stand des Repositories, die zuvor in `.claude/settings.local.json` mitgeführt wurde.
+- **`.gitignore` überarbeitet**: klarere Abschnitte, zusätzlich `.vscode/`, `*.local.json`, `android/` und `.kotlin/`.
+  Der versehentliche Ausschluss von `agent/` wurde entfernt und kommentiert — das Verzeichnis **muss** im
+  Repository bleiben, da der `Dockerfile` `agent/panel-agent.js` und `agent/install.sh` ins Image kopiert.
+
+### ✨ Neue Funktionen & Features
+- **`AGENTS.md` im Projekt-Root als gemeinsame Quelle der Wahrheit**: Projektüberblick (Tech-Stack, Deployment,
+  Verzeichnisstruktur) sowie alle verbindlichen Regeln zu Versionierung, Changelog, Commits und dem, was auf
+  GitHub gehört. Claude Code und die Antigravity IDE arbeiten ab sofort mit demselben Wissensstand.
+- **`CLAUDE.md`** eingeführt; es bindet `AGENTS.md` ein, statt Regeln zu duplizieren. Die alte Datei
+  `.agents/AGENTS.md` ist nur noch ein Verweis auf den Root.
+- **Explizite Sicherheitsregel dokumentiert**: Domain, Tokens, Secrets und Produktions-Configs gehören
+  niemals ins Repository — inklusive Kurz-Checkliste vor jedem Push.
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- `version.json` synchron auf **`1.48.9` (Build 257)** erhöht.
+- **Keine** Auswirkungen auf Backend, Frontend, Datenbank oder Agenten — es wurde ausschließlich Nicht-Laufzeit-Code
+  entfernt. Kein Datenbank-Migrationsbedarf, keine Agent-Aktualisierung nötig.
+- Das Docker-Image wird unverändert gebaut; `agent/` bleibt Teil des Build-Kontexts.
+- **Hinweis zur Historie**: Die Domain ist aus dem aktuellen Stand entfernt, steht aber weiterhin in älteren
+  Commits. Ein vollständiges Entfernen würde ein Umschreiben der Git-Historie erfordern.
+
+---
+
 ## [1.48.8] - 2026-07-27 (Build 256) — *Progress Pride Sidebar Flag (Deaktivierbar)*
 
 ### ✨ Neue Funktionen & Features
