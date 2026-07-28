@@ -4,6 +4,25 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.48.12] - 2026-07-28 (Build 260) — *Gemeinsamer Wissensstand*
+
+### 📚 Dokumentation
+- **`AGENTS.md` um den Abschnitt „Stand der Aufräumaktion vom 28.07.2026" erweitert**, damit jeder KI-Assistent
+  (Claude Code wie Antigravity IDE) beim nächsten Einstieg denselben Ausgangspunkt hat: umgeschriebene Historie,
+  neue Commit-Hashes, gelöschter Branch `pre-session-5`, Lage der Vollsicherung und die Auflage, `.claude/`,
+  `.artifacts/`, `.agents/` und `android/` nie wieder einzuchecken.
+- **Klargestellt, dass `version.json` und `CHANGELOG.md` die verbindliche Quelle für Versionsstand und Historie
+  sind** — der Überblick in `AGENTS.md` wird bewusst nicht mit jeder Version nachgezogen und kann so nicht veralten.
+- **Hinweis ergänzt**, dass `master` der einzige Branch auf GitHub ist und das so bleiben soll.
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- `version.json` synchron auf **`1.48.12` (Build 260)** erhöht.
+- **Reine Dokumentationsänderung.** Keine Auswirkungen auf Backend, Frontend, Agent, Datenbank, Rechte-System
+  oder das Docker-Image. Keine DB-Migration, keine Agent-Aktualisierung, kein Einfluss auf laufende Sessions.
+- Das Image wird durch den Push regulär neu gebaut, Inhalt bleibt funktional identisch zu v1.48.11.
+
+---
+
 ## [1.48.11] - 2026-07-28 (Build 259) — *Bereinigte Git-Historie*
 
 ### 🔐 Sicherheit & Repository-Hygiene
