@@ -4,6 +4,30 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.49.1] - 2026-07-28 (Build 273) — *Update-Ziel ohne Dubletten*
+
+### 🐛 Bugfixes & Optimierungen
+- **Jeder Container stand doppelt in der Auswahlliste „Ziel des Updates"**: `GET /api/update/targets` legte jeden
+  Dockhand-Container zweimal an — einmal unter seiner Container-ID und einmal unter seinem Namen. Beide Einträge
+  trugen dieselbe Beschriftung und waren im Auswahlfeld nicht auseinanderzuhalten; bei vielen Containern
+  (mailcow, PatchMon usw.) verdoppelte das die gesamte Liste.
+  Es wird jetzt **ein Eintrag pro Container** erzeugt. Gespeichert wird der **Container-Name** statt der ID:
+  er ist lesbar und trägt in beiden Update-Wegen — die Dockhand-Suche vergleicht ohnehin gegen ID *und* Name,
+  der lokale Host-Fallback braucht ihn für `docker inspect` und `docker restart`. Nur namenlose Container
+  fallen weiterhin auf ihre ID zurück.
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- `version.json` synchron auf **`1.49.1` (Build 273)** erhöht.
+- **Keine Datenbank-Migration.** Rein serverseitige Änderung an der Zusammenstellung der Auswahlliste,
+  das Frontend bleibt unverändert.
+- **Hinweis für bereits gesetzte Ziele**: Wer in v1.49.0 einen Eintrag ausgewählt hat, bei dem zufällig die
+  Container-**ID** gespeichert wurde, muss nichts tun — die Suche in `/api/update/run` prüft weiterhin gegen ID
+  und Name. Die Auswahl bleibt also gültig, taucht in der Liste aber nur noch einmal auf.
+- Da Dockhand-Container nun unter ihrem Namen geführt werden, erscheinen lokal gefundene Container weiterhin
+  nur dann zusätzlich, wenn Dockhand sie nicht kennt — Doppelungen zwischen beiden Quellen bleiben ausgeschlossen.
+
+---
+
 ## [1.49.0] - 2026-07-28 (Build 272) — *Wählbares Update-Ziel*
 
 ### ✨ Neue Funktionen & Features
