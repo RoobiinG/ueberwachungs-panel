@@ -146,20 +146,32 @@ export const Sidebar = () => {
       )}
 
       {/* ── Benutzer-Info + Version ───────────────────────────────────────── */}
-      <div className="px-3 py-3 border-t border-panel-border">
+      <div
+        className={`px-3 py-3 border-t border-panel-border relative transition-all duration-300 overflow-hidden ${
+          showPrideFlag ? 'text-white shadow-inner' : ''
+        }`}
+        style={
+          showPrideFlag
+            ? {
+                background:
+                  'linear-gradient(rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.18)), linear-gradient(135deg, #E40303 0%, #FF8C00 14%, #FFED00 28%, #008026 42%, #004DFF 56%, #750787 70%, #5BCEFA 85%, #F5A9B8 100%)',
+                textShadow: '0 1px 3px rgba(0, 0, 0, 0.95), 0 1px 2px rgba(0, 0, 0, 0.85)',
+              }
+            : {}
+        }
+      >
         {!collapsed && user && (
-          <div className="flex items-center justify-between text-xs text-panel-muted">
+          <div className={`flex items-center justify-between text-xs ${showPrideFlag ? 'text-white' : 'text-panel-muted'}`}>
             <div className="truncate">
-              <span className="text-panel-text font-medium">{user.username}</span>
-              <span className="ml-1 opacity-60">({user.roleLabel || user.role})</span>
+              <span className={`font-medium ${showPrideFlag ? 'text-white font-bold' : 'text-panel-text'}`}>
+                {user.username}
+              </span>
+              <span className="ml-1 opacity-80">({user.roleLabel || user.role})</span>
             </div>
             {showPrideFlag && (
               <span
                 title="Progress Pride Flag (In den Einstellungen deaktivierbar)"
-                className="inline-flex items-center justify-center px-1.5 py-0.5 rounded-[3px] text-[10px] text-white shadow-sm flex-shrink-0 ml-1.5 cursor-help transition-transform hover:scale-105 border border-white/10"
-                style={{
-                  background: 'linear-gradient(90deg, #FF0018 0%, #FFA52C 16%, #FFFF41 33%, #008018 50%, #0000F9 66%, #86007D 83%, #5BCEFA 90%, #F5A9B8 100%)'
-                }}
+                className="inline-flex items-center justify-center text-[13px] flex-shrink-0 ml-1.5 cursor-help transition-transform hover:scale-110"
               >
                 <span>🏳️‍🌈</span>
               </span>
@@ -167,11 +179,21 @@ export const Sidebar = () => {
           </div>
         )}
         {version && (
-          <div className={`mt-1 flex items-center justify-between text-[10px] text-panel-muted/50 ${collapsed ? 'justify-center' : ''}`}
-            title={`Build ${version.build} · ${version.date}`}>
-            <span>{collapsed ? `v${version.version}` : `v${version.version} · Build ${version.build}`}</span>
+          <div
+            className={`mt-1 flex items-center justify-between text-[10px] ${
+              showPrideFlag ? 'text-white/90 font-medium' : 'text-panel-muted/50'
+            } ${collapsed ? 'justify-center' : ''}`}
+            title={`Build ${version.build} · ${version.date}`}
+          >
+            <span>
+              {collapsed
+                ? `v${version.version}`
+                : `v${version.version} · Build ${version.build}`}
+            </span>
             {showPrideFlag && collapsed && (
-              <span title="Progress Pride Flag" className="text-[10px] ml-1">🏳️‍🌈</span>
+              <span title="Progress Pride Flag" className="text-[12px] ml-1">
+                🏳️‍🌈
+              </span>
             )}
           </div>
         )}

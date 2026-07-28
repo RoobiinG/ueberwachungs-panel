@@ -4,6 +4,27 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.48.13] - 2026-07-28 (Build 261) — *Vollflächiges Pride Flag & Webhook-Fixes*
+
+### 🎨 Frontend & Design
+- **Vollflächige Progress Pride Flag in der Sidebar (`Sidebar.jsx`)**: Das Pride-Flag-Design beschränkt sich nicht mehr auf eine kleine Badge neben dem Benutzernamen, sondern füllt nun den **gesamten unteren Footer-Bereich** der Seitenleiste (Benutzernamen, Rolle, Version und Build) mit einem eleganten 135°-Gradienten.
+- **Optimierte Lesbarkeit & Kontrast**: Weiße Typografie mit starkem Dark-Shadow sorgt dafür, dass alle Informationen auf jeder Farbe des Regenbogen-Verlaufs gestochen scharf lesbar bleiben.
+- **Beschreibung in Einstellungen angepasst**: Erklärung des Toggles in `Settings.jsx` auf den vollflächigen Sidebar-Footer aktualisiert.
+
+### 🐛 Bugfixes & Stabilität
+- **Telegram Webhook HTML-Sanitisierung (`sendWebhook.js`)**: Behebt HTTP 400 Fehler bei Telegram-Webhooks (z. B. beim Alert `"Laufzeit 24"`), die durch unescapete `<` oder `>` Zeichen (z. B. `< 24 Tage` oder `CPU > 80%`) im `parse_mode: 'HTML'` auftraten. Eine neue Hilfsfunktion `sanitizeTelegramHtml()` schützt gültige Telegram-Tags (`<b>`, `<i>`, `<code>` etc.), escapet jedoch sicher alle anderen Vergleichszeichen.
+- **Express Reverse Proxy Trust (`index.js`)**: `app.set('trust proxy', 1)` aktiviert, um die Warnung `ERR_ERL_UNEXPECTED_X_FORWARDED_FOR` von `express-rate-limit` im Betrieb hinter Reverse Proxies (NGINX Proxy Manager / Docker) zu beheben und Client-IPs korrekt zu erkennen.
+- **Zuverlässigere Remote-Agent-Alerts (`alertEvaluator.js`)**: Der Alert-Evaluator liest Metriken von Remote-Agenten primär aus dem lokalen SQLite-Cache (`server_id = 'agent:<id>'`), der sekundengenau vom `remoteMetricsRecorder` gepflegt wird. Dadurch werden Alert-Auswertungen nicht mehr durch temporäre HTTP-Timeouts oder Netzwerkverzögerungen verworfen.
+- **Aktive Webhooks gefiltert**: SQL-Queries im `alertEvaluator.js` und `actionNotify.js` prüfen nun explizit auf `w.active = 1`, um fehlerhafte Sendeversuche an deaktivierte Webhooks zu vermeiden.
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- `version.json` synchron auf **`1.48.13` (Build 261)** erhöht.
+- **Keine Breaking Changes:** Alle DB-Schemas, Endpunkte und Agent-Schnittstellen bleiben vollständig kompatibel.
+- **Keine DB-Migration erforderlich.**
+- **Keine Neustarts oder Session-Abbrüche nötig:** Bestehende Token und Logins bleiben unverändert gültig.
+
+---
+
 ## [1.48.12] - 2026-07-28 (Build 260) — *Gemeinsamer Wissensstand*
 
 ### 📚 Dokumentation

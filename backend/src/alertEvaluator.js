@@ -88,6 +88,23 @@ async function getMetricValue(metric, agentId, targetRef) {
   }
 
   if (agentId != null) {
+    // 1. Primär: Lokale SQLite-Datenbank (von remoteMetricsRecorder / Push), max. 5 Min. alt
+    const serverId = `agent:${agentId}`;
+    const minTs    = Math.floor(Date.now() / 1000) - 300;
+    if (metric === 'net_rx' || metric === 'net_tx') {
+      const col = metric === 'net_rx' ? 'net_rx_sec' : 'net_tx_sec';
+      const row = db.prepare(`SELECT ${col} FROM metrics WHERE server_id = ? AND ts >= ? ORDER BY ts DESC LIMIT 1`).get(serverId, minTs);
+      if (row && row[col] != null) return row[col] / (1024 * 1024);
+    } else {
+      const latest = db.prepare(
+        `SELECT cpu,
+                ROUND(mem_used * 100.0 / mem_total, 1) AS memory,
+                ROUND(disk_used * 100.0 / disk_total, 1) AS disk
+         FROM metrics WHERE server_id = ? AND ts >= ? AND mem_total > 0 ORDER BY ts DESC LIMIT 1`
+      ).get(serverId, minTs);
+      if (latest && latest[metric] != null) return latest[metric];
+    }
+    // 2. Fallback: Direkter HTTP-Aufruf via fetchAgentStats
     const stats = await fetchAgentStats(agentId);
     return stats?.[metric] ?? null;
   }
@@ -161,7 +178,7 @@ async function evaluate() {
     FROM alert_rules r
     JOIN webhooks w ON r.webhook_id = w.id
     LEFT JOIN remote_agents a ON r.agent_id = a.id
-    WHERE r.enabled = 1 AND r.metric != 'action'
+    WHERE r.enabled = 1 AND r.metric != 'action' AND w.active = 1
   `).all();
 
   for (const rule of rules) {

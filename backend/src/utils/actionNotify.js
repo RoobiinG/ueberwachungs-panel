@@ -55,7 +55,7 @@ async function notifyAction(req, action, serverName, platform = 'server') {
     SELECT r.*, w.type AS wtype, w.url AS wurl
     FROM alert_rules r
     JOIN webhooks w ON r.webhook_id = w.id
-    WHERE r.enabled = 1 AND r.metric = 'action'
+    WHERE r.enabled = 1 AND r.metric = 'action' AND w.active = 1
   `).all();
 
   for (const rule of actionRules) {
