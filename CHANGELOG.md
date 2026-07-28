@@ -4,6 +4,19 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.48.19] - 2026-07-28 (Build 267) — *API-First Docker Updater & Comprehensive Console Error Logging*
+
+### ⚡ Updater & API-Optimierungen
+- **Dockhand Pro API als primäre Update-Methode (`update.js`)**: Der automatische Docker-Updater (`POST /api/update/run`) priorisiert in Container-Umgebungen ohne `.git` nun primär die **Dockhand Pro API** (falls in den Einstellungen konfiguriert). Das Image (`ghcr.io/roobiing/ueberwachungs-panel:latest`) wird dabei über den `/api/images/pull` Endpunkt geladen und der Panel-Container über `recreate` bzw. `restart` automatisiert erneuert.
+- **Volle Fehler- & STDOUT-/STDERR-Transparenz in der Konsole**: Sämtliche Schritte des Updaters (Image-Pull, Container-Suche, Recreate/Restart) sowie die Fallback-Methoden (lokales Docker-Socket `/var/run/docker.sock` und `nsenter`) loggen ab sofort jeden Fortschritt sowie eventuelle Fehler-Details, HTTP-Response-Bodys und Stack-Traces direkt in `console.log` und `console.error`. Somit ist eine stumme Blockade im Hintergrund ausgeschlossen.
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen**: Keine Datenbank-Schemaänderungen erforderlich.
+- **Agent-Kompatibilität**: Vollständig kompatibel mit allen bestehenden Agenten.
+- **Neustart-/Session-Verhalten**: Container-Updates laufen zuverlässig und transparent über die konfigurierte API; bei Nichtverfügbarkeit greift sofort der Fallback mit 60-Sekunden-Timeout.
+
+---
+
 ## [1.48.18] - 2026-07-28 (Build 266) — *Hosting-Provider Fusion & Settings Crash Fix*
 
 ### ✨ Features & UI-Optimierungen

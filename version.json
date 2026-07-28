@@ -1,6 +1,6 @@
 {
-  "version": "1.48.18",
-  "build": 266,
+  "version": "1.48.19",
+  "build": 267,
   "date": "2026-07-28",
-  "codename": "Hosting-Provider Fusion & Settings Crash Fix"
+  "codename": "API-First Docker Updater & Comprehensive Console Error Logging"
 }
