@@ -126,47 +126,113 @@ router.post('/run', requireRole('admin'), async (req, res) => {
   // 7. Im Hintergrund Server neu starten bzw. Docker Pull & Container-Neustart ausführen
   setTimeout(async () => {
     if (isDockerUpdate) {
-      console.log('[Update] Starte Docker Image Update über Host-Namespace (nsenter) / lokales Docker...');
+      console.log('[Update] Starte Docker Image Update...');
       const nsenterCmd = 'nsenter --target 1 --mount --uts --ipc --net --pid -- sh -c "docker pull ghcr.io/roobiing/ueberwachungs-panel:latest && (for d in /root /home/* /opt /var/docker /srv/* /app $(pwd); do if [ -f \\"$d/docker-compose.yml\\" ] || [ -f \\"$d/docker-compose.prod.yml\\" ]; then cd \\"$d\\" && docker compose up -d --force-recreate; exit 0; fi; done; docker restart ueberwachungs-panel)"';
       const dockerDirectCmd = 'docker pull ghcr.io/roobiing/ueberwachungs-panel:latest && (for d in /root /home/* /opt /var/docker /srv/* /app $(pwd); do if [ -f "$d/docker-compose.yml" ] || [ -f "$d/docker-compose.prod.yml" ]; then cd "$d" && docker compose up -d --force-recreate; exit 0; fi; done; docker restart ueberwachungs-panel)';
 
-      // 1. Primär: Update direkt über nsenter (Host-Namespace) laut AGENTS.md
-      exec(nsenterCmd, (errNs) => {
-        if (!errNs) {
-          console.log('[Update] Docker-Container erfolgreich über nsenter aktualisiert und neu gestartet.');
+      // 1. Primär: Update über Dockhand Pro API (falls in Einstellungen konfiguriert)
+      const dhToken = db.prepare("SELECT value FROM settings WHERE key = 'dockhandApiToken'").get()?.value;
+      const dhUrl   = db.prepare("SELECT value FROM settings WHERE key = 'dockhandUrl'").get()?.value;
+
+      let apiSuccess = false;
+      if (dhToken && dhUrl) {
+        try {
+          const envId = db.prepare("SELECT value FROM settings WHERE key = 'dockhandLocalEnvId'").get()?.value || '1';
+          console.log(`[Update] Starte Docker Image Update primär über die Dockhand Pro API (URL: ${dhUrl}, EnvID: ${envId})...`);
+          
+          console.log('[Update] Rufe Dockhand API /api/images/pull für ghcr.io/roobiing/ueberwachungs-panel:latest auf...');
+          try {
+            const pullRes = await dockhand.pullImage(envId, 'ghcr.io/roobiing/ueberwachungs-panel:latest');
+            console.log('[Update] Image erfolgreich über Dockhand API geladen:', pullRes?.data || 'OK');
+          } catch (pullErr) {
+            console.error('[Update] FEHLER beim Image Pull über Dockhand API:', pullErr.message);
+            if (pullErr.response?.data) {
+              console.error('[Update] Dockhand API Fehler-Details (pullImage):', JSON.stringify(pullErr.response.data));
+            }
+            if (pullErr.stack) {
+              console.error('[Update] Stack-Trace (pullImage):', pullErr.stack);
+            }
+            console.log('[Update] Versuche trotzdem Container-Aktualisierung (falls Image lokal aktuell ist)...');
+          }
+
+          console.log('[Update] Suche Panel-Container über Dockhand API...');
+          const res = await dockhand.getContainers(envId);
+          const list = Array.isArray(res) ? res : (Array.isArray(res.data) ? res.data : (res?.data && Array.isArray(res.data.data) ? res.data.data : []));
+          console.log(`[Update] ${list.length} Container in Dockhand Environment ${envId} gefunden:`, list.map(c => `${c.name || 'unbekannt'} (${c.image || 'ohne image'})`).join(', '));
+          
+          const panelContainer = list.find(c => {
+            const n = (c.name || '').toLowerCase();
+            const img = (c.image || '').toLowerCase();
+            return n.includes('ueberwachungs-panel') || n.includes('panel') || img.includes('ueberwachungs-panel') || img.includes('roobiing');
+          });
+
+          if (panelContainer) {
+            const cName = panelContainer.name || panelContainer.id;
+            console.log(`[Update] Panel-Container (${cName}, ID: ${panelContainer.id}) gefunden! Starte Recreate/Restart via Dockhand API...`);
+            try {
+              console.log(`[Update] Sende action "recreate" für Container ${cName} an Dockhand API...`);
+              await dockhand.containerAction(envId, panelContainer.id, 'recreate');
+              console.log(`[Update] ERFOLG: Container ${cName} wurde über Dockhand API recreated!`);
+              apiSuccess = true;
+            } catch (recreateErr) {
+              console.error('[Update] FEHLER bei action "recreate" via Dockhand API:', recreateErr.message);
+              if (recreateErr.response?.data) {
+                console.error('[Update] Dockhand API Fehler-Details (recreate):', JSON.stringify(recreateErr.response.data));
+              }
+              console.log(`[Update] Versuche stattdessen action "restart" für Container ${cName} via Dockhand API...`);
+              try {
+                await dockhand.containerAction(envId, panelContainer.id, 'restart');
+                console.log(`[Update] ERFOLG: Container ${cName} wurde über Dockhand API neugestartet!`);
+                apiSuccess = true;
+              } catch (restartErr) {
+                console.error('[Update] FEHLER bei action "restart" via Dockhand API:', restartErr.message);
+                if (restartErr.response?.data) {
+                  console.error('[Update] Dockhand API Fehler-Details (restart):', JSON.stringify(restartErr.response.data));
+                }
+              }
+            }
+          } else {
+            console.error(`[Update] FEHLER: Kein Panel-Container mit Name "ueberwachungs-panel" oder "panel" in Dockhand Environment ${envId} gefunden!`);
+          }
+        } catch (dhErr) {
+          console.error('[Update] Dockhand Pro API Update fehlgeschlagen:', dhErr.message);
+          if (dhErr.response?.data) {
+            console.error('[Update] Dockhand API Response Fehler:', JSON.stringify(dhErr.response.data));
+          }
+          if (dhErr.stack) {
+            console.error('[Update] Dockhand Stack-Trace:', dhErr.stack);
+          }
+        }
+      } else {
+        console.warn('[Update] Dockhand Pro API nicht konfiguriert (Token oder URL fehlt in Einstellungen).');
+      }
+
+      if (apiSuccess) return;
+
+      // 2. Fallback: Lokales Docker CLI über /var/run/docker.sock
+      console.log('[Update] Fallback 1: Versuche Update über lokales Docker-Socket (/var/run/docker.sock)...');
+      exec(dockerDirectCmd, { timeout: 60000 }, (errDirect, stdoutDirect, stderrDirect) => {
+        if (!errDirect) {
+          console.log('[Update] ERFOLG: Docker-Container erfolgreich über lokales Docker aktualisiert und neu gestartet.');
+          if (stdoutDirect) console.log('[Update] Docker STDOUT:', stdoutDirect);
           return;
         }
-        console.log('[Update] nsenter nicht verfügbar (' + errNs.message + '), versuche direkten Docker CLI Befehl...');
-        // 2. Fallback: Direkter Docker CLI Befehl über /var/run/docker.sock
-        exec(dockerDirectCmd, async (errDirect) => {
-          if (!errDirect) {
-            console.log('[Update] Docker-Container erfolgreich über Docker-Socket aktualisiert und neu gestartet.');
+        console.error('[Update] FEHLER beim lokalen Docker-Update:', errDirect.message);
+        if (stdoutDirect) console.error('[Update] Docker STDOUT:', stdoutDirect);
+        if (stderrDirect) console.error('[Update] Docker STDERR:', stderrDirect);
+
+        // 3. Fallback: Update über nsenter (Host-Namespace)
+        console.log('[Update] Fallback 2: Versuche Update über Host-Namespace (nsenter)...');
+        exec(nsenterCmd, { timeout: 60000 }, (errNs, stdoutNs, stderrNs) => {
+          if (!errNs) {
+            console.log('[Update] ERFOLG: Docker-Container erfolgreich über nsenter aktualisiert und neu gestartet.');
+            if (stdoutNs) console.log('[Update] nsenter STDOUT:', stdoutNs);
             return;
           }
-          console.log('[Update] Direkter Docker CLI Befehl fehlgeschlagen, prüfe auf Dockhand Pro API...');
-          // 3. Letzter Fallback: Dockhand Pro API falls in Einstellungen konfiguriert
-          const dhToken = db.prepare("SELECT value FROM settings WHERE key = 'dockhandApiToken'").get()?.value;
-          const dhUrl   = db.prepare("SELECT value FROM settings WHERE key = 'dockhandUrl'").get()?.value;
-          if (dhToken && dhUrl) {
-            try {
-              console.log('[Update] Versuche Update über Dockhand Pro API als Fallback...');
-              const envId = db.prepare("SELECT value FROM settings WHERE key = 'dockhandLocalEnvId'").get()?.value || '1';
-              await dockhand.pullImage(envId, 'ghcr.io/roobiing/ueberwachungs-panel:latest');
-              console.log('[Update] Image über Dockhand gezogen. Suche Panel-Container...');
-              const { data: containers } = await dockhand.getContainers(envId);
-              const panelContainer = (Array.isArray(containers) ? containers : []).find(
-                c => (c.name && c.name.includes('ueberwachungs-panel')) || (c.image && c.image.includes('ueberwachungs-panel')) || (c.name && c.name.includes('panel'))
-              );
-              if (panelContainer) {
-                console.log(`[Update] Panel-Container (${panelContainer.name}) gefunden → starte Recreate via Dockhand...`);
-                await dockhand.containerAction(envId, panelContainer.id, 'recreate');
-                return;
-              }
-              console.warn('[Update] Panel-Container in Dockhand nicht gefunden.');
-            } catch (dhErr) {
-              console.warn('[Update] Dockhand Pro Update fehlgeschlagen:', dhErr.message);
-            }
-          }
+          console.error('[Update] FEHLER bei nsenter-Update:', errNs.message);
+          if (stdoutNs) console.error('[Update] nsenter STDOUT:', stdoutNs);
+          if (stderrNs) console.error('[Update] nsenter STDERR:', stderrNs);
+          console.error('[Update] KRITISCH: Alle Update-Methoden (Dockhand API, lokales Docker CLI, nsenter) sind fehlgeschlagen!');
         });
       });
     } else {
