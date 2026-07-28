@@ -156,21 +156,6 @@ router.post('/vserver/:id/backups', requirePermission('mchost.backup'), async (r
   handle(res, async () => (await api()).post(`/vserver/${req.params.id}/backups`));
 });
 
-// Generischer Action-Wildcard — muss nach allen spezifischen POST-Routen stehen
-router.post('/vserver/:id/:action', requirePermission('mchost.view'), async (req, res) => {
-  if (!validId(req.params.id)) return res.status(400).json({ error: 'Ungültige VServer-ID' });
-  const perm = actionPermMap[req.params.action];
-  if (!perm) return res.status(400).json({ error: 'Ungültige Aktion' });
-  if (!getPermissions(req.user.role).includes(perm)) return res.status(403).json({ error: 'Keine Berechtigung' });
-  const { id, action } = req.params;
-  const serverName = req.body?.serverName || `VServer ${id}`;
-  await handle(res, async () => {
-    const result = await (await api()).post(`/vserver/${id}/${action}`);
-    notifyAction(req, action, serverName, 'mchost');
-    return result;
-  });
-});
-
 // ─── Tag-Routen ──────────────────────────────────────────────────────────────
 
 const VALID_COLORS = ['blue', 'green', 'red', 'orange', 'purple', 'gray'];
@@ -205,6 +190,21 @@ router.delete('/vserver/:id/tags/:tag', requirePermission('mchost.view'), (req, 
   db.prepare('DELETE FROM mchost_vserver_tags WHERE vserver_id = ? AND tag = ?')
     .run(req.params.id, req.params.tag);
   res.json({ ok: true });
+});
+
+// Generischer Action-Wildcard — muss nach allen spezifischen POST-Routen stehen
+router.post('/vserver/:id/:action', requirePermission('mchost.view'), async (req, res) => {
+  if (!validId(req.params.id)) return res.status(400).json({ error: 'Ungültige VServer-ID' });
+  const perm = actionPermMap[req.params.action];
+  if (!perm) return res.status(400).json({ error: 'Ungültige Aktion' });
+  if (!getPermissions(req.user.role).includes(perm)) return res.status(403).json({ error: 'Keine Berechtigung' });
+  const { id, action } = req.params;
+  const serverName = req.body?.serverName || `VServer ${id}`;
+  await handle(res, async () => {
+    const result = await (await api()).post(`/vserver/${id}/${action}`);
+    notifyAction(req, action, serverName, 'mchost');
+    return result;
+  });
 });
 
 // ─── VServer-Zugriffskontrolle für Rollen-Editor ─────────────────────────────

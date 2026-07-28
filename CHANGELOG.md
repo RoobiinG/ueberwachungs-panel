@@ -4,6 +4,20 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.48.20] - 2026-07-28 (Build 268) — *MC-Host24 Tag Routing Fix*
+
+### 🐛 Bugfixes
+- **Fehler „Ungültige Aktion" beim Hinzufügen von MC-Host24-Tags behoben (`backend/src/routes/mchost.js`)**:
+  - In `mchost.js` war die generische Aktions-Wildcard-Route `router.post('/vserver/:id/:action')` über den spezifischen Tag-Routen (`router.post('/vserver/:id/tags')`) platziert. Dadurch fing Express jeden POST-Request zum Anlegen von Tags mit `action = "tags"` ab und lehnte ihn mit HTTP 400 (`Ungültige Aktion`) ab.
+  - Die spezifischen Tag-Routen wurden vor die Wildcard-Route verschoben, sodass Tags nun ordnungsgemäß gespeichert und gelöscht werden können.
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen**: Keine Datenbank-Schemaänderungen erforderlich.
+- **Agent-Kompatibilität**: Vollständig kompatibel mit allen bestehenden Agenten.
+- **Neustart-/Session-Verhalten**: Backend verarbeitet Tag-Anfragen für MC-Host24-Server nach Neustart wieder korrekt.
+
+---
+
 ## [1.48.19] - 2026-07-28 (Build 267) — *API-First Docker Updater & Comprehensive Console Error Logging*
 
 ### ⚡ Updater & API-Optimierungen
