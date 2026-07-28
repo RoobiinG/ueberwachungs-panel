@@ -4,6 +4,36 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.50.1] - 2026-07-28 (Build 275) — *Abhängigkeitsprüfung*
+
+### 🔐 Sicherheit
+- **Neuer Workflow „Abhängigkeiten prüfen" (`.github/workflows/security-audit.yml`)**: Führt `npm audit`
+  getrennt für `backend/` und `frontend/` aus — bei Änderungen an einer `package.json`, zusätzlich jeden
+  Montag um 06:00 UTC und jederzeit manuell auslösbar. Das Ergebnis erscheint als Tabelle in der
+  Job-Zusammenfassung, betroffene Pakete werden bei kritischen und hohen Funden namentlich aufgeführt.
+  Der Lauf ist **bewusst vom Image-Build getrennt** und blockiert das Deployment nicht: Eine neu
+  veröffentlichte Schwachstelle in einem Fremdpaket soll sichtbar werden, aber kein Update verhindern.
+- **`.github/dependabot.yml` ergänzt**: Wöchentliche Update-Vorschläge für `backend/` und `frontend/`,
+  monatlich für die GitHub-Actions. Patch- und Minor-Updates sind gebündelt, damit nicht für jedes
+  einzelne Paket ein eigener Pull Request entsteht.
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- `version.json` synchron auf **`1.50.1` (Build 275)** erhöht.
+- **Reine CI-Änderung.** Keine Auswirkung auf Backend, Frontend, Agent, Datenbank oder das Image —
+  am Panel selbst ändert sich nichts.
+- **Voraussetzung für Dependabot**: Die Datei wirkt erst, wenn Dependabot in den Repository-Einstellungen
+  aktiviert ist (Settings → Code security). Aktuell ist es dort **abgeschaltet**, der Abruf der
+  Sicherheitswarnungen über die API antwortet mit `403 Dependabot alerts are disabled`.
+  Der neue Workflow läuft davon unabhängig und liefert die Prüfung auch ohne diese Einstellung.
+- **Bekannte Einschränkung — keine Lockfiles**: Das Projekt führt weder `backend/package-lock.json` noch
+  `frontend/package-lock.json`, und der `Dockerfile` installiert mit `npm install` statt `npm ci`.
+  Dadurch löst jeder Image-Build die Abhängigkeiten neu auf: Zwei Builds desselben Commits können
+  unterschiedliche Paketversionen enthalten, und neue Patch-Versionen gelangen ungeprüft in das Image.
+  Der Workflow löst den Baum für die Prüfung deshalb jedes Mal frisch auf — er prüft damit den Stand
+  zum Zeitpunkt des Laufs, nicht zwingend exakt den des letzten Builds.
+
+---
+
 ## [1.50.0] - 2026-07-28 (Build 274) — *Sicherheits-Audit*
 
 Vollständige Durchsicht von Backend, Agent und Frontend auf Sicherheitslücken und Bugs.
