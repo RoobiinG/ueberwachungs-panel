@@ -29,7 +29,11 @@ hinter einem NGINX Proxy Manager. Der Updater im Panel (`POST /api/update/run`) 
 am fehlenden `.git` und startet Pull + Recreate **asynchron** über den Host-Namespace (`nsenter`),
 damit der Reverse Proxy keinen 504 wirft.
 
-**Nicht mehr im Projekt:** die Android-App (`android/`) wurde in v1.48.9 endgültig entfernt.
+**Nicht mehr im Projekt:** die Android-App (`android/`) wurde in v1.48.9 entfernt und in v1.48.11 zusätzlich
+aus der gesamten Git-Historie getilgt. Sie wird nicht wiederbelebt.
+
+Die aktuelle Versionsnummer steht immer in `version.json`, die Projektgeschichte in `CHANGELOG.md` —
+beide sind die verbindliche Quelle, dieser Abschnitt hier wird bewusst nicht mit jeder Version nachgezogen.
 
 ---
 
@@ -78,4 +82,27 @@ Input-Validierung). Kritisches vorher fixen, Mittleres benennen.
 - `git add`, `git commit` und `git push` sind generell freigegeben — nicht jedes Mal nachfragen.
 - Git-Befehle einzeln absetzen (nicht mit `&&` oder `;` verketten) — die Sandbox der Antigravity IDE
   blockt verkettete Befehle trotz Freigabe.
-- Gearbeitet wird auf `master`.
+- Gearbeitet wird auf `master`. Das ist der **einzige** Branch auf GitHub — bitte so lassen.
+
+---
+
+## 5. Stand der Aufräumaktion vom 28.07.2026 (v1.48.9 – v1.48.11)
+
+Damit alle Assistenten denselben Ausgangspunkt haben — was in dieser Runde passiert ist und was daraus folgt:
+
+- **`AGENTS.md` im Root eingeführt** (diese Datei) als gemeinsame Quelle für Claude Code und Antigravity.
+  `CLAUDE.md` bindet sie per `@AGENTS.md` ein, `.agents/AGENTS.md` ist nur noch ein Verweis hierher.
+  Neues Projektwissen und neue Regeln kommen **ausschließlich hierher**, nicht in die beiden Verweis-Dateien.
+- **Die Git-Historie wurde vollständig umgeschrieben** (`git filter-branch` über `master` und alle 47 Tags):
+  `.claude/`, `.artifacts/`, `.agents/` und `android/` sind aus **jedem** Commit entfernt, damit auch die
+  produktive Panel-Domain, die früher in `.claude/settings.local.json` lag.
+  **Folgen, die man kennen muss:**
+  - Alle Commit-Hashes sind neu (237 statt 256 Commits, 19 leer gewordene Commits entfielen).
+  - Ein eventuell noch existierender älterer Klon passt nicht mehr zur Historie und braucht einmalig
+    `git fetch origin && git reset --hard origin/master`.
+  - Der verwaiste Branch `pre-session-5` wurde lokal und auf GitHub gelöscht.
+  - Eine Vollsicherung des Stands *vor* dem Eingriff liegt als Git-Bundle **außerhalb** des Repositories.
+- **Diese vier Verzeichnisse nie wieder einchecken.** Sie stehen in `.gitignore`; landen sie erneut im Repo,
+  wäre ein weiterer Force-Push über alle Refs nötig.
+- **Toter Ordner:** `.claude/worktrees/vibrant-kalam-2a9a9b` ist git-seitig abgemeldet, ließ sich aber wegen
+  einer Dateisperre nicht löschen. Er ist bedeutungslos und kann jederzeit von Hand entfernt werden.
