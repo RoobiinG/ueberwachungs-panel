@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Container, Wrench, Shield,
   Webhook, Users, Cloud, Gamepad2, ChevronLeft, ChevronRight,
   Server, Settings, ServerCog, MonitorCheck, Bell, ShieldCheck, ClipboardList,
-  BarChart2, AlertCircle, Trash2, ScrollText, PackageCheck, Layers,
+  BarChart2, AlertCircle, Trash2, ScrollText, PackageCheck,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
@@ -15,8 +15,10 @@ export const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
 
   { section: 'Infrastruktur' },
-  { to: '/docker',      icon: Container,    label: 'Docker',            moduleKey: 'docker' },
-  { to: '/docker-resources', icon: Layers,  label: 'Docker-Ressourcen', moduleKey: 'docker', permission: ['docker.images.view', 'docker.volumes.view', 'docker.networks.view', 'docker.stacks.view'] },
+  // Container und Ressourcen (Images, Volumes, Netzwerke, Stacks) liegen unter einem Punkt,
+  // die Unterteilung passiert über Tabs auf der Seite selbst.
+  { to: '/docker', icon: Container, label: 'Docker', moduleKey: 'docker',
+    permission: ['docker.view', 'docker.images.view', 'docker.volumes.view', 'docker.networks.view', 'docker.stacks.view'] },
   { to: '/services',    icon: Wrench,       label: 'Services' },
   { to: '/firewall',    icon: Shield,       label: 'Firewall' },
   { to: '/monitoring',  icon: BarChart2,    label: 'Monitoring' },

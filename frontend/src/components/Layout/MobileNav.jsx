@@ -15,7 +15,15 @@ const PRIMARY = [
 const visible = (item, isAdmin, hasPermission) => {
   if (item.section || !item.to) return false;
   if (item.adminOnly && !isAdmin) return false;
-  if (item.permission && !hasPermission(item.permission)) return false;
+  // Ein Array bedeutet "eines dieser Rechte genügt" — genau wie in der Sidebar.
+  // Vorher wurde das Array direkt an hasPermission() gereicht, was wegen des
+  // includes()-Vergleichs immer false ergab: Solche Punkte fehlten im Menü komplett.
+  if (item.permission) {
+    const ok = Array.isArray(item.permission)
+      ? item.permission.some(hasPermission)
+      : hasPermission(item.permission);
+    if (!ok) return false;
+  }
   return true;
 };
 

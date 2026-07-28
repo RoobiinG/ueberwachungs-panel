@@ -1,6 +1,6 @@
 {
-  "version": "1.50.3",
-  "build": 277,
+  "version": "1.51.0",
+  "build": 278,
   "date": "2026-07-28",
-  "codename": "Stabiler Image-Push"
+  "codename": "Docker vereint & robuster Updater"
 }

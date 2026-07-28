@@ -15,8 +15,7 @@ import ResetPassword from './pages/ResetPassword';
 
 // Alle anderen Seiten lazy laden → eigene Chunks, nur bei Bedarf geladen
 const Dashboard     = lazy(() => import('./pages/Dashboard'));
-const Docker        = lazy(() => import('./pages/Docker'));
-const DockerResources = lazy(() => import('./pages/DockerResources'));
+const DockerCenter  = lazy(() => import('./pages/DockerCenter'));
 const Services      = lazy(() => import('./pages/Services'));
 const Firewall      = lazy(() => import('./pages/Firewall'));
 const Webhooks      = lazy(() => import('./pages/Webhooks'));
@@ -88,8 +87,9 @@ const AppRoutes = () => {
         <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/" element={<Dashboard liveStats={liveStats} />} />
-            <Route path="/docker" element={<Docker />} />
-            <Route path="/docker-resources" element={<DockerResources />} />
+            <Route path="/docker" element={<DockerCenter />} />
+            {/* Container und Ressourcen sind zusammengelegt — alte Lesezeichen weiterleiten */}
+            <Route path="/docker-resources" element={<Navigate to="/docker" replace />} />
             <Route path="/services" element={<Services />} />
             <Route path="/firewall" element={<Firewall />} />
             <Route path="/network"    element={<Navigate to="/monitoring" replace />} />
