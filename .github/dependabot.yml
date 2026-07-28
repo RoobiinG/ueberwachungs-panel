@@ -2,35 +2,53 @@ version: 2
 
 # Wirkt erst, wenn Dependabot in den Repository-Einstellungen aktiviert ist
 # (Settings → Code security → Dependabot).
+#
+# Grundsatz: Dependabot hält Patch- und Minor-Versionen gebündelt aktuell.
+# Hauptversionssprünge (React 19, Tailwind 4, better-sqlite3 13 …) werden bewusst NICHT
+# automatisch vorgeschlagen — die brauchen eine geplante Umstellung mit Test im Browser.
+# WICHTIG: Sicherheitsupdates bleiben davon unberührt. Die meldet Dependabot weiterhin,
+# auch wenn dafür eine neue Hauptversion nötig ist.
 updates:
   - package-ecosystem: npm
     directory: /backend
     schedule:
       interval: weekly
       day: monday
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
     commit-message:
       prefix: 'chore'
     groups:
-      # Patch- und Minor-Updates gebündelt, damit nicht für jedes Paket ein eigener PR aufgeht
       kleinere-updates:
         update-types: [minor, patch]
+    ignore:
+      - dependency-name: '*'
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: npm
     directory: /frontend
     schedule:
       interval: weekly
       day: monday
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
     commit-message:
       prefix: 'chore'
     groups:
       kleinere-updates:
         update-types: [minor, patch]
+    ignore:
+      - dependency-name: '*'
+        update-types: [version-update:semver-major]
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
+    open-pull-requests-limit: 3
     commit-message:
       prefix: 'chore'
+    groups:
+      kleinere-updates:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: '*'
+        update-types: [version-update:semver-major]

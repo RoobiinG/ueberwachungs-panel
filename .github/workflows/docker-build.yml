@@ -5,6 +5,13 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+# Immer nur ein Image-Build gleichzeitig pro Branch. Zwei parallele Läufe schieben sonst
+# denselben `latest`-Tag zeitgleich zu ghcr.io, was dort zu "ERROR: unknown blob" führen kann.
+# cancel-in-progress bleibt aus: Der laufende Build soll fertig werden, der neue wartet.
+concurrency:
+  group: docker-build-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -38,3 +45,8 @@ jobs:
           context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
+          # Ohne Provenance-Attestierung entsteht ein einfacher Image-Index statt eines
+          # zusätzlichen Attestation-Manifests — das reduziert die Blob-Uploads und damit
+          # die Angriffsfläche für den sporadischen "unknown blob"-Fehler von ghcr.io.
+          # Das Panel nutzt die Attestierung nirgends.
+          provenance: false
