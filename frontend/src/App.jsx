@@ -23,6 +23,7 @@ const Webhooks      = lazy(() => import('./pages/Webhooks'));
 const Users         = lazy(() => import('./pages/Users'));
 const Hetzner       = lazy(() => import('./pages/Hetzner'));
 const MCHost        = lazy(() => import('./pages/MCHost'));
+const Hosting       = lazy(() => import('./pages/Hosting'));
 const Agents        = lazy(() => import('./pages/Agents'));
 const AgentDetail   = lazy(() => import('./pages/AgentDetail'));
 const UptimeKuma    = lazy(() => import('./pages/UptimeKuma'));
@@ -99,8 +100,9 @@ const AppRoutes = () => {
             <Route path="/patchmon" element={<PatchMon />} />
             <Route path="/alerts" element={<Alerts />} />
             <Route path="/webhooks" element={<Webhooks />} />
-            <Route path="/hetzner" element={<Hetzner />} />
-            <Route path="/mchost" element={<MCHost />} />
+            <Route path="/hosting" element={<Hosting />} />
+            <Route path="/hetzner" element={<Navigate to="/hosting" replace />} />
+            <Route path="/mchost" element={<Navigate to="/hosting" replace />} />
             <Route path="/users"     element={<ProtectedRoute adminOnly><Users /></ProtectedRoute>} />
             <Route path="/roles"     element={<ProtectedRoute adminOnly><Roles /></ProtectedRoute>} />
             <Route path="/audit"     element={<ProtectedRoute permission="audit.view"><AuditLog /></ProtectedRoute>} />
