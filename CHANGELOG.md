@@ -4,6 +4,24 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.48.18] - 2026-07-28 (Build 266) — *Hosting-Provider Fusion & Settings Crash Fix*
+
+### ✨ Features & UI-Optimierungen
+- **Zusammenführung der Hoster (Hetzner & MC-Host24)**: 
+  - **Sidebar & Router**: Hetzner Cloud und MC-Host24 sind in der Sidebar unter „Dienste" zu einem gemeinsamen Navigationspunkt **„Hosting-Provider" (`/hosting`)** zusammengefasst. Bisherige Links (`/hetzner`, `/mchost`) leiten automatisch auf die kombinierte Seite weiter.
+  - **Hosting-Seite (`Hosting.jsx`)**: Bietet eine strukturierte Tab-Steuerung zwischen Hetzner Cloud (Server & Storage Boxes) und MC-Host24 (Root-Server).
+  - **Einstellungen (Tab „Cloud & APIs")**: Die separaten Konfigurationskarten für Hetzner Cloud API und MC-Host24 wurden zu einer übersichtlichen Gesamt-Karte **„Hosting & Cloud APIs (Hetzner & MC-Host24)"** zusammengeführt.
+
+### 🐛 Bugfixes
+- **Absturz in den Einstellungen behoben**: Behebt einen `ReferenceError: servers is not defined` auf der Seite `/settings`, der durch einen Variablen-Tippfehler im PatchMon-Serververknüpfungsblock (`pmAgents` statt `servers`) aufgetreten war.
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen**: Keine Datenbank-Schemaänderungen erforderlich.
+- **Agent-Kompatibilität**: Vollständig kompatibel mit allen bestehenden Agenten.
+- **Neustart-/Session-Verhalten**: Konfigurationen der Hoster-APIs (Hetzner und MC-Host24) bleiben unverändert aktiv. Bisherige Lesezeichen auf `/hetzner` oder `/mchost` werden nahtlos auf die neue kombinierte `/hosting`-Seite umgeleitet.
+
+---
+
 ## [1.48.17] - 2026-07-28 (Build 265) — *Frontend Build-Fix & GitHub Token UI Restoral*
 
 ### 🐛 Bugfixes & Frontend

@@ -26,8 +26,7 @@ export const navItems = [
   { to: '/uptime-kuma', icon: MonitorCheck, label: 'Uptime Kuma',       moduleKey: 'uptimekuma', permission: 'uptimekuma.view' },
   { to: '/patchmon',    icon: PackageCheck, label: 'PatchMon',          moduleKey: 'patchmon',   permission: 'patchmon.view' },
   { to: '/alerts',      icon: Bell,         label: 'Benachrichtigungen' },
-  { to: '/hetzner',     icon: Cloud,        label: 'Hetzner',           moduleKey: 'hetzner',    permission: 'hetzner.view' },
-  { to: '/mchost',      icon: Gamepad2,     label: 'MC-Host24',         moduleKey: 'mchost',     permission: 'mchost.view'  },
+  { to: '/hosting',     icon: Cloud,        label: 'Hosting-Provider',  permission: ['hetzner.view', 'mchost.view'] },
 
   { section: 'Verwaltung' },
   { to: '/users',      icon: Users,         label: 'Benutzer',        adminOnly: true },

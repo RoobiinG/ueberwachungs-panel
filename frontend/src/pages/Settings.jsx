@@ -1323,93 +1323,100 @@ export default function Settings() {
       {/* ═══════════════════ TAB 3: CLOUD & APIS (Admin) ═══════════════════ */}
       {tab === 'integrations' && isAdmin && (
         <div className="columns-1 lg:columns-2 gap-4 [&>*]:mb-4 [&>*]:break-inside-avoid">
-          {/* ── Hetzner ── */}
-          <Card title={<span className="flex items-center gap-2"><Cloud size={14} />Hetzner Cloud API</span>}>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <StatusBadge set={!!status.hetzner_api_token} />
-                {status.hetzner_api_token && (
-                  <Button size="sm" variant="danger" onClick={deleteHetzner} disabled={loading.hetzner_del}>
-                    <Trash2 size={12} className="mr-1" />Entfernen
-                  </Button>
-                )}
-              </div>
-              <div>
-                <label className="block text-xs text-panel-muted mb-1">
-                  {status.hetzner_api_token ? 'Neuen Token eintragen (überschreibt)' : 'API Token'}
-                </label>
-                <div className="relative">
-                  <input
-                    type={showHetzner ? 'text' : 'password'}
-                    value={hetznerToken}
-                    onChange={e => setHetznerToken(e.target.value)}
-                    placeholder="hv1-..."
-                    className={inputCls + ' pr-9'}
-                    onKeyDown={e => e.key === 'Enter' && saveHetzner()}
-                  />
-                  <button type="button" onClick={() => setShowHetzner(v => !v)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
-                    {showHetzner ? <EyeOff size={14} /> : <Eye size={14} />}
-                  </button>
+          {/* ── Hosting & Cloud APIs (Hetzner & MC-Host24) ── */}
+          <Card title={<span className="flex items-center gap-2"><Cloud size={14} />Hosting & Cloud APIs (Hetzner & MC-Host24)</span>}>
+            <div className="space-y-6">
+              {/* Hetzner Cloud API */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-panel-text flex items-center gap-1.5">
+                    <Cloud size={13} className="text-panel-accent" /> Hetzner Cloud API
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <StatusBadge set={!!status.hetzner_api_token} />
+                    {status.hetzner_api_token && (
+                      <Button size="sm" variant="danger" onClick={deleteHetzner} disabled={loading.hetzner_del}>
+                        <Trash2 size={12} className="mr-1" />Entfernen
+                      </Button>
+                    )}
+                  </div>
                 </div>
+                <div>
+                  <label className="block text-xs text-panel-muted mb-1">
+                    {status.hetzner_api_token ? 'Neuen Token eintragen (überschreibt)' : 'API Token'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showHetzner ? 'text' : 'password'}
+                      value={hetznerToken}
+                      onChange={e => setHetznerToken(e.target.value)}
+                      placeholder="hv1-..."
+                      className={inputCls + ' pr-9'}
+                      onKeyDown={e => e.key === 'Enter' && saveHetzner()}
+                    />
+                    <button type="button" onClick={() => setShowHetzner(v => !v)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
+                      {showHetzner ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
+                </div>
+                <Button onClick={saveHetzner} disabled={!hetznerToken.trim() || loading.hetzner} size="sm">Speichern</Button>
+                <Msg msg={msgs.hetzner} />
               </div>
-              <Button onClick={saveHetzner} disabled={!hetznerToken.trim() || loading.hetzner} size="sm">Speichern</Button>
-              <Msg msg={msgs.hetzner} />
-            </div>
-          </Card>
 
-          {/* ── MC-Host24 ── */}
-          <Card title={<span className="flex items-center gap-2"><Server size={14} />MC-Host24</span>}>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <StatusBadge set={status.mchost_token_set} />
-                  {status.mchost_token_set && (
-                    <p className="text-xs text-panel-muted">Token aktiv · wird automatisch erneuert</p>
-                  )}
+              {/* Trennlinie */}
+              <div className="border-t border-panel-border/60" />
+
+              {/* MC-Host24 API */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-panel-text flex items-center gap-1.5">
+                    <Server size={13} className="text-panel-accent" /> MC-Host24 API
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <StatusBadge set={status.mchost_token_set} />
+                    {status.mchost_token_set && (
+                      <Button size="sm" variant="ghost" onClick={refreshMcHost} disabled={loading.mchost_refresh}>
+                        <RefreshCw size={12} className="mr-1" />Erneuern
+                      </Button>
+                    )}
+                    {(status.mchost_token_set || status.mchost_username) && (
+                      <Button size="sm" variant="danger" onClick={deleteMcHost} disabled={loading.mchost_del}>
+                        <Trash2 size={12} className="mr-1" />Entfernen
+                      </Button>
+                    )}
+                  </div>
                 </div>
-                <div className="flex gap-1">
-                  {status.mchost_token_set && (
-                    <Button size="sm" variant="ghost" onClick={refreshMcHost} disabled={loading.mchost_refresh}>
-                      <RefreshCw size={12} className="mr-1" />Erneuern
-                    </Button>
-                  )}
-                  {(status.mchost_token_set || status.mchost_username) && (
-                    <Button size="sm" variant="danger" onClick={deleteMcHost} disabled={loading.mchost_del}>
-                      <Trash2 size={12} className="mr-1" />Entfernen
-                    </Button>
-                  )}
+                <div>
+                  <label className="block text-xs text-panel-muted mb-1">E-Mail-Adresse</label>
+                  <input type="email" value={mcUsername} onChange={e => setMcUsername(e.target.value)}
+                    placeholder="deine@email.de" className={inputCls} />
+                  <p className="text-xs text-panel-muted mt-1">
+                    Verwende deine MC-Host24 <strong>Login-E-Mail</strong>, nicht deinen Anzeigenamen.
+                  </p>
                 </div>
-              </div>
-              <div>
-                <label className="block text-xs text-panel-muted mb-1">E-Mail-Adresse</label>
-                <input type="email" value={mcUsername} onChange={e => setMcUsername(e.target.value)}
-                  placeholder="deine@email.de" className={inputCls} />
-                <p className="text-xs text-panel-muted mt-1">
-                  Verwende deine MC-Host24 <strong>Login-E-Mail</strong>, nicht deinen Anzeigenamen.
-                </p>
-              </div>
-              <div>
-                <label className="block text-xs text-panel-muted mb-1">Passwort</label>
-                <div className="relative">
-                  <input
-                    type={showMcPw ? 'text' : 'password'}
-                    value={mcPassword}
-                    onChange={e => setMcPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className={inputCls + ' pr-9'}
-                    onKeyDown={e => e.key === 'Enter' && loginMcHost()}
-                  />
-                  <button type="button" onClick={() => setShowMcPw(v => !v)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
-                    {showMcPw ? <EyeOff size={14} /> : <Eye size={14} />}
-                  </button>
+                <div>
+                  <label className="block text-xs text-panel-muted mb-1">Passwort</label>
+                  <div className="relative">
+                    <input
+                      type={showMcPw ? 'text' : 'password'}
+                      value={mcPassword}
+                      onChange={e => setMcPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className={inputCls + ' pr-9'}
+                      onKeyDown={e => e.key === 'Enter' && loginMcHost()}
+                    />
+                    <button type="button" onClick={() => setShowMcPw(v => !v)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
+                      {showMcPw ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
                 </div>
+                <Button onClick={loginMcHost} disabled={!mcUsername || !mcPassword || loading.mchost} size="sm">
+                  {status.mchost_token_set ? 'Neu einloggen' : 'Einloggen & Token holen'}
+                </Button>
+                <Msg msg={msgs.mchost} />
               </div>
-              <Button onClick={loginMcHost} disabled={!mcUsername || !mcPassword || loading.mchost} size="sm">
-                {status.mchost_token_set ? 'Neu einloggen' : 'Einloggen & Token holen'}
-              </Button>
-              <Msg msg={msgs.mchost} />
             </div>
           </Card>
 
@@ -1526,12 +1533,12 @@ export default function Settings() {
                         {pmHosts.map(h => <option key={h.id} value={h.id}>{h.name}{h.ip ? ` · ${h.ip}` : ''}</option>)}
                       </select>
                     </div>
-                    {servers.map(s => (
-                      <div key={s.id} className="flex items-center justify-between px-3 py-2 gap-2">
-                        <span className="text-xs text-panel-text truncate">{s.name}{s.ip ? ` (${s.ip})` : ''}</span>
+                    {pmAgents.map(a => (
+                      <div key={a.id} className="flex items-center justify-between px-3 py-2 gap-2">
+                        <span className="text-xs text-panel-text truncate">{a.name}</span>
                         <select
-                          value={pmServerMap[s.id] ?? ''}
-                          onChange={e => savePmMapping(s.id, e.target.value)}
+                          value={a.patchmon_host_id ?? ''}
+                          onChange={e => saveAgentPm(a.id, e.target.value)}
                           className="bg-panel-surface border border-panel-border rounded px-2 py-1 text-xs text-panel-text focus:outline-none focus:border-panel-accent max-w-[60%]">
                           <option value="">— nicht verknüpft —</option>
                           {pmHosts.map(h => <option key={h.id} value={h.id}>{h.name}{h.ip ? ` · ${h.ip}` : ''}</option>)}
@@ -1541,7 +1548,6 @@ export default function Settings() {
                   </div>
                 </div>
               )}
-              <Msg msg={msgs.pmMapping} />
             </div>
           </Card>
         </div>
