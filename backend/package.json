@@ -19,7 +19,7 @@
     "express-rate-limit": "^7.3.1",
     "geoip-lite": "^1.4.10",
     "jsonwebtoken": "^9.0.2",
-    "nodemailer": "^6.9.0",
+    "nodemailer": "^9.0.3",
     "socket.io-client": "^4.7.5",
     "systeminformation": "^5.22.11",
     "ws": "^8.17.0"
