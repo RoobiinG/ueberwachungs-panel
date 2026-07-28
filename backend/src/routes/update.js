@@ -1,13 +1,23 @@
 const router = require('express').Router();
 const updateCheck = require('../utils/updateCheck');
 const requireRole = require('../middleware/roles');
-const { exec } = require('child_process');
+const { exec, execFile } = require('child_process');
 const util = require('util');
 const execPromise = util.promisify(exec);
+// execFile startet ohne Shell — nötig überall dort, wo Werte wie der GitHub-Token
+// in den Befehl einfließen und sonst von der Shell interpretiert würden.
+const execFilePromise = util.promisify(execFile);
 const path = require('path');
 const fs = require('fs');
 const db = require('../db');
 const dockhand = require('../utils/dockhandClient');
+
+// SICHERHEIT: Das konfigurierte Update-Ziel wird unten in ein Shell-Skript eingesetzt, das per
+// nsenter als root im Host-Namespace läuft. Ohne strenge Prüfung wäre ein Wert wie `$(befehl)`
+// eine Befehlsinjektion als root auf dem Host. Erlaubt ist deshalb nur das Zeichenrepertoire,
+// das Docker für Container-, Stack- und ID-Namen selbst zulässt.
+const VALID_TARGET_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
+const isValidTarget = (t) => typeof t === 'string' && VALID_TARGET_RE.test(t);
 
 // Update-Status abrufen
 router.get('/status', async (req, res) => {
@@ -44,7 +54,9 @@ router.post('/run', requireRole('admin'), async (req, res) => {
       if (token) {
         try {
           const remoteUrl = `https://${token}@github.com/RoobiinG/ueberwachungs-panel.git`;
-          await execPromise(`git pull ${remoteUrl} master`, { cwd: repoDir, timeout: 45000 });
+          // Ohne Shell ausführen: Ein Token mit Sonderzeichen würde sonst von der Shell
+          // interpretiert werden statt als Teil der URL anzukommen.
+          await execFilePromise('git', ['pull', remoteUrl, 'master'], { cwd: repoDir, timeout: 45000 });
         } catch (authErr) {
           await execPromise('git pull', { cwd: repoDir, timeout: 45000 });
         }
@@ -128,7 +140,13 @@ router.post('/run', requireRole('admin'), async (req, res) => {
     if (isDockerUpdate) {
       console.log('[Update] Starte Docker Image Update...');
 
-      const configuredTarget = db.prepare("SELECT value FROM settings WHERE key = 'panel_container'").get()?.value?.trim() || '';
+      let configuredTarget = db.prepare("SELECT value FROM settings WHERE key = 'panel_container'").get()?.value?.trim() || '';
+      // Zweite Verteidigungslinie: Auch ein bereits gespeicherter Wert wird vor der Verwendung
+      // geprüft — er könnte aus einer älteren Version ohne Prüfung oder direkt aus der DB stammen.
+      if (configuredTarget && !isValidTarget(configuredTarget)) {
+        console.warn(`[Update] SICHERHEIT: Gespeichertes Update-Ziel enthält unerlaubte Zeichen und wird ignoriert. Es gilt wieder die automatische Erkennung.`);
+        configuredTarget = '';
+      }
       if (configuredTarget) {
         console.log(`[Update] Konfigurierter Standard-Container / Stack für Panel-Update: "${configuredTarget}"`);
       } else {
@@ -374,6 +392,13 @@ router.get('/targets', requireRole('admin'), async (req, res) => {
 router.put('/target', requireRole('admin'), (req, res) => {
   const { target } = req.body;
   const val = (target || '').trim();
+  // Leerer Wert = automatische Erkennung. Alles andere muss ein zulässiger Docker-Name sein,
+  // da der Wert später im Host-Namespace in einer Shell landet (siehe isValidTarget oben).
+  if (val && !isValidTarget(val)) {
+    return res.status(400).json({
+      error: 'Ungültiger Container- bzw. Stack-Name. Erlaubt sind Buchstaben, Ziffern sowie _ . - (maximal 128 Zeichen).',
+    });
+  }
   db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('panel_container', ?, CURRENT_TIMESTAMP)").run(val);
   res.json({ success: true, target: val });
 });
