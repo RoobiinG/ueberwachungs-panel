@@ -369,7 +369,7 @@ function PrideFlagToggleCard() {
           </span>
           <div>
             <div className="text-xs font-medium text-panel-text">Pride Flag in der Sidebar anzeigen</div>
-            <div className="text-[11px] text-panel-muted">Zeigt ein dezentes Progress Pride Symbol neben dem Benutzernamen</div>
+            <div className="text-[11px] text-panel-muted">Färbt den gesamten unteren Bereich der Seitenleiste mit dem Progress-Pride-Flag-Verlauf</div>
           </div>
         </div>
         <Toggle on={enabled} onToggle={toggle} />

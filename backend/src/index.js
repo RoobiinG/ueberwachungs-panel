@@ -18,6 +18,8 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET === JWT_PLACEHOLDER || pro
 }
 
 const app    = express();
+// Reverse Proxy (z. B. NGINX Proxy Manager / Docker) für korrekte Client-IPs und express-rate-limit vertrauen
+app.set('trust proxy', 1);
 const server = http.createServer(app);
 
 // CORS: In Produktion nur erlaubte Origin; Standard = kein Cross-Origin
