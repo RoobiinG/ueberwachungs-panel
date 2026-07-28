@@ -127,14 +127,21 @@ router.post('/run', requireRole('admin'), async (req, res) => {
   setTimeout(async () => {
     if (isDockerUpdate) {
       console.log('[Update] Starte Docker Image Update...');
-      const nsenterCmd = 'nsenter --target 1 --mount --uts --ipc --net --pid -- sh -c "docker pull ghcr.io/roobiing/ueberwachungs-panel:latest && (WDIR=\\"\\$(docker inspect -f \'{{ index .Config.Labels \\"com.docker.compose.project.working_dir\\" }}\' ueberwachungs-panel 2>/dev/null)\\"; if [ -n \\"$WDIR\\" ] && [ -d \\"$WDIR\\" ]; then cd \\"$WDIR\\" && docker compose up -d --force-recreate && exit 0; fi; for d in /root /root/* /home/* /home/*/* /opt /opt/* /var/docker /var/docker/* /srv /srv/* /app /app/* \\$(pwd); do if [ -f \\"$d/docker-compose.yml\\" ] || [ -f \\"$d/docker-compose.prod.yml\\" ]; then cd \\"$d\\" && docker compose up -d --force-recreate; exit 0; fi; done; docker restart ueberwachungs-panel)"';
-      const dockerDirectCmd = 'docker pull ghcr.io/roobiing/ueberwachungs-panel:latest && (WDIR="$(docker inspect -f \'{{ index .Config.Labels "com.docker.compose.project.working_dir" }}\' ueberwachungs-panel 2>/dev/null)"; if [ -n "$WDIR" ] && [ -d "$WDIR" ]; then cd "$WDIR" && docker compose up -d --force-recreate && exit 0; fi; for d in /root /root/* /home/* /home/*/* /opt /opt/* /var/docker /var/docker/* /srv /srv/* /app /app/* $(pwd); do if [ -f "$d/docker-compose.yml" ] || [ -f "$d/docker-compose.prod.yml" ]; then cd "$d" && docker compose up -d --force-recreate; exit 0; fi; done; docker restart ueberwachungs-panel)';
+
+      const configuredTarget = db.prepare("SELECT value FROM settings WHERE key = 'panel_container'").get()?.value?.trim() || '';
+      if (configuredTarget) {
+        console.log(`[Update] Konfigurierter Standard-Container / Stack für Panel-Update: "${configuredTarget}"`);
+      } else {
+        console.log('[Update] Kein Standard-Container konfiguriert -> Automatische Erkennung aktiv.');
+      }
 
       // 1. Primär: Update über Dockhand Pro API (falls in Einstellungen konfiguriert)
       const dhToken = db.prepare("SELECT value FROM settings WHERE key = 'dockhandApiToken'").get()?.value;
       const dhUrl   = db.prepare("SELECT value FROM settings WHERE key = 'dockhandUrl'").get()?.value;
 
       let apiSuccess = false;
+      let stackUpdated = false;
+
       if (dhToken && dhUrl) {
         try {
           const envId = db.prepare("SELECT value FROM settings WHERE key = 'dockhandLocalEnvId'").get()?.value || '1';
@@ -146,21 +153,16 @@ router.post('/run', requireRole('admin'), async (req, res) => {
             console.log('[Update] Image erfolgreich über Dockhand API geladen:', pullRes?.data || 'OK');
           } catch (pullErr) {
             console.error('[Update] FEHLER beim Image Pull über Dockhand API:', pullErr.message);
-            if (pullErr.response?.data) {
-              console.error('[Update] Dockhand API Fehler-Details (pullImage):', JSON.stringify(pullErr.response.data));
-            }
-            if (pullErr.stack) {
-              console.error('[Update] Stack-Trace (pullImage):', pullErr.stack);
-            }
-            console.log('[Update] Versuche trotzdem Container-Aktualisierung (falls Image lokal aktuell ist)...');
           }
 
           console.log('[Update] Suche Panel-Stack über Dockhand API...');
-          let stackUpdated = false;
           try {
             const stacksRes = await dockhand.getStacks(envId);
             const stacksList = Array.isArray(stacksRes) ? stacksRes : (Array.isArray(stacksRes.data) ? stacksRes.data : (stacksRes?.data && Array.isArray(stacksRes.data.data) ? stacksRes.data.data : []));
             const panelStack = stacksList.find(s => {
+              if (configuredTarget) {
+                return s.id === configuredTarget || (s.name || '').toLowerCase() === configuredTarget.toLowerCase();
+              }
               const n = (s.name || '').toLowerCase();
               return n.includes('ueberwachungs-panel') || n.includes('panel');
             });
@@ -188,9 +190,10 @@ router.post('/run', requireRole('admin'), async (req, res) => {
             console.log('[Update] Suche Panel-Container über Dockhand API...');
             const res = await dockhand.getContainers(envId);
             const list = Array.isArray(res) ? res : (Array.isArray(res.data) ? res.data : (res?.data && Array.isArray(res.data.data) ? res.data.data : []));
-            console.log(`[Update] ${list.length} Container in Dockhand Environment ${envId} gefunden:`, list.map(c => `${c.name || 'unbekannt'} (${c.image || 'ohne image'})`).join(', '));
-            
             const panelContainer = list.find(c => {
+              if (configuredTarget) {
+                return c.id === configuredTarget || (c.name || '').toLowerCase() === configuredTarget.toLowerCase();
+              }
               const n = (c.name || '').toLowerCase();
               const img = (c.image || '').toLowerCase();
               return n.includes('ueberwachungs-panel') || n.includes('panel') || img.includes('ueberwachungs-panel') || img.includes('roobiing');
@@ -198,66 +201,92 @@ router.post('/run', requireRole('admin'), async (req, res) => {
 
             if (panelContainer) {
               const cName = panelContainer.name || panelContainer.id;
-              console.log(`[Update] Panel-Container (${cName}, ID: ${panelContainer.id}) gefunden! Versuche Recreate/Restart via Dockhand API...`);
+              console.log(`[Update] Panel-Container (${cName}, ID: ${panelContainer.id}) gefunden! Versuche Recreate via Dockhand API...`);
               try {
-                console.log(`[Update] Sende action "recreate" für Container ${cName} an Dockhand API...`);
                 await dockhand.containerAction(envId, panelContainer.id, 'recreate');
                 console.log(`[Update] ERFOLG: Container ${cName} wurde über Dockhand API recreated!`);
                 apiSuccess = true;
               } catch (recreateErr) {
                 console.error('[Update] FEHLER bei action "recreate" via Dockhand API:', recreateErr.message);
-                console.log(`[Update] Versuche stattdessen action "restart" für Container ${cName} via Dockhand API...`);
-                try {
-                  await dockhand.containerAction(envId, panelContainer.id, 'restart');
-                  console.log(`[Update] HINWEIS: Container ${cName} wurde über Dockhand API neugestartet. Da Container-Restart ein bestehendes Image nicht durch ein neues ersetzt, wird zusätzlich Fallback via docker-compose force-recreate ausgeführt.`);
-                  // WICHTIG: Kein apiSuccess = true, damit das lokale docker-compose force-recreate danach ausgeführt wird!
-                } catch (restartErr) {
-                  console.error('[Update] FEHLER bei action "restart" via Dockhand API:', restartErr.message);
-                }
+                console.log(`[Update] HINWEIS: Führe Host-Namespace Fallback aus, um Container-Recreate mit neuem Image sicherzustellen...`);
               }
             } else {
-              console.error(`[Update] FEHLER: Kein Panel-Container mit Name "ueberwachungs-panel" oder "panel" in Dockhand Environment ${envId} gefunden!`);
+              console.log(`[Update] HINWEIS: Kein Panel-Container in Dockhand Environment ${envId} gefunden.`);
             }
           }
         } catch (dhErr) {
           console.error('[Update] Dockhand Pro API Update fehlgeschlagen:', dhErr.message);
-          if (dhErr.response?.data) {
-            console.error('[Update] Dockhand API Response Fehler:', JSON.stringify(dhErr.response.data));
-          }
-          if (dhErr.stack) {
-            console.error('[Update] Dockhand Stack-Trace:', dhErr.stack);
-          }
         }
-      } else {
-        console.warn('[Update] Dockhand Pro API nicht konfiguriert (Token oder URL fehlt in Einstellungen).');
       }
 
+      // Hat einer der Dockhand-Wege (Stack-Deploy oder Container-Recreate) funktioniert,
+      // ist das Update durch — dann darf der Host-Fallback nicht nochmal recreaten.
       if (apiSuccess) return;
 
-      // 2. Fallback: Lokales Docker CLI über /var/run/docker.sock
-      console.log('[Update] Fallback 1: Versuche Update über lokales Docker-Socket (/var/run/docker.sock)...');
-      exec(dockerDirectCmd, { timeout: 60000 }, (errDirect, stdoutDirect, stderrDirect) => {
-        if (!errDirect) {
-          console.log('[Update] ERFOLG: Docker-Container erfolgreich über lokales Docker aktualisiert und neu gestartet.');
-          if (stdoutDirect) console.log('[Update] Docker STDOUT:', stdoutDirect);
+      // 2. Lokaler Host-Namespace Fallback (nsenter / docker inspect)
+      // WICHTIG: Zuerst nsenter nutzen, da nur im Host-Namespace die Compose-Pfade (/home/robin/...) existieren!
+      const targetName = configuredTarget || 'ueberwachungs-panel';
+      const hostScript = `
+        echo "[Update] Starte lokales Docker-Update für Ziel: ${targetName}..."
+        TARGET="${targetName}"
+        if [ -z "$TARGET" ] || [ "$TARGET" = "ueberwachungs-panel" ]; then
+          DETECTED=$(docker ps --format '{{.Names}} {{.Image}}' 2>/dev/null | grep -iE 'roobiing|ueberwachungs-panel' | awk '{print $1}' | head -n 1)
+          if [ -n "$DETECTED" ]; then
+            TARGET="$DETECTED"
+            echo "[Update] Automatisch erkannter Container-Name: $TARGET"
+          fi
+        fi
+        echo "[Update] Pulle neues Image ghcr.io/roobiing/ueberwachungs-panel:latest..."
+        docker pull ghcr.io/roobiing/ueberwachungs-panel:latest
+        
+        WDIR=$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' "$TARGET" 2>/dev/null)
+        CFG=$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project.config_files" }}' "$TARGET" 2>/dev/null)
+        
+        if [ -n "$WDIR" ] && [ -d "$WDIR" ]; then
+          echo "[Update] Compose Working-Directory von $TARGET gefunden: $WDIR"
+          cd "$WDIR" && docker compose pull && docker compose up -d --force-recreate && exit 0
+        fi
+        if [ -n "$CFG" ] && [ -f "$CFG" ]; then
+          echo "[Update] Compose Config-File von $TARGET gefunden: $CFG"
+          docker compose -f "$CFG" pull && docker compose -f "$CFG" up -d --force-recreate && exit 0
+        fi
+        
+        for d in /root /root/* /home/* /home/*/* /opt /opt/* /var/docker /var/docker/* /srv /srv/* /app /app/* $(pwd); do
+          if [ -f "$d/docker-compose.yml" ] || [ -f "$d/docker-compose.prod.yml" ]; then
+            echo "[Update] Prüfe Compose-Datei in $d"
+            cd "$d" && docker compose pull && docker compose up -d --force-recreate && exit 0
+          fi
+        done
+        
+        echo "[Update] Fallback: Standalone Recreate für Container $TARGET..."
+        docker restart "$TARGET"
+      `.replace(/\n\s+/g, ' ').trim();
+
+      const nsenterCmd = `nsenter --target 1 --mount --uts --ipc --net --pid -- sh -c "${hostScript.replace(/"/g, '\\"')}"`;
+      const dockerDirectCmd = hostScript;
+
+      console.log('[Update] Primär lokales Update über Host-Namespace (nsenter)...');
+      exec(nsenterCmd, { timeout: 120000 }, (errNs, stdoutNs, stderrNs) => {
+        if (!errNs) {
+          console.log('[Update] ERFOLG: Docker-Container über nsenter (Host-Namespace) mit neuem Image aktualisiert und neu gestartet.');
+          if (stdoutNs) console.log('[Update] nsenter STDOUT:', stdoutNs);
           return;
         }
-        console.error('[Update] FEHLER beim lokalen Docker-Update:', errDirect.message);
-        if (stdoutDirect) console.error('[Update] Docker STDOUT:', stdoutDirect);
-        if (stderrDirect) console.error('[Update] Docker STDERR:', stderrDirect);
+        console.error('[Update] FEHLER bei nsenter-Update:', errNs.message);
+        if (stdoutNs) console.error('[Update] nsenter STDOUT:', stdoutNs);
+        if (stderrNs) console.error('[Update] nsenter STDERR:', stderrNs);
 
-        // 3. Fallback: Update über nsenter (Host-Namespace)
-        console.log('[Update] Fallback 2: Versuche Update über Host-Namespace (nsenter)...');
-        exec(nsenterCmd, { timeout: 60000 }, (errNs, stdoutNs, stderrNs) => {
-          if (!errNs) {
-            console.log('[Update] ERFOLG: Docker-Container erfolgreich über nsenter aktualisiert und neu gestartet.');
-            if (stdoutNs) console.log('[Update] nsenter STDOUT:', stdoutNs);
+        console.log('[Update] Fallback: Versuche Update über lokales Docker-Socket (/var/run/docker.sock)...');
+        exec(dockerDirectCmd, { timeout: 120000 }, (errDirect, stdoutDirect, stderrDirect) => {
+          if (!errDirect) {
+            console.log('[Update] ERFOLG: Docker-Container über lokales Docker-Socket aktualisiert und neu gestartet.');
+            if (stdoutDirect) console.log('[Update] Docker STDOUT:', stdoutDirect);
             return;
           }
-          console.error('[Update] FEHLER bei nsenter-Update:', errNs.message);
-          if (stdoutNs) console.error('[Update] nsenter STDOUT:', stdoutNs);
-          if (stderrNs) console.error('[Update] nsenter STDERR:', stderrNs);
-          console.error('[Update] KRITISCH: Alle Update-Methoden (Dockhand API, lokales Docker CLI, nsenter) sind fehlgeschlagen!');
+          console.error('[Update] FEHLER beim lokalen Docker-Socket Update:', errDirect.message);
+          if (stdoutDirect) console.error('[Update] Docker STDOUT:', stdoutDirect);
+          if (stderrDirect) console.error('[Update] Docker STDERR:', stderrDirect);
+          console.error('[Update] KRITISCH: Alle Update-Methoden sind fehlgeschlagen!');
         });
       });
     } else {
@@ -280,6 +309,70 @@ router.get('/changelog', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: 'Changelog konnte nicht geladen werden: ' + err.message });
   }
+});
+
+// ── GET /api/update/targets ──────────────────────────────────────────────────
+router.get('/targets', requireRole('admin'), async (req, res) => {
+  const currentTarget = db.prepare("SELECT value FROM settings WHERE key = 'panel_container'").get()?.value || '';
+  const targets = [];
+  const addedIds = new Set();
+
+  const addTarget = (id, name, type, source) => {
+    if (!id || addedIds.has(id)) return;
+    addedIds.add(id);
+    targets.push({ id, name, type, source });
+  };
+
+  // 1. Stacks und Container über Dockhand Pro API abrufen (falls konfiguriert)
+  const dhToken = db.prepare("SELECT value FROM settings WHERE key = 'dockhandApiToken'").get()?.value;
+  const dhUrl   = db.prepare("SELECT value FROM settings WHERE key = 'dockhandUrl'").get()?.value;
+  if (dhToken && dhUrl) {
+    try {
+      const envId = db.prepare("SELECT value FROM settings WHERE key = 'dockhandLocalEnvId'").get()?.value || '1';
+      const stacksRes = await dockhand.getStacks(envId);
+      const stacksList = Array.isArray(stacksRes) ? stacksRes : (Array.isArray(stacksRes.data) ? stacksRes.data : (stacksRes?.data && Array.isArray(stacksRes.data.data) ? stacksRes.data.data : []));
+      stacksList.forEach(s => {
+        addTarget(s.id, `[Dockhand Stack] ${s.name || s.id}`, 'stack', 'Dockhand');
+      });
+
+      const containersRes = await dockhand.getContainers(envId);
+      const containersList = Array.isArray(containersRes) ? containersRes : (Array.isArray(containersRes.data) ? containersRes.data : (containersRes?.data && Array.isArray(containersRes.data.data) ? containersRes.data.data : []));
+      containersList.forEach(c => {
+        const img = (c.image || '').split('/').pop();
+        addTarget(c.id, `[Dockhand Container] ${c.name || c.id} (${img})`, 'container', 'Dockhand');
+        if (c.name && c.name !== c.id) addTarget(c.name, `[Dockhand Container] ${c.name} (${img})`, 'container', 'Dockhand');
+      });
+    } catch (e) {
+      console.warn('[Update/Targets] Dockhand Abruf fehlerhaft:', e.message);
+    }
+  }
+
+  // 2. Lokale Docker-Container über Host-Namespace abrufen
+  try {
+    const cmd = 'nsenter --target 1 --mount --uts --ipc --net --pid -- docker ps -a --format "{{.Names}}|{{.Image}}" 2>/dev/null || docker ps -a --format "{{.Names}}|{{.Image}}" 2>/dev/null';
+    const { stdout } = await execPromise(cmd, { timeout: 10000 });
+    if (stdout) {
+      stdout.split('\n').map(l => l.trim()).filter(Boolean).forEach(line => {
+        const [name, image] = line.split('|');
+        if (name) {
+          const imgShort = (image || '').split('/').pop();
+          addTarget(name, `[Lokaler Container] ${name} (${imgShort})`, 'local', 'Lokal');
+        }
+      });
+    }
+  } catch (e) {
+    console.warn('[Update/Targets] Lokaler Docker Abruf fehlerhaft:', e.message);
+  }
+
+  res.json({ success: true, currentTarget, targets });
+});
+
+// ── PUT /api/update/target ───────────────────────────────────────────────────
+router.put('/target', requireRole('admin'), (req, res) => {
+  const { target } = req.body;
+  const val = (target || '').trim();
+  db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('panel_container', ?, CURRENT_TIMESTAMP)").run(val);
+  res.json({ success: true, target: val });
 });
 
 module.exports = router;
