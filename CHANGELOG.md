@@ -4,6 +4,18 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.48.23] - 2026-07-28 (Build 271) — *GitHub-Token Card Layout Fix*
+
+### 🎨 Design & UI-Verbesserungen
+- **Fehlendes Card-Layout beim GitHub-Token & Panel-Updater behoben (`Settings.jsx`)**: In den Einstellungen im Tab „System & Backup" fehlte beim Bereich „GitHub Update-Token / Panel-Updater" auf der linken Seite die umliegende `<Card>`-Komponente. Der Block war ohne Header und Rahmen direkt im Grid platziert. Die Komponente `GitHubTokenCard` wurde nun in eine vollwertige `<Card>` mit Titel und Icon eingebettet, sodass sie optisch perfekt zur Karte „Backup & Migration" auf der rechten Seite passt.
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen**: Keine Datenbank-Schemaänderungen erforderlich.
+- **Agent-Kompatibilität**: Vollständig kompatibel mit allen bestehenden Agenten.
+- **Neustart-/Session-Verhalten**: Nach dem Seitenneustart erscheint der GitHub-Bereich im Tab „System & Backup" sauber gerahmt als Karte.
+
+---
+
 ## [1.48.22] - 2026-07-28 (Build 270) — *Update-Log Modal Changelog Fix*
 
 ### 🐛 Bugfixes

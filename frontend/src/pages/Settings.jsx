@@ -205,91 +205,93 @@ function GitHubTokenCard({ status, onReload }) {
   const isSet = !!status?.github_token;
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <StatusBadge set={isSet} />
-        {isSet && (
-          <button onClick={remove} disabled={saving} className="text-xs text-panel-red hover:underline flex items-center gap-1">
-            <Trash2 size={12} />Token löschen
-          </button>
-        )}
-      </div>
-      <p className="text-xs text-panel-muted leading-relaxed">
-        Personal Access Token (PAT) von GitHub, damit das Panel automatisch im privaten Repository nach Updates (version.json & Agent) suchen kann.
-      </p>
-
-      {/* Erklärung: So erstellst du ein GitHub Token */}
-      <div className="rounded-md border border-panel-accent/30 bg-panel-accent/5 px-3.5 py-2.5 space-y-1.5">
-        <p className="text-[11px] font-semibold text-panel-accent">So erstellst du ein GitHub-Token für dein privates Repository:</p>
-        <ol className="text-[11px] text-panel-muted leading-relaxed list-decimal list-inside space-y-0.5">
-          <li>Auf GitHub zu <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noreferrer" className="text-panel-text underline hover:text-panel-accent">Settings → Developer settings → Personal access tokens (Fine-grained)</a> gehen.</li>
-          <li>Auf <strong>Generate new token</strong> klicken und dein privates Repository <code className="text-panel-text font-mono bg-panel-surface px-1 py-0.5 rounded">ueberwachungs-panel</code> auswählen.</li>
-          <li>Unter <strong>Repository permissions</strong> bei <strong>Contents</strong> und <strong>Metadata</strong> auf <strong>Read-only</strong> (Lesezugriff) stellen.</li>
-          <li>Token generieren, hier in das Feld einfügen und speichern.</li>
-        </ol>
-      </div>
-
-      <div className="flex gap-2">
-        <input
-          type="password"
-          value={token}
-          onChange={e => setToken(e.target.value)}
-          placeholder="ghp_xxxx..."
-          className="w-full bg-panel-surface border border-panel-border rounded-md px-3 py-1.5 text-sm text-panel-text focus:outline-none focus:border-panel-accent"
-        />
-        <button
-          onClick={testToken}
-          disabled={testing || saving || (!isSet && !token.trim())}
-          className="px-3 py-1.5 text-xs bg-panel-card text-panel-text border border-panel-border rounded-md hover:bg-panel-border transition-colors disabled:opacity-50 whitespace-nowrap cursor-pointer"
-          title="Prüfen, ob das (eingegebene oder gespeicherte) Token gültig ist und Lesezugriff auf RoobiinG/ueberwachungs-panel hat"
-        >
-          {testing ? 'Prüfe…' : 'Token testen'}
-        </button>
-        <button
-          onClick={save}
-          disabled={saving || !token.trim()}
-          className="px-3 py-1.5 text-xs bg-panel-accent text-white rounded-md hover:bg-blue-500 transition-colors disabled:opacity-50 whitespace-nowrap cursor-pointer"
-        >
-          {saving ? '…' : 'Speichern'}
-        </button>
-      </div>
-      {msg && <p className={`text-xs ${msg.startsWith('✓') ? 'text-panel-green' : msg.startsWith('⏳') ? 'text-panel-accent' : 'text-panel-red'}`}>{msg}</p>}
-
-      {/* ── Automatischen Panel-Updater starten ── */}
-      <div className="pt-3 border-t border-panel-border/40 space-y-2">
+    <Card title={<span className="flex items-center gap-2"><RefreshCw size={14} className="text-panel-accent" />GitHub-Repository & Panel-Updater</span>}>
+      <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <div>
-            <h4 className="text-xs font-semibold text-panel-text flex items-center gap-1.5">
-              <RefreshCw size={13} className="text-panel-accent" /> Panel-Updater (Git Pull & Neustart)
-            </h4>
-            <p className="text-[11px] text-panel-muted">
-              Aktualisiert das Panel automatisch vom GitHub-Repository auf die neueste Version, lädt die Seite neu und zeigt den Update-Log.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <a
-              href="https://github.com/RoobiinG/ueberwachungs-panel/blob/master/CHANGELOG.md"
-              target="_blank"
-              rel="noreferrer"
-              className="px-2.5 py-1.5 text-xs bg-panel-surface border border-panel-border hover:border-panel-accent text-panel-text rounded-md flex items-center gap-1.5 transition-colors whitespace-nowrap"
-              title="Release-Historie, Bugfixes & Nachwirken auf GitHub ansehen"
-            >
-              <FileText size={13} className="text-panel-accent" />
-              Update-Log & Nachwirken (GitHub)
-            </a>
-            <Button
-              onClick={runPanelUpdate}
-              disabled={updating}
-              size="sm"
-              className="bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-1.5 whitespace-nowrap"
-            >
-              <Download size={13} />
-              {updating ? 'Aktualisiere...' : 'Jetzt aktualisieren'}
-            </Button>
+          <StatusBadge set={isSet} />
+          {isSet && (
+            <button onClick={remove} disabled={saving} className="text-xs text-panel-red hover:underline flex items-center gap-1">
+              <Trash2 size={12} />Token löschen
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-panel-muted leading-relaxed">
+          Personal Access Token (PAT) von GitHub, damit das Panel automatisch im privaten Repository nach Updates (version.json & Agent) suchen kann.
+        </p>
+
+        {/* Erklärung: So erstellst du ein GitHub Token */}
+        <div className="rounded-md border border-panel-accent/30 bg-panel-accent/5 px-3.5 py-2.5 space-y-1.5">
+          <p className="text-[11px] font-semibold text-panel-accent">So erstellst du ein GitHub-Token für dein privates Repository:</p>
+          <ol className="text-[11px] text-panel-muted leading-relaxed list-decimal list-inside space-y-0.5">
+            <li>Auf GitHub zu <a href="https://github.com/settings/tokens?type=beta" target="_blank" rel="noreferrer" className="text-panel-text underline hover:text-panel-accent">Settings → Developer settings → Personal access tokens (Fine-grained)</a> gehen.</li>
+            <li>Auf <strong>Generate new token</strong> klicken und dein privates Repository <code className="text-panel-text font-mono bg-panel-surface px-1 py-0.5 rounded">ueberwachungs-panel</code> auswählen.</li>
+            <li>Unter <strong>Repository permissions</strong> bei <strong>Contents</strong> und <strong>Metadata</strong> auf <strong>Read-only</strong> (Lesezugriff) stellen.</li>
+            <li>Token generieren, hier in das Feld einfügen und speichern.</li>
+          </ol>
+        </div>
+
+        <div className="flex gap-2">
+          <input
+            type="password"
+            value={token}
+            onChange={e => setToken(e.target.value)}
+            placeholder="ghp_xxxx..."
+            className="w-full bg-panel-surface border border-panel-border rounded-md px-3 py-1.5 text-sm text-panel-text focus:outline-none focus:border-panel-accent"
+          />
+          <button
+            onClick={testToken}
+            disabled={testing || saving || (!isSet && !token.trim())}
+            className="px-3 py-1.5 text-xs bg-panel-card text-panel-text border border-panel-border rounded-md hover:bg-panel-border transition-colors disabled:opacity-50 whitespace-nowrap cursor-pointer"
+            title="Prüfen, ob das (eingegebene oder gespeicherte) Token gültig ist und Lesezugriff auf RoobiinG/ueberwachungs-panel hat"
+          >
+            {testing ? 'Prüfe…' : 'Token testen'}
+          </button>
+          <button
+            onClick={save}
+            disabled={saving || !token.trim()}
+            className="px-3 py-1.5 text-xs bg-panel-accent text-white rounded-md hover:bg-blue-500 transition-colors disabled:opacity-50 whitespace-nowrap cursor-pointer"
+          >
+            {saving ? '…' : 'Speichern'}
+          </button>
+        </div>
+        {msg && <p className={`text-xs ${msg.startsWith('✓') ? 'text-panel-green' : msg.startsWith('⏳') ? 'text-panel-accent' : 'text-panel-red'}`}>{msg}</p>}
+
+        {/* ── Automatischen Panel-Updater starten ── */}
+        <div className="pt-3 border-t border-panel-border/40 space-y-2">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div>
+              <h4 className="text-xs font-semibold text-panel-text flex items-center gap-1.5">
+                <RefreshCw size={13} className="text-panel-accent" /> Panel-Updater (Git Pull & Neustart)
+              </h4>
+              <p className="text-[11px] text-panel-muted">
+                Aktualisiert das Panel automatisch vom GitHub-Repository auf die neueste Version, lädt die Seite neu und zeigt den Update-Log.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <a
+                href="https://github.com/RoobiinG/ueberwachungs-panel/blob/master/CHANGELOG.md"
+                target="_blank"
+                rel="noreferrer"
+                className="px-2.5 py-1.5 text-xs bg-panel-surface border border-panel-border hover:border-panel-accent text-panel-text rounded-md flex items-center gap-1.5 transition-colors whitespace-nowrap"
+                title="Release-Historie, Bugfixes & Nachwirken auf GitHub ansehen"
+              >
+                <FileText size={13} className="text-panel-accent" />
+                Update-Log & Nachwirken (GitHub)
+              </a>
+              <Button
+                onClick={runPanelUpdate}
+                disabled={updating}
+                size="sm"
+                className="bg-emerald-600 hover:bg-emerald-500 text-white flex items-center gap-1.5 whitespace-nowrap"
+              >
+                <Download size={13} />
+                {updating ? 'Aktualisiere...' : 'Jetzt aktualisieren'}
+              </Button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </Card>
   );
 }
 
