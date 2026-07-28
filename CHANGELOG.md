@@ -4,6 +4,46 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.49.0] - 2026-07-28 (Build 272) — *Wählbares Update-Ziel*
+
+### ✨ Neue Funktionen & Features
+- **Ziel-Container bzw. Stack für das Panel-Update frei wählbar**: Der Updater musste sich sein Ziel bisher
+  über Namensraten selbst suchen (`name.includes('panel')`, Image enthält `roobiing` …). Heißt der Container
+  auf dem Server anders, lief das ins Leere. Ab sofort lässt sich das Ziel in den Einstellungen fest hinterlegen:
+  - **`GET /api/update/targets`** (Admin) liefert eine kombinierte Auswahlliste aus Dockhand-Stacks,
+    Dockhand-Containern und lokal über den Host-Namespace gefundenen Containern — jeweils mit Image-Angabe.
+  - **`PUT /api/update/target`** (Admin) speichert die Auswahl unter dem Settings-Schlüssel `panel_container`.
+  - **Einstellungen → System → GitHub-Repository & Panel-Updater**: neuer Abschnitt „Ziel des Updates" mit
+    Auswahlfeld, Neu-laden-Knopf und der Voreinstellung *Automatisch erkennen*. Die Auswahl wird sofort gespeichert.
+  - Sowohl die Dockhand-Suche als auch der lokale Host-Fallback bevorzugen ab jetzt das konfigurierte Ziel und
+    fallen nur ohne Auswahl auf die bisherige automatische Erkennung zurück.
+- **Robusterer lokaler Fallback**: Das Host-Skript liest `com.docker.compose.project.working_dir` **und**
+  `com.docker.compose.project.config_files` aus den Container-Labels, führt vor dem Recreate ein `docker compose pull`
+  aus und durchsucht erst danach die bekannten Verzeichnisse. Reihenfolge ist jetzt nsenter (Host-Namespace) zuerst,
+  Docker-Socket als Fallback — im Container selbst existieren die Compose-Pfade des Hosts nicht.
+
+### 🐛 Bugfixes & Optimierungen
+- **Backend-Absturz verhindert**: In `backend/src/routes/update.js` waren die neuen Routen versehentlich
+  **innerhalb** des `/changelog`-Handlers gelandet, dessen Funktionsrumpf dadurch nie geschlossen wurde.
+  Die Datei war nicht ladbar (`SyntaxError: Unexpected end of input`) — das Backend wäre beim Start abgestürzt.
+  Der Handler wird jetzt korrekt geschlossen, beide Routen liegen auf oberster Ebene.
+- **Doppeltes Neuerstellen des Containers behoben**: Der frühe Ausstieg prüfte nur noch `stackUpdated`, während
+  ein erfolgreiches Container-Recreate über die Dockhand-API in `apiSuccess` vermerkt, aber nicht mehr ausgewertet
+  wurde. Dadurch lief nach einem bereits erfolgreichen Update zusätzlich der Host-Fallback und erstellte den
+  Container ein zweites Mal neu — mitten im laufenden ersten Recreate. Geprüft wird jetzt wieder `apiSuccess`.
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- `version.json` synchron auf **`1.49.0` (Build 272)** erhöht (Minor, da neues Feature).
+- **Keine Datenbank-Migration nötig**: `panel_container` ist ein gewöhnlicher Schlüssel in der bestehenden
+  Key-Value-Tabelle `settings` und wird erst beim ersten Speichern angelegt.
+- **Abwärtskompatibel**: Ohne gesetztes Ziel verhält sich der Updater exakt wie bisher (automatische Erkennung).
+- **Keine Agent-Aktualisierung erforderlich**, keine Änderung an Rechten, Sessions oder WebSocket-Verhalten.
+  Die neuen Routen sind wie der restliche Updater auf die Rolle `admin` beschränkt.
+- **Wirksam erst nach dem Update**: Da der Fix im Updater selbst sitzt, greift er erst bei dem Update, das auf
+  diese Version folgt. Das Einspielen dieser Version läuft noch über den bisherigen Weg.
+
+---
+
 ## [1.48.23] - 2026-07-28 (Build 271) — *GitHub-Token Card Layout Fix*
 
 ### 🎨 Design & UI-Verbesserungen

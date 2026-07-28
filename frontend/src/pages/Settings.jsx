@@ -139,6 +139,40 @@ function GitHubTokenCard({ status, onReload }) {
   const [testing, setTesting]   = useState(false);
   const [msg, setMsg]           = useState('');
 
+  // Ziel-Container / Stack, der beim Panel-Update neu erstellt wird
+  const [targets, setTargets]               = useState([]);
+  const [target, setTarget]                 = useState('');
+  const [loadingTargets, setLoadingTargets] = useState(false);
+  const [savingTarget, setSavingTarget]     = useState(false);
+
+  const loadTargets = async () => {
+    setLoadingTargets(true);
+    try {
+      const { data } = await axios.get('/api/update/targets');
+      setTargets(data.targets || []);
+      setTarget(data.currentTarget || '');
+    } catch (err) {
+      setMsg('❌ ' + (err.response?.data?.error || 'Container-Liste konnte nicht geladen werden'));
+    }
+    setLoadingTargets(false);
+  };
+
+  useEffect(() => { loadTargets(); }, []);
+
+  const saveTarget = async (val) => {
+    setSavingTarget(true);
+    setTarget(val);
+    try {
+      await axios.put('/api/update/target', { target: val });
+      setMsg(val
+        ? '✓ Update-Ziel gespeichert — das Panel aktualisiert künftig genau diesen Container bzw. Stack'
+        : '✓ Update-Ziel zurückgesetzt — die automatische Erkennung ist wieder aktiv');
+    } catch (err) {
+      setMsg('❌ ' + (err.response?.data?.error || 'Update-Ziel konnte nicht gespeichert werden'));
+    }
+    setSavingTarget(false);
+  };
+
   const testToken = async () => {
     setTesting(true);
     setMsg('⏳ Prüfe GitHub-Token und Lesezugriff auf das private Repository...');
@@ -288,6 +322,44 @@ function GitHubTokenCard({ status, onReload }) {
                 {updating ? 'Aktualisiere...' : 'Jetzt aktualisieren'}
               </Button>
             </div>
+          </div>
+
+          {/* ── Ziel-Container / Stack für das Update ── */}
+          <div className="rounded-md border border-panel-border/60 bg-panel-surface/40 px-3.5 py-2.5 space-y-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <h5 className="text-[11px] font-semibold text-panel-text flex items-center gap-1.5">
+                <Layers size={12} className="text-panel-accent" /> Ziel des Updates
+              </h5>
+              <button
+                onClick={loadTargets}
+                disabled={loadingTargets}
+                className="text-[11px] text-panel-muted hover:text-panel-accent flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                title="Container- und Stack-Liste neu einlesen"
+              >
+                <RefreshCw size={11} className={loadingTargets ? 'animate-spin' : ''} />
+                {loadingTargets ? 'Lade…' : 'Neu laden'}
+              </button>
+            </div>
+            <p className="text-[11px] text-panel-muted leading-relaxed">
+              Legt fest, welcher Container oder Dockhand-Stack beim Update neu erstellt wird. Ohne Auswahl sucht sich
+              das Panel sein Ziel automatisch anhand des Namens — das schlägt fehl, wenn der Container bei dir anders heißt.
+            </p>
+            <select
+              value={target}
+              onChange={e => saveTarget(e.target.value)}
+              disabled={savingTarget || loadingTargets}
+              className={inputCls + ' py-1.5 text-xs disabled:opacity-50 cursor-pointer'}
+            >
+              <option value="">Automatisch erkennen (Standard)</option>
+              {targets.map(t => (
+                <option key={`${t.source}-${t.type}-${t.id}`} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+            {!loadingTargets && targets.length === 0 && (
+              <p className="text-[11px] text-panel-muted">
+                Keine Container oder Stacks gefunden — weder über die Dockhand-API noch lokal. Die automatische Erkennung bleibt aktiv.
+              </p>
+            )}
           </div>
         </div>
       </div>
