@@ -4,6 +4,19 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.48.21] - 2026-07-28 (Build 269) — *Dockhand Stack Deploy & Smart Compose Discovery Updater*
+
+### ⚡ Updater & Docker-Optimierungen
+- **Dockhand Pro API Stack-Deploy im Updater (`update.js`)**: Der automatische Docker-Updater (`POST /api/update/run`) prüft in Dockhand nun primär, ob das Panel als Docker-Compose-Stack verwaltet wird. Wird ein Panel-Stack gefunden, wird direkt ein Stack-Deploy (`/api/stacks/:id/deploy` mit `pullImages: true` und `forceRecreate: true`) ausgeführt. Da ein Container-Restart (`/api/containers/:id/restart`) das alte Image beibehält und `/recreate` für Container in Dockhand nicht existiert, sorgt das Stack-Deploy für eine vollständige Erneuerung mit dem neu geladenen Image.
+- **Intelligente Docker Compose Pfad-Erkennung für lokales Docker & `nsenter`**: Für die Fallback-Methoden (lokales Docker-Socket `/var/run/docker.sock` und Host-Namespace über `nsenter`) liest das Skript zunächst über `docker inspect` automatisch das Label `com.docker.compose.project.working_dir` des Containers aus. So wird exakt das Arbeitsverzeichnis des Projekts auf dem Host ermittelt und `docker compose up -d --force-recreate` im richtigen Ordner gestartet.
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen**: Keine Datenbank-Schemaänderungen erforderlich.
+- **Agent-Kompatibilität**: Vollständig kompatibel mit allen bestehenden Agenten.
+- **Neustart-/Session-Verhalten**: Der Updater erneuert den Panel-Container bei Dockhand-Stack-Verwaltung oder über die intelligente Pfadsuche nun fehlerfrei mit dem jeweils aktuellen Image.
+
+---
+
 ## [1.48.20] - 2026-07-28 (Build 268) — *MC-Host24 Tag Routing Fix*
 
 ### 🐛 Bugfixes
