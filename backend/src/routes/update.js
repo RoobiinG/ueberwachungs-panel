@@ -126,46 +126,48 @@ router.post('/run', requireRole('admin'), async (req, res) => {
   // 7. Im Hintergrund Server neu starten bzw. Docker Pull & Container-Neustart ausführen
   setTimeout(async () => {
     if (isDockerUpdate) {
-      console.log('[Update] Starte Docker Image Update...');
-      // A. Versuch über Dockhand Pro API (falls in Einstellungen konfiguriert)
-      const dhToken = db.prepare("SELECT value FROM settings WHERE key = 'dockhandApiToken'").get()?.value;
-      const dhUrl   = db.prepare("SELECT value FROM settings WHERE key = 'dockhandUrl'").get()?.value;
-      if (dhToken && dhUrl) {
-        try {
-          console.log('[Update] Dockhand Pro API konfiguriert. Versuche Update über Dockhand...');
-          const envId = db.prepare("SELECT value FROM settings WHERE key = 'dockhandLocalEnvId'").get()?.value || '1';
-          await dockhand.pullImage(envId, 'ghcr.io/roobiing/ueberwachungs-panel:latest');
-          console.log('[Update] Image über Dockhand gezogen. Suche Panel-Container...');
-          const { data: containers } = await dockhand.getContainers(envId);
-          const panelContainer = (Array.isArray(containers) ? containers : []).find(
-            c => (c.name && c.name.includes('ueberwachungs-panel')) || (c.image && c.image.includes('ueberwachungs-panel')) || (c.name && c.name.includes('panel'))
-          );
-          if (panelContainer) {
-            console.log(`[Update] Panel-Container (${panelContainer.name}) gefunden → starte Recreate via Dockhand...`);
-            await dockhand.containerAction(envId, panelContainer.id, 'recreate');
+      console.log('[Update] Starte Docker Image Update über Host-Namespace (nsenter) / lokales Docker...');
+      const nsenterCmd = 'nsenter --target 1 --mount --uts --ipc --net --pid -- sh -c "docker pull ghcr.io/roobiing/ueberwachungs-panel:latest && (for d in /root /home/* /opt /var/docker /srv/* /app $(pwd); do if [ -f \\"$d/docker-compose.yml\\" ] || [ -f \\"$d/docker-compose.prod.yml\\" ]; then cd \\"$d\\" && docker compose up -d --force-recreate; exit 0; fi; done; docker restart ueberwachungs-panel)"';
+      const dockerDirectCmd = 'docker pull ghcr.io/roobiing/ueberwachungs-panel:latest && (for d in /root /home/* /opt /var/docker /srv/* /app $(pwd); do if [ -f "$d/docker-compose.yml" ] || [ -f "$d/docker-compose.prod.yml" ]; then cd "$d" && docker compose up -d --force-recreate; exit 0; fi; done; docker restart ueberwachungs-panel)';
+
+      // 1. Primär: Update direkt über nsenter (Host-Namespace) laut AGENTS.md
+      exec(nsenterCmd, (errNs) => {
+        if (!errNs) {
+          console.log('[Update] Docker-Container erfolgreich über nsenter aktualisiert und neu gestartet.');
+          return;
+        }
+        console.log('[Update] nsenter nicht verfügbar (' + errNs.message + '), versuche direkten Docker CLI Befehl...');
+        // 2. Fallback: Direkter Docker CLI Befehl über /var/run/docker.sock
+        exec(dockerDirectCmd, async (errDirect) => {
+          if (!errDirect) {
+            console.log('[Update] Docker-Container erfolgreich über Docker-Socket aktualisiert und neu gestartet.');
             return;
           }
-          console.warn('[Update] Panel-Container in Dockhand nicht gefunden. Weiche auf Host-Docker aus...');
-        } catch (dhErr) {
-          console.warn('[Update] Dockhand Pro Update nicht möglich (' + dhErr.message + '). Weiche auf Host-Docker (nsenter/socket) aus...');
-        }
-      }
-
-      // B. Fallback: Direkter Docker-Socket Befehl oder Host-Namespace via nsenter
-      console.log('[Update] Versuche Update über lokales Docker / nsenter...');
-      const dockerDirectCmd = 'docker pull ghcr.io/roobiing/ueberwachungs-panel:latest && (for d in /root /home/* /opt /var/docker /srv/* /app $(pwd); do if [ -f "$d/docker-compose.yml" ] || [ -f "$d/docker-compose.prod.yml" ]; then cd "$d" && docker compose up -d --force-recreate; exit 0; fi; done; docker restart ueberwachungs-panel)';
-      const nsenterCmd = 'nsenter --target 1 --mount --uts --ipc --net --pid -- sh -c "docker pull ghcr.io/roobiing/ueberwachungs-panel:latest && (for d in /root /home/* /opt /var/docker /srv/* /app $(pwd); do if [ -f \\"$d/docker-compose.yml\\" ] || [ -f \\"$d/docker-compose.prod.yml\\" ]; then cd \\"$d\\" && docker compose up -d --force-recreate; exit 0; fi; done; docker restart ueberwachungs-panel)"';
-
-      exec(dockerDirectCmd, (errDirect) => {
-        if (errDirect) {
-          console.log('[Update] Direkter Docker CLI Befehl nicht möglich, verwende nsenter...');
-          exec(nsenterCmd, (errNs) => {
-            if (errNs) console.error('[Update] Hintergrund Docker-Update (nsenter) Fehler:', errNs.message);
-            else console.log('[Update] Docker-Container erfolgreich über nsenter aktualisiert und neu gestartet.');
-          });
-        } else {
-          console.log('[Update] Docker-Container erfolgreich über Docker-Socket aktualisiert und neu gestartet.');
-        }
+          console.log('[Update] Direkter Docker CLI Befehl fehlgeschlagen, prüfe auf Dockhand Pro API...');
+          // 3. Letzter Fallback: Dockhand Pro API falls in Einstellungen konfiguriert
+          const dhToken = db.prepare("SELECT value FROM settings WHERE key = 'dockhandApiToken'").get()?.value;
+          const dhUrl   = db.prepare("SELECT value FROM settings WHERE key = 'dockhandUrl'").get()?.value;
+          if (dhToken && dhUrl) {
+            try {
+              console.log('[Update] Versuche Update über Dockhand Pro API als Fallback...');
+              const envId = db.prepare("SELECT value FROM settings WHERE key = 'dockhandLocalEnvId'").get()?.value || '1';
+              await dockhand.pullImage(envId, 'ghcr.io/roobiing/ueberwachungs-panel:latest');
+              console.log('[Update] Image über Dockhand gezogen. Suche Panel-Container...');
+              const { data: containers } = await dockhand.getContainers(envId);
+              const panelContainer = (Array.isArray(containers) ? containers : []).find(
+                c => (c.name && c.name.includes('ueberwachungs-panel')) || (c.image && c.image.includes('ueberwachungs-panel')) || (c.name && c.name.includes('panel'))
+              );
+              if (panelContainer) {
+                console.log(`[Update] Panel-Container (${panelContainer.name}) gefunden → starte Recreate via Dockhand...`);
+                await dockhand.containerAction(envId, panelContainer.id, 'recreate');
+                return;
+              }
+              console.warn('[Update] Panel-Container in Dockhand nicht gefunden.');
+            } catch (dhErr) {
+              console.warn('[Update] Dockhand Pro Update fehlgeschlagen:', dhErr.message);
+            }
+          }
+        });
       });
     } else {
       console.log('[Update] Server startet nach automatischem Git-Update neu...');
