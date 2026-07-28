@@ -1,6 +1,6 @@
 {
-  "version": "1.49.0",
-  "build": 272,
+  "version": "1.49.1",
+  "build": 273,
   "date": "2026-07-28",
-  "codename": "Wählbares Update-Ziel"
+  "codename": "Update-Ziel ohne Dubletten"
 }

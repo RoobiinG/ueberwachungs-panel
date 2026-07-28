@@ -339,8 +339,11 @@ router.get('/targets', requireRole('admin'), async (req, res) => {
       const containersList = Array.isArray(containersRes) ? containersRes : (Array.isArray(containersRes.data) ? containersRes.data : (containersRes?.data && Array.isArray(containersRes.data.data) ? containersRes.data.data : []));
       containersList.forEach(c => {
         const img = (c.image || '').split('/').pop();
-        addTarget(c.id, `[Dockhand Container] ${c.name || c.id} (${img})`, 'container', 'Dockhand');
-        if (c.name && c.name !== c.id) addTarget(c.name, `[Dockhand Container] ${c.name} (${img})`, 'container', 'Dockhand');
+        // Nur EIN Eintrag pro Container. Der Name wird der ID vorgezogen: er ist lesbar und
+        // funktioniert in beiden Update-Wegen — die Dockhand-Suche vergleicht ohnehin gegen
+        // ID und Name, der Host-Fallback braucht ihn für `docker inspect` / `docker restart`.
+        // Ohne Namen bleibt die ID als Rückfallebene.
+        addTarget(c.name || c.id, `[Dockhand Container] ${c.name || c.id} (${img})`, 'container', 'Dockhand');
       });
     } catch (e) {
       console.warn('[Update/Targets] Dockhand Abruf fehlerhaft:', e.message);
