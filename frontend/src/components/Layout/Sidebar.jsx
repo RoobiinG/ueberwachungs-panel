@@ -168,14 +168,6 @@ export const Sidebar = () => {
               </span>
               <span className="ml-1 opacity-80">({user.roleLabel || user.role})</span>
             </div>
-            {showPrideFlag && (
-              <span
-                title="Progress Pride Flag (In den Einstellungen deaktivierbar)"
-                className="inline-flex items-center justify-center text-[13px] flex-shrink-0 ml-1.5 cursor-help transition-transform hover:scale-110"
-              >
-                <span>🏳️‍🌈</span>
-              </span>
-            )}
           </div>
         )}
         {version && (
@@ -190,11 +182,6 @@ export const Sidebar = () => {
                 ? `v${version.version}`
                 : `v${version.version} · Build ${version.build}`}
             </span>
-            {showPrideFlag && collapsed && (
-              <span title="Progress Pride Flag" className="text-[12px] ml-1">
-                🏳️‍🌈
-              </span>
-            )}
           </div>
         )}
         {updateStatus?.panel?.available && !collapsed && (

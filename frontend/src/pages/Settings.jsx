@@ -136,7 +136,20 @@ function GitHubTokenCard({ status, onReload }) {
   const [token, setToken]       = useState('');
   const [saving, setSaving]     = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [testing, setTesting]   = useState(false);
   const [msg, setMsg]           = useState('');
+
+  const testToken = async () => {
+    setTesting(true);
+    setMsg('⏳ Prüfe GitHub-Token und Lesezugriff auf das private Repository...');
+    try {
+      const { data } = await axios.post('/api/settings/github/test', { token: token.trim() || undefined });
+      setMsg('✓ ' + data.message);
+    } catch (err) {
+      setMsg('❌ ' + (err.response?.data?.error || 'GitHub-Token Prüfung fehlgeschlagen'));
+    }
+    setTesting(false);
+  };
 
   const save = async () => {
     if (!token.trim()) return;
@@ -224,9 +237,17 @@ function GitHubTokenCard({ status, onReload }) {
           className="w-full bg-panel-surface border border-panel-border rounded-md px-3 py-1.5 text-sm text-panel-text focus:outline-none focus:border-panel-accent"
         />
         <button
+          onClick={testToken}
+          disabled={testing || saving || (!isSet && !token.trim())}
+          className="px-3 py-1.5 text-xs bg-panel-card text-panel-text border border-panel-border rounded-md hover:bg-panel-border transition-colors disabled:opacity-50 whitespace-nowrap cursor-pointer"
+          title="Prüfen, ob das (eingegebene oder gespeicherte) Token gültig ist und Lesezugriff auf RoobiinG/ueberwachungs-panel hat"
+        >
+          {testing ? 'Prüfe…' : 'Token testen'}
+        </button>
+        <button
           onClick={save}
           disabled={saving || !token.trim()}
-          className="px-3 py-1.5 text-xs bg-panel-accent text-white rounded-md hover:bg-blue-500 transition-colors disabled:opacity-50 whitespace-nowrap"
+          className="px-3 py-1.5 text-xs bg-panel-accent text-white rounded-md hover:bg-blue-500 transition-colors disabled:opacity-50 whitespace-nowrap cursor-pointer"
         >
           {saving ? '…' : 'Speichern'}
         </button>
