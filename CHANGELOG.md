@@ -4,6 +4,36 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.50.2] - 2026-07-28 (Build 276) — *Express aktualisiert*
+
+### 🔐 Sicherheit
+- **Express von fest `4.19.2` auf `^4.22.2` gehoben**: Der erste Lauf der neuen Abhängigkeitsprüfung meldete
+  im Backend 14 Schwachstellen (9 hoch, 2 mittel, 3 niedrig). Sieben der hohen Funde hingen an einer einzigen
+  Wurzel — der veralteten Express-Version und deren Unterpaketen `body-parser`, `cookie`, `path-to-regexp`,
+  `qs`, `send` und `serve-static`. Der Sprung bleibt innerhalb von Express 4 und ist damit ein reines
+  Wartungsupdate ohne Umstellungen am Code.
+- **Einordnung der behobenen Meldungen**: Die beiden `body-parser`-Advisories betreffen
+  `application/x-www-form-urlencoded`. Das Panel bindet ausschließlich `express.json()` ein, war also
+  praktisch kaum exponiert — die Aktualisierung räumt sie trotzdem ab.
+- **Caret statt fester Version**: Da das Projekt keine Lockfiles führt, löst ohnehin jeder Build die
+  Abhängigkeiten neu auf. Die exakte Angabe erzeugte damit nur den Anschein von Reproduzierbarkeit,
+  verhinderte aber, dass Sicherheits-Patches innerhalb von Express 4 überhaupt ankommen.
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- `version.json` synchron auf **`1.50.2` (Build 276)** erhöht.
+- **Keine Code-Anpassung nötig**, keine Datenbank-Migration, keine Agent-Aktualisierung. Express 4.22 ist zu
+  4.19 API-kompatibel; Routen, Middleware und `express.json()` verhalten sich unverändert.
+- **Wirksam mit dem nächsten Image-Build**, da die Abhängigkeiten dort neu installiert werden.
+- **Bewusst offen gelassen** (erfordern Sprünge über Hauptversionen und einen Test im Browser):
+  - `vite` / `esbuild` (Frontend): Die Meldung betrifft den **Entwicklungsserver**, nicht das ausgelieferte
+    Produktions-Bundle. Ein Fix erfordert Vite 8.
+  - `react-router-dom` (Frontend): Offene Weiterleitung über Backslash in `<Link>` / `useNavigate`.
+    Der zweite Teil des Advisories betrifft SSR-Hydration, die das Panel nicht verwendet.
+  - `geoip-lite` (Backend): DoS in `brace-expansion` über `rimraf`/`glob`, erreichbar nur beim Aktualisieren
+    der GeoIP-Daten, nicht über Anfragen an das Panel.
+
+---
+
 ## [1.50.1] - 2026-07-28 (Build 275) — *Abhängigkeitsprüfung*
 
 ### 🔐 Sicherheit
