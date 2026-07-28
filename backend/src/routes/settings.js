@@ -4,7 +4,7 @@ const db = require('../db');
 const requireRole = require('../middleware/roles');
 const { auditLog } = require('../utils/audit');
 
-const SENSITIVE = ['hetzner_api_token', 'mchost_password', 'mchost_api_token', 'smtp_pass', 'claude_api_key', 'github_token'];
+const SENSITIVE = ['hetzner_api_token', 'mchost_password', 'mchost_api_token', 'smtp_pass', 'github_token'];
 
 const get = (key) => db.prepare('SELECT value FROM settings WHERE key = ?').get(key)?.value || '';
 const set = (key, value) => db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)').run(key, value);
@@ -23,26 +23,10 @@ router.get('/', requireRole('admin'), (req, res) => {
     smtp_pass:         get('smtp_pass') ? '***gesetzt***' : '',
     smtp_from:         get('smtp_from'),
     smtp_secure:       get('smtp_secure') || 'false',
-    claude_api_key:    get('claude_api_key') ? '***gesetzt***' : '',
-    claude_model:      get('claude_model') || 'claude-haiku-4-5',
     github_token:      get('github_token') ? '***gesetzt***' : '',
   });
 });
 
-// ── Claude (Anthropic) API Key ────────────────────────────────────────────────
-router.put('/claude', requireRole('admin'), (req, res) => {
-  const { apiKey, model } = req.body;
-  if (!apiKey) return res.status(400).json({ error: 'API-Key erforderlich' });
-  set('claude_api_key', apiKey.trim());
-  if (model) set('claude_model', model.trim());
-  auditLog(req, 'settings.claude', 'settings', 'claude_api_key');
-  res.json({ success: true });
-});
-router.delete('/claude', requireRole('admin'), (req, res) => {
-  del('claude_api_key');
-  del('claude_model');
-  res.json({ success: true });
-});
 
 // Hetzner Token speichern
 router.put('/hetzner', requireRole('admin'), (req, res) => {

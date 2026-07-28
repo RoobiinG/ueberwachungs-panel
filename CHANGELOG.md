@@ -4,6 +4,28 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.48.15] - 2026-07-28 (Build 263) — *MC-Host24 Laufzeit-Benachrichtigungen & Settings Cleanup*
+
+### 🎨 Frontend & Einstellungen
+- **KI-Funktionen aus Firewall und Einstellungen entfernt**: Der `ScanSearch`-Aufruf in `Firewall.jsx` sowie das Claude-KI-Modul inklusive API-Key-Verwaltung in `Settings.jsx` wurden vollständig aus der Benutzeroberfläche entfernt.
+- **4 übersichtliche Tabs in den Einstellungen (`Settings.jsx`)**: Die Einstellungsseite wurde strukturiert in vier klar getrennte Tabs untergliedert:
+  - 👤 **Profil & Sicherheit**: Passwort, E-Mail-Adresse, Passkeys (WebAuthn), 2FA, Aktive Sitzungen.
+  - 🎨 **Allgemein & Design**: Darstellung & Design (Pride Flag), Aktive Module, Benachrichtigungen, Live-Refresh.
+  - ☁️ **Cloud & APIs (Admin)**: Hetzner Cloud API, MC-Host24, Dockhand, PatchMon, SMTP.
+  - 🛠️ **System & Backup (Admin)**: GitHub Update-Token, Backup & Migration.
+
+### 🔔 Alerts & Benachrichtigungen (`alertEvaluator.js`)
+- **Minimalistisches Layout für MC-Host24 Laufzeit-Warnungen (Vorschlag A)**: Bei der Auswertung von `mchost_runtime` wird in Benachrichtigungen nur noch der Servername und die exakt verbleibende Laufzeit (z. B. `Verbleibende Laufzeit: 10,9 Tage`) anstelle einer redundanten Auflistung sämtlicher ODER-Schwellenwerte gesendet. Bei Verlängerung wird ebenso sauber entwarnungsfrei protokolliert (`Aktuelle Laufzeit: 30,0 Tage`).
+- **Schutz vor doppelten Nachrichten nach Neustarts**: Der `AlertEvaluator` stellt den Alarm-Zustand (`hasFired` sowie den letzten Schwellenwert `lastFiredThreshold`) bei Server- oder Panel-Neustarts direkt aus der Datenbank (`alert_history`) wieder her. Bestehende Alarme werden nach Neustarts nicht mehr doppelt versendet.
+- **Intelligente ODER-Schwellenauslösung**: Bei Regeln mit mehreren Schwellen (z. B. `< 11`, `< 7`, `< 5` Tage) wird eine erneute Warnung nur versendet, wenn eine noch tiefere Schwelle als beim letzten Alarm unterschritten wird.
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen**: Neue Spalte `server_key TEXT DEFAULT NULL` via try/catch-Migration zur Tabelle `alert_history` hinzugefügt, um Alarmzustände pro Server auch über Neustarts hinweg genau zuzuordnen.
+- **Agent-Kompatibilität**: Vollständig kompatibel mit allen bestehenden Agenten.
+- **Neustart-/Session-Verhalten**: Keine Auswirkung auf aktive Sessions. Alarm-Benachrichtigungen sind durch die Datenbank-Persistierung nun gegen Server-Neustarts abgesichert.
+
+---
+
 ## [1.48.14] - 2026-07-28 (Build 262) — *GitHub Token Verifizierung & Dockhand Updater Integration*
 
 ### 🎨 Frontend & Design
