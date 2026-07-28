@@ -217,6 +217,14 @@ function GitHubTokenCard({ status, onReload }) {
     if (!confirm('Möchtest du das Panel jetzt automatisch aus dem privaten GitHub-Repository aktualisieren und neu starten?')) return;
     setUpdating(true);
     setMsg('⏳ Starte automatisches Panel-Update...');
+
+    // Build-Nummer vor dem Update merken, um den Neustart daran zu erkennen
+    let buildBefore = null;
+    try {
+      const { data: v } = await axios.get('/api/version');
+      buildBefore = v?.build ?? null;
+    } catch { /* nicht kritisch — dann zählt nur die Erreichbarkeit */ }
+
     try {
       const { data } = await axios.post('/api/update/run');
       localStorage.setItem('panel_update_result', JSON.stringify({
@@ -226,10 +234,39 @@ function GitHubTokenCard({ status, onReload }) {
         log: data.log,
         changelogEntry: data.changelogEntry
       }));
-      setMsg('✓ ' + data.message + ' Starte Seite neu...');
-      setTimeout(() => {
-        window.location.reload();
-      }, 1500);
+
+      // Früher wurde hier pauschal nach 1,5 Sekunden neu geladen. Beim Docker-Update dauert
+      // Pull und Neustart aber 20–30 Sekunden: Die Seite lud noch den ALTEN Container und
+      // wirkte, als sei nichts passiert — kurz darauf brach die Verbindung weg.
+      // Deshalb wird jetzt aktiv auf den Neustart gewartet.
+      const MAX_WARTEN_MS = 180_000;
+      const INTERVALL_MS  = 3_000;
+      const start = Date.now();
+      let warDown = false;   // Server war zwischendurch nicht erreichbar = Neustart lief
+
+      const warte = (ms) => new Promise(r => setTimeout(r, ms));
+
+      while (Date.now() - start < MAX_WARTEN_MS) {
+        await warte(INTERVALL_MS);
+        const sek = Math.round((Date.now() - start) / 1000);
+        setMsg(`⏳ ${data.message} Warte auf den Neustart… (${sek} s)`);
+
+        try {
+          const { data: v } = await axios.get('/api/version', { timeout: 2500 });
+          // Neue Build-Nummer → Update ist durch. Oder: Server war weg und ist zurück.
+          if ((buildBefore != null && v?.build != null && v.build !== buildBefore) || warDown) {
+            setMsg('✓ Update abgeschlossen — Seite wird neu geladen…');
+            await warte(800);
+            window.location.reload();
+            return;
+          }
+        } catch {
+          warDown = true;   // Container startet gerade neu
+        }
+      }
+
+      setMsg('⚠️ Das Update läuft noch oder der Neustart dauert ungewöhnlich lange. Lade die Seite später neu und prüfe die Panel-Logs.');
+      setUpdating(false);
     } catch (err) {
       setMsg('❌ ' + (err.response?.data?.error || 'Update fehlgeschlagen'));
       setUpdating(false);

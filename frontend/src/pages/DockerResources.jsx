@@ -34,14 +34,21 @@ const TABS = [
   { key: 'stacks',   label: 'Stacks',    icon: Package,   endpoint: '/api/docker/stacks' },
 ];
 
-export default function DockerResources() {
+/**
+ * Ressourcen-Ansicht (Images, Volumes, Netzwerke, Stacks).
+ *
+ * Wird von `DockerCenter` eingebettet, das die gemeinsame Tab-Leiste stellt. Dann kommen
+ * `tab` und `onTabChange` von außen und `hideTabs` blendet die eigene Leiste aus.
+ * Ohne diese Props verhält sich die Seite wie zuvor eigenständig.
+ */
+export default function DockerResources({ tab: controlledTab, onTabChange, hideTabs = false }) {
   const { hasPermission, isAdmin, hideLocal } = useAuth();
-  
+
   const availableTabs = TABS.filter(t => isAdmin || hasPermission(`docker.${t.key}.view`));
-  
+
   const [selectedServer, setSelectedServer] = useState(null);
-  
-  const [tab, setTab] = useState(() => {
+
+  const [internalTab, setInternalTab] = useState(() => {
     if (availableTabs.some(t => t.key === 'images')) return 'images';
     return availableTabs.length > 0 ? availableTabs[0].key : 'images';
   });
@@ -55,6 +62,10 @@ export default function DockerResources() {
   const [optPull, setOptPull] = useState(true);
   const [optBuild, setOptBuild] = useState(false);
   const [optForce, setOptForce] = useState(false);
+
+  // Gesteuerter Modus (eingebettet in DockerCenter) hat Vorrang, sonst der eigene Zustand.
+  const tab    = controlledTab ?? internalTab;
+  const setTab = onTabChange   ?? setInternalTab;
 
   useEffect(() => {
     if (availableTabs.length > 0 && !availableTabs.some(t => t.key === tab)) {
@@ -118,16 +129,18 @@ export default function DockerResources() {
 
       {/* Tabs + Aktionen */}
       <div className="flex items-center gap-2 flex-wrap">
-        <div className="flex gap-1 bg-panel-surface border border-panel-border rounded-lg p-1">
-          {availableTabs.map(t => (
-            <button key={t.key} onClick={() => setTab(t.key)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                tab === t.key ? 'bg-panel-card text-panel-text' : 'text-panel-muted hover:text-panel-text'
-              }`}>
-              <t.icon size={13} />{t.label}
-            </button>
-          ))}
-        </div>
+        {!hideTabs && (
+          <div className="flex gap-1 bg-panel-surface border border-panel-border rounded-lg p-1">
+            {availableTabs.map(t => (
+              <button key={t.key} onClick={() => setTab(t.key)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                  tab === t.key ? 'bg-panel-card text-panel-text' : 'text-panel-muted hover:text-panel-text'
+                }`}>
+                <t.icon size={13} />{t.label}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="ml-auto flex items-center gap-2">
           <Button size="sm" variant="ghost" onClick={load} disabled={loading}>
             <RefreshCw size={13} className={`mr-1 ${loading ? 'animate-spin' : ''}`} />Aktualisieren

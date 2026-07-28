@@ -4,6 +4,53 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.51.0] - 2026-07-28 (Build 278) — *Docker vereint & robuster Updater*
+
+### ✨ Neue Funktionen & Features
+- **„Docker" und „Docker-Ressourcen" zu einem Menüpunkt zusammengelegt**: Die Navigation führte zwei
+  Einträge, die inhaltlich zusammengehören. Es gibt jetzt nur noch **Docker** mit einer Tab-Leiste
+  **Container · Images · Volumes · Netzwerke · Stacks** (neue Seite `DockerCenter.jsx`).
+  - Jeder Tab hängt weiterhin an seinem eigenen Recht (`docker.view`, `docker.images.view` …). Wer nur
+    Images sehen darf, bekommt genau diesen einen Tab; ohne jedes Docker-Recht verschwindet der Punkt.
+  - Der alte Pfad `/docker-resources` leitet dauerhaft auf `/docker` um, alte Lesezeichen bleiben gültig.
+
+### 🐛 Bugfixes & Optimierungen
+- **Update-Vorgang lud die Seite viel zu früh neu (`Settings.jsx`)**: Nach dem Auslösen wurde pauschal
+  nach **1,5 Sekunden** neu geladen. Ein Docker-Update braucht für Pull und Recreate aber 20–30 Sekunden.
+  Die Seite lud also noch den **alten** Container, wirkte, als sei nichts passiert — und kurz darauf brach
+  die Verbindung weg, weil der Container erst dann neu startete.
+  Das Panel wartet jetzt aktiv: Es merkt sich die Build-Nummer vor dem Update und fragt `/api/version`
+  alle 3 Sekunden ab. Neu geladen wird erst, wenn eine neue Build-Nummer erscheint oder der Server nach
+  einer Unterbrechung zurück ist. Ein Zähler zeigt die verstrichene Zeit; nach 3 Minuten erscheint ein
+  Hinweis statt eines endlosen Wartens.
+- **Fehler des Updaters waren im Panel unsichtbar (`update.js`)**: Der Vorgang läuft nach der HTTP-Antwort
+  im Hintergrund weiter, Fehlschläge landeten ausschließlich in der Container-Konsole. Erfolg und
+  Scheitern werden jetzt zusätzlich in die **Panel-Logs** geschrieben (Quelle `Panel-Updater`) — inklusive
+  der Angabe, welcher Weg genutzt wurde (Dockhand-API, nsenter oder Docker-Socket) und der `stderr`-Ausgabe
+  im Fehlerfall.
+- **Doppeltes Auslösen des Updates verhindert (`POST /api/update/run`)**: Ein zweiter Klick startete bisher
+  einen weiteren Pull samt Recreate, während der erste noch lief. Weitere Aufrufe werden nun mit
+  **HTTP 409** abgewiesen, solange ein Update läuft. Die Sperre verfällt nach 10 Minuten und wird bei
+  jedem Fehlschlag sofort gelöst, damit ein abgebrochener Lauf keine weiteren Updates blockiert.
+- **Menüpunkte mit mehreren möglichen Rechten fehlten in der Mobil-Navigation (`MobileNav.jsx`)**:
+  Die Sichtbarkeitsprüfung reichte ein Rechte-**Array** direkt an `hasPermission()` weiter, das intern
+  `permissions.includes(key)` nutzt — mit einem Array ergibt das **immer** `false`. Betroffen war
+  „Docker-Ressourcen", der Punkt fehlte im Drawer für **alle** Benutzer, auch für Administratoren.
+  Die Prüfung wertet Arrays jetzt wie die Sidebar als ODER aus.
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- `version.json` synchron auf **`1.51.0` (Build 278)** erhöht — Minor, da sich die Navigation ändert.
+- **Keine Datenbank-Migration**, keine Änderung an Rechten oder deren Namen. Die bestehenden
+  `docker.*`-Berechtigungen gelten unverändert und steuern jetzt die Tabs statt zweier Seiten.
+- **Keine Agent-Aktualisierung nötig**, keine Änderung an WebSocket oder Metrik-Erfassung.
+- **Sichtbar für Benutzer**: Der Menüpunkt „Docker-Ressourcen" verschwindet aus der Seitenleiste; seine
+  Inhalte liegen unverändert unter „Docker". Wer bisher keinerlei Docker-Recht hatte, aber den Punkt
+  „Docker" trotzdem sah, sieht ihn nun nicht mehr — die Seite war für ihn ohnehin leer.
+- **Der Updater-Fix wirkt erst beim übernächsten Update**: Das Warten auf den Neustart steckt in der
+  Oberfläche der *neuen* Version. Das Einspielen dieser Version läuft noch mit dem alten Verhalten.
+
+---
+
 ## [1.50.3] - 2026-07-28 (Build 277) — *Stabiler Image-Push*
 
 ### 🐛 Bugfixes & Optimierungen

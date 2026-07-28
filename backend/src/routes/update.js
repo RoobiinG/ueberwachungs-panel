@@ -19,6 +19,25 @@ const dockhand = require('../utils/dockhandClient');
 const VALID_TARGET_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/;
 const isValidTarget = (t) => typeof t === 'string' && VALID_TARGET_RE.test(t);
 
+/**
+ * Schreibt eine Meldung in die Panel-Logs.
+ * Das Update läuft nach der HTTP-Antwort im Hintergrund weiter — Fehler landeten bisher
+ * ausschließlich in der Container-Konsole und waren im Panel nicht zu sehen. Ausgerechnet
+ * beim Selbst-Update ist das unpraktisch, weil man dann erst recht in die Oberfläche schaut.
+ */
+const logPanel = (level, message, stack = null) => {
+  try {
+    db.prepare('INSERT INTO panel_logs (level, source, message, stack, url) VALUES (?, ?, ?, ?, ?)')
+      .run(level, 'Panel-Updater', String(message).slice(0, 2000), stack ? String(stack).slice(0, 4000) : null, '/api/update/run');
+  } catch { /* Logging darf das Update nie zum Scheitern bringen */ }
+};
+
+// Schutz vor mehrfachem Auslösen: Ein zweiter Klick würde sonst einen weiteren Pull und
+// Recreate starten, während der erste noch läuft. Nach 10 Minuten gilt die Sperre als
+// verwaist, damit ein abgebrochener Lauf das Update nicht dauerhaft blockiert.
+const UPDATE_SPERRE_MS = 10 * 60 * 1000;
+let updateLaeuftSeit = 0;
+
 // Update-Status abrufen
 router.get('/status', async (req, res) => {
   try {
@@ -32,6 +51,14 @@ router.get('/status', async (req, res) => {
 
 // Automatischen Panel-Update durchführen (Git Pull + Changelog + Neustart)
 router.post('/run', requireRole('admin'), async (req, res) => {
+  if (updateLaeuftSeit && Date.now() - updateLaeuftSeit < UPDATE_SPERRE_MS) {
+    const seit = Math.round((Date.now() - updateLaeuftSeit) / 1000);
+    return res.status(409).json({
+      error: `Es läuft bereits ein Update (seit ${seit} s). Bitte den Neustart abwarten.`,
+    });
+  }
+  updateLaeuftSeit = Date.now();
+
   const repoDir = path.join(__dirname, '../../../');
 
   // 1. Vorherige Version lesen
@@ -70,6 +97,8 @@ router.post('/run', requireRole('admin'), async (req, res) => {
     }
   } catch (pullErr) {
     console.error('[Update] Update-Fehler:', pullErr.message);
+    logPanel('error', `Update fehlgeschlagen: ${pullErr.message}`, pullErr.stack);
+    updateLaeuftSeit = 0;   // Sperre lösen, sonst blockiert ein Fehlversuch alle weiteren
     return res.status(500).json({ error: 'Update fehlgeschlagen: ' + pullErr.message });
   }
 
@@ -239,7 +268,11 @@ router.post('/run', requireRole('admin'), async (req, res) => {
 
       // Hat einer der Dockhand-Wege (Stack-Deploy oder Container-Recreate) funktioniert,
       // ist das Update durch — dann darf der Host-Fallback nicht nochmal recreaten.
-      if (apiSuccess) return;
+      if (apiSuccess) {
+        logPanel('info', `Update über die Dockhand-API ausgeführt (${stackUpdated ? 'Stack-Deploy' : 'Container-Recreate'}).`);
+        updateLaeuftSeit = 0;
+        return;
+      }
 
       // 2. Lokaler Host-Namespace Fallback (nsenter / docker inspect)
       // WICHTIG: Zuerst nsenter nutzen, da nur im Host-Namespace die Compose-Pfade (/home/robin/...) existieren!
@@ -288,6 +321,8 @@ router.post('/run', requireRole('admin'), async (req, res) => {
         if (!errNs) {
           console.log('[Update] ERFOLG: Docker-Container über nsenter (Host-Namespace) mit neuem Image aktualisiert und neu gestartet.');
           if (stdoutNs) console.log('[Update] nsenter STDOUT:', stdoutNs);
+          logPanel('info', `Update über den Host-Namespace (nsenter) ausgeführt. Ziel: ${targetName}`);
+          updateLaeuftSeit = 0;
           return;
         }
         console.error('[Update] FEHLER bei nsenter-Update:', errNs.message);
@@ -299,12 +334,21 @@ router.post('/run', requireRole('admin'), async (req, res) => {
           if (!errDirect) {
             console.log('[Update] ERFOLG: Docker-Container über lokales Docker-Socket aktualisiert und neu gestartet.');
             if (stdoutDirect) console.log('[Update] Docker STDOUT:', stdoutDirect);
+            logPanel('info', `Update über das lokale Docker-Socket ausgeführt. Ziel: ${targetName}`);
+            updateLaeuftSeit = 0;
             return;
           }
           console.error('[Update] FEHLER beim lokalen Docker-Socket Update:', errDirect.message);
           if (stdoutDirect) console.error('[Update] Docker STDOUT:', stdoutDirect);
           if (stderrDirect) console.error('[Update] Docker STDERR:', stderrDirect);
           console.error('[Update] KRITISCH: Alle Update-Methoden sind fehlgeschlagen!');
+          // In die Panel-Logs schreiben: Der Container läuft ja weiter, also sieht der Nutzer
+          // die Meldung dort auch tatsächlich. Ohne das bliebe der Fehlschlag unbemerkt.
+          logPanel('error',
+            'Alle Update-Wege sind fehlgeschlagen (Dockhand-API, Host-Namespace via nsenter, Docker-Socket). ' +
+            `Letzter Fehler: ${errDirect.message}`,
+            [stderrDirect, stderrNs].filter(Boolean).join('\n---\n'));
+          updateLaeuftSeit = 0;   // Sperre lösen, damit ein neuer Versuch möglich ist
         });
       });
     } else {
