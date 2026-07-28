@@ -24,8 +24,9 @@ RUN apk add --no-cache sqlite-libs util-linux git curl
 
 COPY --from=backend-builder /app/backend ./
 COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
-# version.json liegt im Repo-Root und muss explizit kopiert werden
+# version.json und CHANGELOG.md liegen im Repo-Root und müssen explizit kopiert werden
 COPY version.json /app/version.json
+COPY CHANGELOG.md /app/CHANGELOG.md
 # Agent-Scripts: panel-agent.js (Update-Push + öffentlicher Download) + install.sh (Installer)
 COPY agent/panel-agent.js /app/agent/panel-agent.js
 COPY agent/install.sh     /app/agent/install.sh
