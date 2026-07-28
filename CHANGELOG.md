@@ -4,6 +4,19 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.48.17] - 2026-07-28 (Build 265) — *Frontend Build-Fix & GitHub Token UI Restoral*
+
+### 🐛 Bugfixes & Frontend
+- **Syntaxfehler im Settings-Build behoben**: Korrigiert fehlende schließende Tags (`</div>` und Tab-Bedingungen) in `Settings.jsx`, die beim Vite-Production-Build von Docker Action zu einem Abbruch gefühlt hatten.
+- **GitHub Update-Token UI im System-Tab wiederhergestellt**: Das Kartenelement `GitHubTokenCard` (inkl. "Token testen"-Button zur Live-Prüfung der GitHub-PAT-Gültigkeit im privaten Repository) ist nun wieder sauber im Tab "System & Backup" eingebunden, nachdem es beim Tab-Refactoring versehentlich ausgelassen wurde.
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen**: Keine Datenbank-Schemaänderungen erforderlich.
+- **Agent-Kompatibilität**: Vollständig kompatibel mit allen bestehenden Agenten.
+- **Neustart-/Session-Verhalten**: Behebt den Vite ESBuild Abbruch (`npm run build`), sodass der Docker-Build und der Updater wieder fehlerfrei durchlaufen.
+
+---
+
 ## [1.48.16] - 2026-07-28 (Build 264) — *Docker Updater Host-Namespace (nsenter) Priorisierung*
 
 ### 🐛 Bugfixes & Updater

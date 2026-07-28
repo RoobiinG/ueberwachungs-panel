@@ -1526,34 +1526,100 @@ export default function Settings() {
                         {pmHosts.map(h => <option key={h.id} value={h.id}>{h.name}{h.ip ? ` · ${h.ip}` : ''}</option>)}
                       </select>
                     </div>
-                  <Button onClick={handleMigrationPush} disabled={!migrationTargetUrl || !migrationUsername || !migrationPassword || loading.migration} size="sm">
-                    {loading.migration ? 'Migriere...' : 'Migration starten'}
-                  </Button>
+                    {servers.map(s => (
+                      <div key={s.id} className="flex items-center justify-between px-3 py-2 gap-2">
+                        <span className="text-xs text-panel-text truncate">{s.name}{s.ip ? ` (${s.ip})` : ''}</span>
+                        <select
+                          value={pmServerMap[s.id] ?? ''}
+                          onChange={e => savePmMapping(s.id, e.target.value)}
+                          className="bg-panel-surface border border-panel-border rounded px-2 py-1 text-xs text-panel-text focus:outline-none focus:border-panel-accent max-w-[60%]">
+                          <option value="">— nicht verknüpft —</option>
+                          {pmHosts.map(h => <option key={h.id} value={h.id}>{h.name}{h.ip ? ` · ${h.ip}` : ''}</option>)}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
-
-              {migrationTab === 'receive' && (
-                <div className="space-y-3 p-3 bg-panel-surface rounded-md border border-panel-border">
-                  <p className="text-[11px] text-panel-muted leading-relaxed">
-                    Lade ein Datenbank-Backup (`.db`) hoch, um dieses Panel mit einem alten Stand zu überschreiben. **Der Server startet danach neu!**
-                  </p>
-                  <input type="file" accept=".db,application/octet-stream" onChange={e => setMigrationFile(e.target.files[0])} className="text-xs text-panel-text file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-panel-accent/10 file:text-panel-accent hover:file:bg-panel-accent/20" />
-                  <Button onClick={handleMigrationImport} disabled={!migrationFile || loading.migration} size="sm" variant="danger">
-                    {loading.migration ? 'Importiere...' : 'Backup importieren & überschreiben'}
-                  </Button>
-                </div>
-              )}
-              
-              <Msg msg={msgs.migration} />
+              <Msg msg={msgs.pmMapping} />
             </div>
-          </div>
-        </Card>
+          </Card>
+        </div>
       )}
 
-      {/* ── Aktive Sitzungen ─────────────────────────────────────────────────── */}
-      <SessionsSection isAdmin={isAdmin} />
+      {/* ═══════════════════ TAB 4: SYSTEM & BACKUP (Admin) ═══════════════════ */}
+      {tab === 'system' && isAdmin && (
+        <div className="columns-1 lg:columns-2 gap-4 [&>*]:mb-4 [&>*]:break-inside-avoid">
+          {/* ── GitHub Update-Token ── */}
+          <GitHubTokenCard status={status} onReload={loadAdmin} />
 
-      </div>{/* /Masonry-Raster */}
+          {/* ── System-Migration & Backup ── */}
+          {hasPermission('system.backup') && (
+            <Card title={<span className="flex items-center gap-2"><Database size={14} />Backup & Migration</span>}>
+              <div className="space-y-4">
+                <div className="pb-3 border-b border-panel-border">
+                  <p className="text-xs text-panel-muted mb-2">Erstelle ein komplettes Backup der aktuellen Datenbank (inkl. User, Einstellungen, Server).</p>
+                  <Button onClick={handleBackupDownload} size="sm" variant="ghost">
+                    <Download size={13} className="mr-1" /> Backup herunterladen
+                  </Button>
+                </div>
+                
+                <div>
+                  <p className="text-sm font-medium text-panel-text mb-2">Migration auf einen anderen Server</p>
+                  
+                  <div className="flex gap-1 bg-panel-surface border border-panel-border rounded-lg p-1 mb-3">
+                    <button onClick={() => setMigrationTab('send')}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs transition-colors ${migrationTab === 'send' ? 'bg-panel-card text-panel-text font-medium' : 'text-panel-muted hover:text-panel-text'}`}>
+                      <Upload size={12} /> Senden (Export)
+                    </button>
+                    <button onClick={() => setMigrationTab('receive')}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs transition-colors ${migrationTab === 'receive' ? 'bg-panel-card text-panel-text font-medium' : 'text-panel-muted hover:text-panel-text'}`}>
+                      <Download size={12} /> Empfangen (Import)
+                    </button>
+                  </div>
+
+                  {migrationTab === 'send' && (
+                    <div className="space-y-3 p-3 bg-panel-surface rounded-md border border-panel-border">
+                      <p className="text-[11px] text-panel-muted leading-relaxed">
+                        Kopiert die gesamte Datenbank auf ein neues, frisches Panel. Loggt sich dort ein, überträgt die Daten und updated alle angebundenen Agents auf die neue Adresse.
+                      </p>
+                      <div>
+                        <label className="block text-[11px] text-panel-muted mb-1">Neue API-Adresse (Ziel-Panel)</label>
+                        <input type="url" value={migrationTargetUrl} onChange={e => setMigrationTargetUrl(e.target.value)} placeholder="https://neu.example.com" className={inputCls} />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-panel-muted mb-1">Admin-Benutzername (Ziel-Panel)</label>
+                        <input type="text" value={migrationUsername} onChange={e => setMigrationUsername(e.target.value)} placeholder="Admin" className={inputCls} />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] text-panel-muted mb-1">Admin-Passwort (Ziel-Panel)</label>
+                        <input type="password" value={migrationPassword} onChange={e => setMigrationPassword(e.target.value)} placeholder="••••••••" className={inputCls} />
+                      </div>
+                      <Button onClick={handleMigrationPush} disabled={!migrationTargetUrl || !migrationUsername || !migrationPassword || loading.migration} size="sm">
+                        {loading.migration ? 'Migriere...' : 'Migration starten'}
+                      </Button>
+                    </div>
+                  )}
+
+                  {migrationTab === 'receive' && (
+                    <div className="space-y-3 p-3 bg-panel-surface rounded-md border border-panel-border">
+                      <p className="text-[11px] text-panel-muted leading-relaxed">
+                        Lade ein Datenbank-Backup (`.db`) hoch, um dieses Panel mit einem alten Stand zu überschreiben. **Der Server startet danach neu!**
+                      </p>
+                      <input type="file" accept=".db,application/octet-stream" onChange={e => setMigrationFile(e.target.files[0])} className="text-xs text-panel-text file:mr-2 file:py-1 file:px-2 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-panel-accent/10 file:text-panel-accent hover:file:bg-panel-accent/20" />
+                      <Button onClick={handleMigrationImport} disabled={!migrationFile || loading.migration} size="sm" variant="danger">
+                        {loading.migration ? 'Importiere...' : 'Backup importieren & überschreiben'}
+                      </Button>
+                    </div>
+                  )}
+                  
+                  <Msg msg={msgs.migration} />
+                </div>
+              </div>
+            </Card>
+          )}
+        </div>
+      )}
     </div>
   );
 }
