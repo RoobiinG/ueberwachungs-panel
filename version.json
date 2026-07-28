@@ -1,6 +1,6 @@
 {
-  "version": "1.48.15",
-  "build": 263,
+  "version": "1.48.16",
+  "build": 264,
   "date": "2026-07-28",
-  "codename": "MC-Host24 Laufzeit-Benachrichtigungen & Settings Cleanup"
+  "codename": "Docker Updater Host-Namespace (nsenter) Priorisierung"
 }

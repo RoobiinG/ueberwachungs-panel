@@ -4,6 +4,19 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.48.16] - 2026-07-28 (Build 264) — *Docker Updater Host-Namespace (nsenter) Priorisierung*
+
+### 🐛 Bugfixes & Updater
+- **Host-Namespace (`nsenter`) als primärer Docker-Updater (`update.js`)**: Behebt das Hängenbleiben des automatischen Klick-Updaters in der Sidebar. Zuvor wurde versucht, das Update primär über die Dockhand Pro API auszuführen, deren HTTP-Anfrage beim `pullImage` hängen bleiben konnte und so den weiteren Update-Verlauf blockierte.
+- **Reihenfolge der Update-Fallbacks optimiert**: Der Updater nutzt nun wieder primär die bewährte Host-Namespace-Methode (`nsenter --target 1 ... docker pull && docker compose up -d --force-recreate`) laut `AGENTS.md`. Erst falls `nsenter` nicht verfügbar ist, wird das lokale Docker-Socket genutzt, und erst an dritter Stelle die Dockhand Pro API als Fallback.
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen**: Keine Datenbank-Schemaänderungen erforderlich.
+- **Agent-Kompatibilität**: Vollständig kompatibel mit allen bestehenden Agenten.
+- **Neustart-/Session-Verhalten**: Der Klick auf „⚡ Update jetzt installieren" unten links in der Sidebar aktualisiert und startet den Container im NGINX Proxy Manager Betrieb nun zuverlässig in 10-20 Sekunden neu.
+
+---
+
 ## [1.48.15] - 2026-07-28 (Build 263) — *MC-Host24 Laufzeit-Benachrichtigungen & Settings Cleanup*
 
 ### 🎨 Frontend & Einstellungen
