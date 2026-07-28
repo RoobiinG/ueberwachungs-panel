@@ -1,6 +1,6 @@
 {
-  "version": "1.48.20",
-  "build": 268,
+  "version": "1.48.21",
+  "build": 269,
   "date": "2026-07-28",
-  "codename": "MC-Host24 Tag Routing Fix"
+  "codename": "Dockhand Stack Deploy & Smart Compose Discovery Updater"
 }

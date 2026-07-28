@@ -127,8 +127,8 @@ router.post('/run', requireRole('admin'), async (req, res) => {
   setTimeout(async () => {
     if (isDockerUpdate) {
       console.log('[Update] Starte Docker Image Update...');
-      const nsenterCmd = 'nsenter --target 1 --mount --uts --ipc --net --pid -- sh -c "docker pull ghcr.io/roobiing/ueberwachungs-panel:latest && (for d in /root /home/* /opt /var/docker /srv/* /app $(pwd); do if [ -f \\"$d/docker-compose.yml\\" ] || [ -f \\"$d/docker-compose.prod.yml\\" ]; then cd \\"$d\\" && docker compose up -d --force-recreate; exit 0; fi; done; docker restart ueberwachungs-panel)"';
-      const dockerDirectCmd = 'docker pull ghcr.io/roobiing/ueberwachungs-panel:latest && (for d in /root /home/* /opt /var/docker /srv/* /app $(pwd); do if [ -f "$d/docker-compose.yml" ] || [ -f "$d/docker-compose.prod.yml" ]; then cd "$d" && docker compose up -d --force-recreate; exit 0; fi; done; docker restart ueberwachungs-panel)';
+      const nsenterCmd = 'nsenter --target 1 --mount --uts --ipc --net --pid -- sh -c "docker pull ghcr.io/roobiing/ueberwachungs-panel:latest && (WDIR=\\"\\$(docker inspect -f \'{{ index .Config.Labels \\"com.docker.compose.project.working_dir\\" }}\' ueberwachungs-panel 2>/dev/null)\\"; if [ -n \\"$WDIR\\" ] && [ -d \\"$WDIR\\" ]; then cd \\"$WDIR\\" && docker compose up -d --force-recreate && exit 0; fi; for d in /root /root/* /home/* /home/*/* /opt /opt/* /var/docker /var/docker/* /srv /srv/* /app /app/* \\$(pwd); do if [ -f \\"$d/docker-compose.yml\\" ] || [ -f \\"$d/docker-compose.prod.yml\\" ]; then cd \\"$d\\" && docker compose up -d --force-recreate; exit 0; fi; done; docker restart ueberwachungs-panel)"';
+      const dockerDirectCmd = 'docker pull ghcr.io/roobiing/ueberwachungs-panel:latest && (WDIR="$(docker inspect -f \'{{ index .Config.Labels "com.docker.compose.project.working_dir" }}\' ueberwachungs-panel 2>/dev/null)"; if [ -n "$WDIR" ] && [ -d "$WDIR" ]; then cd "$WDIR" && docker compose up -d --force-recreate && exit 0; fi; for d in /root /root/* /home/* /home/*/* /opt /opt/* /var/docker /var/docker/* /srv /srv/* /app /app/* $(pwd); do if [ -f "$d/docker-compose.yml" ] || [ -f "$d/docker-compose.prod.yml" ]; then cd "$d" && docker compose up -d --force-recreate; exit 0; fi; done; docker restart ueberwachungs-panel)';
 
       // 1. Primär: Update über Dockhand Pro API (falls in Einstellungen konfiguriert)
       const dhToken = db.prepare("SELECT value FROM settings WHERE key = 'dockhandApiToken'").get()?.value;
@@ -155,44 +155,69 @@ router.post('/run', requireRole('admin'), async (req, res) => {
             console.log('[Update] Versuche trotzdem Container-Aktualisierung (falls Image lokal aktuell ist)...');
           }
 
-          console.log('[Update] Suche Panel-Container über Dockhand API...');
-          const res = await dockhand.getContainers(envId);
-          const list = Array.isArray(res) ? res : (Array.isArray(res.data) ? res.data : (res?.data && Array.isArray(res.data.data) ? res.data.data : []));
-          console.log(`[Update] ${list.length} Container in Dockhand Environment ${envId} gefunden:`, list.map(c => `${c.name || 'unbekannt'} (${c.image || 'ohne image'})`).join(', '));
-          
-          const panelContainer = list.find(c => {
-            const n = (c.name || '').toLowerCase();
-            const img = (c.image || '').toLowerCase();
-            return n.includes('ueberwachungs-panel') || n.includes('panel') || img.includes('ueberwachungs-panel') || img.includes('roobiing');
-          });
+          console.log('[Update] Suche Panel-Stack über Dockhand API...');
+          let stackUpdated = false;
+          try {
+            const stacksRes = await dockhand.getStacks(envId);
+            const stacksList = Array.isArray(stacksRes) ? stacksRes : (Array.isArray(stacksRes.data) ? stacksRes.data : (stacksRes?.data && Array.isArray(stacksRes.data.data) ? stacksRes.data.data : []));
+            const panelStack = stacksList.find(s => {
+              const n = (s.name || '').toLowerCase();
+              return n.includes('ueberwachungs-panel') || n.includes('panel');
+            });
 
-          if (panelContainer) {
-            const cName = panelContainer.name || panelContainer.id;
-            console.log(`[Update] Panel-Container (${cName}, ID: ${panelContainer.id}) gefunden! Starte Recreate/Restart via Dockhand API...`);
-            try {
-              console.log(`[Update] Sende action "recreate" für Container ${cName} an Dockhand API...`);
-              await dockhand.containerAction(envId, panelContainer.id, 'recreate');
-              console.log(`[Update] ERFOLG: Container ${cName} wurde über Dockhand API recreated!`);
+            if (panelStack) {
+              const sName = panelStack.name || panelStack.id;
+              console.log(`[Update] Panel-Stack (${sName}, ID: ${panelStack.id}) gefunden! Starte Stack Deploy via Dockhand API...`);
+              await dockhand.updateStack(envId, panelStack.id, {
+                pullImages: true,
+                pullImage: true,
+                buildImages: false,
+                forceRecreate: true,
+              });
+              console.log(`[Update] ERFOLG: Stack "${sName}" wurde über Dockhand Pro API neu deployed und recreated!`);
               apiSuccess = true;
-            } catch (recreateErr) {
-              console.error('[Update] FEHLER bei action "recreate" via Dockhand API:', recreateErr.message);
-              if (recreateErr.response?.data) {
-                console.error('[Update] Dockhand API Fehler-Details (recreate):', JSON.stringify(recreateErr.response.data));
-              }
-              console.log(`[Update] Versuche stattdessen action "restart" für Container ${cName} via Dockhand API...`);
+              stackUpdated = true;
+            } else {
+              console.log('[Update] Kein Stack für das Panel über Dockhand API gefunden.');
+            }
+          } catch (stackErr) {
+            console.error('[Update] FEHLER bei Stack-Suche/Deploy via Dockhand API:', stackErr.message);
+          }
+
+          if (!stackUpdated) {
+            console.log('[Update] Suche Panel-Container über Dockhand API...');
+            const res = await dockhand.getContainers(envId);
+            const list = Array.isArray(res) ? res : (Array.isArray(res.data) ? res.data : (res?.data && Array.isArray(res.data.data) ? res.data.data : []));
+            console.log(`[Update] ${list.length} Container in Dockhand Environment ${envId} gefunden:`, list.map(c => `${c.name || 'unbekannt'} (${c.image || 'ohne image'})`).join(', '));
+            
+            const panelContainer = list.find(c => {
+              const n = (c.name || '').toLowerCase();
+              const img = (c.image || '').toLowerCase();
+              return n.includes('ueberwachungs-panel') || n.includes('panel') || img.includes('ueberwachungs-panel') || img.includes('roobiing');
+            });
+
+            if (panelContainer) {
+              const cName = panelContainer.name || panelContainer.id;
+              console.log(`[Update] Panel-Container (${cName}, ID: ${panelContainer.id}) gefunden! Versuche Recreate/Restart via Dockhand API...`);
               try {
-                await dockhand.containerAction(envId, panelContainer.id, 'restart');
-                console.log(`[Update] ERFOLG: Container ${cName} wurde über Dockhand API neugestartet!`);
+                console.log(`[Update] Sende action "recreate" für Container ${cName} an Dockhand API...`);
+                await dockhand.containerAction(envId, panelContainer.id, 'recreate');
+                console.log(`[Update] ERFOLG: Container ${cName} wurde über Dockhand API recreated!`);
                 apiSuccess = true;
-              } catch (restartErr) {
-                console.error('[Update] FEHLER bei action "restart" via Dockhand API:', restartErr.message);
-                if (restartErr.response?.data) {
-                  console.error('[Update] Dockhand API Fehler-Details (restart):', JSON.stringify(restartErr.response.data));
+              } catch (recreateErr) {
+                console.error('[Update] FEHLER bei action "recreate" via Dockhand API:', recreateErr.message);
+                console.log(`[Update] Versuche stattdessen action "restart" für Container ${cName} via Dockhand API...`);
+                try {
+                  await dockhand.containerAction(envId, panelContainer.id, 'restart');
+                  console.log(`[Update] HINWEIS: Container ${cName} wurde über Dockhand API neugestartet. Da Container-Restart ein bestehendes Image nicht durch ein neues ersetzt, wird zusätzlich Fallback via docker-compose force-recreate ausgeführt.`);
+                  // WICHTIG: Kein apiSuccess = true, damit das lokale docker-compose force-recreate danach ausgeführt wird!
+                } catch (restartErr) {
+                  console.error('[Update] FEHLER bei action "restart" via Dockhand API:', restartErr.message);
                 }
               }
+            } else {
+              console.error(`[Update] FEHLER: Kein Panel-Container mit Name "ueberwachungs-panel" oder "panel" in Dockhand Environment ${envId} gefunden!`);
             }
-          } else {
-            console.error(`[Update] FEHLER: Kein Panel-Container mit Name "ueberwachungs-panel" oder "panel" in Dockhand Environment ${envId} gefunden!`);
           }
         } catch (dhErr) {
           console.error('[Update] Dockhand Pro API Update fehlgeschlagen:', dhErr.message);
