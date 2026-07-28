@@ -37,10 +37,24 @@ const broadcast = (data) => {
 };
 
 // ─── In-Memory-Zustand pro (Regel × Server) ──────────────────────────────────
-// Schlüssel: "<ruleId>:<serverId>" → { activeSince, lastFiredAt, hasFired }
+// Schlüssel: "<ruleId>:<serverId>" → { activeSince, lastFiredAt, hasFired, lastFiredThreshold }
 const state = new Map();
-const getState = (key) => {
-  if (!state.has(key)) state.set(key, { activeSince: null, lastFiredAt: null, hasFired: false });
+const getState = (ruleId, srvKey) => {
+  const key = `${ruleId}:${srvKey}`;
+  if (!state.has(key)) {
+    let hasFired = false;
+    let lastFiredThreshold = null;
+    try {
+      const row = db.prepare(
+        "SELECT type, value FROM alert_history WHERE rule_id = ? AND (server_key = ? OR server_key IS NULL) ORDER BY triggered_at DESC, id DESC LIMIT 1"
+      ).get(ruleId, srvKey);
+      if (row && row.type === 'fired') {
+        hasFired = true;
+        lastFiredThreshold = row.value;
+      }
+    } catch {}
+    state.set(key, { activeSince: null, lastFiredAt: null, hasFired, lastFiredThreshold });
+  }
   return state.get(key);
 };
 
@@ -219,24 +233,49 @@ async function evaluate() {
         ? results.some(r => r.met)
         : results.every(r => r.met);
 
-      const stateKey = `${rule.id}:${srv.key}`;
-      const s        = getState(stateKey);
+      const s = getState(rule.id, srv.key);
 
-      // Zusammenfassende Nachricht aus allen Bedingungen
-      const detailLines = results.map(r => {
-        const u = METRIC_UNIT[r.cond.metric] ?? '%';
-        const c = r.cond.condition === 'gt' ? '>' : '<';
-        return `${METRIC_LABELS[r.cond.metric] ?? r.cond.metric} ${c} ${r.cond.threshold}${u} (${r.value.toFixed(2)}${u})`;
-      }).join('\n');
+      const metConditions = results.filter(r => r.met);
+      let currentMetThreshold = null;
+      if (metConditions.length > 0) {
+        const isGt = metConditions[0].cond.condition === 'gt';
+        const thresholds = metConditions.map(r => r.cond.threshold);
+        currentMetThreshold = isGt ? Math.max(...thresholds) : Math.min(...thresholds);
+      }
+
+      const isMCHostMetric = conditions.some(c => c.metric === 'mchost_runtime');
 
       if (conditionMet) {
         if (s.activeSince === null) s.activeSince = now;
         const activeFor = now - s.activeSince;
 
-        // Nur beim ersten Auslösen reagieren — kein Spam bis zur Erholung
-        if (activeFor >= (rule.duration_seconds || 0) && !s.hasFired) {
-          const logicStr = logic === 'or' ? '(ODER)' : '(UND)';
-          const message  = `⚠️ Alert: ${rule.name} ${logicStr}\n${detailLines}\nServer: ${srv.name}`;
+        let shouldFire = false;
+        if (activeFor >= (rule.duration_seconds || 0)) {
+          if (!s.hasFired) {
+            shouldFire = true;
+          } else if (currentMetThreshold !== null && s.lastFiredThreshold !== null) {
+            const isGt = metConditions[0]?.cond.condition === 'gt';
+            if (isGt && currentMetThreshold > s.lastFiredThreshold) shouldFire = true;
+            if (!isGt && currentMetThreshold < s.lastFiredThreshold) shouldFire = true;
+          }
+        }
+
+        if (shouldFire) {
+          let message;
+          if (isMCHostMetric) {
+            const daysVal = results[0]?.value;
+            const daysStr = daysVal != null ? `${daysVal.toFixed(1).replace('.', ',')} Tage` : '? Tage';
+            message = `⚠️ MC-Host24 Laufzeit-Warnung\nServer: ${srv.name} (MC-Host24)\nVerbleibende Laufzeit: ${daysStr}`;
+          } else {
+            const logicStr = logic === 'or' ? '(ODER)' : '(UND)';
+            const detailLines = results.map(r => {
+              const u = METRIC_UNIT[r.cond.metric] ?? '%';
+              const c = r.cond.condition === 'gt' ? '>' : '<';
+              return `${METRIC_LABELS[r.cond.metric] ?? r.cond.metric} ${c} ${r.cond.threshold}${u} (${r.value.toFixed(1)}${u})`;
+            }).join('\n');
+            message = `⚠️ Alert: ${rule.name} ${logicStr}\nServer: ${srv.name}\n${detailLines}`;
+          }
+
           try {
             await sendWebhook({ type: rule.wtype, url: rule.wurl }, message);
           } catch (err) {
@@ -244,11 +283,17 @@ async function evaluate() {
           }
           s.lastFiredAt = now;
           s.hasFired    = true;
+          if (currentMetThreshold !== null) s.lastFiredThreshold = currentMetThreshold;
 
           try {
-            db.prepare("INSERT INTO alert_history (rule_id, value, message, type) VALUES (?, ?, ?, 'fired')")
-              .run(rule.id, results[0]?.value ?? 0, message);
-          } catch {}
+            db.prepare("INSERT INTO alert_history (rule_id, value, message, type, server_key) VALUES (?, ?, ?, 'fired', ?)")
+              .run(rule.id, currentMetThreshold ?? (results[0]?.value ?? 0), message, srv.key);
+          } catch {
+            try {
+              db.prepare("INSERT INTO alert_history (rule_id, value, message, type) VALUES (?, ?, ?, 'fired')")
+                .run(rule.id, currentMetThreshold ?? (results[0]?.value ?? 0), message);
+            } catch {}
+          }
 
           broadcast({
             type: 'alert',
@@ -262,22 +307,30 @@ async function evaluate() {
               agentId:    srv.agentId || null,
               metric:     conditions[0]?.metric ?? null,
               value:      results[0]?.value ?? null,
-              threshold:  conditions[0]?.threshold ?? null,
+              threshold:  currentMetThreshold ?? conditions[0]?.threshold ?? null,
             },
           });
         }
       } else {
         if (s.hasFired) {
-          s.hasFired    = false;
-          s.activeSince = null;
-          const recoveryLines = results.map(r => {
-            const u   = METRIC_UNIT[r.cond.metric] ?? '%';
-            const dir = r.cond.condition === 'gt' ? 'über' : 'unter';
-            return `${METRIC_LABELS[r.cond.metric] ?? r.cond.metric}: ${r.value.toFixed(1)}${u} ✓ (war ${dir} ${r.cond.threshold}${u})`;
-          }).join('\n');
-          const message = `✅ Erholt: ${rule.name}\n${recoveryLines}\nServer: ${srv.name}`;
+          s.hasFired           = false;
+          s.lastFiredThreshold = null;
+          s.activeSince        = null;
 
-          // Erholungs-Webhook immer senden (einmal-Modell: fire once → resolve once)
+          let message;
+          if (isMCHostMetric) {
+            const daysVal = results[0]?.value;
+            const daysStr = daysVal != null ? `${daysVal.toFixed(1).replace('.', ',')} Tage` : '? Tage';
+            message = `✅ MC-Host24 Laufzeit verlängert\nServer: ${srv.name} (MC-Host24)\nAktuelle Laufzeit: ${daysStr}`;
+          } else {
+            const recoveryLines = results.map(r => {
+              const u   = METRIC_UNIT[r.cond.metric] ?? '%';
+              const dir = r.cond.condition === 'gt' ? 'über' : 'unter';
+              return `${METRIC_LABELS[r.cond.metric] ?? r.cond.metric}: ${r.value.toFixed(1)}${u} ✓ (war ${dir} ${r.cond.threshold}${u})`;
+            }).join('\n');
+            message = `✅ Erholt: ${rule.name}\nServer: ${srv.name}\n${recoveryLines}`;
+          }
+
           try {
             await sendWebhook({ type: rule.wtype, url: rule.wurl }, message);
           } catch (err) {
@@ -285,9 +338,15 @@ async function evaluate() {
           }
 
           try {
-            db.prepare("INSERT INTO alert_history (rule_id, value, message, type) VALUES (?, ?, ?, 'resolved')")
-              .run(rule.id, results[0]?.value ?? 0, message);
-          } catch {}
+            db.prepare("INSERT INTO alert_history (rule_id, value, message, type, server_key) VALUES (?, ?, ?, 'resolved', ?)")
+              .run(rule.id, results[0]?.value ?? 0, message, srv.key);
+          } catch {
+            try {
+              db.prepare("INSERT INTO alert_history (rule_id, value, message, type) VALUES (?, ?, ?, 'resolved')")
+                .run(rule.id, results[0]?.value ?? 0, message);
+            } catch {}
+          }
+
           broadcast({
             type: 'alert',
             payload: { alertType: 'resolved', ruleId: rule.id, ruleName: rule.name, conditions, logic, serverName: srv.name, agentId: srv.agentId || null, metric: conditions[0]?.metric ?? null, value: results[0]?.value ?? null, threshold: conditions[0]?.threshold ?? null },

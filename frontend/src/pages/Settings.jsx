@@ -575,11 +575,6 @@ export default function Settings() {
   const [smtp, setSmtp] = useState({ host: '', port: 587, user: '', pass: '', from: '', secure: false });
   const [showSmtpPw, setShowSmtpPw] = useState(false);
 
-  // Claude KI
-  const [claudeKey,      setClaudeKey]      = useState('');
-  const [claudeModel,    setClaudeModel]    = useState('claude-haiku-4-5');
-  const [showClaudeKey,  setShowClaudeKey]  = useState(false);
-
   // Passkeys
   const [passkeys,     setPasskeys]     = useState([]);
   const [passkeyName,  setPasskeyName]  = useState('');
@@ -1012,443 +1007,473 @@ export default function Settings() {
   return (
     <div className="space-y-4">
 
-      {/* Tab-Header */}
-      <div className="flex gap-1 bg-panel-surface border border-panel-border rounded-lg p-1">
+      {/* Tab-Header (4 klare Kategorien) */}
+      <div className="flex flex-wrap gap-1 bg-panel-surface border border-panel-border rounded-lg p-1">
         <button
           onClick={() => setTab('profile')}
-          className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-sm transition-colors ${
-            tab === 'profile' ? 'bg-panel-card text-panel-text font-medium' : 'text-panel-muted hover:text-panel-text'
+          className={`flex-1 min-w-[140px] flex items-center justify-center gap-1.5 py-1.5 rounded-md text-sm transition-colors cursor-pointer ${
+            tab === 'profile' ? 'bg-panel-card text-panel-text font-medium shadow-sm' : 'text-panel-muted hover:text-panel-text'
           }`}>
-          <User size={14} />Mein Profil
+          <User size={14} />Profil & Sicherheit
+        </button>
+        <button
+          onClick={() => setTab('general')}
+          className={`flex-1 min-w-[140px] flex items-center justify-center gap-1.5 py-1.5 rounded-md text-sm transition-colors cursor-pointer ${
+            tab === 'general' ? 'bg-panel-card text-panel-text font-medium shadow-sm' : 'text-panel-muted hover:text-panel-text'
+          }`}>
+          <Eye size={14} />Allgemein & Design
         </button>
         {isAdmin && (
           <button
-            onClick={() => setTab('system')}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-sm transition-colors ${
-              tab === 'system' ? 'bg-panel-card text-panel-text font-medium' : 'text-panel-muted hover:text-panel-text'
+            onClick={() => setTab('integrations')}
+            className={`flex-1 min-w-[140px] flex items-center justify-center gap-1.5 py-1.5 rounded-md text-sm transition-colors cursor-pointer ${
+              tab === 'integrations' ? 'bg-panel-card text-panel-text font-medium shadow-sm' : 'text-panel-muted hover:text-panel-text'
             }`}>
-            <Settings2 size={14} />System
+            <Cloud size={14} />Cloud & APIs
+          </button>
+        )}
+        {isAdmin && (
+          <button
+            onClick={() => setTab('system')}
+            className={`flex-1 min-w-[140px] flex items-center justify-center gap-1.5 py-1.5 rounded-md text-sm transition-colors cursor-pointer ${
+              tab === 'system' ? 'bg-panel-card text-panel-text font-medium shadow-sm' : 'text-panel-muted hover:text-panel-text'
+            }`}>
+            <Settings2 size={14} />System & Backup
           </button>
         )}
       </div>
 
-      {/* Karten als responsives Masonry-Raster (nebeneinander + untereinander) */}
-      <div className="columns-1 lg:columns-2 gap-4 [&>*]:mb-4 [&>*]:break-inside-avoid">
+      {/* ═══════════════════ TAB 1: PROFIL & SICHERHEIT ═══════════════════ */}
+      {tab === 'profile' && (
+        <div className="columns-1 lg:columns-2 gap-4 [&>*]:mb-4 [&>*]:break-inside-avoid">
+          {/* ── Passwort ändern ── */}
+          <Card title={<span className="flex items-center gap-2"><Lock size={14} />Passwort ändern</span>}>
+            <div className="space-y-3">
+              {[
+                ['Aktuelles Passwort', pwCurrent, setPwCurrent],
+                ['Neues Passwort',     pwNew,     setPwNew],
+                ['Bestätigen',         pwConfirm, setPwConfirm],
+              ].map(([label, val, set]) => (
+                <div key={label}>
+                  <label className="block text-xs text-panel-muted mb-1">{label}</label>
+                  <div className="relative">
+                    <input
+                      type={showPw ? 'text' : 'password'}
+                      value={val}
+                      onChange={e => set(e.target.value)}
+                      placeholder="••••••••"
+                      className={inputCls + ' pr-9'}
+                      onKeyDown={e => e.key === 'Enter' && changePassword()}
+                    />
+                    <button type="button" onClick={() => setShowPw(v => !v)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
+                      {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
+                </div>
+              ))}
+              <Button onClick={changePassword}
+                disabled={!pwCurrent || !pwNew || !pwConfirm || loading.pw} size="sm">
+                Passwort speichern
+              </Button>
+              <Msg msg={msgs.pw} />
+            </div>
+          </Card>
 
-      {/* ═══════════════════ PROFIL-TAB ═══════════════════ */}
-      {tab === 'profile' && (<>
+          {/* ── E-Mail-Adresse ── */}
+          <Card title={<span className="flex items-center gap-2"><Mail size={14} />E-Mail-Adresse</span>}>
+            <div className="space-y-3">
+              <p className="text-xs text-panel-muted">Wird für Passwort-Reset-E-Mails verwendet.</p>
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="deine@email.de"
+                className={inputCls}
+                onKeyDown={e => e.key === 'Enter' && saveEmail()}
+              />
+              <Button onClick={saveEmail} disabled={loading.email} size="sm">
+                E-Mail speichern
+              </Button>
+              <Msg msg={msgs.email} />
+            </div>
+          </Card>
 
-        {/* ── Passwort ändern ── */}
-        <Card title={<span className="flex items-center gap-2"><Lock size={14} />Passwort ändern</span>}>
-          <div className="space-y-3">
-            {[
-              ['Aktuelles Passwort', pwCurrent, setPwCurrent],
-              ['Neues Passwort',     pwNew,     setPwNew],
-              ['Bestätigen',         pwConfirm, setPwConfirm],
-            ].map(([label, val, set]) => (
-              <div key={label}>
-                <label className="block text-xs text-panel-muted mb-1">{label}</label>
+          {/* ── Passkeys ── */}
+          <Card title={<span className="flex items-center gap-2"><ShieldCheck size={14} />Passkeys (WebAuthn)</span>}>
+            <div className="space-y-3">
+              <p className="text-xs text-panel-muted">
+                Passkeys ermöglichen passwortlosen Login per Fingerabdruck, Face ID, Hardware-Key oder Passwort-Manager.
+              </p>
+
+              {passkeys.length > 0 && (
+                <div className="space-y-1.5 border border-panel-border rounded-md p-2 bg-panel-surface">
+                  <p className="text-xs font-medium text-panel-text">Registrierte Passkeys ({passkeys.length})</p>
+                  <div className="space-y-1">
+                    {passkeys.map(pk => (
+                      <div key={pk.id} className="flex items-center justify-between py-1 border-b border-panel-border/30 last:border-0">
+                        <div>
+                          <p className="text-xs font-medium text-panel-text">{pk.name}</p>
+                          <p className="text-[10px] text-panel-muted">
+                            Erstellt: {fmtDate(pk.created_at)} · {pk.device_type}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => deletePasskey(pk.id)}
+                          className="p-1 text-panel-muted hover:text-panel-red transition-colors"
+                          title="Löschen"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={passkeyName}
+                  onChange={e => setPasskeyName(e.target.value)}
+                  placeholder="Name (z.B. iPhone, YubiKey, Enpass)"
+                  className="flex-1 bg-panel-surface border border-panel-border rounded-md px-3 py-1.5 text-sm text-panel-text focus:outline-none focus:border-panel-accent"
+                />
+                <Button onClick={registerPasskey} disabled={loading.passkey} size="sm">
+                  {loading.passkey ? '…' : '+ Passkey registrieren'}
+                </Button>
+              </div>
+              <Msg msg={msgs.passkey} />
+            </div>
+          </Card>
+
+          {/* ── 2FA ── */}
+          <Card title={<span className="flex items-center gap-2"><ShieldAlert size={14} />Zwei-Faktor-Authentifizierung (2FA)</span>}>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-panel-muted">Aktueller Status:</span>
+                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                  twoFaStatus.twofa_type !== 'none'
+                    ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/30'
+                    : 'bg-panel-border/40 text-panel-muted border border-panel-border'
+                }`}>
+                  {twoFaStatus.twofa_type === 'email' ? 'Aktiv (E-Mail)' :
+                   twoFaStatus.twofa_type === 'totp' ? 'Aktiv (Authenticator-App)' : 'Deaktiviert'}
+                </span>
+              </div>
+
+              {twoFaStatus.twofa_type === 'none' && !twoFaSetup && (
+                <div className="space-y-3 pt-1">
+                  <p className="text-xs text-panel-muted leading-relaxed">
+                    Schütze dein Konto zusätzlich durch eine 6-stellige PIN-Abfrage bei jeder Anmeldung.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={() => start2faSetup('totp')} disabled={loading.twofa} size="sm">
+                      <QrCode size={13} className="mr-1.5" />
+                      Mit App einrichten (TOTP)
+                    </Button>
+                    <Button onClick={() => start2faSetup('email')} disabled={loading.twofa} size="sm" variant="secondary">
+                      <Mail size={13} className="mr-1.5" />
+                      Mit E-Mail einrichten
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {twoFaSetup && (
+                <div className="space-y-4 rounded-lg border border-panel-border bg-panel-surface/50 p-3.5">
+                  {twoFaSetup.type === 'totp' ? (
+                    <div className="space-y-3">
+                      <p className="text-xs font-medium text-panel-text">1. QR-Code mit Authenticator-App scannen:</p>
+                      <div className="flex justify-center bg-white p-3 rounded-lg shadow-sm border border-panel-border/20 w-fit mx-auto">
+                        <div className="w-40 h-40" dangerouslySetInnerHTML={{ __html: twoFaSetup.qrSvg }} />
+                      </div>
+                      <div className="text-center">
+                        <span className="text-[11px] text-panel-muted block mb-1">Oder manuellen Sicherheitsschlüssel eingeben:</span>
+                        <div className="inline-flex items-center gap-1.5 bg-panel-card border border-panel-border rounded px-2.5 py-1">
+                          <code className="text-xs font-mono font-semibold tracking-wider text-panel-accent select-all">
+                            {twoFaSetup.secret}
+                          </code>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(twoFaSetup.secret);
+                              setCopied2FA(true);
+                              setTimeout(() => setCopied2FA(false), 2000);
+                            }}
+                            className="text-panel-muted hover:text-panel-text transition-colors p-0.5"
+                            title="Geheimsymbol kopieren"
+                          >
+                            {copied2FA ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-medium text-panel-text">1. Bestätigungscode prüfen</p>
+                      <p className="text-xs text-panel-muted leading-relaxed">
+                        Wir haben dir einen 6-stelligen Code an <span className="text-panel-text font-medium">{email}</span> gesendet.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="space-y-2 pt-1 border-t border-panel-border/50">
+                    <label className="block text-xs font-medium text-panel-text">
+                      {twoFaSetup.type === 'totp' ? '2. 6-stelligen Code eingeben:' : '2. E-Mail Code eingeben:'}
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={twoFaCode}
+                        onChange={e => setTwoFaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        placeholder="123456"
+                        maxLength={6}
+                        className="w-32 bg-panel-card border border-panel-border rounded-md px-3 py-1.5 text-center text-sm font-mono tracking-widest text-panel-text focus:outline-none focus:border-panel-accent"
+                      />
+                      <Button onClick={enable2fa} disabled={loading.twofa || twoFaCode.length !== 6} size="sm">
+                        Aktivieren
+                      </Button>
+                      <Button onClick={() => { setTwoFaSetup(null); setTwoFaCode(''); }} variant="secondary" size="sm">
+                        Abbrechen
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {twoFaStatus.twofa_type !== 'none' && (
+                <div className="space-y-3 pt-2 border-t border-panel-border/40">
+                  <p className="text-xs text-panel-muted">
+                    Um die Zwei-Faktor-Authentifizierung zu deaktivieren, bestätige bitte dein aktuelles Passwort:
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="password"
+                      value={twoFaPw}
+                      onChange={e => setTwoFaPw(e.target.value)}
+                      placeholder="Passwort"
+                      className="flex-1 bg-panel-surface border border-panel-border rounded-md px-3 py-1.5 text-sm text-panel-text focus:outline-none focus:border-panel-accent"
+                    />
+                    <Button onClick={disable2fa} disabled={loading.twofa || !twoFaPw} size="sm" variant="danger">
+                      2FA Deaktivieren
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              <Msg msg={msgs.twofa} />
+            </div>
+          </Card>
+
+          {/* ── Aktive Sitzungen ── */}
+          <SessionsSection isAdmin={isAdmin} />
+        </div>
+      )}
+
+      {/* ═══════════════════ TAB 2: ALLGEMEIN & DESIGN ═══════════════════ */}
+      {tab === 'general' && (
+        <div className="columns-1 lg:columns-2 gap-4 [&>*]:mb-4 [&>*]:break-inside-avoid">
+          {/* ── Darstellung & Design ── */}
+          <Card title={<span className="flex items-center gap-2"><Eye size={14} />Darstellung & Design</span>}>
+            <PrideFlagToggleCard />
+          </Card>
+
+          {isAdmin && (
+            <>
+              {/* ── Aktive Module & Funktionen ── */}
+              <Card title={<span className="flex items-center gap-2"><Layers size={14} />Aktive Module</span>}>
+                <ModulesToggleCard />
+              </Card>
+
+              {/* ── Benachrichtigungen ── */}
+              <Card title={<span className="flex items-center gap-2"><Bell size={14} />Benachrichtigungen</span>}>
+                <ActionNotificationsToggle />
+              </Card>
+
+              {/* ── Live-Refresh-Intervall ── */}
+              <Card title={<span className="flex items-center gap-2"><Timer size={14} />Live-Refresh-Intervall</span>}>
+                <div className="space-y-3">
+                  <p className="text-xs text-panel-muted">
+                    Wie oft Agent-Detail- und Dashboard-Seiten automatisch aktualisieren (5–300 Sekunden).
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="number"
+                      min={5}
+                      max={300}
+                      value={liveInterval}
+                      onChange={e => setLiveInterval(e.target.value)}
+                      onBlur={() => setLiveInterval(v => Math.max(5, Math.min(300, parseInt(v, 10) || 15)))}
+                      className={inputCls + ' w-28'}
+                    />
+                    <span className="text-sm text-panel-muted">Sekunden</span>
+                  </div>
+                  <Button onClick={saveLiveInterval} disabled={loading.liveInterval} size="sm">
+                    Speichern
+                  </Button>
+                  <Msg msg={msgs.liveInterval} />
+                </div>
+              </Card>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ═══════════════════ TAB 3: CLOUD & APIS (Admin) ═══════════════════ */}
+      {tab === 'integrations' && isAdmin && (
+        <div className="columns-1 lg:columns-2 gap-4 [&>*]:mb-4 [&>*]:break-inside-avoid">
+          {/* ── Hetzner ── */}
+          <Card title={<span className="flex items-center gap-2"><Cloud size={14} />Hetzner Cloud API</span>}>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <StatusBadge set={!!status.hetzner_api_token} />
+                {status.hetzner_api_token && (
+                  <Button size="sm" variant="danger" onClick={deleteHetzner} disabled={loading.hetzner_del}>
+                    <Trash2 size={12} className="mr-1" />Entfernen
+                  </Button>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs text-panel-muted mb-1">
+                  {status.hetzner_api_token ? 'Neuen Token eintragen (überschreibt)' : 'API Token'}
+                </label>
                 <div className="relative">
                   <input
-                    type={showPw ? 'text' : 'password'}
-                    value={val}
-                    onChange={e => set(e.target.value)}
-                    placeholder="••••••••"
+                    type={showHetzner ? 'text' : 'password'}
+                    value={hetznerToken}
+                    onChange={e => setHetznerToken(e.target.value)}
+                    placeholder="hv1-..."
                     className={inputCls + ' pr-9'}
-                    onKeyDown={e => e.key === 'Enter' && changePassword()}
+                    onKeyDown={e => e.key === 'Enter' && saveHetzner()}
                   />
-                  <button type="button" onClick={() => setShowPw(v => !v)}
+                  <button type="button" onClick={() => setShowHetzner(v => !v)}
                     className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
-                    {showPw ? <EyeOff size={14} /> : <Eye size={14} />}
+                    {showHetzner ? <EyeOff size={14} /> : <Eye size={14} />}
                   </button>
                 </div>
               </div>
-            ))}
-            <Button onClick={changePassword}
-              disabled={!pwCurrent || !pwNew || !pwConfirm || loading.pw} size="sm">
-              Passwort speichern
-            </Button>
-            <Msg msg={msgs.pw} />
-          </div>
-        </Card>
-
-        {/* ── E-Mail-Adresse ── */}
-        <Card title={<span className="flex items-center gap-2"><Mail size={14} />E-Mail-Adresse</span>}>
-          <div className="space-y-3">
-            <p className="text-xs text-panel-muted">Wird für Passwort-Reset-E-Mails verwendet.</p>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="deine@email.de"
-              className={inputCls}
-              onKeyDown={e => e.key === 'Enter' && saveEmail()}
-            />
-            <Button onClick={saveEmail} disabled={loading.email} size="sm">
-              E-Mail speichern
-            </Button>
-            <Msg msg={msgs.email} />
-          </div>
-        </Card>
-
-        {/* ── Passkeys ── */}
-        <Card title={<span className="flex items-center gap-2"><ShieldCheck size={14} />Passkeys (WebAuthn)</span>}>
-          <div className="space-y-3">
-            <p className="text-xs text-panel-muted">
-              Passkeys ermöglichen passwortlosen Login per Fingerabdruck, Face ID, Hardware-Key oder Passwort-Manager.
-            </p>
-
-            {/* Hinweis für externe Passwort-Manager */}
-            <div className="rounded-md border border-panel-accent/30 bg-panel-accent/5 px-3 py-2.5 space-y-1.5">
-              <p className="text-[11px] font-semibold text-panel-accent">
-                Enpass / Bitwarden als Passkey-Anbieter aktivieren
-              </p>
-              <ol className="text-[11px] text-panel-muted leading-relaxed list-none space-y-1">
-                <li><span className="text-panel-text font-medium">1.</span> In Chrome diese Adresse öffnen:</li>
-                <li>
-                  <span className="font-mono bg-panel-card border border-panel-border rounded px-2 py-0.5 text-panel-accent select-all">
-                    chrome://settings/passkeys
-                  </span>
-                </li>
-                <li><span className="text-panel-text font-medium">2.</span> Unter <span className="text-panel-text">„Passwort-Manager"</span> → <span className="text-panel-text">Enpass</span> auswählen</li>
-                <li><span className="text-panel-text font-medium">3.</span> Dann hier auf <span className="text-panel-text">„Registrieren"</span> klicken → Chrome zeigt seinen eigenen Dialog (nicht Windows)</li>
-              </ol>
+              <Button onClick={saveHetzner} disabled={!hetznerToken.trim() || loading.hetzner} size="sm">Speichern</Button>
+              <Msg msg={msgs.hetzner} />
             </div>
+          </Card>
 
-            {/* Registrierte Passkeys */}
-            {passkeys.length > 0 ? (
-              <div className="divide-y divide-panel-border -mx-4">
-                {passkeys.map(pk => (
-                  <div key={pk.id} className="flex items-center justify-between px-4 py-2.5">
-                    <div>
-                      <p className="text-xs text-panel-text font-medium">{pk.device_type || 'Passkey'}</p>
-                      <p className="text-xs text-panel-muted">{fmtDate(pk.created_at)}</p>
-                    </div>
-                    <Button size="sm" variant="danger" onClick={() => deletePasskey(pk.id)}>
-                      <Trash2 size={12} />
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-panel-muted">Keine Passkeys registriert</p>
-            )}
-
-            {/* Name + Button */}
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={passkeyName}
-                onChange={e => setPasskeyName(e.target.value)}
-                placeholder="Name (z. B. Enpass, YubiKey …)"
-                maxLength={60}
-                className="flex-1 bg-panel-surface border border-panel-border rounded-md px-3 py-1.5 text-sm text-panel-text placeholder:text-panel-muted/40 focus:outline-none focus:border-panel-accent transition-colors"
-              />
-              <Button onClick={registerPasskey} disabled={loading.passkey} size="sm">
-                <Key size={13} className="mr-1" />
-                {loading.passkey ? 'Warte…' : 'Registrieren'}
-              </Button>
-            </div>
-            <Msg msg={msgs.passkey} />
-          </div>
-        </Card>
-
-        {/* ── 2FA ── */}
-        <Card title={<span className="flex items-center gap-2"><ShieldAlert size={14} />Zwei-Faktor-Authentifizierung (2FA)</span>}>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-panel-muted">Aktueller Status:</span>
-              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                twoFaStatus.twofa_type !== 'none'
-                  ? 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/30'
-                  : 'bg-panel-border/40 text-panel-muted border border-panel-border'
-              }`}>
-                {twoFaStatus.twofa_type === 'email' ? 'Aktiv (E-Mail)' :
-                 twoFaStatus.twofa_type === 'totp' ? 'Aktiv (Authenticator-App)' : 'Deaktiviert'}
-              </span>
-            </div>
-
-            {twoFaStatus.twofa_type === 'none' && !twoFaSetup && (
-              <div className="space-y-3 pt-1">
-                <p className="text-xs text-panel-muted leading-relaxed">
-                  Schütze dein Konto zusätzlich durch eine 6-stellige PIN-Abfrage bei jeder Anmeldung.
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <Button onClick={() => start2faSetup('totp')} disabled={loading.twofa} size="sm">
-                    <QrCode size={13} className="mr-1.5" />
-                    Mit App einrichten (TOTP)
-                  </Button>
-                  <Button onClick={() => start2faSetup('email')} disabled={loading.twofa} size="sm" variant="secondary">
-                    <Mail size={13} className="mr-1.5" />
-                    Mit E-Mail einrichten
-                  </Button>
+          {/* ── MC-Host24 ── */}
+          <Card title={<span className="flex items-center gap-2"><Server size={14} />MC-Host24</span>}>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <StatusBadge set={status.mchost_token_set} />
+                  {status.mchost_token_set && (
+                    <p className="text-xs text-panel-muted">Token aktiv · wird automatisch erneuert</p>
+                  )}
                 </div>
-              </div>
-            )}
-
-            {twoFaSetup && (
-              <div className="space-y-4 rounded-lg border border-panel-border bg-panel-surface/50 p-3.5">
-                {twoFaSetup.type === 'totp' ? (
-                  <div className="space-y-3">
-                    <p className="text-xs font-medium text-panel-text">1. QR-Code mit Authenticator-App scannen:</p>
-                    <div className="flex justify-center bg-white p-3 rounded-lg shadow-sm border border-panel-border/20 w-fit mx-auto">
-                      <div className="w-40 h-40" dangerouslySetInnerHTML={{ __html: twoFaSetup.qrSvg }} />
-                    </div>
-                    <div className="text-center">
-                      <span className="text-[11px] text-panel-muted block mb-1">Oder manuellen Sicherheitsschlüssel eingeben:</span>
-                      <div className="inline-flex items-center gap-1.5 bg-panel-card border border-panel-border rounded px-2.5 py-1">
-                        <code className="text-xs font-mono font-semibold tracking-wider text-panel-accent select-all">
-                          {twoFaSetup.secret}
-                        </code>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(twoFaSetup.secret);
-                            setCopied2FA(true);
-                            setTimeout(() => setCopied2FA(false), 2000);
-                          }}
-                          className="text-panel-muted hover:text-panel-text transition-colors p-0.5"
-                          title="Geheimsymbol kopieren"
-                        >
-                          {copied2FA ? <Check size={13} className="text-emerald-500" /> : <Copy size={13} />}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-1.5">
-                    <p className="text-xs font-medium text-panel-text">1. Bestätigungscode prüfen</p>
-                    <p className="text-xs text-panel-muted leading-relaxed">
-                      Wir haben dir einen 6-stelligen Code an <span className="text-panel-text font-medium">{email}</span> gesendet.
-                    </p>
-                  </div>
-                )}
-
-                <div className="space-y-2 pt-1 border-t border-panel-border/50">
-                  <label className="block text-xs font-medium text-panel-text">
-                    {twoFaSetup.type === 'totp' ? '2. 6-stelligen Code eingeben:' : '2. E-Mail Code eingeben:'}
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={twoFaCode}
-                      onChange={e => setTwoFaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                      placeholder="123456"
-                      maxLength={6}
-                      className="w-32 bg-panel-card border border-panel-border rounded-md px-3 py-1.5 text-center text-sm font-mono tracking-widest text-panel-text focus:outline-none focus:border-panel-accent"
-                    />
-                    <Button onClick={enable2fa} disabled={loading.twofa || twoFaCode.length !== 6} size="sm">
-                      Aktivieren
+                <div className="flex gap-1">
+                  {status.mchost_token_set && (
+                    <Button size="sm" variant="ghost" onClick={refreshMcHost} disabled={loading.mchost_refresh}>
+                      <RefreshCw size={12} className="mr-1" />Erneuern
                     </Button>
-                    <Button onClick={() => { setTwoFaSetup(null); setTwoFaCode(''); }} variant="secondary" size="sm">
-                      Abbrechen
+                  )}
+                  {(status.mchost_token_set || status.mchost_username) && (
+                    <Button size="sm" variant="danger" onClick={deleteMcHost} disabled={loading.mchost_del}>
+                      <Trash2 size={12} className="mr-1" />Entfernen
                     </Button>
-                  </div>
+                  )}
                 </div>
-              </div>
-            )}
-
-            {twoFaStatus.twofa_type !== 'none' && (
-              <div className="space-y-3 pt-2 border-t border-panel-border/40">
-                <p className="text-xs text-panel-muted">
-                  Um die Zwei-Faktor-Authentifizierung zu deaktivieren, bestätige bitte dein aktuelles Passwort:
-                </p>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="password"
-                    value={twoFaPw}
-                    onChange={e => setTwoFaPw(e.target.value)}
-                    placeholder="Passwort"
-                    className="flex-1 bg-panel-surface border border-panel-border rounded-md px-3 py-1.5 text-sm text-panel-text focus:outline-none focus:border-panel-accent"
-                  />
-                  <Button onClick={disable2fa} disabled={loading.twofa || !twoFaPw} size="sm" variant="danger">
-                    2FA Deaktivieren
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            <Msg msg={msgs.twofa} />
-          </div>
-        </Card>
-
-      </>)}
-
-      {/* ═══════════════════ SYSTEM-TAB (Admin) ═══════════════════ */}
-      {tab === 'system' && isAdmin && (<>
-
-        {/* ── SMTP ── */}
-        <Card title={<span className="flex items-center gap-2"><Send size={14} />SMTP E-Mail (Passwort-Reset)</span>}>
-          <div className="space-y-3">
-            <div className="grid grid-cols-3 gap-2">
-              <div className="col-span-2">
-                <label className="block text-xs text-panel-muted mb-1">SMTP Host</label>
-                <input value={smtp.host} onChange={e => setSmtp(s => ({ ...s, host: e.target.value }))}
-                  placeholder="smtp.example.com" className={inputCls} />
               </div>
               <div>
-                <label className="block text-xs text-panel-muted mb-1">Port</label>
-                <input type="number" value={smtp.port}
-                  onChange={e => setSmtp(s => ({ ...s, port: Number(e.target.value) }))}
-                  placeholder="587" className={inputCls} />
+                <label className="block text-xs text-panel-muted mb-1">E-Mail-Adresse</label>
+                <input type="email" value={mcUsername} onChange={e => setMcUsername(e.target.value)}
+                  placeholder="deine@email.de" className={inputCls} />
+                <p className="text-xs text-panel-muted mt-1">
+                  Verwende deine MC-Host24 <strong>Login-E-Mail</strong>, nicht deinen Anzeigenamen.
+                </p>
               </div>
-            </div>
-            <div>
-              <label className="block text-xs text-panel-muted mb-1">Benutzername</label>
-              <input value={smtp.user} onChange={e => setSmtp(s => ({ ...s, user: e.target.value }))}
-                placeholder="user@example.com" className={inputCls} />
-            </div>
-            <div>
-              <label className="block text-xs text-panel-muted mb-1">Passwort</label>
-              <div className="relative">
-                <input
-                  type={showSmtpPw ? 'text' : 'password'}
-                  value={smtp.pass}
-                  onChange={e => setSmtp(s => ({ ...s, pass: e.target.value }))}
-                  placeholder={status.smtp_pass === '***gesetzt***' ? '(gesetzt — leer lassen = behalten)' : ''}
-                  className={inputCls + ' pr-9'}
-                />
-                <button type="button" onClick={() => setShowSmtpPw(v => !v)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
-                  {showSmtpPw ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs text-panel-muted mb-1">Absender-Adresse (From)</label>
-              <input value={smtp.from} onChange={e => setSmtp(s => ({ ...s, from: e.target.value }))}
-                placeholder="Monitoring Panel <noreply@example.com>" className={inputCls} />
-            </div>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={smtp.secure}
-                onChange={e => setSmtp(s => ({ ...s, secure: e.target.checked }))}
-                className="rounded border-panel-border" />
-              <span className="text-xs text-panel-text">SSL/TLS (Port 465) — deaktiviert für STARTTLS (Port 587)</span>
-            </label>
-            <div className="flex gap-2">
-              <Button onClick={saveSmtp} disabled={loading.smtp} size="sm">SMTP speichern</Button>
-              <Button onClick={testSmtp} disabled={loading.smtp_test} size="sm" variant="ghost">
-                <Send size={12} className="mr-1" />Test-Mail senden
-              </Button>
-            </div>
-            <Msg msg={msgs.smtp} />
-          </div>
-        </Card>
-
-        {/* ── Hetzner ── */}
-        <Card title={<span className="flex items-center gap-2"><Cloud size={14} />Hetzner Cloud API</span>}>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <StatusBadge set={!!status.hetzner_api_token} />
-              {status.hetzner_api_token && (
-                <Button size="sm" variant="danger" onClick={deleteHetzner} disabled={loading.hetzner_del}>
-                  <Trash2 size={12} className="mr-1" />Entfernen
-                </Button>
-              )}
-            </div>
-            <div>
-              <label className="block text-xs text-panel-muted mb-1">
-                {status.hetzner_api_token ? 'Neuen Token eintragen (überschreibt)' : 'API Token'}
-              </label>
-              <div className="relative">
-                <input
-                  type={showHetzner ? 'text' : 'password'}
-                  value={hetznerToken}
-                  onChange={e => setHetznerToken(e.target.value)}
-                  placeholder="hv1-..."
-                  className={inputCls + ' pr-9'}
-                  onKeyDown={e => e.key === 'Enter' && saveHetzner()}
-                />
-                <button type="button" onClick={() => setShowHetzner(v => !v)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
-                  {showHetzner ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
-              </div>
-            </div>
-            <Button onClick={saveHetzner} disabled={!hetznerToken.trim() || loading.hetzner} size="sm">Speichern</Button>
-            <Msg msg={msgs.hetzner} />
-          </div>
-        </Card>
-
-        {/* ── Dockhand ── */}
-        <Card title={<span className="flex items-center gap-2"><Layers size={14} />Dockhand Docker-Management</span>}>
-          <div className="space-y-3">
-            <p className="text-xs text-panel-muted">
-              Verbindet das Panel mit einer laufenden Dockhand-Instanz. Der API-Token wird unter
-              Dockhand → Settings → Authentication → API Tokens generiert.
-            </p>
-
-            {/* URL */}
-            <div>
-              <label className="block text-xs text-panel-muted mb-1">Dockhand URL</label>
-              <input
-                value={dockhandUrl}
-                onChange={e => setDockhandUrl(e.target.value)}
-                placeholder="http://localhost:3000"
-                className={inputCls}
-              />
-            </div>
-
-            {/* Token */}
-            <div>
-              <label className="block text-xs text-panel-muted mb-1">
-                API-Token {status.dockhandHasToken && <span className="text-panel-green">(gesetzt)</span>}
-              </label>
-              <div className="relative">
-                <input
-                  type={showDockhandToken ? 'text' : 'password'}
-                  value={dockhandToken}
-                  onChange={e => setDockhandToken(e.target.value)}
-                  placeholder={status.dockhandHasToken ? '(gesetzt — leer lassen = behalten)' : 'dh_xxxxxxxx…'}
-                  className={inputCls + ' pr-9'}
-                />
-                <button type="button" onClick={() => setShowDockhandToken(v => !v)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
-                  {showDockhandToken ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <Button onClick={testDockhand} disabled={!dockhandUrl || loading.dockhand} size="sm" variant="ghost">
-                <RefreshCw size={12} className="mr-1" />Verbindung testen
-              </Button>
-              <Button onClick={saveDockhand} disabled={!dockhandUrl || loading.dockhand_save} size="sm">
-                Speichern
-              </Button>
-            </div>
-
-            {/* Environment-Mapping — erscheint sobald Envs geladen */}
-            {dockhandEnvs.length > 0 && (
-              <div className="border border-panel-border rounded-md overflow-hidden mt-1">
-                <div className="bg-panel-surface px-3 py-1.5 text-xs font-medium text-panel-muted border-b border-panel-border">
-                  Environment-Zuweisung
+              <div>
+                <label className="block text-xs text-panel-muted mb-1">Passwort</label>
+                <div className="relative">
+                  <input
+                    type={showMcPw ? 'text' : 'password'}
+                    value={mcPassword}
+                    onChange={e => setMcPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className={inputCls + ' pr-9'}
+                    onKeyDown={e => e.key === 'Enter' && loginMcHost()}
+                  />
+                  <button type="button" onClick={() => setShowMcPw(v => !v)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
+                    {showMcPw ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
                 </div>
-                <div className="divide-y divide-panel-border">
-                  {/* Lokaler Server */}
-                  <div className="flex items-center justify-between px-3 py-2">
-                    <span className="text-xs text-panel-text">Lokaler Panel-Server</span>
-                    <select
-                      value={dockhandEnvId}
-                      onChange={e => {
-                        const v = e.target.value;
-                        setDockhandEnvId(v);
-                        axios.post('/api/dockhand/config', { localEnvId: v }).catch(() => {});
-                      }}
-                      className="bg-panel-surface border border-panel-border rounded px-2 py-1 text-xs text-panel-text focus:outline-none focus:border-panel-accent">
-                      <option value="">— nicht zugewiesen —</option>
-                      {dockhandEnvs.map(e => (
-                        <option key={e.id} value={e.id}>{e.name}</option>
-                      ))}
-                    </select>
+              </div>
+              <Button onClick={loginMcHost} disabled={!mcUsername || !mcPassword || loading.mchost} size="sm">
+                {status.mchost_token_set ? 'Neu einloggen' : 'Einloggen & Token holen'}
+              </Button>
+              <Msg msg={msgs.mchost} />
+            </div>
+          </Card>
+
+          {/* ── Dockhand ── */}
+          <Card title={<span className="flex items-center gap-2"><Layers size={14} />Dockhand Docker-Management</span>}>
+            <div className="space-y-3">
+              <p className="text-xs text-panel-muted">
+                Verbindet das Panel mit einer laufenden Dockhand-Instanz. Der API-Token wird unter
+                Dockhand → Settings → Authentication → API Tokens generiert.
+              </p>
+
+              <div>
+                <label className="block text-xs text-panel-muted mb-1">Dockhand URL</label>
+                <input
+                  value={dockhandUrl}
+                  onChange={e => setDockhandUrl(e.target.value)}
+                  placeholder="http://localhost:3000"
+                  className={inputCls}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-panel-muted mb-1">
+                  API-Token {status.dockhandHasToken && <span className="text-panel-green">(gesetzt)</span>}
+                </label>
+                <div className="relative">
+                  <input
+                    type={showDockhandToken ? 'text' : 'password'}
+                    value={dockhandToken}
+                    onChange={e => setDockhandToken(e.target.value)}
+                    placeholder={status.dockhandHasToken ? '(gesetzt — leer lassen = behalten)' : 'dh_xxxxxxxx…'}
+                    className={inputCls + ' pr-9'}
+                  />
+                  <button type="button" onClick={() => setShowDockhandToken(v => !v)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
+                    {showDockhandToken ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <Button onClick={testDockhand} disabled={!dockhandUrl || loading.dockhand} size="sm" variant="ghost">
+                  <RefreshCw size={12} className="mr-1" />Verbindung testen
+                </Button>
+                <Button onClick={saveDockhand} disabled={!dockhandUrl || loading.dockhand_save} size="sm">
+                  Speichern
+                </Button>
+              </div>
+
+              {dockhandEnvs.length > 0 && (
+                <div className="border border-panel-border rounded-md overflow-hidden mt-1">
+                  <div className="bg-panel-surface px-3 py-1.5 text-xs font-medium text-panel-muted border-b border-panel-border">
+                    Environment-Zuweisung
                   </div>
-                  {/* Remote-Agents */}
-                  {dockhandAgents.map(agent => (
-                    <div key={agent.id} className="flex items-center justify-between px-3 py-2">
-                      <span className="text-xs text-panel-text">{agent.name}</span>
+                  <div className="divide-y divide-panel-border">
+                    <div className="flex items-center justify-between px-3 py-2">
+                      <span className="text-xs text-panel-text">Lokaler Panel-Server</span>
                       <select
-                        value={agent.dockhand_env_id ?? ''}
-                        onChange={e => saveAgentEnv(agent.id, e.target.value)}
+                        value={dockhandEnvId}
+                        onChange={e => {
+                          const v = e.target.value;
+                          setDockhandEnvId(v);
+                          axios.post('/api/dockhand/config', { localEnvId: v }).catch(() => {});
+                        }}
                         className="bg-panel-surface border border-panel-border rounded px-2 py-1 text-xs text-panel-text focus:outline-none focus:border-panel-accent">
                         <option value="">— nicht zugewiesen —</option>
                         {dockhandEnvs.map(e => (
@@ -1456,266 +1481,51 @@ export default function Settings() {
                         ))}
                       </select>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <Msg msg={msgs.dockhand} />
-          </div>
-        </Card>
-
-        {/* ── PatchMon-Server-Verknüpfung ── */}
-        <Card title={<span className="flex items-center gap-2"><PackageCheck size={14} />PatchMon-Server-Verknüpfung</span>}>
-          <div className="space-y-3">
-            <p className="text-xs text-panel-muted">
-              Ordne jedem Panel-Server den passenden PatchMon-Host zu. Dann erscheinen Update-Infos am Server und PatchMon-Alerts funktionieren (inkl. lokalem Server).
-            </p>
-            {pmHosts.length === 0 ? (
-              <p className="text-xs text-panel-muted">
-                Keine PatchMon-Hosts geladen — zuerst unter „PatchMon" die Verbindung einrichten.
-              </p>
-            ) : (
-              <div className="border border-panel-border rounded-md overflow-hidden">
-                <div className="divide-y divide-panel-border">
-                  {/* Lokaler Server */}
-                  <div className="flex items-center justify-between px-3 py-2 gap-2">
-                    <span className="text-xs text-panel-text truncate">Lokaler Panel-Server</span>
-                    <select
-                      value={pmLocalHostId}
-                      onChange={e => saveLocalPm(e.target.value)}
-                      className="bg-panel-surface border border-panel-border rounded px-2 py-1 text-xs text-panel-text focus:outline-none focus:border-panel-accent max-w-[60%]">
-                      <option value="">— nicht verknüpft —</option>
-                      {pmHosts.map(h => <option key={h.id} value={h.id}>{h.name}{h.ip ? ` · ${h.ip}` : ''}</option>)}
-                    </select>
+                    {dockhandAgents.map(agent => (
+                      <div key={agent.id} className="flex items-center justify-between px-3 py-2">
+                        <span className="text-xs text-panel-text">{agent.name}</span>
+                        <select
+                          value={agent.dockhand_env_id ?? ''}
+                          onChange={e => saveAgentEnv(agent.id, e.target.value)}
+                          className="bg-panel-surface border border-panel-border rounded px-2 py-1 text-xs text-panel-text focus:outline-none focus:border-panel-accent">
+                          <option value="">— nicht zugewiesen —</option>
+                          {dockhandEnvs.map(e => (
+                            <option key={e.id} value={e.id}>{e.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
                   </div>
-                  {/* Remote-Agents */}
-                  {pmAgents.map(a => (
-                    <div key={a.id} className="flex items-center justify-between px-3 py-2 gap-2">
-                      <span className="text-xs text-panel-text truncate">{a.name}</span>
+                </div>
+              )}
+
+              <Msg msg={msgs.dockhand} />
+            </div>
+          </Card>
+
+          {/* ── PatchMon-Server-Verknüpfung ── */}
+          <Card title={<span className="flex items-center gap-2"><PackageCheck size={14} />PatchMon-Server-Verknüpfung</span>}>
+            <div className="space-y-3">
+              <p className="text-xs text-panel-muted">
+                Ordne jedem Panel-Server den passenden PatchMon-Host zu. Dann erscheinen Update-Infos am Server und PatchMon-Alerts funktionieren (inkl. lokalem Server).
+              </p>
+              {pmHosts.length === 0 ? (
+                <p className="text-xs text-panel-muted">
+                  Keine PatchMon-Hosts geladen — zuerst unter „PatchMon" die Verbindung einrichten.
+                </p>
+              ) : (
+                <div className="border border-panel-border rounded-md overflow-hidden">
+                  <div className="divide-y divide-panel-border">
+                    <div className="flex items-center justify-between px-3 py-2 gap-2">
+                      <span className="text-xs text-panel-text truncate">Lokaler Panel-Server</span>
                       <select
-                        value={a.patchmon_host_id ?? ''}
-                        onChange={e => saveAgentPm(a.id, e.target.value)}
+                        value={pmLocalHostId}
+                        onChange={e => saveLocalPm(e.target.value)}
                         className="bg-panel-surface border border-panel-border rounded px-2 py-1 text-xs text-panel-text focus:outline-none focus:border-panel-accent max-w-[60%]">
                         <option value="">— nicht verknüpft —</option>
                         {pmHosts.map(h => <option key={h.id} value={h.id}>{h.name}{h.ip ? ` · ${h.ip}` : ''}</option>)}
                       </select>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </Card>
-
-        {/* ── Benachrichtigungen ── */}
-        <Card title={<span className="flex items-center gap-2"><Bell size={14} />Benachrichtigungen</span>}>
-          <ActionNotificationsToggle />
-        </Card>
-
-        {/* ── Aktive Module & Funktionen ── */}
-        <Card title={<span className="flex items-center gap-2"><Layers size={14} />Aktive Module</span>}>
-          <ModulesToggleCard />
-        </Card>
-
-        {/* ── Darstellung & Design ── */}
-        <Card title={<span className="flex items-center gap-2"><Eye size={14} />Darstellung & Design</span>}>
-          <PrideFlagToggleCard />
-        </Card>
-
-        {/* ── GitHub Personal Access Token ── */}
-        <Card title={<span className="flex items-center gap-2"><Key size={14} />GitHub Update-Token</span>}>
-          <GitHubTokenCard status={status} onReload={loadAdmin} />
-        </Card>
-
-        {/* ── Live-Refresh-Intervall ── */}
-        <Card title={<span className="flex items-center gap-2"><Timer size={14} />Live-Refresh-Intervall</span>}>
-          <div className="space-y-3">
-            <p className="text-xs text-panel-muted">
-              Wie oft Agent-Detail- und Dashboard-Seiten automatisch aktualisieren (5–300 Sekunden).
-            </p>
-            <div className="flex items-center gap-3">
-              <input
-                type="number"
-                min={5}
-                max={300}
-                value={liveInterval}
-                onChange={e => setLiveInterval(e.target.value)}
-                onBlur={() => setLiveInterval(v => Math.max(5, Math.min(300, parseInt(v, 10) || 15)))}
-                className={inputCls + ' w-28'}
-              />
-              <span className="text-sm text-panel-muted">Sekunden</span>
-            </div>
-            <Button onClick={saveLiveInterval} disabled={loading.liveInterval} size="sm">
-              Speichern
-            </Button>
-            <Msg msg={msgs.liveInterval} />
-          </div>
-        </Card>
-
-        {/* ── MC-Host24 ── */}
-        <Card title={<span className="flex items-center gap-2"><Server size={14} />MC-Host24</span>}>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <StatusBadge set={status.mchost_token_set} />
-                {status.mchost_token_set && (
-                  <p className="text-xs text-panel-muted">Token aktiv · wird automatisch erneuert</p>
-                )}
-              </div>
-              <div className="flex gap-1">
-                {status.mchost_token_set && (
-                  <Button size="sm" variant="ghost" onClick={refreshMcHost} disabled={loading.mchost_refresh}>
-                    <RefreshCw size={12} className="mr-1" />Erneuern
-                  </Button>
-                )}
-                {(status.mchost_token_set || status.mchost_username) && (
-                  <Button size="sm" variant="danger" onClick={deleteMcHost} disabled={loading.mchost_del}>
-                    <Trash2 size={12} className="mr-1" />Entfernen
-                  </Button>
-                )}
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs text-panel-muted mb-1">E-Mail-Adresse</label>
-              <input type="email" value={mcUsername} onChange={e => setMcUsername(e.target.value)}
-                placeholder="deine@email.de" className={inputCls} />
-              <p className="text-xs text-panel-muted mt-1">
-                Verwende deine MC-Host24 <strong>Login-E-Mail</strong>, nicht deinen Anzeigenamen.
-              </p>
-            </div>
-            <div>
-              <label className="block text-xs text-panel-muted mb-1">Passwort</label>
-              <div className="relative">
-                <input
-                  type={showMcPw ? 'text' : 'password'}
-                  value={mcPassword}
-                  onChange={e => setMcPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className={inputCls + ' pr-9'}
-                  onKeyDown={e => e.key === 'Enter' && loginMcHost()}
-                />
-                <button type="button" onClick={() => setShowMcPw(v => !v)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
-                  {showMcPw ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
-              </div>
-            </div>
-            <Button onClick={loginMcHost} disabled={!mcUsername || !mcPassword || loading.mchost} size="sm">
-              {status.mchost_token_set ? 'Neu einloggen' : 'Einloggen & Token holen'}
-            </Button>
-            <Msg msg={msgs.mchost} />
-          </div>
-        </Card>
-
-      </>)}
-
-      {/* ── Claude KI ────────────────────────────────────────────────────────── */}
-      {isAdmin && (
-        <Card title={<span className="flex items-center gap-2"><Key size={14} />KI-Assistent (Claude · Anthropic)</span>}>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <StatusBadge set={!!status.claude_api_key} />
-            </div>
-            <div>
-              <label className="block text-xs text-panel-muted mb-1">API-Key</label>
-              <div className="relative">
-                <input
-                  type={showClaudeKey ? 'text' : 'password'}
-                  value={claudeKey}
-                  onChange={e => setClaudeKey(e.target.value)}
-                  placeholder={status.claude_api_key ? '***gesetzt*** (neu eingeben zum Ändern)' : 'sk-ant-…'}
-                  className={inputCls + ' pr-9'}
-                />
-                <button type="button" onClick={() => setShowClaudeKey(v => !v)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
-                  {showClaudeKey ? <EyeOff size={14} /> : <Eye size={14} />}
-                </button>
-              </div>
-              <p className="text-xs text-panel-muted mt-1">
-                API-Key aus <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer" className="text-panel-accent underline">Anthropic Console</a> — beginnt mit <code className="bg-panel-surface px-1 rounded">sk-ant-</code>
-              </p>
-            </div>
-            <div>
-              <label className="block text-xs text-panel-muted mb-1">Modell</label>
-              <select value={claudeModel} onChange={e => setClaudeModel(e.target.value)} className={inputCls}>
-                <option value="claude-haiku-4-5">Claude Haiku 4.5 (schnell &amp; günstig, empfohlen)</option>
-                <option value="claude-sonnet-4-5">Claude Sonnet 4.5 (ausgewogen)</option>
-                <option value="claude-opus-4-5">Claude Opus 4.5 (leistungsstark)</option>
-              </select>
-            </div>
-            <div className="flex gap-2">
-              <Button size="sm" onClick={async () => {
-                if (!claudeKey) return;
-                setLoading(l => ({ ...l, claude: true }));
-                try {
-                  await axios.put('/api/settings/claude', { apiKey: claudeKey, model: claudeModel });
-                  setMsgs(m => ({ ...m, claude: '✓ Gespeichert' }));
-                  setClaudeKey('');
-                  await loadAdmin();
-                } catch (e) { setMsgs(m => ({ ...m, claude: e.response?.data?.error || 'Fehler' })); }
-                setLoading(l => ({ ...l, claude: false }));
-              }} disabled={!claudeKey || loading.claude}>
-                {loading.claude ? 'Speichere…' : 'Speichern'}
-              </Button>
-              {status.claude_api_key && (
-                <Button size="sm" variant="danger" onClick={async () => {
-                  if (!confirm('Claude API-Key wirklich entfernen?')) return;
-                  await axios.delete('/api/settings/claude');
-                  setMsgs(m => ({ ...m, claude: '✓ Entfernt' }));
-                  await loadAdmin();
-                }}>
-                  <Trash2 size={12} className="mr-1" />Entfernen
-                </Button>
-              )}
-            </div>
-            <Msg msg={msgs.claude} />
-          </div>
-        </Card>
-      )}
-
-      {/* ── Backup & Migration ──────────────────────────────────────────────── */}
-      {hasPermission('system.backup') && (
-        <Card title={<span className="flex items-center gap-2"><Database size={14} />Backup & Migration</span>}>
-          <div className="space-y-4">
-            <div className="pb-3 border-b border-panel-border">
-              <p className="text-xs text-panel-muted mb-2">Erstelle ein komplettes Backup der aktuellen Datenbank (inkl. User, Einstellungen, Server).</p>
-              <Button onClick={handleBackupDownload} size="sm" variant="ghost">
-                <Download size={13} className="mr-1" /> Backup herunterladen
-              </Button>
-            </div>
-            
-            <div>
-              <p className="text-sm font-medium text-panel-text mb-2">Migration auf einen anderen Server</p>
-              
-              <div className="flex gap-1 bg-panel-surface border border-panel-border rounded-lg p-1 mb-3">
-                <button onClick={() => setMigrationTab('send')}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs transition-colors ${migrationTab === 'send' ? 'bg-panel-card text-panel-text font-medium' : 'text-panel-muted hover:text-panel-text'}`}>
-                  <Upload size={12} /> Senden (Export)
-                </button>
-                <button onClick={() => setMigrationTab('receive')}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-xs transition-colors ${migrationTab === 'receive' ? 'bg-panel-card text-panel-text font-medium' : 'text-panel-muted hover:text-panel-text'}`}>
-                  <Download size={12} /> Empfangen (Import)
-                </button>
-              </div>
-
-              {migrationTab === 'send' && (
-                <div className="space-y-3 p-3 bg-panel-surface rounded-md border border-panel-border">
-                  <p className="text-[11px] text-panel-muted leading-relaxed">
-                    Kopiert die gesamte Datenbank auf ein neues, frisches Panel. Loggt sich dort ein, überträgt die Daten und updated alle angebundenen Agents auf die neue Adresse.
-                  </p>
-                  <div>
-                    <label className="block text-[11px] text-panel-muted mb-1">Neue API-Adresse (Ziel-Panel)</label>
-                    <input type="url" value={migrationTargetUrl} onChange={e => setMigrationTargetUrl(e.target.value)} placeholder="https://neu.example.com" className={inputCls} />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-panel-muted mb-1">Admin-Benutzername (Ziel-Panel)</label>
-                    <input type="text" value={migrationUsername} onChange={e => setMigrationUsername(e.target.value)} placeholder="Admin" className={inputCls} />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-panel-muted mb-1">Admin-Passwort (Ziel-Panel)</label>
-                    <input type="password" value={migrationPassword} onChange={e => setMigrationPassword(e.target.value)} placeholder="••••••••" className={inputCls} />
-                  </div>
                   <Button onClick={handleMigrationPush} disabled={!migrationTargetUrl || !migrationUsername || !migrationPassword || loading.migration} size="sm">
                     {loading.migration ? 'Migriere...' : 'Migration starten'}
                   </Button>

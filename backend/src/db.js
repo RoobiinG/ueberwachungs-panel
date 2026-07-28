@@ -139,6 +139,7 @@ try { db.exec('ALTER TABLE roles ADD COLUMN restrict_agents INTEGER NOT NULL DEF
 // Alerts: Remote-Agent-Unterstützung + History-Typ
 try { db.exec('ALTER TABLE alert_rules ADD COLUMN agent_id INTEGER REFERENCES remote_agents(id) ON DELETE SET NULL'); } catch {}
 try { db.exec("ALTER TABLE alert_history ADD COLUMN type TEXT NOT NULL DEFAULT 'fired'"); } catch {}
+try { db.exec("ALTER TABLE alert_history ADD COLUMN server_key TEXT DEFAULT NULL"); } catch {}
 // Alert-Rules: CHECK-Constraints entfernen + multi-server agent_ids + neue Metriken
 try {
   const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='alert_rules'").get();

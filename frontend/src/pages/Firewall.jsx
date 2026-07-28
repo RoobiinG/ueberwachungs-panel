@@ -6,7 +6,7 @@ import { Modal } from '../components/ui/Modal';
 import { ServerSelector } from '../components/ui/ServerSelector';
 import { useAuth } from '../context/AuthContext';
 import {
-  Plus, Trash2, RefreshCw, Shield, ScanSearch, Power,
+  Plus, Trash2, RefreshCw, Shield, Power,
   Pencil, ChevronLeft, ChevronRight, Search, X, Filter,
 } from 'lucide-react';
 
