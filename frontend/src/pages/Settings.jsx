@@ -189,7 +189,8 @@ function GitHubTokenCard({ status, onReload }) {
         timestamp: Date.now(),
         oldVersion: data.oldVersion,
         newVersion: data.newVersion,
-        log: data.log
+        log: data.log,
+        changelogEntry: data.changelogEntry
       }));
       setMsg('✓ ' + data.message + ' Starte Seite neu...');
       setTimeout(() => {

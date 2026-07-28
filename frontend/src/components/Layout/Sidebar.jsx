@@ -194,7 +194,8 @@ export const Sidebar = () => {
                   timestamp: Date.now(),
                   oldVersion: data.oldVersion,
                   newVersion: data.newVersion,
-                  log: data.log
+                  log: data.log,
+                  changelogEntry: data.changelogEntry
                 }));
                 window.location.reload();
               } catch (err) {

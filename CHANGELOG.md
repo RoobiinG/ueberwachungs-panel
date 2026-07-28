@@ -4,6 +4,21 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.48.22] - 2026-07-28 (Build 270) — *Update-Log Modal Changelog Fix*
+
+### 🐛 Bugfixes
+- **Anzeige des aktuellen Update-Logs im Popup gelöst (`Dockerfile`, `Sidebar.jsx`, `Settings.jsx`)**: Bisher zeigte das Erfolgs-Popup nach einem Panel-Update standardmäßig alten Fallback-Text zu 2FA/GitHub-Token an. Die Ursache war doppelt:
+  1. Im `Dockerfile` wurde `CHANGELOG.md` bisher nicht ins Container-Image (`/app/CHANGELOG.md`) kopiert, weshalb das Backend beim Update keinen aktuellen Changelog-Eintrag auslesen konnte.
+  2. In `Sidebar.jsx` und `Settings.jsx` wurde `data.changelogEntry` beim Speichern in den `localStorage` (`panel_update_result`) nicht mit übergeben.
+  Beide Punkte wurden behoben, sodass nach dem automatischen Neustart nun immer exakt der neueste Changelog-Eintrag inklusive *Nachwirken* angezeigt wird.
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen**: Keine Datenbank-Schemaänderungen erforderlich.
+- **Agent-Kompatibilität**: Vollständig kompatibel mit allen bestehenden Agenten.
+- **Neustart-/Session-Verhalten**: Nach dem nächsten Update erscheint im „Update-Log & Nachwirken"-Modal sofort der korrekte, jeweils neueste Eintrag aus `CHANGELOG.md`.
+
+---
+
 ## [1.48.21] - 2026-07-28 (Build 269) — *Dockhand Stack Deploy & Smart Compose Discovery Updater*
 
 ### ⚡ Updater & Docker-Optimierungen
