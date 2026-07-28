@@ -1,0 +1,36 @@
+version: 2
+
+# Wirkt erst, wenn Dependabot in den Repository-Einstellungen aktiviert ist
+# (Settings → Code security → Dependabot).
+updates:
+  - package-ecosystem: npm
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: 'chore'
+    groups:
+      # Patch- und Minor-Updates gebündelt, damit nicht für jedes Paket ein eigener PR aufgeht
+      kleinere-updates:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: 'chore'
+    groups:
+      kleinere-updates:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: 'chore'
