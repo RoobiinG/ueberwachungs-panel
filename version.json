@@ -1,6 +1,6 @@
 {
-  "version": "1.48.13",
-  "build": 261,
+  "version": "1.48.14",
+  "build": 262,
   "date": "2026-07-28",
-  "codename": "Vollflächiges Pride Flag & Webhook-Fixes"
+  "codename": "GitHub Token Verifizierung & Dockhand Updater Integration"
 }

@@ -4,6 +4,26 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.48.14] - 2026-07-28 (Build 262) — *GitHub Token Verifizierung & Dockhand Updater Integration*
+
+### 🎨 Frontend & Design
+- **Redundantes Regenbogen-Icon entfernt (`Sidebar.jsx`)**: Da das Pride-Flag-Design den gesamten unteren Footer-Bereich der Sidebar als Hintergrund-Gradient ausfüllt, wurde das separate `🏳️‍🌈`-Emoji-Icon entfernt, um ein klares und aufgeräumtes Erscheinungsbild in eingeklappter und ausgenommener Seitenleiste zu gewährleisten.
+- **GitHub Token Live-Test im Frontend (`Settings.jsx`)**: Neuer **„Token testen"**-Button bei der GitHub-PAT-Konfiguration. Prüft per Klick sofort das eingegebene oder gespeicherte Token gegen das private Repository und zeigt direkt die aktuelle Remote-Version und Build-Nummer bei Erfolg an (bzw. klare Fehlermeldungen bei fehlenden Rechten / 404 / 401).
+
+### ⚙️ Backend & Updater
+- **GitHub Token Prüf-Endpunkt (`settings.js`)**: Neuer API-Endpunkt `POST /api/settings/github/test`, der mit dem GitHub-Token die GitHub-API kontaktiert und den Lesezugriff auf das private Repository `RoobiinG/ueberwachungs-panel` (`version.json`) verifiziert.
+- **Dreistufige Docker-Updater Integration (`update.js`)**: Der automatische Updater (`POST /api/update/run`) in Docker-Umgebungen unterstützt nun eine intelligente Fallback-Kette:
+  1. **Dockhand Pro API**: Ist in den Einstellungen die Dockhand-Anbindung konfiguriert, wird das Update reibungslos über die Dockhand-REST-API ausgeführt (Image pullen + Container neu erstellen).
+  2. **Direktes Docker-Socket**: Ist `/var/run/docker.sock` im Container eingebunden, wird das Update direkt über die lokale Docker-CLI ausgeführt.
+  3. **Host-Namespace (`nsenter`)**: Fallback für Umgebungen mit Host-Namespace-Zugriff.
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen**: Keine Datenbank-Schemaänderungen erforderlich.
+- **Agent-Kompatibilität**: Vollständig kompatibel mit allen bestehenden Agenten.
+- **Neustart-/Session-Verhalten**: Keine Auswirkung auf bestehende Logins oder Sessions. Der automatische Updater funktioniert nun in sämtlichen Docker-/Reverse-Proxy-Konfigurationen zuverlässig.
+
+---
+
 ## [1.48.13] - 2026-07-28 (Build 261) — *Vollflächiges Pride Flag & Webhook-Fixes*
 
 ### 🎨 Frontend & Design

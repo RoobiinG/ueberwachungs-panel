@@ -217,6 +217,41 @@ router.delete('/github', requireRole('admin'), (req, res) => {
   res.json({ success: true });
 });
 
+// ── GitHub Token Verbindung und Gültigkeit prüfen ─────────────────────────────
+router.post('/github/test', requireRole('admin'), async (req, res) => {
+  const token = req.body.token ? req.body.token.trim() : get('github_token');
+  if (!token) {
+    return res.status(400).json({ error: 'Kein GitHub Token zum Testen angegeben oder gespeichert.' });
+  }
+
+  try {
+    const url = 'https://api.github.com/repos/RoobiinG/ueberwachungs-panel/contents/version.json';
+    const response = await axios.get(url, {
+      headers: {
+        Accept: 'application/vnd.github.v3.raw',
+        'User-Agent': 'Ueberwachungs-Panel-UpdateChecker',
+        Authorization: `token ${token}`,
+      },
+      timeout: 10000,
+    });
+
+    const ver = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
+    res.json({
+      success: true,
+      message: `Token ist gültig! Lesezugriff auf RoobiinG/ueberwachungs-panel erfolgreich (Aktuelle Remote-Version: v${ver.version} Build ${ver.build}).`,
+      remoteVersion: ver.version,
+      remoteBuild: ver.build,
+    });
+  } catch (err) {
+    const status = err.response?.status;
+    let errorMsg = 'Verbindung zu GitHub fehlgeschlagen.';
+    if (status === 401) errorMsg = 'GitHub Token ist ungültig oder abgelaufen (401 Unauthorized).';
+    else if (status === 404) errorMsg = 'GitHub Token hat keinen Lesezugriff auf das private Repository RoobiinG/ueberwachungs-panel (404 Not Found). Prüfe Repository-Rechte.';
+    else if (err.message) errorMsg = `GitHub API-Fehler: ${err.message}`;
+    res.status(status || 500).json({ error: errorMsg });
+  }
+});
+
 // ── Aktive Module & Funktionen ────────────────────────────────────────────────
 const defaultModules = {
   docker: true,
