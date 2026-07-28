@@ -9,6 +9,32 @@ const { getPermissions } = require('../middleware/requirePermission');
 const { auditLog } = require('../utils/audit');
 
 const hashToken   = (t) => crypto.createHash('sha256').update(t).digest('hex');
+
+/**
+ * Setzt alle Sitzungen eines Benutzers ungültig — optional mit Ausnahme der aktuellen.
+ * Wird nach jeder Passwortänderung aufgerufen: Wer sein Passwort ändert (oder es nach einem
+ * Verdacht auf Missbrauch zurücksetzt), erwartet, dass fremde Anmeldungen damit hinfällig sind.
+ * Ohne das bliebe ein erbeutetes JWT bis zum Ablauf (Standard 24 h) weiter gültig.
+ * @returns {number} Anzahl der beendeten Sitzungen
+ */
+const revokeUserSessions = (userId, exceptTokenHash = null) => {
+  try {
+    const rows = db.prepare('SELECT token_hash FROM sessions WHERE user_id = ?').all(userId);
+    const ins  = db.prepare('INSERT OR IGNORE INTO revoked_tokens (token_hash) VALUES (?)');
+    const del  = db.prepare('DELETE FROM sessions WHERE token_hash = ?');
+    let count = 0;
+    for (const row of rows) {
+      if (exceptTokenHash && row.token_hash === exceptTokenHash) continue;
+      ins.run(row.token_hash);
+      del.run(row.token_hash);
+      count++;
+    }
+    return count;
+  } catch {
+    return 0;
+  }
+};
+
 const storeSession = (token, userId, req) => {
   try {
     db.prepare(`
@@ -227,7 +253,10 @@ router.post('/reset-password', async (req, res) => {
 
   db.prepare('UPDATE users SET password = ?, reset_token = NULL, reset_expires = NULL WHERE id = ?')
     .run(bcrypt.hashSync(newPassword, 10), user.id);
-  res.json({ ok: true });
+  // Ein Reset läuft ohne Anmeldung — hier werden ausnahmslos alle Sitzungen beendet,
+  // damit ein eventuell fremder Zugriff mit dem Zurücksetzen tatsächlich endet.
+  const revoked = revokeUserSessions(user.id);
+  res.json({ ok: true, revokedSessions: revoked });
 });
 
 // ─── Auth-pflichtiger Bereich ─────────────────────────────────────────────────
@@ -250,14 +279,26 @@ router.put('/password', authMiddleware, (req, res) => {
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
   if (!bcrypt.compareSync(currentPassword, user.password)) return res.status(401).json({ error: 'Aktuelles Passwort falsch' });
   db.prepare('UPDATE users SET password = ? WHERE id = ?').run(bcrypt.hashSync(newPassword, 10), req.user.id);
-  auditLog(req, 'password.change', 'user', req.user.username);
-  res.json({ success: true });
+  // Alle anderen Sitzungen beenden — die aktuelle bleibt bestehen, damit man nach dem
+  // Ändern des eigenen Passworts nicht aus dem Panel fliegt.
+  const revoked = revokeUserSessions(req.user.id, req.tokenHash);
+  auditLog(req, 'password.change', 'user', req.user.username, { revokedSessions: revoked });
+  res.json({ success: true, revokedSessions: revoked });
 });
 
 router.put('/me/email', authMiddleware, (req, res) => {
-  const { email } = req.body;
+  const { email, currentPassword } = req.body;
   if (!email || !email.includes('@')) return res.status(400).json({ error: 'Gültige E-Mail-Adresse erforderlich' });
+  // Passwortbestätigung ist hier Pflicht: Die E-Mail-Adresse ist der Wiederherstellungsweg des
+  // Kontos. Ohne Prüfung könnte über eine gekaperte Sitzung erst die Adresse getauscht und
+  // danach per "Passwort vergessen" das Konto vollständig übernommen werden.
+  if (!currentPassword) return res.status(400).json({ error: 'Aktuelles Passwort zur Bestätigung erforderlich' });
+  const user = db.prepare('SELECT password FROM users WHERE id = ?').get(req.user.id);
+  if (!user || !bcrypt.compareSync(currentPassword, user.password)) {
+    return res.status(401).json({ error: 'Aktuelles Passwort falsch' });
+  }
   db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email.trim().toLowerCase(), req.user.id);
+  auditLog(req, 'email.change', 'user', req.user.username);
   res.json({ success: true });
 });
 

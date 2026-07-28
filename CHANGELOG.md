@@ -4,6 +4,62 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.50.0] - 2026-07-28 (Build 274) — *Sicherheits-Audit*
+
+Vollständige Durchsicht von Backend, Agent und Frontend auf Sicherheitslücken und Bugs.
+Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
+
+### 🔐 Sicherheit
+- **Befehlsinjektion als root auf dem Host geschlossen (kritisch, `POST /api/update/run`)**:
+  Das in v1.49.0 eingeführte Update-Ziel (`panel_container`) wurde ungeprüft in ein Shell-Skript eingesetzt,
+  das per `nsenter` als **root im Host-Namespace** läuft. Die einzige Absicherung war ein Escaping von
+  Anführungszeichen — gegen `$(…)` und Backticks wirkungslos. Ein Wert wie `$(befehl)` hätte damit beliebigen
+  Code als root auf dem Docker-Host ausgeführt, also weit außerhalb des Containers.
+  Ein Panel-Administrator konnte sich so zu vollem Host-Zugriff erweitern; über eine gekaperte Admin-Sitzung
+  wäre derselbe Weg von außen nutzbar gewesen.
+  Ziele werden jetzt gegen das von Docker zugelassene Zeichenrepertoire geprüft
+  (`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$`) — beim Speichern in `PUT /api/update/target` (Antwort `400` bei
+  Verstoß) **und** ein zweites Mal unmittelbar vor der Verwendung, damit auch Altbestände aus der Datenbank
+  oder aus früheren Versionen nicht durchrutschen.
+- **Passwortänderung beendet jetzt fremde Sitzungen (`PUT /api/auth/password`)**: Bisher blieb ein bereits
+  erbeutetes JWT nach einer Passwortänderung bis zum Ablauf (Standard 24 Stunden) gültig — ausgerechnet die
+  Maßnahme, zu der man bei Verdacht auf Missbrauch greift, sperrte niemanden aus. Alle übrigen Sitzungen des
+  Kontos werden nun widerrufen; die gerade benutzte bleibt bestehen, damit man nicht selbst herausfliegt.
+- **Passwort-Reset beendet ausnahmslos alle Sitzungen (`POST /api/auth/reset-password`)**: Da der Reset ohne
+  Anmeldung abläuft, wird hier keine Sitzung verschont.
+- **E-Mail-Änderung erfordert das aktuelle Passwort (`PUT /api/auth/me/email`)**: Die Adresse ist der
+  Wiederherstellungsweg des Kontos. Zuvor genügte eine gültige Sitzung, um sie zu tauschen — anschließend
+  hätte „Passwort vergessen" die vollständige Übernahme des Kontos ermöglicht. Die Änderung wird zusätzlich
+  im Audit-Log vermerkt.
+- **GitHub-Token nicht mehr über die Shell (`POST /api/update/run`)**: Der `git pull` mit eingebettetem Token
+  lief über eine Shell-Zeile. Der Aufruf nutzt jetzt `execFile` ohne Shell, wodurch Sonderzeichen im Token
+  nicht mehr interpretiert werden können.
+
+### ✅ Geprüft und in Ordnung (keine Änderung nötig)
+- **Firewall-Regeln** (`firewallAdapters.js`): Ports, Protokolle und Quell-Adressen sind über strenge
+  Regex-Whitelists abgesichert, bevor sie in Kommandos einfließen.
+- **Systemd-Steuerung** (`services.js`): Unit-Namen über Whitelist geprüft, Aktionen auf eine feste Liste begrenzt.
+- **SQL**: Keine Injektion gefunden. Die wenigen Stellen mit Interpolation setzen ausschließlich fest
+  verdrahtete Spaltennamen bzw. Platzhalter ein, alle Werte laufen über Parameter.
+- **Authentifizierung**: JWT-Prüfung, Widerrufsliste und Rechteprüfung greifen auf allen `/api`-Routen;
+  Login, 2FA-Prüfung und „Passwort vergessen" sind rate-limited (10 Versuche / 15 Minuten).
+- **Frontend**: Kein `target="_blank"` ohne `rel`, keine fehlenden React-Keys; das einzige
+  `dangerouslySetInnerHTML` rendert ausschließlich das serverseitig erzeugte QR-Code-SVG.
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- `version.json` synchron auf **`1.50.0` (Build 274)** erhöht — Minor, da sich Abläufe sichtbar ändern.
+- **Keine Datenbank-Migration.** Die Tabellen `sessions` und `revoked_tokens` bestehen bereits und werden
+  lediglich zusätzlich genutzt.
+- **Spürbare Verhaltensänderungen**: Nach einer Passwortänderung müssen sich alle *anderen* Geräte neu
+  anmelden. Zum Ändern der E-Mail-Adresse fragt die Oberfläche jetzt zusätzlich das aktuelle Passwort ab —
+  Backend und Oberfläche wurden gemeinsam umgestellt, es bleibt kein Formular ohne passendes Gegenstück.
+- **Bereits gespeicherte Update-Ziele**: Enthält ein vorhandener Wert unerlaubte Zeichen, wird er ignoriert
+  und im Log vermerkt; das Panel fällt dann auf die automatische Erkennung zurück. Normale Container-Namen
+  sind nicht betroffen.
+- **Keine Agent-Aktualisierung erforderlich**, keine Änderung an Rechten, WebSocket oder Metrik-Erfassung.
+
+---
+
 ## [1.49.1] - 2026-07-28 (Build 273) — *Update-Ziel ohne Dubletten*
 
 ### 🐛 Bugfixes & Optimierungen

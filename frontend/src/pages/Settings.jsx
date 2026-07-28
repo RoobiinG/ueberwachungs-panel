@@ -636,6 +636,7 @@ export default function Settings() {
 
   // E-Mail
   const [email,     setEmail]    = useState('');
+  const [emailPw,   setEmailPw]  = useState('');   // Passwortbestätigung für die E-Mail-Änderung
 
   // Hetzner
   const [hetznerToken, setHetznerToken] = useState('');
@@ -797,7 +798,8 @@ export default function Settings() {
   const saveEmail = async () => {
     busy('email', true);
     try {
-      await axios.put('/api/auth/me/email', { email });
+      await axios.put('/api/auth/me/email', { email, currentPassword: emailPw });
+      setEmailPw('');
       feedback('email', 'ok', 'E-Mail gespeichert');
     } catch (err) {
       feedback('email', 'err', err.response?.data?.error || 'Fehler');
@@ -1158,16 +1160,27 @@ export default function Settings() {
           {/* ── E-Mail-Adresse ── */}
           <Card title={<span className="flex items-center gap-2"><Mail size={14} />E-Mail-Adresse</span>}>
             <div className="space-y-3">
-              <p className="text-xs text-panel-muted">Wird für Passwort-Reset-E-Mails verwendet.</p>
+              <p className="text-xs text-panel-muted">
+                Wird für Passwort-Reset-E-Mails verwendet. Zum Ändern ist dein aktuelles Passwort nötig,
+                da über diese Adresse das Konto wiederhergestellt werden kann.
+              </p>
               <input
                 type="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 placeholder="deine@email.de"
                 className={inputCls}
+              />
+              <input
+                type="password"
+                value={emailPw}
+                onChange={e => setEmailPw(e.target.value)}
+                placeholder="Aktuelles Passwort zur Bestätigung"
+                className={inputCls}
+                autoComplete="current-password"
                 onKeyDown={e => e.key === 'Enter' && saveEmail()}
               />
-              <Button onClick={saveEmail} disabled={loading.email} size="sm">
+              <Button onClick={saveEmail} disabled={loading.email || !emailPw} size="sm">
                 E-Mail speichern
               </Button>
               <Msg msg={msgs.email} />
