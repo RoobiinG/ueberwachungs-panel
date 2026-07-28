@@ -4,6 +4,40 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.50.3] - 2026-07-28 (Build 277) — *Stabiler Image-Push*
+
+### 🐛 Bugfixes & Optimierungen
+- **Sporadisch fehlschlagender Image-Push abgesichert (`docker-build.yml`)**: Ein Lauf brach mit
+  `ERROR: unknown blob` ab — **nicht** beim Bauen, sondern beim Hochladen der Layer zu ghcr.io.
+  Auslöser war sehr wahrscheinlich, dass zwei Läufe kurz hintereinander denselben `latest`-Tag
+  gleichzeitig hochluden. Zwei Gegenmaßnahmen:
+  - `concurrency`-Gruppe pro Branch — es läuft nur noch ein Image-Build gleichzeitig, ein zweiter
+    wartet, statt parallel zu pushen. `cancel-in-progress` bleibt bewusst aus, damit ein laufender
+    Build fertig wird.
+  - `provenance: false` — ohne Attestierungs-Manifest entsteht ein einfacher Image-Index mit
+    weniger Blob-Uploads. Das Panel wertet die Provenance-Daten ohnehin nirgends aus.
+- **Dependabot auf ein sinnvolles Maß gebracht (`dependabot.yml`)**: Die erste Aktivierung erzeugte auf
+  einen Schlag zwölf Pull Requests, überwiegend Hauptversionssprünge (React 19, Tailwind 4,
+  better-sqlite3 13, recharts 3, nodemailer 9). Solche Sprünge gehören geplant und im Browser getestet,
+  nicht über Nacht als PR. Hauptversionen werden jetzt für alle drei Ökosysteme ignoriert, das Limit
+  liegt bei drei offenen PRs.
+  **Sicherheitsupdates sind davon ausdrücklich nicht betroffen** — die meldet Dependabot weiterhin,
+  auch wenn dafür eine neue Hauptversion nötig wäre.
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- `version.json` synchron auf **`1.50.3` (Build 277)** erhöht.
+- **Reine CI-Änderung**, kein Eingriff in Backend, Frontend, Agent oder Datenbank.
+- **Der fehlgeschlagene Lauf hatte keine Auswirkung auf den Betrieb**: Der unmittelbar folgende Build
+  hat `latest` erfolgreich hochgeladen (Stand v1.50.2, Tag `da6e1be`). Auf dem Server genügt weiterhin
+  `docker compose pull && up -d`.
+- **Zur Einordnung der Historie**: Drei ältere Fehlschläge desselben Workflows (27.07. sowie zweimal am
+  28.07. gegen 15:50) hatten eine andere Ursache — dort scheiterte `npm run build` im Frontend an einem
+  Syntaxfehler. Diese wurden jeweils vom nächsten Commit behoben und sind hier nicht betroffen.
+- Die bereits offenen Dependabot-PRs mit Hauptversionssprüngen bleiben bestehen und können von Hand
+  geschlossen werden; die geänderte Regel verhindert nur, dass neue dieser Art entstehen.
+
+---
+
 ## [1.50.2] - 2026-07-28 (Build 276) — *Express aktualisiert*
 
 ### 🔐 Sicherheit
