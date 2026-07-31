@@ -4,6 +4,18 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.52.2] - 2026-08-01 (Build 283) — *Abhängigkeits-Update: @xterm/addon-fit 0.11.0 & lucide-react 0.577.0*
+
+### 📦 Abhängigkeiten & Chores
+- **Aktualisierung von Frontend-Paketen (`package.json`)**: Update von `@xterm/addon-fit` (`^0.10.0` → `^0.11.0`) für verbesserte Terminal-Größenanpassung sowie von `lucide-react` (`^0.378.0` → `^0.577.0`) für aktuelle Icons und SVG-Optimierungen (PR #22 von Dependabot).
+
+### ⚙️ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank-Migrationen**: Keine Datenbankmigrationen erforderlich.
+- **Agent-Kompatibilität**: Keine Änderungen an der Kommunikation zwischen Server und Remote-Agenten (`panel-agent.js`).
+- **Neustart-/Session-Verhalten**: Ein Rebuild des Frontends bzw. des Docker-Images ist erforderlich, um die neuen Paketversionen im Browser bereitzustellen.
+
+---
+
 ## [1.52.1] - 2026-08-01 (Build 282) — *Robustes Docker-Update via Dockhand API, nsenter & docker.sock*
 
 ### 🐛 Bugfixes & Optimierungen
