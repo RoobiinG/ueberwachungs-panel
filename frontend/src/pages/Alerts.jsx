@@ -643,8 +643,9 @@ export default function Alerts() {
               const isResolved = h.type === 'resolved';
               // Detail-Zeilen aus der gespeicherten Nachricht extrahieren
               // (erste Zeile = Header, letzte = "Server: …" → beide überspringen)
-              const detailLines = h.message
-                ? h.message.split('\n').slice(1).filter(l => l.trim() && !l.startsWith('Server:'))
+              const cleanMsg = String(h.message || '').replace(/<[^>]+>/g, '');
+              const detailLines = cleanMsg
+                ? cleanMsg.split('\n').slice(1).filter(l => l.trim() && !l.startsWith('Server:') && !l.startsWith('🖥️'))
                 : [];
               return (
                 <div key={h.id}

@@ -4,6 +4,25 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.51.1] - 2026-07-31 (Build 279) — *Präzise Benachrichtigungen & Tag-Anzeige*
+
+### ✨ Neue Funktionen & Features
+- **Server-Tags in Alert-Benachrichtigungen (`alertEvaluator.js`, `mchost.js`, `Header.jsx`)**: Ist für einen Server ein Tag (z. B. bei MC-Host24 VServern) hinterlegt, wird dieser ab sofort sowohl in Webhook-Benachrichtigungen (Telegram & Discord) als auch im Frontend-Toast und in der Notification-Liste als Badge (`🏷️ Tag: ...`) angezeigt.
+- **Automatische Markdown-Konvertierung für Discord-Webhooks (`sendWebhook.js`)**: Webhook-Nachrichten nutzen für Telegram HTML-Formatierung (`<b>...</b>`). Beim Versand an Discord konvertiert das Panel diese HTML-Tags automatisch in sauberes Markdown (`**...**`), sodass Nachrichten auf beiden Plattformen optimal formatiert erscheinen.
+- **Modernisiertes Benachrichtigungs-Layout (`alertEvaluator.js`, `alerts.js`)**: Fired- und Resolved-Benachrichtigungen (sowohl für MC-Host24 Laufzeiten als auch alle anderen Metriken wie CPU, RAM, Disk, Storage Box) wurden neu strukturiert (übersichtliche Blöcke für Server, Tag, Metrik und Schwelle). Auch Test-Alerts (`/api/alerts/rules/:id/test`) nutzen nun das neue strukturierte Format.
+
+### 🐛 Bugfixes & Optimierungen
+- **Korrekte Einheiten und Bezeichnungen in der Benachrichtigungs-Liste (`Header.jsx`)**: Für Metriken wie `mchost_runtime` oder `hetzner_storage_usage` fehlten in der Frontend-Liste die Einträge, weshalb fälschlicherweise `%` statt `Tage` sowie der technische Bezeichner angezeigt wurden. Alle im Backend unterstützten Metriken sind nun mitsamt ihren korrekten Einheiten und deutschen Bezeichnern hinterlegt.
+- **Doppelte Emojis in Benachrichtigungstiteln entfernt (`Header.jsx`)**: In der Dropdown-Liste wurden Alert-Regelnamen mit einem zusätzlichen Icon-Präfix versehen, was zu doppelten Emojis führte (z. B. `⚠️ ⚠️ Laufzeit 24`). Führende Emojis im Regelnamen werden nun sauber herausgefiltert.
+- **Saubere Darstellung im Alert-Verlauf (`Alerts.jsx`)**: HTML-Tags aus Webhook-Texten sowie die wiederholte Serverzeile werden in der Detailansicht der Alert-Historie nun automatisch herausgefiltert.
+
+### ⚙️ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank-Migrationen**: Keine Datenbankmigrationen erforderlich.
+- **Agent-Kompatibilität**: Keine Änderungen an der Kommunikation zwischen Server und Remote-Agenten (`panel-agent.js`).
+- **Neustart-/Session-Verhalten**: Ein Neustart des Backends ist erforderlich, um die angepassten Alert-Evaluierungen und Discord-Webhook-Konvertierungen zu aktivieren. Bestehende Webhooks, Alert-Regeln und Sitzungen laufen nahtlos weiter.
+
+---
+
 ## [1.51.0] - 2026-07-28 (Build 278) — *Docker vereint & robuster Updater*
 
 ### ✨ Neue Funktionen & Features

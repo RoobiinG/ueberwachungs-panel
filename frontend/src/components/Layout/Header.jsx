@@ -23,15 +23,48 @@ const pageTitles = {
   '/settings': 'Einstellungen',
 };
 
-const METRIC_LABELS  = { cpu: 'CPU', memory: 'RAM', disk: 'Disk', net_rx: 'Netz ↓', net_tx: 'Netz ↑', action: 'Server-Aktion' };
-const METRIC_COLORS  = { cpu: 'text-blue-400', memory: 'text-green-400', disk: 'text-yellow-400', net_rx: 'text-purple-400', net_tx: 'text-purple-400', action: 'text-panel-accent' };
-const METRIC_UNIT    = { net_rx: ' MB/s', net_tx: ' MB/s' };
+const METRIC_LABELS  = {
+  cpu: 'CPU',
+  memory: 'RAM',
+  disk: 'Disk',
+  net_rx: 'Netz ↓',
+  net_tx: 'Netz ↑',
+  action: 'Server-Aktion',
+  patchmon_updates: 'PatchMon Updates',
+  patchmon_security: 'PatchMon Security',
+  hetzner_storage_usage: 'Storage Box',
+  mchost_runtime: 'MC-Host24 Laufzeit',
+};
+const METRIC_COLORS  = {
+  cpu: 'text-blue-400',
+  memory: 'text-green-400',
+  disk: 'text-yellow-400',
+  net_rx: 'text-purple-400',
+  net_tx: 'text-purple-400',
+  action: 'text-panel-accent',
+  patchmon_updates: 'text-panel-orange',
+  patchmon_security: 'text-panel-red',
+  hetzner_storage_usage: 'text-panel-accent',
+  mchost_runtime: 'text-panel-green',
+};
+const METRIC_UNIT    = {
+  cpu: '%',
+  memory: '%',
+  disk: '%',
+  net_rx: ' MB/s',
+  net_tx: ' MB/s',
+  action: '',
+  patchmon_updates: '',
+  patchmon_security: '',
+  hetzner_storage_usage: '%',
+  mchost_runtime: ' Tage',
+};
 
 // Extrahiert metric/threshold aus der Notification — mit Fallback auf conditions-Array
 const resolveAlert = (n) => {
   const metric    = n.metric    ?? n.conditions?.[0]?.metric    ?? null;
   const threshold = n.threshold ?? n.conditions?.[0]?.threshold ?? null;
-  const unit      = METRIC_UNIT[metric] ?? '%';
+  const unit      = METRIC_UNIT[metric] !== undefined ? METRIC_UNIT[metric] : '%';
   return { metric, threshold, unit };
 };
 
@@ -44,6 +77,7 @@ const ACTION_LABELS  = {
 function AlertToast({ n, onDismiss }) {
   const isFired = n.alertType === 'fired';
   const { metric, threshold, unit } = resolveAlert(n);
+  const cleanRuleName = String(n.ruleName || '').replace(/^[⚠️✅🚨🔔\s]+/, '');
   return (
     <div className={`flex items-start gap-3 px-4 py-3 rounded-lg shadow-xl border text-sm max-w-sm w-full
       ${isFired ? 'bg-panel-surface border-panel-orange/40' : 'bg-panel-surface border-panel-green/40'}
@@ -54,10 +88,18 @@ function AlertToast({ n, onDismiss }) {
         : <CheckCircle   size={16} className="text-panel-green flex-shrink-0 mt-0.5" />
       }
       <div className="flex-1 min-w-0">
-        <p className="font-medium text-panel-text truncate">{n.ruleName}</p>
+        <p className="font-medium text-panel-text truncate">{cleanRuleName}</p>
+        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+          <span className="text-xs text-panel-muted">{n.serverName}</span>
+          {n.tag && (
+            <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-medium bg-panel-border/50 text-panel-muted border border-panel-border/60">
+              🏷️ {n.tag}
+            </span>
+          )}
+        </div>
         <p className="text-xs text-panel-muted mt-0.5">
-          {n.serverName}{metric ? ` · ${METRIC_LABELS[metric] ?? metric}` : ''}
-          {n.value != null ? ` ${n.value.toFixed(1)}${unit}` : ''}
+          {metric ? `${METRIC_LABELS[metric] ?? metric}: ` : ''}
+          {n.value != null ? <span className="font-semibold text-panel-text">{n.value.toFixed(1)}{unit}</span> : ''}
           {threshold != null ? ` (Schwelle: ${threshold}${unit})` : ''}
         </p>
       </div>
@@ -210,6 +252,7 @@ export const Header = ({ connected }) => {
                       }
                       const isFired = n.alertType === 'fired';
                       const { metric: m, threshold: thr, unit } = resolveAlert(n);
+                      const cleanRuleName = String(n.ruleName || '').replace(/^[⚠️✅🚨🔔\s]+/, '');
                       return (
                         <div key={n.id || i}
                           className="flex items-start gap-3 px-3 py-2.5 border-b border-panel-border/50 last:border-0 hover:bg-panel-card/30 transition-colors">
@@ -220,14 +263,26 @@ export const Header = ({ connected }) => {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between gap-1">
                               <p className="text-xs font-medium text-panel-text truncate">
-                                {isFired ? '⚠️' : '✅'} {n.ruleName}
+                                {cleanRuleName}
                               </p>
                               <span className="text-[10px] text-panel-muted flex-shrink-0">{fmtTime(n.timestamp)}</span>
                             </div>
+                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                              <span className="text-[11px] font-medium text-panel-text">{n.serverName}</span>
+                              {n.tag && (
+                                <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-medium bg-panel-border/50 text-panel-muted border border-panel-border/60">
+                                  🏷️ {n.tag}
+                                </span>
+                              )}
+                            </div>
                             <p className="text-[11px] text-panel-muted mt-0.5">
-                              {n.serverName}{m ? ` · ${METRIC_LABELS[m] ?? m}` : ''}
-                              {n.value != null ? ` ${n.value.toFixed(1)}${unit}` : ''}
-                              {thr != null && <span className="ml-1">(Schwelle: {thr}{unit})</span>}
+                              {m ? `${METRIC_LABELS[m] ?? m}: ` : ''}
+                              {n.value != null && (
+                                <span className="font-medium text-panel-text">
+                                  {n.value.toFixed(1)}{unit}
+                                </span>
+                              )}
+                              {thr != null && <span className="ml-1 text-panel-muted">(Schwelle: {thr}{unit})</span>}
                             </p>
                           </div>
                         </div>

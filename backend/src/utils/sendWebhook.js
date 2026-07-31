@@ -35,7 +35,12 @@ function sanitizeTelegramHtml(text) {
  */
 async function sendWebhook(webhook, message) {
   if (webhook.type === 'discord') {
-    const content = message.length > 1990 ? message.slice(0, 1990) + '...' : message;
+    let content = String(message || '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<(b|strong)>([\s\S]*?)<\/\1>/gi, '**$2**')
+      .replace(/<(i|em)>([\s\S]*?)<\/\1>/gi, '*$2*')
+      .replace(/<[^>]+>/g, '');
+    if (content.length > 1990) content = content.slice(0, 1990) + '...';
     await axios.post(webhook.url, { content }, { timeout: 10_000 });
   } else if (webhook.type === 'telegram') {
     // URL-Format: https://api.telegram.org/bot<TOKEN>/sendMessage?chat_id=<ID>
