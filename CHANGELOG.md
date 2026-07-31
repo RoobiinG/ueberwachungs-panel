@@ -4,6 +4,22 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.51.2] - 2026-07-31 (Build 280) — *Robustes Docker-Update & gehärtetes Image*
+
+### 🐛 Bugfixes & Optimierungen
+- **Behebung von Syntaxfehlern beim lokalen Docker-/nsenter-Update (`backend/src/routes/update.js`)**: Im Fallback-Update über den Host-Namespace (`nsenter`) und das lokale Docker-Socket schlug das Shell-Skript mit `sh: 1: Syntax error: "then" unexpected` (bzw. `/bin/sh: syntax error: unexpected "then"`) fehl, weil das Skript per `.replace(/\n\s+/g, ' ')` in eine einzeilige Befehlszeile ohne Semikola umgewandelt wurde. Alle Anweisungen im Update-Skript sind nun mit sauberen Semikola abgeschlossen (`echo "..."; TARGET="..."; if ...; fi;`), sodass das Skript syntaktisch 100 % korrekt in `/bin/sh` und via `nsenter -c` verarbeitet wird.
+- **Härtung des Docker-Images gegen Schwachstellen (`Dockerfile`, `package.json`)**:
+  - Alle Build- und Runtime-Stages in `Dockerfile` wurden auf `node:22-alpine` (aktive Node-22-LTS-Linie) angehoben.
+  - Im finalen Container-Image wird zusätzlich `apk update && apk upgrade --no-cache` ausgeführt, um alle zugrundeliegenden Alpine-Linux-Systempakete (inklusive OpenSSL, libcrypto, busybox, curl) auf die jeweils neuesten Sicherheits-Patches zu aktualisieren.
+  - Sicherheitspatches in `backend/package.json` und `frontend/package.json` (`axios` auf `^1.7.9`, `ws` auf `^8.18.0`), um bekannte ReDoS/SSRF-Meldungen in Scanner-Tools wie Dockhand/Watchtower/Trivy zu eliminieren.
+
+### ⚙️ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank-Migrationen**: Keine Datenbankmigrationen erforderlich.
+- **Agent-Kompatibilität**: Keine Änderungen an der Kommunikation zwischen Server und Remote-Agenten (`panel-agent.js`).
+- **Neustart-/Session-Verhalten**: Mit dem neuen Docker-Image werden zukünftige Container-Updates (`POST /api/update/run`) zuverlässig und fehlerfrei im Host-Namespace über `nsenter` bzw. per Socket aufgerufen.
+
+---
+
 ## [1.51.1] - 2026-07-31 (Build 279) — *Präzise Benachrichtigungen & Tag-Anzeige*
 
 ### ✨ Neue Funktionen & Features
