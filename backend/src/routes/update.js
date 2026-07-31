@@ -277,41 +277,35 @@ router.post('/run', requireRole('admin'), async (req, res) => {
       // 2. Lokaler Host-Namespace Fallback (nsenter / docker inspect)
       // WICHTIG: Zuerst nsenter nutzen, da nur im Host-Namespace die Compose-Pfade (/home/robin/...) existieren!
       const targetName = configuredTarget || 'ueberwachungs-panel';
-      const hostScript = `
-        echo "[Update] Starte lokales Docker-Update für Ziel: ${targetName}..."
-        TARGET="${targetName}"
-        if [ -z "$TARGET" ] || [ "$TARGET" = "ueberwachungs-panel" ]; then
-          DETECTED=$(docker ps --format '{{.Names}} {{.Image}}' 2>/dev/null | grep -iE 'roobiing|ueberwachungs-panel' | awk '{print $1}' | head -n 1)
-          if [ -n "$DETECTED" ]; then
-            TARGET="$DETECTED"
-            echo "[Update] Automatisch erkannter Container-Name: $TARGET"
-          fi
-        fi
-        echo "[Update] Pulle neues Image ghcr.io/roobiing/ueberwachungs-panel:latest..."
-        docker pull ghcr.io/roobiing/ueberwachungs-panel:latest
-        
-        WDIR=$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' "$TARGET" 2>/dev/null)
-        CFG=$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project.config_files" }}' "$TARGET" 2>/dev/null)
-        
-        if [ -n "$WDIR" ] && [ -d "$WDIR" ]; then
-          echo "[Update] Compose Working-Directory von $TARGET gefunden: $WDIR"
-          cd "$WDIR" && docker compose pull && docker compose up -d --force-recreate && exit 0
-        fi
-        if [ -n "$CFG" ] && [ -f "$CFG" ]; then
-          echo "[Update] Compose Config-File von $TARGET gefunden: $CFG"
-          docker compose -f "$CFG" pull && docker compose -f "$CFG" up -d --force-recreate && exit 0
-        fi
-        
-        for d in /root /root/* /home/* /home/*/* /opt /opt/* /var/docker /var/docker/* /srv /srv/* /app /app/* $(pwd); do
-          if [ -f "$d/docker-compose.yml" ] || [ -f "$d/docker-compose.prod.yml" ]; then
-            echo "[Update] Prüfe Compose-Datei in $d"
-            cd "$d" && docker compose pull && docker compose up -d --force-recreate && exit 0
-          fi
-        done
-        
-        echo "[Update] Fallback: Standalone Recreate für Container $TARGET..."
-        docker restart "$TARGET"
-      `.replace(/\n\s+/g, ' ').trim();
+      const hostScript = `echo "[Update] Starte lokales Docker-Update für Ziel: ${targetName}..."; ` +
+        `TARGET="${targetName}"; ` +
+        `if [ -z "$TARGET" ] || [ "$TARGET" = "ueberwachungs-panel" ]; then ` +
+          `DETECTED=$(docker ps --format '{{.Names}} {{.Image}}' 2>/dev/null | grep -iE 'roobiing|ueberwachungs-panel' | awk '{print $1}' | head -n 1); ` +
+          `if [ -n "$DETECTED" ]; then ` +
+            `TARGET="$DETECTED"; ` +
+            `echo "[Update] Automatisch erkannter Container-Name: $TARGET"; ` +
+          `fi; ` +
+        `fi; ` +
+        `echo "[Update] Pulle neues Image ghcr.io/roobiing/ueberwachungs-panel:latest..."; ` +
+        `docker pull ghcr.io/roobiing/ueberwachungs-panel:latest; ` +
+        `WDIR=$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' "$TARGET" 2>/dev/null); ` +
+        `CFG=$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project.config_files" }}' "$TARGET" 2>/dev/null); ` +
+        `if [ -n "$WDIR" ] && [ -d "$WDIR" ]; then ` +
+          `echo "[Update] Compose Working-Directory von $TARGET gefunden: $WDIR"; ` +
+          `cd "$WDIR" && docker compose pull && docker compose up -d --force-recreate && exit 0; ` +
+        `fi; ` +
+        `if [ -n "$CFG" ] && [ -f "$CFG" ]; then ` +
+          `echo "[Update] Compose Config-File von $TARGET gefunden: $CFG"; ` +
+          `docker compose -f "$CFG" pull && docker compose -f "$CFG" up -d --force-recreate && exit 0; ` +
+        `fi; ` +
+        `for d in /root /root/* /home/* /home/*/* /opt /opt/* /var/docker /var/docker/* /srv /srv/* /app /app/* $(pwd); do ` +
+          `if [ -f "$d/docker-compose.yml" ] || [ -f "$d/docker-compose.prod.yml" ]; then ` +
+            `echo "[Update] Prüfe Compose-Datei in $d"; ` +
+            `cd "$d" && docker compose pull && docker compose up -d --force-recreate && exit 0; ` +
+          `fi; ` +
+        `done; ` +
+        `echo "[Update] Fallback: Standalone Recreate für Container $TARGET..."; ` +
+        `docker restart "$TARGET"`;
 
       const nsenterCmd = `nsenter --target 1 --mount --uts --ipc --net --pid -- sh -c "${hostScript.replace(/"/g, '\\"')}"`;
       const dockerDirectCmd = hostScript;
