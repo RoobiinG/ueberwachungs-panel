@@ -127,11 +127,16 @@ router.post('/rules/:id/test', requirePermission('alerts.manage'), async (req, r
   ).get(req.params.id);
   if (!rule) return res.status(404).json({ error: 'Regel nicht gefunden' });
 
-  const serverStr = rule.agent_name ? ` (${rule.agent_name})` : ' (Lokal)';
+  const METRIC_LABELS = { cpu: 'CPU', memory: 'RAM', disk: 'Disk', net_rx: 'Netz ↓', net_tx: 'Netz ↑', action: 'Aktion', patchmon_updates: 'PatchMon Updates', patchmon_security: 'PatchMon Security', hetzner_storage_usage: 'Storage Box', mchost_runtime: 'MC-Host Laufzeit' };
+  const METRIC_UNIT   = { cpu: '%', memory: '%', disk: '%', net_rx: ' MB/s', net_tx: ' MB/s', action: '', patchmon_updates: '', patchmon_security: '', hetzner_storage_usage: '%', mchost_runtime: ' Tage' };
+  const serverStr = rule.agent_name ? `${rule.agent_name}` : 'Lokal';
+  const label = METRIC_LABELS[rule.metric] || rule.metric;
+  const unit  = METRIC_UNIT[rule.metric] !== undefined ? METRIC_UNIT[rule.metric] : '%';
+  const c     = rule.condition === 'gt' ? '>' : '<';
   try {
     await sendWebhook(
       { type: rule.type, url: rule.url },
-      `🔔 Test-Alert: ${rule.name}${serverStr}\n${rule.metric.toUpperCase()} ${rule.condition === 'gt' ? '>' : '<'} ${rule.threshold}%`
+      `🔔 <b>Test-Alert:</b> ${rule.name}\n\n🖥️ <b>Server:</b> ${serverStr}\n📊 <b>${label}:</b> Schwelle ${c} ${rule.threshold}${unit}`
     );
     res.json({ success: true });
   } catch (err) {

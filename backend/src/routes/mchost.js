@@ -238,7 +238,8 @@ router.put('/access/:roleId', requirePermission('mchost.view'), (req, res) => {
 const getVserversSafe = async () => {
   try {
     const body = (await (await api()).get('/vserver')).data;
-    return Array.isArray(body?.data) ? body.data : Array.isArray(body) ? body : [];
+    const list = Array.isArray(body?.data) ? body.data : Array.isArray(body) ? body : [];
+    return attachTags(list);
   } catch {
     return null;
   }

@@ -61,6 +61,19 @@ const getState = (ruleId, srvKey) => {
 const METRIC_LABELS = { cpu: 'CPU', memory: 'RAM', disk: 'Disk', net_rx: 'Netz ↓', net_tx: 'Netz ↑', action: 'Aktion', patchmon_updates: 'PatchMon Updates', patchmon_security: 'PatchMon Security', hetzner_storage_usage: 'Storage Box', mchost_runtime: 'MC-Host Laufzeit' };
 const METRIC_UNIT   = { cpu: '%', memory: '%', disk: '%', net_rx: ' MB/s', net_tx: ' MB/s', action: '', patchmon_updates: '', patchmon_security: '', hetzner_storage_usage: '%', mchost_runtime: ' Tage' };
 
+// Tag als String aus einem Server/Objekt formatieren
+function getServerTagString(item) {
+  if (!item) return null;
+  if (typeof item.tag === 'string' && item.tag.trim()) return item.tag.trim();
+  if (Array.isArray(item.tags) && item.tags.length > 0) {
+    const arr = item.tags
+      .map(t => (typeof t === 'object' && t ? t.tag : t))
+      .filter(Boolean);
+    if (arr.length > 0) return arr.join(', ');
+  }
+  return null;
+}
+
 // ─── Metrik-Wert abrufen ─────────────────────────────────────────────────────
 async function getMetricValue(metric, agentId, targetRef) {
   if (metric === 'action') return null; // Aktions-Alerts werden in actionNotify gehandelt
@@ -216,13 +229,13 @@ async function evaluate() {
     if (isStorage) {
       const boxes = (await getStorageBoxesSafe()) || [];
       const relevant = targetRefs.length > 0 ? boxes.filter(b => targetRefs.includes(String(b.id))) : boxes;
-      for (const b of relevant) servers.push({ key: 'sbox:' + b.id, name: b.name, agentId: null, targetRef: String(b.id) });
+      for (const b of relevant) servers.push({ key: 'sbox:' + b.id, name: b.name, tag: getServerTagString(b), agentId: null, targetRef: String(b.id) });
     } else if (isMCHost) {
       const mcs = (await getMCHostServersSafe()) || [];
       const relevant = targetRefs.length > 0 ? mcs.filter(m => targetRefs.includes(String(m.id))) : mcs;
-      for (const m of relevant) servers.push({ key: 'mchost:' + m.id, name: m.name || `VServer ${m.id}`, agentId: null, targetRef: String(m.id) });
+      for (const m of relevant) servers.push({ key: 'mchost:' + m.id, name: m.name || `VServer ${m.id}`, tag: getServerTagString(m), agentId: null, targetRef: String(m.id) });
     } else {
-      for (const s of getServerList(rule)) servers.push({ ...s, targetRef: null });
+      for (const s of getServerList(rule)) servers.push({ ...s, tag: getServerTagString(s), targetRef: null });
     }
 
     for (const srv of servers) {
@@ -265,15 +278,17 @@ async function evaluate() {
           if (isMCHostMetric) {
             const daysVal = results[0]?.value;
             const daysStr = daysVal != null ? `${daysVal.toFixed(1).replace('.', ',')} Tage` : '? Tage';
-            message = `⚠️ MC-Host24 Laufzeit-Warnung\nServer: ${srv.name} (MC-Host24)\nVerbleibende Laufzeit: ${daysStr}`;
+            const tagLine = srv.tag ? `\n🏷️ <b>Tag:</b> ${srv.tag}` : '';
+            message = `⚠️ <b>MC-Host24 Laufzeit-Warnung</b>\n\n🖥️ <b>Server:</b> ${srv.name} (MC-Host24)${tagLine}\n⏳ <b>Verbleibende Laufzeit:</b> ${daysStr}`;
           } else {
-            const logicStr = logic === 'or' ? '(ODER)' : '(UND)';
+            const logicStr = conditions.length > 1 ? (logic === 'or' ? ' (ODER)' : ' (UND)') : '';
+            const tagLine  = srv.tag ? `\n🏷️ <b>Tag:</b> ${srv.tag}` : '';
             const detailLines = results.map(r => {
               const u = METRIC_UNIT[r.cond.metric] ?? '%';
               const c = r.cond.condition === 'gt' ? '>' : '<';
-              return `${METRIC_LABELS[r.cond.metric] ?? r.cond.metric} ${c} ${r.cond.threshold}${u} (${r.value.toFixed(1)}${u})`;
+              return `📊 <b>${METRIC_LABELS[r.cond.metric] ?? r.cond.metric}:</b> ${r.value.toFixed(1)}${u} (Schwelle: ${c} ${r.cond.threshold}${u})`;
             }).join('\n');
-            message = `⚠️ Alert: ${rule.name} ${logicStr}\nServer: ${srv.name}\n${detailLines}`;
+            message = `⚠️ <b>Alert ausgelöst:</b> ${rule.name}${logicStr}\n\n🖥️ <b>Server:</b> ${srv.name}${tagLine}\n${detailLines}`;
           }
 
           try {
@@ -304,6 +319,7 @@ async function evaluate() {
               conditions,
               logic,
               serverName: srv.name,
+              tag:        srv.tag || null,
               agentId:    srv.agentId || null,
               metric:     conditions[0]?.metric ?? null,
               value:      results[0]?.value ?? null,
@@ -321,14 +337,16 @@ async function evaluate() {
           if (isMCHostMetric) {
             const daysVal = results[0]?.value;
             const daysStr = daysVal != null ? `${daysVal.toFixed(1).replace('.', ',')} Tage` : '? Tage';
-            message = `✅ MC-Host24 Laufzeit verlängert\nServer: ${srv.name} (MC-Host24)\nAktuelle Laufzeit: ${daysStr}`;
+            const tagLine = srv.tag ? `\n🏷️ <b>Tag:</b> ${srv.tag}` : '';
+            message = `✅ <b>MC-Host24 Laufzeit verlängert</b>\n\n🖥️ <b>Server:</b> ${srv.name} (MC-Host24)${tagLine}\n⏳ <b>Aktuelle Laufzeit:</b> ${daysStr}`;
           } else {
+            const tagLine = srv.tag ? `\n🏷️ <b>Tag:</b> ${srv.tag}` : '';
             const recoveryLines = results.map(r => {
               const u   = METRIC_UNIT[r.cond.metric] ?? '%';
               const dir = r.cond.condition === 'gt' ? 'über' : 'unter';
-              return `${METRIC_LABELS[r.cond.metric] ?? r.cond.metric}: ${r.value.toFixed(1)}${u} ✓ (war ${dir} ${r.cond.threshold}${u})`;
+              return `📊 <b>${METRIC_LABELS[r.cond.metric] ?? r.cond.metric}:</b> ${r.value.toFixed(1)}${u} ✓ (war ${dir} ${r.cond.threshold}${u})`;
             }).join('\n');
-            message = `✅ Erholt: ${rule.name}\nServer: ${srv.name}\n${recoveryLines}`;
+            message = `✅ <b>Erholt:</b> ${rule.name}\n\n🖥️ <b>Server:</b> ${srv.name}${tagLine}\n${recoveryLines}`;
           }
 
           try {
@@ -349,7 +367,7 @@ async function evaluate() {
 
           broadcast({
             type: 'alert',
-            payload: { alertType: 'resolved', ruleId: rule.id, ruleName: rule.name, conditions, logic, serverName: srv.name, agentId: srv.agentId || null, metric: conditions[0]?.metric ?? null, value: results[0]?.value ?? null, threshold: conditions[0]?.threshold ?? null },
+            payload: { alertType: 'resolved', ruleId: rule.id, ruleName: rule.name, conditions, logic, serverName: srv.name, tag: srv.tag || null, agentId: srv.agentId || null, metric: conditions[0]?.metric ?? null, value: results[0]?.value ?? null, threshold: conditions[0]?.threshold ?? null },
           });
         }
         s.activeSince = null;
