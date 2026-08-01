@@ -4,6 +4,18 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.54.1] - 2026-08-01 (Build 288) — *Fix für Custom-Widget Titel-Parameter im Dashboard*
+
+### 🐛 Bugfixes & Stabilität
+- **Behebung von `ReferenceError: item is not defined` im Dashboard (`Dashboard.jsx`)**: Korrektur der Funktionssignatur von `widgetTitle(id, serverName, item)`. Zuvor fehlte der dritte Parameter `item`, was beim Rendern von benutzerdefinierten Kacheln (`id.startsWith('custom:')`) zu einem Absturz beim Zugriff auf `item?.title` führte. Das Dashboard lädt nun mit individuellen Widgets einwandfrei.
+
+### ⚙️ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank-Migrationen**: Keine Datenbankänderung erforderlich.
+- **Agent-Kompatibilität**: Unverändert voll kompatibel.
+- **Neustart-/Session-Verhalten**: Vorhandene und neue Custom-Widgets auf der Startseite werden jetzt fehlerfrei angezeigt, ohne dass ein Seiten-Crash ausgelöst wird.
+
+---
+
 ## [1.54.0] - 2026-08-01 (Build 287) — *Modul 1 & 2: Custom Dashboard-Builder & DB-Sicherung im UI*
 
 ### ✨ Neue Features & UI-Verbesserungen

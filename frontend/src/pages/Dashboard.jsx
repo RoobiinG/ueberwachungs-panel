@@ -31,7 +31,7 @@ const LegendDot = ({ color, label }) => (
 const GridLayout = WidthProvider(RGLBase);
 const GRID_COLS = 12;
 
-const widgetTitle = (id, serverName) => {
+const widgetTitle = (id, serverName, item) => {
   if (id === 'kpi')             return 'Übersicht';
   if (id === 'activity')        return 'Aktivität';
   if (id === 'status')          return 'Status';

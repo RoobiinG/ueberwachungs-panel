@@ -1,6 +1,6 @@
 {
-  "version": "1.54.0",
-  "build": 287,
+  "version": "1.54.1",
+  "build": 288,
   "date": "2026-08-01",
-  "codename": "Modul 1 & 2: Custom Dashboard-Builder & DB-Sicherung im UI"
+  "codename": "Fix für Custom-Widget Titel-Parameter im Dashboard"
 }
