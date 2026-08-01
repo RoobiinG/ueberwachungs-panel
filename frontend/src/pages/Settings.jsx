@@ -512,6 +512,148 @@ function PrideFlagToggleCard() {
   );
 }
 
+// ── SQLite Backup Manager Card (Modul 1) ──────────────────────────────────────
+function BackupManagerCard() {
+  const [backups, setBackups]   = useState([]);
+  const [loading, setLoading]   = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [restoring, setRestoring] = useState(null);
+  const [msg, setMsg]           = useState('');
+
+  const loadBackups = async () => {
+    setLoading(true);
+    try {
+      const { data } = await axios.get('/api/backups');
+      setBackups(data.backups || []);
+    } catch (err) {
+      setMsg('❌ Fehler beim Laden der Backups: ' + (err.response?.data?.error || err.message));
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { loadBackups(); }, []);
+
+  const handleCreateBackup = async () => {
+    setCreating(true);
+    setMsg('');
+    try {
+      const { data } = await axios.post('/api/backups/create');
+      setMsg(`✓ Backup '${data.backup.filename}' erfolgreich angelegt.`);
+      loadBackups();
+    } catch (err) {
+      setMsg('❌ Backup-Erstellung fehlgeschlagen: ' + (err.response?.data?.error || err.message));
+    }
+    setCreating(false);
+  };
+
+  const handleDeleteBackup = async (filename) => {
+    if (!window.confirm(`Möchtest du das Backup '${filename}' wirklich unwiderruflich löschen?`)) return;
+    try {
+      await axios.delete(`/api/backups/${encodeURIComponent(filename)}`);
+      setMsg(`✓ Backup '${filename}' gelöscht.`);
+      loadBackups();
+    } catch (err) {
+      setMsg('❌ Fehler beim Löschen: ' + (err.response?.data?.error || err.message));
+    }
+  };
+
+  const handleRestoreBackup = async (filename) => {
+    if (!window.confirm(`⚠️ ACHTUNG: Möchtest du die Datenbank wirklich auf den Stand von '${filename}' zurücksetzen?\n\nAlle Änderungen seit diesem Datum gehen verloren! (Ein automatisches Sicherheits-Backup wird vorher angelegt).`)) return;
+    setRestoring(filename);
+    setMsg('⏳ Datenbank wird wiederhergestellt...');
+    try {
+      const { data } = await axios.post('/api/backups/restore', { filename });
+      setMsg(`✓ ${data.message} — Seite wird geladen...`);
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (err) {
+      setMsg('❌ Wiederherstellung fehlgeschlagen: ' + (err.response?.data?.error || err.message));
+      setRestoring(null);
+    }
+  };
+
+  const fmtBytes = (b) => {
+    if (!b) return '0 B';
+    const k = 1024, sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(b) / Math.log(k));
+    return `${parseFloat((b / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+  };
+
+  return (
+    <Card title={<span className="flex items-center gap-2"><Database size={14} className="text-panel-accent" />Sicherungen & Backups (SQLite data.db)</span>}>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <p className="text-xs text-panel-muted leading-relaxed">
+            Erstelle und verwalte Sicherungen deiner SQLite-Datenbank (<code className="text-panel-text font-mono">data.db</code>). Bis zu 10 Backups werden rotierend gespeichert.
+          </p>
+          <Button onClick={handleCreateBackup} disabled={creating || loading} size="sm" className="flex items-center gap-1.5 whitespace-nowrap">
+            <Database size={13} />
+            {creating ? 'Sichere...' : 'Sofort-Backup erstellen'}
+          </Button>
+        </div>
+
+        {msg && <p className={`text-xs ${msg.startsWith('✓') ? 'text-panel-green' : msg.startsWith('⏳') ? 'text-panel-accent' : 'text-panel-red'}`}>{msg}</p>}
+
+        {loading ? (
+          <p className="text-xs text-panel-muted py-2">Lade Backup-Liste...</p>
+        ) : backups.length === 0 ? (
+          <div className="p-4 text-center border border-dashed border-panel-border rounded-lg text-xs text-panel-muted">
+            Noch keine lokalen Datenbank-Backups vorhanden. Klicke auf „Sofort-Backup erstellen“, um den aktuellen Stand zu sichern.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-panel-border text-panel-muted font-medium">
+                  <th className="py-2 pr-4">Dateiname</th>
+                  <th className="py-2 pr-4">Erstellt am</th>
+                  <th className="py-2 pr-4">Größe</th>
+                  <th className="py-2 text-right">Aktionen</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-panel-border/40">
+                {backups.map(b => (
+                  <tr key={b.filename} className="hover:bg-panel-surface/60 transition-colors">
+                    <td className="py-2 pr-4 font-mono text-panel-text">{b.filename}</td>
+                    <td className="py-2 pr-4 text-panel-muted">
+                      {new Date(b.createdAt).toLocaleString('de-DE')}
+                    </td>
+                    <td className="py-2 pr-4 text-panel-muted">{fmtBytes(b.sizeBytes)}</td>
+                    <td className="py-2 text-right space-x-1 whitespace-nowrap">
+                      <a
+                        href={`/api/backups/download/${encodeURIComponent(b.filename)}`}
+                        download
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-panel-surface border border-panel-border hover:border-panel-accent rounded text-panel-text transition-colors"
+                        title="Herunterladen"
+                      >
+                        <Download size={12} />
+                      </a>
+                      <button
+                        onClick={() => handleRestoreBackup(b.filename)}
+                        disabled={restoring === b.filename}
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-panel-accent/10 border border-panel-accent/40 text-panel-accent hover:bg-panel-accent hover:text-white rounded transition-colors cursor-pointer"
+                        title="Diesen Stand wiederherstellen"
+                      >
+                        {restoring === b.filename ? 'Wiederherstellen...' : 'Wiederherstellen'}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteBackup(b.filename)}
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-panel-red/10 border border-panel-red/30 text-panel-red hover:bg-panel-red hover:text-white rounded transition-colors cursor-pointer"
+                        title="Löschen"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 // ── UA-Hilfsfunktionen ─────────────────────────────────────────────────────────
 function parseBrowser(ua = '') {
   if (!ua) return 'Unbekannt';
@@ -1146,7 +1288,7 @@ export default function Settings() {
             <Cloud size={14} />Cloud & APIs
           </button>
         )}
-        {isAdmin && (
+        {(isAdmin || hasPermission('system.backup') || hasPermission('system.update')) && (
           <button
             onClick={() => setTab('system')}
             className={`flex-1 min-w-[140px] flex items-center justify-center gap-1.5 py-1.5 rounded-md text-sm transition-colors cursor-pointer ${
@@ -1713,10 +1855,13 @@ export default function Settings() {
       )}
 
       {/* ═══════════════════ TAB 4: SYSTEM & BACKUP (Admin) ═══════════════════ */}
-      {tab === 'system' && isAdmin && (
+      {tab === 'system' && (isAdmin || hasPermission('system.backup') || hasPermission('system.update')) && (
         <div className="columns-1 lg:columns-2 gap-4 [&>*]:mb-4 [&>*]:break-inside-avoid">
           {/* ── GitHub Update-Token ── */}
           <GitHubTokenCard status={status} onReload={loadAdmin} />
+
+          {/* ── SQLite Backup Manager (Modul 1) ── */}
+          {hasPermission('system.backup') && <BackupManagerCard />}
 
           {/* ── System-Migration & Backup ── */}
           {hasPermission('system.backup') && (

@@ -1,6 +1,6 @@
 {
-  "version": "1.53.1",
-  "build": 286,
+  "version": "1.54.0",
+  "build": 287,
   "date": "2026-08-01",
-  "codename": "Fix für User-Login Metadaten-Migration & Protokollierung"
+  "codename": "Modul 1 & 2: Custom Dashboard-Builder & DB-Sicherung im UI"
 }

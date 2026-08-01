@@ -4,6 +4,34 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.54.0] - 2026-08-01 (Build 287) — *Modul 1 & 2: Custom Dashboard-Builder & DB-Sicherung im UI*
+
+### ✨ Neue Features & UI-Verbesserungen
+- **Modul 1: Backup-Manager im Einstellungs-Panel (`backups.js` & `Settings.jsx`)**:
+  - Vollständiges SQLite-Backup-Management direkt im Panel unter *Einstellungen → System & Backup* (geschützt über das Recht `system.backup`).
+  - **Manuelle Sofort-Sicherung**: Per Knopfdruck kann ein konsistentes SQLite-Backup im laufenden Betrieb erzeugt werden (`db.backup(destPath)`).
+  - **Sicherungsverwaltung**: Anzeige aller im Ordner `data/backups/` gespeicherten `.db`-Sicherungen mit Zeitstempel und Dateigröße, inklusive Download-Funktion und Löschung nicht mehr benötigter Archive.
+  - **Live-Wiederherstellung (Restore)**: Geführter Wiederherstellungsprozess aus einer Sicherungsdatei mit Sicherheits-Bestätigungsdialog.
+- **Modul 2: Individueller Dashboard-Builder & Multi-Server-Analysen (`Dashboard.jsx`)**:
+  - **+ Widget hinzufügen**: Über eine neue Schaltfläche im Dashboard-Header können Nutzer nun individuelle Überwachungs-Widgets im Raster hinzufügen.
+  - **5 Spezial-Widgets verfügbar**:
+    1. *Multi-Server-Vergleich Chart*: Vergleicht die CPU- oder RAM-Auslastung mehrerer Server zeitgleich im Recharts-Liniendiagramm.
+    2. *Tachometer / Gauge-Widget*: Visuelles Rundinstrument mit SVG-Anzeige für die aktuelle Systemlast einzelner Server.
+    3. *PatchMon Sicherheitsampel*: Übersichtskachel für anstehende OS-Updates und erforderliche Neustarts.
+    4. *Uptime-Kuma Statuskachel*: Kompakte Kachel mit Verfügbarkeits-Fortschrittsbalken und Up/Total-Zähler.
+    5. *Live-Log-Ticker*: Scrollbarer Echtzeit-Feed für kürzlich aufgetretene System-Alerts und Systemereignisse.
+  - **Persistentes Grid-Layout (`react-grid-layout`)**: Alle hinzugefügten Widgets lassen sich frei verschieben und in der Größe verändern; das Layout wird pro Benutzer/Session beständig in der SQLite-Datenbank (`/api/dashboard/home-layout`) abgelegt.
+- **Erweiterungen im Rechtesystem**:
+  - Trennung in dedizierte Einzelberechtigungen: `system.update` für den System-Updater und `system.backup` für die Datenbanksicherungen.
+  - Integration von Benutzer-Metadaten im Konto-Bereich (Letzter Login, IP, Browser, Passkeys) geschützt durch `users.view_meta`.
+
+### ⚙️ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank-Migrationen**: Keine Schema-Änderung an SQLite erforderlich; Backups werden im Dateisystem unter `/app/backend/data/backups/` abgelegt. Das Grid-Layout speichert neu erzeugte Custom-Widgets strukturiert unter `custom:<type>:<ts>` im JSON-Format der Spalte `home_layout`.
+- **Agent-Kompatibilität**: Vollständig kompatibel; Custom-Widgets greifen auf die im Cache aggregierten Live-Metriken und Verlaufsdaten (`/api/metrics`) der Agenten zurück.
+- **Neustart-/Session-Verhalten**: Bestehende Dashboard-Layouts bleiben uneingeschränkt erhalten; neue Custom-Widgets werden zusätzlich im Raster positioniert und können jederzeit über die Header-Buttons zurückgesetzt oder gelöscht werden.
+
+---
+
 ## [1.53.1] - 2026-08-01 (Build 286) — *Fix für User-Login Metadaten-Migration & Protokollierung*
 
 ### 🐛 Bugfixes & Stabilität

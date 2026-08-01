@@ -7,9 +7,9 @@ import {
   Cpu, WifiOff, Container, ChevronRight, Server, Activity,
   MemoryStick, HardDrive, Network, ArrowDownToLine, ArrowUpFromLine,
   Clock, Monitor, Package, ShieldAlert, RotateCw, Bell,
-  GripVertical, RotateCcw,
+  GripVertical, RotateCcw, Trash2, Plus, FileText,
 } from 'lucide-react';
-import { LineChart, Line, YAxis, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { useLiveInterval } from '../hooks/useLiveInterval';
@@ -37,6 +37,7 @@ const widgetTitle = (id, serverName) => {
   if (id === 'status')          return 'Status';
   if (id === 'hetzner_storage') return 'Hetzner Storage Boxes';
   if (id.startsWith('server:')) return serverName(id.slice(7));
+  if (id.startsWith('custom:')) return item?.title || 'Custom Widget';
   return '';
 };
 
@@ -418,6 +419,160 @@ function ActivityFeed({ events }) {
   );
 }
 
+// ── Modal zum Hinzufügen individueller Widgets (Modul 2) ─────────────────────
+function AddWidgetModal({ isOpen, onClose, onAdd, serverKeys, serverName }) {
+  const [selectedType, setSelectedType] = useState('multi_server_comp');
+  const [title, setTitle]               = useState('Server-Vergleich (CPU)');
+  const [selectedServers, setSelectedServers] = useState([]);
+  const [singleServer, setSingleServer] = useState(serverKeys[0] || 'local');
+  const [metric, setMetric]             = useState('cpu');
+
+  useEffect(() => {
+    if (serverKeys.length && !selectedServers.length) {
+      setSelectedServers(serverKeys.slice(0, 2));
+    }
+  }, [serverKeys]);
+
+  if (!isOpen) return null;
+
+  const toggleServer = (k) => {
+    if (selectedServers.includes(k)) {
+      setSelectedServers(selectedServers.filter(x => x !== k));
+    } else {
+      setSelectedServers([...selectedServers, k]);
+    }
+  };
+
+  const handleCreate = (e) => {
+    e.preventDefault();
+    onAdd({
+      customType: selectedType,
+      title: title || 'Individuelles Widget',
+      serverIds: selectedType === 'multi_server_comp' ? selectedServers : [],
+      serverId: singleServer,
+      metric,
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="w-full max-w-lg bg-panel-card border border-panel-border rounded-xl shadow-2xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-panel-border flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-panel-text flex items-center gap-2">
+            + Individuelles Widget hinzufügen
+          </h3>
+          <button onClick={onClose} className="text-panel-muted hover:text-panel-text text-sm cursor-pointer">✕</button>
+        </div>
+        <form onSubmit={handleCreate} className="p-5 space-y-4 text-xs">
+          <div>
+            <label className="block font-medium text-panel-text mb-1">Widget-Typ auswählen</label>
+            <select
+              value={selectedType}
+              onChange={e => {
+                setSelectedType(e.target.value);
+                if (e.target.value === 'multi_server_comp') setTitle('Server-Vergleich (CPU)');
+                if (e.target.value === 'gauge_tile') setTitle('Tachometer Gauge');
+                if (e.target.value === 'patchmon_tile') setTitle('PatchMon Sicherheitsampel');
+                if (e.target.value === 'uptime_tile') setTitle('Uptime Kuma Statuskachel');
+                if (e.target.value === 'log_ticker') setTitle('Live-Log-Ticker');
+              }}
+              className="w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-panel-text focus:outline-none focus:border-panel-accent"
+            >
+              <option value="multi_server_comp">📈 Multi-Server-Vergleich Chart (CPU / RAM)</option>
+              <option value="gauge_tile">⏱️ Tachometer / Gauge-Widget (Live-Last)</option>
+              <option value="patchmon_tile">🛡️ PatchMon Sicherheitsampel</option>
+              <option value="uptime_tile">🟢 Uptime-Kuma Statuskachel</option>
+              <option value="log_ticker">📜 Live-Log-Ticker (Aktuelle Fehlermeldungen)</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block font-medium text-panel-text mb-1">Titel des Widgets</label>
+            <input
+              type="text"
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              className="w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-panel-text focus:outline-none focus:border-panel-accent"
+            />
+          </div>
+
+          {selectedType === 'multi_server_comp' && (
+            <div className="space-y-3">
+              <div>
+                <label className="block font-medium text-panel-text mb-1">Metrik für Vergleich</label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setMetric('cpu')}
+                    className={`flex-1 py-1.5 rounded border text-center transition-colors cursor-pointer ${metric === 'cpu' ? 'bg-panel-accent/15 border-panel-accent text-panel-accent font-medium' : 'bg-panel-surface border-panel-border text-panel-muted'}`}
+                  >
+                    CPU Auslastung (%)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMetric('mem')}
+                    className={`flex-1 py-1.5 rounded border text-center transition-colors cursor-pointer ${metric === 'mem' ? 'bg-panel-accent/15 border-panel-accent text-panel-accent font-medium' : 'bg-panel-surface border-panel-border text-panel-muted'}`}
+                  >
+                    RAM Auslastung (%)
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-medium text-panel-text mb-1">Server zum Vergleichen wählen</label>
+                <div className="max-h-36 overflow-y-auto space-y-1.5 bg-panel-surface p-2 rounded border border-panel-border">
+                  {serverKeys.map(k => (
+                    <label key={k} className="flex items-center gap-2 cursor-pointer hover:text-panel-accent">
+                      <input
+                        type="checkbox"
+                        checked={selectedServers.includes(k)}
+                        onChange={() => toggleServer(k)}
+                        className="rounded border-panel-border bg-panel-card text-panel-accent"
+                      />
+                      <span>{serverName(k)}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {selectedType === 'gauge_tile' && (
+            <div>
+              <label className="block font-medium text-panel-text mb-1">Ziel-Server für Tachometer</label>
+              <select
+                value={singleServer}
+                onChange={e => setSingleServer(e.target.value)}
+                className="w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-panel-text focus:outline-none focus:border-panel-accent"
+              >
+                {serverKeys.map(k => (
+                  <option key={k} value={k}>{serverName(k)}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-panel-border">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-1.5 rounded border border-panel-border text-panel-muted hover:text-panel-text transition-colors cursor-pointer"
+            >
+              Abbrechen
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-1.5 rounded bg-panel-accent text-white hover:bg-blue-500 font-medium transition-colors cursor-pointer"
+            >
+              Widget hinzufügen
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard({ liveStats }) {
   const navigate  = useNavigate();
   const { hideLocal } = useAuth();
@@ -435,6 +590,7 @@ export default function Dashboard({ liveStats }) {
   const [uptime,      setUptime]      = useState(null);  // { up, total }
   const [firewall,    setFirewall]    = useState(null);  // { active }
   const [rgl, setRgl] = useState(null);   // gespeichertes RGL-Layout (null = Standard)
+  const [showAddWidget, setShowAddWidget] = useState(false);
   const persistRef    = useRef(null);
   const readyRef      = useRef(false);    // erst nach dem Laden darf persistiert werden
 
@@ -595,13 +751,41 @@ export default function Dashboard({ liveStats }) {
   );
 
   const onLayoutChange = (l) => {
-    setRgl(l);
+    const merged = l.map(newItem => {
+      const existing = (rgl || []).find(x => x.i === newItem.i) || gridLayout.find(x => x.i === newItem.i) || {};
+      return { ...existing, ...newItem, v: LAYOUT_VERSION };
+    });
+    setRgl(merged);
     if (!readyRef.current) return; // gespeichertes Layout nicht überschreiben, bevor es geladen ist
     clearTimeout(persistRef.current);
-    const stamped = l.map(it => ({ ...it, v: LAYOUT_VERSION }));
-    persistRef.current = setTimeout(() => { axios.put('/api/dashboard/home-layout', { layout: stamped }).catch(() => {}); }, 700);
+    persistRef.current = setTimeout(() => { axios.put('/api/dashboard/home-layout', { layout: merged }).catch(() => {}); }, 700);
   };
   const resetLayout = () => { setRgl(null); axios.put('/api/dashboard/home-layout', { layout: [] }).catch(() => {}); };
+
+  const addCustomWidget = (config) => {
+    const newId = `custom:${config.customType}:${Date.now()}`;
+    const newItem = {
+      i: newId,
+      x: 0,
+      y: 0,
+      w: config.customType === 'multi_server_comp' ? 12 : 4,
+      h: config.customType === 'multi_server_comp' ? 8 : 6,
+      minW: 3,
+      minH: 3,
+      v: LAYOUT_VERSION,
+      ...config,
+    };
+    const next = [newItem, ...gridLayout];
+    setRgl(next);
+    axios.put('/api/dashboard/home-layout', { layout: next }).catch(() => {});
+    setShowAddWidget(false);
+  };
+
+  const removeCustomWidget = (id) => {
+    const next = gridLayout.filter(it => it.i !== id);
+    setRgl(next);
+    axios.put('/api/dashboard/home-layout', { layout: next }).catch(() => {});
+  };
 
   const serverName = (key) => (key === 'local' ? 'Panel-Server' : (agents.find(a => String(a.id) === key)?.name || 'Server'));
 
@@ -706,8 +890,272 @@ export default function Dashboard({ liveStats }) {
           onNavigate={() => navigate(`/agents/${a.id}`)} />
       );
     }
+    if (id.startsWith('custom:')) {
+      const item = gridLayout.find(x => x.i === id);
+      return renderCustomWidget(id, item);
+    }
     return null;
   };
+
+  const renderCustomWidget = (id, item) => {
+    if (!item) return null;
+    const cType = item.customType;
+
+    if (cType === 'multi_server_comp') {
+      const chartData = (() => {
+        const maxLen = 30;
+        const data = [];
+        const sids = item.serverIds || [];
+        for (let idx = 0; idx < maxLen; idx++) {
+          const row = { idx: String(idx) };
+          for (const sid of sids) {
+            const arr = histories[sid] || [];
+            const pt = arr[arr.length - maxLen + idx] || arr[idx] || {};
+            row[sid] = pt[item.metric || 'cpu'] ?? 0;
+          }
+          data.push(row);
+        }
+        return data;
+      })();
+
+      const CUSTOM_COLORS = ['#388bfd', '#3fb950', '#e3b341', '#a371f7', '#f85149', '#58a6ff', '#ec6547', '#a5d6ff'];
+
+      return (
+        <div className="h-full flex flex-col bg-panel-card border border-panel-border/70 rounded-2xl overflow-hidden relative group/custom">
+          <div className="px-4 py-2.5 border-b border-panel-border/50 flex items-center justify-between flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <Activity size={13} className="text-panel-accent" />
+              <span className="text-xs font-semibold text-panel-text">{item.title || 'Multi-Server-Vergleich'}</span>
+              <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-panel-accent/10 text-panel-accent font-medium">
+                {item.metric === 'mem' ? 'RAM' : 'CPU'} %
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => removeCustomWidget(item.i)}
+              className="p-1 rounded-md text-panel-muted hover:text-panel-red transition-colors opacity-0 group-hover/custom:opacity-100 cursor-pointer"
+              title="Widget löschen"
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+          <div className="flex-1 p-3 flex flex-col justify-between min-h-0">
+            <div className="h-[75%] w-full min-h-[120px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
+                  <YAxis domain={[0, 100]} stroke="#64748b" fontSize={10} tickFormatter={v => `${v}%`} />
+                  <Tooltip
+                    contentStyle={{ background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', fontSize: '11px' }}
+                    labelFormatter={() => 'Zeitverlauf'}
+                  />
+                  {(item.serverIds || []).map((sid, index) => (
+                    <Line
+                      key={sid}
+                      type="monotone"
+                      dataKey={sid}
+                      name={serverName(sid)}
+                      stroke={CUSTOM_COLORS[index % CUSTOM_COLORS.length]}
+                      strokeWidth={2}
+                      dot={false}
+                      isAnimationActive={false}
+                    />
+                  ))}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 pt-2 border-t border-panel-border/30 text-[11px]">
+              {(item.serverIds || []).map((sid, index) => (
+                <div key={sid} className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: CUSTOM_COLORS[index % CUSTOM_COLORS.length] }} />
+                  <span className="text-panel-text font-medium">{serverName(sid)}</span>
+                </div>
+              ))}
+              {(item.serverIds || []).length === 0 && (
+                <span className="text-panel-muted">Keine Server ausgewählt.</span>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (cType === 'gauge_tile') {
+      const sid = item.serverId || 'local';
+      let pct = 0;
+      if (sid === 'local') pct = localCpu;
+      else pct = agentStats[sid]?.cpu?.usage ?? 0;
+      pct = Math.round(pct);
+      const gaugeColor = pct >= 90 ? '#ef4444' : pct >= 75 ? '#f97316' : '#3fb950';
+      const radius = 38;
+      const circ = 2 * Math.PI * radius;
+      const offset = circ - (pct / 100) * circ;
+
+      return (
+        <div className="h-full flex flex-col bg-panel-card border border-panel-border/70 rounded-2xl overflow-hidden relative group/custom">
+          <div className="px-4 py-2 border-b border-panel-border/50 flex items-center justify-between flex-shrink-0">
+            <span className="text-xs font-semibold text-panel-text truncate">{item.title || 'Tachometer'}</span>
+            <button
+              type="button"
+              onClick={() => removeCustomWidget(item.i)}
+              className="p-1 rounded-md text-panel-muted hover:text-panel-red transition-colors opacity-0 group-hover/custom:opacity-100 cursor-pointer"
+              title="Widget löschen"
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+          <div className="flex-1 flex flex-col items-center justify-center p-3">
+            <div className="relative flex items-center justify-center">
+              <svg className="w-28 h-28 transform -rotate-90">
+                <circle cx="56" cy="56" r={radius} stroke="currentColor" strokeWidth="10" className="text-panel-surface" fill="transparent" />
+                <circle
+                  cx="56"
+                  cy="56"
+                  r={radius}
+                  stroke={gaugeColor}
+                  strokeWidth="10"
+                  strokeDasharray={circ}
+                  strokeDashoffset={offset}
+                  strokeLinecap="round"
+                  fill="transparent"
+                  className="transition-all duration-500"
+                />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                <span className="text-xl font-bold font-mono text-panel-text">{pct}%</span>
+                <span className="text-[10px] text-panel-muted uppercase font-semibold">CPU</span>
+              </div>
+            </div>
+            <div className="text-xs font-medium text-panel-text mt-2 truncate max-w-full">{serverName(sid)}</div>
+          </div>
+        </div>
+      );
+    }
+
+    if (cType === 'patchmon_tile') {
+      return (
+        <div className="h-full flex flex-col bg-panel-card border border-panel-border/70 rounded-2xl overflow-hidden relative group/custom">
+          <div className="px-4 py-2 border-b border-panel-border/50 flex items-center justify-between flex-shrink-0">
+            <span className="text-xs font-semibold text-panel-text flex items-center gap-1.5">
+              <Package size={13} className="text-panel-accent" />
+              {item.title || 'PatchMon Ampel'}
+            </span>
+            <button
+              type="button"
+              onClick={() => removeCustomWidget(item.i)}
+              className="p-1 rounded-md text-panel-muted hover:text-panel-red transition-colors opacity-0 group-hover/custom:opacity-100 cursor-pointer"
+              title="Widget löschen"
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+          <div className="flex-1 p-4 flex flex-col justify-center items-center text-center">
+            {pmWithUpdates > 0 ? (
+              <div className="space-y-2">
+                <div className="w-12 h-12 rounded-full bg-panel-orange/15 border border-panel-orange/40 flex items-center justify-center mx-auto text-panel-orange font-bold text-lg">
+                  {pmWithUpdates}
+                </div>
+                <div className="text-xs font-semibold text-panel-text">{pmWithUpdates} Server mit Updates</div>
+                <div className="text-[11px] text-panel-muted">
+                  {pmSecurity} Security-Patches {pmReboot > 0 ? `· ${pmReboot} Neustarts nötig` : ''}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="w-12 h-12 rounded-full bg-panel-green/15 border border-panel-green/40 flex items-center justify-center mx-auto text-panel-green font-bold text-lg">
+                  ✓
+                </div>
+                <div className="text-xs font-semibold text-panel-text">Alle Server aktuell</div>
+                <div className="text-[11px] text-panel-muted">Keine ausstehenden Patches</div>
+              </div>
+            )}
+            <button
+              onClick={() => navigate('/patchmon')}
+              className="mt-3 px-3 py-1 bg-panel-surface border border-panel-border hover:border-panel-accent rounded text-xs text-panel-text transition-colors cursor-pointer"
+            >
+              PatchMon öffnen →
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (cType === 'uptime_tile') {
+      const upCnt = uptime ? uptime.up : 0;
+      const totCnt = uptime ? uptime.total : 0;
+      const pct = totCnt > 0 ? Math.round((upCnt / totCnt) * 100) : 100;
+      return (
+        <div className="h-full flex flex-col bg-panel-card border border-panel-border/70 rounded-2xl overflow-hidden relative group/custom">
+          <div className="px-4 py-2 border-b border-panel-border/50 flex items-center justify-between flex-shrink-0">
+            <span className="text-xs font-semibold text-panel-text flex items-center gap-1.5">
+              <Activity size={13} className="text-panel-accent" />
+              {item.title || 'Uptime Status'}
+            </span>
+            <button
+              type="button"
+              onClick={() => removeCustomWidget(item.i)}
+              className="p-1 rounded-md text-panel-muted hover:text-panel-red transition-colors opacity-0 group-hover/custom:opacity-100 cursor-pointer"
+              title="Widget löschen"
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+          <div className="flex-1 p-4 flex flex-col justify-center space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-panel-muted">Status</span>
+              <span className={`text-sm font-bold ${pct < 100 ? 'text-panel-orange' : 'text-panel-green'}`}>
+                {upCnt} / {totCnt} Up
+              </span>
+            </div>
+            <div className="h-2 bg-panel-surface rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full ${pct < 100 ? 'bg-panel-orange' : 'bg-panel-green'} transition-all duration-500`}
+                style={{ width: `${Math.min(pct, 100)}%` }}
+              />
+            </div>
+            <div className="text-[11px] text-panel-muted text-right font-mono">{pct}% Verfügbarkeit</div>
+          </div>
+        </div>
+      );
+    }
+
+    if (cType === 'log_ticker') {
+      const recent = (activity || []).slice(0, 6);
+      return (
+        <div className="h-full flex flex-col bg-panel-card border border-panel-border/70 rounded-2xl overflow-hidden relative group/custom">
+          <div className="px-4 py-2 border-b border-panel-border/50 flex items-center justify-between flex-shrink-0">
+            <span className="text-xs font-semibold text-panel-text flex items-center gap-1.5">
+              <FileText size={13} className="text-panel-accent" />
+              {item.title || 'Live-Log-Ticker'}
+            </span>
+            <button
+              type="button"
+              onClick={() => removeCustomWidget(item.i)}
+              className="p-1 rounded-md text-panel-muted hover:text-panel-red transition-colors opacity-0 group-hover/custom:opacity-100 cursor-pointer"
+              title="Widget löschen"
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-3 space-y-2 font-mono text-[11px]">
+            {recent.length === 0 ? (
+              <div className="text-panel-muted/70 text-center py-2">Keine neueren Log-Ereignisse.</div>
+            ) : recent.map((e, idx) => (
+              <div key={idx} className="flex items-start gap-2 border-b border-panel-border/30 pb-1.5 last:border-0">
+                <span className={`w-1.5 h-1.5 rounded-full mt-1 flex-shrink-0 ${e.severity === 'danger' ? 'bg-panel-red' : e.severity === 'warning' ? 'bg-panel-orange' : 'bg-panel-green'}`} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-panel-text truncate">{e.title}</div>
+                  <div className="text-panel-muted text-[10px] truncate">{e.sub}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
 
   // Mobil: einspaltig gestapelt (kein Drag/Resize) → schnelle, saubere Anzeige
   const isMobile = useIsMobile();
@@ -736,8 +1184,14 @@ export default function Dashboard({ liveStats }) {
         <span className="flex items-center gap-1.5 ml-auto">
           <Activity size={13} />Live · Auto-Refresh {Math.round(liveInterval / 1000)}s
         </span>
+        <button
+          onClick={() => setShowAddWidget(true)}
+          className="flex items-center gap-1 px-2.5 py-1 bg-panel-accent/10 border border-panel-accent/40 text-panel-accent hover:bg-panel-accent hover:text-white rounded-md transition-colors cursor-pointer font-medium"
+        >
+          <Plus size={13} /> Widget hinzufügen
+        </button>
         <button onClick={resetLayout} title="Auf Standard-Anordnung zurücksetzen"
-          className="flex items-center gap-1 hover:text-panel-text transition-colors">
+          className="flex items-center gap-1 hover:text-panel-text transition-colors cursor-pointer">
           <RotateCcw size={12} />Layout zurücksetzen
         </button>
       </div>
@@ -762,7 +1216,7 @@ export default function Dashboard({ liveStats }) {
           <div key={it.i} className="group relative">
             <button type="button"
               className="wdrag absolute top-2 right-2 z-10 p-1 rounded-md bg-panel-surface/90 border border-panel-border/60 text-panel-muted opacity-0 group-hover:opacity-100 transition-opacity cursor-move"
-              title={`${widgetTitle(it.i, serverName)} verschieben`}
+              title={`${widgetTitle(it.i, serverName, it)} verschieben`}
               aria-label="Widget verschieben"
             >
               <GripVertical size={13} />
@@ -771,6 +1225,14 @@ export default function Dashboard({ liveStats }) {
           </div>
         ))}
       </GridLayout>
+
+      <AddWidgetModal
+        isOpen={showAddWidget}
+        onClose={() => setShowAddWidget(false)}
+        onAdd={addCustomWidget}
+        serverKeys={serverKeys}
+        serverName={serverName}
+      />
     </div>
   );
 }
