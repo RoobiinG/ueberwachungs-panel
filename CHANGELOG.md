@@ -4,6 +4,19 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.54.2] - 2026-08-01 (Build 289) — *Gemeinsame KI-Roadmap & Entwicklungsplan für zukünftige Phasen*
+
+### 📚 Dokumentation & KI-Agenten-Architektur
+- **Neue Projekt-Roadmap (`ROADMAP.md`)**: Erstellung des zentralen Entwicklungsplans im Projekt-Root für alle KI-Assistenten (Claude Code & Antigravity IDE). Enthält eine vollständige Bestandsaufnahme der umgesetzten Neuerungen (Modul 1 & Modul 2, feingranulare Rechte, User-Metadaten) sowie spezifizierte Architektur- und API-Konzepte für die nächsten Module (Modul 3 bis Modul 6).
+- **Verweis in `AGENTS.md`**: Erweitert das zentrale Agenten-Regelwerk (`AGENTS.md`) um Abschnitt 6 mit direkteinsehbaren Verweisen auf `ROADMAP.md`, damit nachfolgende Assistenten sofort an den nächsten Phasen (Prozess-Manager, Server-Notizbuch, Discord-Webhooks, Docker Stack Control) ansetzen können.
+
+### ⚙️ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank-Migrationen**: Keine Änderungen am Schema; rein dokumentarische Erweiterung für den Entwicklungs-Workflow.
+- **Agent-Kompatibilität**: Unverändert.
+- **Neustart-/Session-Verhalten**: Keine Auswirkungen auf bestehende Container oder Sitzungen.
+
+---
+
 ## [1.54.1] - 2026-08-01 (Build 288) — *Fix für Custom-Widget Titel-Parameter im Dashboard*
 
 ### 🐛 Bugfixes & Stabilität
