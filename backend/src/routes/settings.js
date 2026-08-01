@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const axios = require('axios');
 const db = require('../db');
-const requireRole = require('../middleware/roles');
+const { requirePermission } = require('../middleware/requirePermission');
 const { auditLog } = require('../utils/audit');
 
 const SENSITIVE = ['hetzner_api_token', 'mchost_password', 'mchost_api_token', 'smtp_pass', 'github_token'];
@@ -11,7 +11,7 @@ const set = (key, value) => db.prepare('INSERT OR REPLACE INTO settings (key, va
 const del = (key) => db.prepare('DELETE FROM settings WHERE key = ?').run(key);
 
 // Alle Settings lesen — sensible Werte nur als "gesetzt/nicht gesetzt" zurückgeben
-router.get('/', requireRole('admin'), (req, res) => {
+router.get('/', requirePermission('settings.view'), (req, res) => {
   res.json({
     hetzner_api_token: get('hetzner_api_token') ? '***gesetzt***' : '',
     mchost_username:   get('mchost_username'),
@@ -29,7 +29,7 @@ router.get('/', requireRole('admin'), (req, res) => {
 
 
 // Hetzner Token speichern
-router.put('/hetzner', requireRole('admin'), (req, res) => {
+router.put('/hetzner', requirePermission('settings.manage'), (req, res) => {
   const { token } = req.body;
   if (!token) return res.status(400).json({ error: 'Token erforderlich' });
   set('hetzner_api_token', token.trim());
@@ -37,13 +37,13 @@ router.put('/hetzner', requireRole('admin'), (req, res) => {
 });
 
 // Hetzner Token löschen
-router.delete('/hetzner', requireRole('admin'), (req, res) => {
+router.delete('/hetzner', requirePermission('settings.manage'), (req, res) => {
   del('hetzner_api_token');
   res.json({ success: true });
 });
 
 // MC-Host24 Login: Username + Passwort speichern und Token holen
-router.post('/mchost/login', requireRole('admin'), async (req, res) => {
+router.post('/mchost/login', requirePermission('settings.manage'), async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username und Passwort erforderlich' });
 
@@ -78,7 +78,7 @@ router.post('/mchost/login', requireRole('admin'), async (req, res) => {
 });
 
 // MC-Host24 Credentials löschen
-router.delete('/mchost', requireRole('admin'), (req, res) => {
+router.delete('/mchost', requirePermission('settings.manage'), (req, res) => {
   del('mchost_username');
   del('mchost_password');
   del('mchost_api_token');
@@ -86,7 +86,7 @@ router.delete('/mchost', requireRole('admin'), (req, res) => {
 });
 
 // MC-Host24 Token manuell erneuern
-router.post('/mchost/refresh', requireRole('admin'), async (req, res) => {
+router.post('/mchost/refresh', requirePermission('settings.manage'), async (req, res) => {
   const username = get('mchost_username');
   const password = get('mchost_password');
   if (!username || !password) return res.status(400).json({ error: 'Keine Zugangsdaten hinterlegt' });
@@ -111,7 +111,7 @@ router.post('/mchost/refresh', requireRole('admin'), async (req, res) => {
 
 // ─── SMTP-Konfiguration ───────────────────────────────────────────────────────
 
-router.put('/smtp', requireRole('admin'), (req, res) => {
+router.put('/smtp', requirePermission('settings.manage'), (req, res) => {
   const { host, port, user, pass, from, secure } = req.body;
   if (host !== undefined) set('smtp_host', host.trim());
   if (port !== undefined) set('smtp_port', String(port));
@@ -123,7 +123,7 @@ router.put('/smtp', requireRole('admin'), (req, res) => {
   res.json({ success: true });
 });
 
-router.post('/smtp/test', requireRole('admin'), async (req, res) => {
+router.post('/smtp/test', requirePermission('settings.manage'), async (req, res) => {
   const adminUser = db.prepare('SELECT email FROM users WHERE id = ?').get(req.user.id);
   const toEmail   = req.body.email || adminUser?.email;
   if (!toEmail) return res.status(400).json({ error: 'Keine Test-E-Mail-Adresse angegeben — E-Mail in Profil hinterlegen oder im Body mitschicken' });
@@ -160,7 +160,7 @@ router.get('/general', (req, res) => {
   res.json({ liveRefreshInterval: secs * 1000 });
 });
 
-router.put('/general', requireRole('admin'), (req, res) => {
+router.put('/general', requirePermission('settings.manage'), (req, res) => {
   const { liveRefreshInterval } = req.body;
   if (liveRefreshInterval !== undefined) {
     const secs = Math.max(5, Math.min(300, parseInt(liveRefreshInterval, 10) || 15));
@@ -171,7 +171,7 @@ router.put('/general', requireRole('admin'), (req, res) => {
 });
 
 // ── Aktions-Benachrichtigungen ────────────────────────────────────────────────
-router.get('/notifications', requireRole('admin'), (req, res) => {
+router.get('/notifications', requirePermission('settings.view'), (req, res) => {
   const wid = get('action_webhook_id');
   res.json({
     actionNotifications: get('action_notifications') === '1',
@@ -179,7 +179,7 @@ router.get('/notifications', requireRole('admin'), (req, res) => {
   });
 });
 
-router.put('/notifications', requireRole('admin'), (req, res) => {
+router.put('/notifications', requirePermission('settings.manage'), (req, res) => {
   const { actionNotifications, actionWebhookId } = req.body;
   if (actionNotifications !== undefined)
     set('action_notifications', actionNotifications ? '1' : '0');
@@ -189,20 +189,20 @@ router.put('/notifications', requireRole('admin'), (req, res) => {
 });
 
 // ── GitHub Personal Access Token (für Update-Check im privaten Repo) ─────────
-router.put('/github', requireRole('admin'), (req, res) => {
+router.put('/github', requirePermission('settings.manage'), (req, res) => {
   const { token } = req.body;
   if (!token) return res.status(400).json({ error: 'Token erforderlich' });
   set('github_token', token.trim());
   auditLog(req, 'settings.github', 'settings', 'github_token');
   res.json({ success: true });
 });
-router.delete('/github', requireRole('admin'), (req, res) => {
+router.delete('/github', requirePermission('settings.manage'), (req, res) => {
   del('github_token');
   res.json({ success: true });
 });
 
 // ── GitHub Token Verbindung und Gültigkeit prüfen ─────────────────────────────
-router.post('/github/test', requireRole('admin'), async (req, res) => {
+router.post('/github/test', requirePermission('settings.manage'), async (req, res) => {
   const token = req.body.token ? req.body.token.trim() : get('github_token');
   if (!token) {
     return res.status(400).json({ error: 'Kein GitHub Token zum Testen angegeben oder gespeichert.' });
@@ -255,7 +255,7 @@ router.get('/modules', (req, res) => {
   }
 });
 
-router.put('/modules', requireRole('admin'), (req, res) => {
+router.put('/modules', requirePermission('settings.manage'), (req, res) => {
   try {
     const { modules } = req.body;
     const raw = get('enabled_modules');

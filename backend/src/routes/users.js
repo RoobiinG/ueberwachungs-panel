@@ -1,17 +1,17 @@
 const router = require('express').Router();
 const bcrypt = require('bcryptjs');
 const db = require('../db');
-const requireRole = require('../middleware/roles');
+const { requirePermission } = require('../middleware/requirePermission');
 const { auditLog } = require('../utils/audit');
 
-router.get('/', requireRole('admin'), (req, res) => {
-  const users = db.prepare('SELECT id, username, role, created_at FROM users').all();
+router.get('/', requirePermission('users.view'), (req, res) => {
+  const users = db.prepare('SELECT id, username, role, created_at, last_login, last_login_ip, last_login_from FROM users').all();
   const roles = db.prepare('SELECT name, label FROM roles').all();
   const roleMap = Object.fromEntries(roles.map(r => [r.name, r.label]));
   res.json(users.map(u => ({ ...u, roleLabel: roleMap[u.role] || u.role })));
 });
 
-router.post('/', requireRole('admin'), (req, res) => {
+router.post('/', requirePermission('users.manage'), (req, res) => {
   const { username, password, role = 'guest' } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
   // Rolle muss in der roles-Tabelle existieren (außer admin — schreibgeschützt)
@@ -29,7 +29,7 @@ router.post('/', requireRole('admin'), (req, res) => {
   }
 });
 
-router.put('/:id', requireRole('admin'), (req, res) => {
+router.put('/:id', requirePermission('users.manage'), (req, res) => {
   const { role, password } = req.body;
   const userId = parseInt(req.params.id);
 
@@ -55,7 +55,7 @@ router.put('/:id', requireRole('admin'), (req, res) => {
   res.json({ success: true });
 });
 
-router.delete('/:id', requireRole('admin'), (req, res) => {
+router.delete('/:id', requirePermission('users.manage'), (req, res) => {
   const userId = parseInt(req.params.id);
   if (userId === req.user.id) return res.status(400).json({ error: 'Cannot delete yourself' });
   const delUser = db.prepare('SELECT username FROM users WHERE id = ?').get(userId);

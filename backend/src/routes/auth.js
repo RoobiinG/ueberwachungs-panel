@@ -294,7 +294,7 @@ router.post('/reset-password', async (req, res) => {
 // ─── Auth-pflichtiger Bereich ─────────────────────────────────────────────────
 
 router.get('/me', authMiddleware, (req, res) => {
-  const user = db.prepare('SELECT id, username, role, email, twofa_type, created_at FROM users WHERE id = ?').get(req.user.id);
+  const user = db.prepare('SELECT id, username, role, email, twofa_type, created_at, last_login, last_login_ip, last_login_from FROM users WHERE id = ?').get(req.user.id);
   if (!user) return res.status(404).json({ error: 'Benutzer nicht gefunden' });
   const permissions = getPermissions(user.role);
   // Rollenbezeichnung + hide_local-Flag aus der roles-Tabelle holen

@@ -658,7 +658,7 @@ function SessionsSection({ isAdmin }) {
 }
 
 export default function Settings() {
-  const { isAdmin, hasPermission } = useAuth();
+  const { user, isAdmin, hasPermission } = useAuth();
   const [tab, setTab]     = useState('profile'); // 'profile' | 'system'
 
   const [status,  setStatus]  = useState({});
@@ -1160,6 +1160,40 @@ export default function Settings() {
       {/* ═══════════════════ TAB 1: PROFIL & SICHERHEIT ═══════════════════ */}
       {tab === 'profile' && (
         <div className="columns-1 lg:columns-2 gap-4 [&>*]:mb-4 [&>*]:break-inside-avoid">
+          {/* ── Konto-Informationen ── */}
+          <Card title={<span className="flex items-center gap-2"><User size={14} />Konto-Informationen</span>}>
+            <div className="space-y-3 text-sm">
+              <div className="flex items-center justify-between pb-2 border-b border-panel-border">
+                <span className="text-panel-muted text-xs">Benutzername</span>
+                <span className="font-medium text-panel-text">{user?.username}</span>
+              </div>
+              <div className="flex items-center justify-between pb-2 border-b border-panel-border">
+                <span className="text-panel-muted text-xs">Rolle</span>
+                <span className="font-medium text-panel-accent">{user?.roleLabel || user?.role}</span>
+              </div>
+              <div className="flex items-center justify-between pb-2 border-b border-panel-border">
+                <span className="text-panel-muted text-xs">Registriert am</span>
+                <span className="text-panel-text text-xs">
+                  {user?.created_at ? new Date(user.created_at).toLocaleDateString('de-DE') : '—'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between pb-2 border-b border-panel-border">
+                <span className="text-panel-muted text-xs">Letzter Login</span>
+                <span className="text-panel-text text-xs">
+                  {user?.last_login ? new Date(user.last_login).toLocaleString('de-DE') : 'Bisher kein Login-Eintrag'}
+                </span>
+              </div>
+              {(user?.last_login_ip || user?.last_login_from) && (
+                <div className="flex items-center justify-between">
+                  <span className="text-panel-muted text-xs">Login-Standort</span>
+                  <span className="text-panel-text text-xs">
+                    {user?.last_login_ip || '?'}{user?.last_login_from ? ` (${user.last_login_from})` : ''}
+                  </span>
+                </div>
+              )}
+            </div>
+          </Card>
+
           {/* ── Passwort ändern ── */}
           <Card title={<span className="flex items-center gap-2"><Lock size={14} />Passwort ändern</span>}>
             <div className="space-y-3">

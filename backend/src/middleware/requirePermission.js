@@ -21,11 +21,12 @@ function getPermissions(roleName) {
  * Middleware: erlaubt nur wenn der Nutzer die angegebene Berechtigung hat.
  * requirePermission('docker.control')
  */
-function requirePermission(key) {
+function requirePermission(keys) {
+  const needed = Array.isArray(keys) ? keys : [keys];
   return (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'Authentifizierung erforderlich' });
     const perms = getPermissions(req.user.role);
-    if (!perms.includes(key)) return res.status(403).json({ error: 'Keine Berechtigung' });
+    if (!needed.some(k => perms.includes(k))) return res.status(403).json({ error: 'Keine Berechtigung' });
     next();
   };
 }

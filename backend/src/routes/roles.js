@@ -1,6 +1,6 @@
 const router     = require('express').Router();
 const db         = require('../db');
-const requireRole = require('../middleware/roles');
+const { requirePermission } = require('../middleware/requirePermission');
 const { PERMISSIONS, ALL_KEYS } = require('../permissions');
 const { auditLog } = require('../utils/audit');
 
@@ -8,17 +8,17 @@ const getRole  = (id) => db.prepare('SELECT * FROM roles WHERE id = ?').get(id);
 const allRoles = ()   => db.prepare('SELECT id, name, label, is_system, is_admin, restrict_agents, restrict_mchost, hide_local, created_at FROM roles ORDER BY is_admin DESC, is_system DESC, label').all();
 
 // ─── Alle Rollen listen (für Dropdown in Benutzerverwaltung) ──────────────────
-router.get('/', requireRole('admin'), (req, res) => {
+router.get('/', requirePermission(['users.manage', 'roles.manage', 'users.view']), (req, res) => {
   res.json(allRoles());
 });
 
 // ─── Alle Berechtigungs-Definitionen (für UI) ─────────────────────────────────
-router.get('/permissions', requireRole('admin'), (req, res) => {
+router.get('/permissions', requirePermission('roles.manage'), (req, res) => {
   res.json(PERMISSIONS);
 });
 
 // ─── Berechtigungen einer Rolle abrufen ───────────────────────────────────────
-router.get('/:id/permissions', requireRole('admin'), (req, res) => {
+router.get('/:id/permissions', requirePermission('roles.manage'), (req, res) => {
   const role = getRole(req.params.id);
   if (!role) return res.status(404).json({ error: 'Rolle nicht gefunden' });
   if (role.is_admin) return res.json(ALL_KEYS);
@@ -28,7 +28,7 @@ router.get('/:id/permissions', requireRole('admin'), (req, res) => {
 });
 
 // ─── Berechtigungen einer Rolle setzen (ersetzt komplett) ─────────────────────
-router.put('/:id/permissions', requireRole('admin'), (req, res) => {
+router.put('/:id/permissions', requirePermission('roles.manage'), (req, res) => {
   const role = getRole(req.params.id);
   if (!role) return res.status(404).json({ error: 'Rolle nicht gefunden' });
   if (role.is_admin) return res.status(403).json({ error: 'Admin-Rolle kann nicht bearbeitet werden' });
@@ -50,7 +50,7 @@ router.put('/:id/permissions', requireRole('admin'), (req, res) => {
 });
 
 // ─── Server-Zuweisungen einer Rolle abrufen ───────────────────────────────────
-router.get('/:id/agents', requireRole('admin'), (req, res) => {
+router.get('/:id/agents', requirePermission('roles.manage'), (req, res) => {
   const role = getRole(req.params.id);
   if (!role) return res.status(404).json({ error: 'Rolle nicht gefunden' });
   const agentIds = db.prepare('SELECT agent_id FROM agent_grants WHERE role_id = ?')
@@ -59,7 +59,7 @@ router.get('/:id/agents', requireRole('admin'), (req, res) => {
 });
 
 // ─── Server-Zuweisungen einer Rolle setzen ────────────────────────────────────
-router.put('/:id/agents', requireRole('admin'), (req, res) => {
+router.put('/:id/agents', requirePermission('roles.manage'), (req, res) => {
   const role = getRole(req.params.id);
   if (!role) return res.status(404).json({ error: 'Rolle nicht gefunden' });
   if (role.is_admin) return res.status(403).json({ error: 'Admin-Rolle kann nicht eingeschränkt werden' });
@@ -82,7 +82,7 @@ router.put('/:id/agents', requireRole('admin'), (req, res) => {
 });
 
 // ─── MC-Host24 VServer-Einschränkung einer Rolle ──────────────────────────────
-router.get('/:id/mchost', requireRole('admin'), (req, res) => {
+router.get('/:id/mchost', requirePermission('roles.manage'), (req, res) => {
   const role = getRole(req.params.id);
   if (!role) return res.status(404).json({ error: 'Rolle nicht gefunden' });
   const vserverIds = db.prepare('SELECT vserver_id FROM mchost_vserver_access WHERE role_id = ?')
@@ -90,7 +90,7 @@ router.get('/:id/mchost', requireRole('admin'), (req, res) => {
   res.json({ restrictMchost: !!role.restrict_mchost, vserverIds });
 });
 
-router.put('/:id/mchost', requireRole('admin'), (req, res) => {
+router.put('/:id/mchost', requirePermission('roles.manage'), (req, res) => {
   const role = getRole(req.params.id);
   if (!role) return res.status(404).json({ error: 'Rolle nicht gefunden' });
   if (role.is_admin) return res.status(403).json({ error: 'Admin-Rolle kann nicht eingeschränkt werden' });
@@ -110,7 +110,7 @@ router.put('/:id/mchost', requireRole('admin'), (req, res) => {
 });
 
 // ─── Neue Rolle erstellen ─────────────────────────────────────────────────────
-router.post('/', requireRole('admin'), (req, res) => {
+router.post('/', requirePermission('roles.manage'), (req, res) => {
   const { label, permissions = [] } = req.body;
   if (!label?.trim()) return res.status(400).json({ error: 'Label erforderlich' });
 
@@ -143,7 +143,7 @@ router.post('/', requireRole('admin'), (req, res) => {
 });
 
 // ─── Rolle umbenennen (nur Label, nicht name) ─────────────────────────────────
-router.put('/:id', requireRole('admin'), (req, res) => {
+router.put('/:id', requirePermission('roles.manage'), (req, res) => {
   const role = getRole(req.params.id);
   if (!role) return res.status(404).json({ error: 'Rolle nicht gefunden' });
   if (role.is_admin) return res.status(403).json({ error: 'Admin-Rolle kann nicht bearbeitet werden' });
@@ -156,7 +156,7 @@ router.put('/:id', requireRole('admin'), (req, res) => {
 });
 
 // ─── Rolle löschen (nicht System-Rollen) ─────────────────────────────────────
-router.delete('/:id', requireRole('admin'), (req, res) => {
+router.delete('/:id', requirePermission('roles.manage'), (req, res) => {
   const role = getRole(req.params.id);
   if (!role) return res.status(404).json({ error: 'Rolle nicht gefunden' });
   if (role.is_system) return res.status(403).json({ error: 'System-Rollen können nicht gelöscht werden' });

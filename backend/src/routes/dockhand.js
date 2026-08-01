@@ -5,10 +5,10 @@
 // POST /api/dockhand/test            → Verbindung testen
 // PUT  /api/agents/:id/dockhand-env  → dockhand_env_id eines Agents setzen
 
-const router      = require('express').Router();
-const db          = require('../db');
-const requireRole = require('../middleware/roles');
-const dockhand    = require('../utils/dockhandClient');
+const router            = require('express').Router();
+const db                = require('../db');
+const { requirePermission } = require('../middleware/requirePermission');
+const dockhand          = require('../utils/dockhandClient');
 
 const getSetting = k =>
   db.prepare('SELECT value FROM settings WHERE key = ?').get(k)?.value ?? null;
@@ -16,7 +16,7 @@ const setSetting = (k, v) =>
   db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(k, v);
 
 // ── GET /api/dockhand/config ──────────────────────────────────────────────────
-router.get('/config', requireRole('admin'), (req, res) => {
+router.get('/config', requirePermission('settings.view'), (req, res) => {
   res.json({
     url:          getSetting('dockhandUrl')        || '',
     hasToken:     !!getSetting('dockhandApiToken'),
@@ -25,7 +25,7 @@ router.get('/config', requireRole('admin'), (req, res) => {
 });
 
 // ── POST /api/dockhand/config ─────────────────────────────────────────────────
-router.post('/config', requireRole('admin'), (req, res) => {
+router.post('/config', requirePermission('settings.manage'), (req, res) => {
   const { url, apiToken, localEnvId } = req.body;
   if (url        !== undefined) setSetting('dockhandUrl',        url.trim());
   if (apiToken   !== undefined) setSetting('dockhandApiToken',   apiToken.trim());
@@ -34,7 +34,7 @@ router.post('/config', requireRole('admin'), (req, res) => {
 });
 
 // ── GET /api/dockhand/environments ────────────────────────────────────────────
-router.get('/environments', requireRole('admin'), async (req, res) => {
+router.get('/environments', requirePermission('settings.view'), async (req, res) => {
   try {
     const { data } = await dockhand.getEnvironments();
     res.json(Array.isArray(data) ? data : []);
@@ -44,7 +44,7 @@ router.get('/environments', requireRole('admin'), async (req, res) => {
 });
 
 // ── POST /api/dockhand/test ───────────────────────────────────────────────────
-router.post('/test', requireRole('admin'), async (req, res) => {
+router.post('/test', requirePermission('settings.manage'), async (req, res) => {
   const { url, apiToken } = req.body;
 
   // Alte Werte merken — bei Fehler wird zurückgerollt damit funktionierende
@@ -69,7 +69,7 @@ router.post('/test', requireRole('admin'), async (req, res) => {
 
 // ── PUT /api/dockhand/agent-env ───────────────────────────────────────────────
 // Setzt dockhand_env_id für einen Remote-Agent
-router.put('/agent-env', requireRole('admin'), (req, res) => {
+router.put('/agent-env', requirePermission('agents.edit'), (req, res) => {
   const { agentId, envId } = req.body;
   if (!agentId) return res.status(400).json({ error: 'agentId fehlt' });
   const agent = db.prepare('SELECT id FROM remote_agents WHERE id = ?').get(agentId);

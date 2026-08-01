@@ -6,10 +6,10 @@
 // GET  /api/logs          → Admin liest alle Logs (paginiert)
 // DELETE /api/logs        → Admin löscht alle Logs
 
-const router      = require('express').Router();
-const crypto      = require('crypto');
-const db          = require('../db');
-const requireRole = require('../middleware/roles');
+const router            = require('express').Router();
+const crypto            = require('crypto');
+const db                = require('../db');
+const { requirePermission } = require('../middleware/requirePermission');
 
 const MAX_LOGS = 500;   // Max. gespeicherte Einträge
 const MAX_MSG  = 2000;  // Max. Länge einer Nachricht
@@ -48,7 +48,7 @@ router.post('/', (req, res) => {
 });
 
 // ── GET /api/logs  (Admin → lesen) ───────────────────────────────────────────
-router.get('/', requireRole('admin'), (req, res) => {
+router.get('/', requirePermission('settings.view'), (req, res) => {
   const limit  = Math.min(parseInt(req.query.limit)  || 100, 500);
   const offset = parseInt(req.query.offset) || 0;
   const level  = req.query.level;
@@ -74,13 +74,13 @@ router.get('/', requireRole('admin'), (req, res) => {
 });
 
 // ── DELETE /api/logs  (Admin → alle löschen) ─────────────────────────────────
-router.delete('/', requireRole('admin'), (req, res) => {
+router.delete('/', requirePermission('settings.manage'), (req, res) => {
   db.prepare('DELETE FROM panel_logs').run();
   res.json({ ok: true });
 });
 
 // ── DELETE /api/logs/bulk  (Admin → ausgewählte löschen) ──────────────────────
-router.delete('/bulk', requireRole('admin'), (req, res) => {
+router.delete('/bulk', requirePermission('settings.manage'), (req, res) => {
   const { ids } = req.body;
   if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids fehlt' });
   const safeIds = ids.map(Number).filter(n => Number.isFinite(n) && n > 0);
@@ -91,13 +91,13 @@ router.delete('/bulk', requireRole('admin'), (req, res) => {
 });
 
 // ── GET /api/logs/sources  (Admin → distincte Quellen für Filter) ─────────────
-router.get('/sources', requireRole('admin'), (req, res) => {
+router.get('/sources', requirePermission('settings.view'), (req, res) => {
   const rows = db.prepare('SELECT DISTINCT source FROM panel_logs ORDER BY source').all();
   res.json(rows.map(r => r.source));
 });
 
 // ── POST /api/logs/share  (Admin → Share-Token erstellen) ─────────────────────
-router.post('/share', requireRole('admin'), (req, res) => {
+router.post('/share', requirePermission('settings.manage'), (req, res) => {
   const { ids, label } = req.body;
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids fehlt' });
   const safeIds = ids.map(Number).filter(n => Number.isFinite(n) && n > 0);
@@ -110,7 +110,7 @@ router.post('/share', requireRole('admin'), (req, res) => {
 });
 
 // ── GET /api/logs/shares  (Admin → alle Share-Links) ─────────────────────────
-router.get('/shares', requireRole('admin'), (req, res) => {
+router.get('/shares', requirePermission('settings.view'), (req, res) => {
   const shares = db.prepare(
     'SELECT id, token, log_ids, label, created_at, accessed_at, access_count FROM panel_log_shares ORDER BY created_at DESC'
   ).all();
@@ -118,7 +118,7 @@ router.get('/shares', requireRole('admin'), (req, res) => {
 });
 
 // ── DELETE /api/logs/shares/:id  (Admin → Link widerrufen) ───────────────────
-router.delete('/shares/:id', requireRole('admin'), (req, res) => {
+router.delete('/shares/:id', requirePermission('settings.manage'), (req, res) => {
   db.prepare('DELETE FROM panel_log_shares WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });

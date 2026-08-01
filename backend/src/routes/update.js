@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const updateCheck = require('../utils/updateCheck');
-const requireRole = require('../middleware/roles');
+const { requirePermission } = require('../middleware/requirePermission');
 const { exec, execFile } = require('child_process');
 const util = require('util');
 const execPromise = util.promisify(exec);
@@ -39,7 +39,7 @@ const UPDATE_SPERRE_MS = 10 * 60 * 1000;
 let updateLaeuftSeit = 0;
 
 // Update-Status abrufen
-router.get('/status', async (req, res) => {
+router.get('/status', requirePermission('system.update'), async (req, res) => {
   try {
     const force = req.query.force === 'true';
     const status = await updateCheck.checkUpdates(force);
@@ -50,7 +50,7 @@ router.get('/status', async (req, res) => {
 });
 
 // Automatischen Panel-Update durchführen (Git Pull + Changelog + Neustart)
-router.post('/run', requireRole('admin'), async (req, res) => {
+router.post('/run', requirePermission('system.update'), async (req, res) => {
   if (updateLaeuftSeit && Date.now() - updateLaeuftSeit < UPDATE_SPERRE_MS) {
     const seit = Math.round((Date.now() - updateLaeuftSeit) / 1000);
     return res.status(409).json({
@@ -393,7 +393,7 @@ router.get('/changelog', async (req, res) => {
 });
 
 // ── GET /api/update/targets ──────────────────────────────────────────────────
-router.get('/targets', requireRole('admin'), async (req, res) => {
+router.get('/targets', requirePermission('system.update'), async (req, res) => {
   const currentTarget = db.prepare("SELECT value FROM settings WHERE key = 'panel_container'").get()?.value || '';
   const targets = [];
   const addedIds = new Set();
@@ -452,7 +452,7 @@ router.get('/targets', requireRole('admin'), async (req, res) => {
 });
 
 // ── PUT /api/update/target ───────────────────────────────────────────────────
-router.put('/target', requireRole('admin'), (req, res) => {
+router.put('/target', requirePermission('system.update'), (req, res) => {
   const { target } = req.body;
   const val = (target || '').trim();
   // Leerer Wert = automatische Erkennung. Alles andere muss ein zulässiger Docker-Name sein,

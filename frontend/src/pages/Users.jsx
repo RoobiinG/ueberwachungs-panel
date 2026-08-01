@@ -81,7 +81,18 @@ export default function Users() {
                     {u.id === me?.id && <span className="text-panel-muted text-xs">(Du)</span>}
                     {u.role === 'admin' && <Lock size={11} className="text-panel-orange" />}
                   </div>
-                  <div className="text-xs text-panel-muted">{new Date(u.created_at).toLocaleDateString('de-DE')}</div>
+                  <div className="text-xs text-panel-muted flex flex-wrap items-center gap-2 mt-0.5">
+                    <span>Erstellt: {new Date(u.created_at).toLocaleDateString('de-DE')}</span>
+                    {u.last_login ? (
+                      <span className="flex items-center gap-1 text-panel-text/80 bg-panel-surface border border-panel-border px-1.5 py-0.5 rounded">
+                        Letzter Login: {new Date(u.last_login).toLocaleString('de-DE')}
+                        {u.last_login_ip && ` • ${u.last_login_ip}`}
+                        {u.last_login_from && ` (${u.last_login_from})`}
+                      </span>
+                    ) : (
+                      <span className="text-panel-muted/60 italic">Bisher kein Login</span>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-2">

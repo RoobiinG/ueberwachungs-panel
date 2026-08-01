@@ -4,6 +4,25 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.53.0] - 2026-08-01 (Build 285) — *Feingranulares Rechtesystem & erweiterte Konto-Metadaten*
+
+### 🔒 Sicherheit & Berechtigungen
+- **Vollständige Migration auf feingranulares Rechtesystem (`requirePermission`)**: Alle restlichen Backend-Routen (`settings.js`, `users.js`, `roles.js`, `panelLogs.js`, `dockhand.js`) wurden von starren `requireRole('admin')`-Prüfungen auf dynamische Berechtigungs-Checks umgestellt.
+- **Eigenes Recht für das Updatesystem (`system.update`)**: Das Systemupdate unter Einstellungen (`/api/update/*`) wird nun über eine eigene Berechtigung (`system.update`) gesteuert und erlaubt damit eine entkoppelte und gezielte Vergabe von Update-Rechten unabhängig vom allgemeinen Systemverwaltungs-Recht.
+- **Erweiterung der Berechtigungs-Middleware**: Die Middleware `requirePermission` akzeptiert ab sofort auch Arrays von Berechtigungs-Keys (ODER-Verknüpfung), sodass gemeinsame Lese-Endpunkte flexibel durch mehrere passende Berechtigungen genutzt werden können.
+
+### 👤 Benutzer-Metadaten & Konto-Informationen
+- **Erweiterte Login-Metadaten**: Erfassung und automatische Speicherung des letzten Login-Zeitpunkts (`last_login`), der IP-Adresse (`last_login_ip`) und des Herkunftslands/Standorts (`last_login_from`) in der `users`-Tabelle bei jeder Anmeldung im Panel.
+- **Konto-Informationen im Profil (`Settings.jsx`)**: Neuer Informationsbereich unter *Einstellungen → Profil & Sicherheit*, der angemeldeten Benutzern Details zum eigenen Konto (Benutzername, Rolle, Registrierungsdatum, letzter Login-Zeitpunkt und Login-Standort) übersichtlich darstellt.
+- **Letzter Login in der Benutzerverwaltung (`Users.jsx`)**: Erweiterung der Benutzerliste im Frontend um die Anzeige des letzten Logins (inkl. Datum, Uhrzeit, IP-Adresse und Standort) zusätzlich zum Erstellungsdatum.
+
+### ⚙️ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank-Migrationen**: Automatische Schema-Erweiterung für die Tabelle `users` um die neuen Spalten `last_login` (TEXT), `last_login_ip` (TEXT) und `last_login_from` (TEXT) im Try-Catch-Verfahren (`backend/src/db.js`).
+- **Agent-Kompatibilität**: Keine Änderungen am Kommunikationsprotokoll der Remote-Agenten (`panel-agent.js`).
+- **Neustart-/Session-Verhalten**: Bestehende Benutzer-Sitzungen bleiben gültig. Die erweiterten Login-Metadaten werden ab dem nächsten Login neu aufgezeichnet und in der Benutzeroberfläche angezeigt.
+
+---
+
 ## [1.52.3] - 2026-08-01 (Build 284) — *PatchMon-Alert-Auswertung & präzises Dockhand-Stack-Matching*
 
 ### 🐛 Bugfixes & Optimierungen

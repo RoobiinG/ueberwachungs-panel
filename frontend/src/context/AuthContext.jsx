@@ -21,7 +21,17 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     if (!token) return;
     axios.get('/api/auth/me').then(r => {
-      const u = { id: r.data.id, username: r.data.username, role: r.data.role, roleLabel: r.data.roleLabel };
+      const u = {
+        id: r.data.id,
+        username: r.data.username,
+        role: r.data.role,
+        roleLabel: r.data.roleLabel,
+        email: r.data.email,
+        created_at: r.data.created_at,
+        last_login: r.data.last_login,
+        last_login_ip: r.data.last_login_ip,
+        last_login_from: r.data.last_login_from,
+      };
       const hl = !!r.data.hideLocal;
       setUser(u);
       setPermissions(r.data.permissions || []);
@@ -37,7 +47,17 @@ export const AuthProvider = ({ children }) => {
   }, [token]);
 
   const saveSession = useCallback((userData, tokenStr, perms = [], hl = false) => {
-    const u = { id: userData.id, username: userData.username, role: userData.role, roleLabel: userData.roleLabel };
+    const u = {
+      id: userData.id,
+      username: userData.username,
+      role: userData.role,
+      roleLabel: userData.roleLabel,
+      email: userData.email,
+      created_at: userData.created_at,
+      last_login: userData.last_login,
+      last_login_ip: userData.last_login_ip,
+      last_login_from: userData.last_login_from,
+    };
     setUser(u);
     setToken(tokenStr);
     setPermissions(perms);
