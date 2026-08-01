@@ -4,6 +4,19 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.52.0] - 2026-08-01 (Build 281) — *E-Mail-Warnung bei fehlerhaften Login-Versuchen*
+
+### ✨ Neue Funktionen & Features
+- **Sicherheitswarnung per E-Mail bei fehlerhaften Login-Versuchen (`auth.js`, `AuditLog.jsx`)**: Wird beim Login (`POST /api/login`) ein gültiger Benutzername mit einem falschen Passwort verwendet, versendet das Backend automatisch eine Sicherheitswarnung per E-Mail an die im Benutzerkonto hinterlegte Adresse (`user.email`). Die E-Mail enthält Datum und Uhrzeit, die ermittelte IP-Adresse sowie Angaben zum Gerät bzw. Browser (`User-Agent`). Der Versand erfolgt asynchron, sodass die HTTP-Antwort nicht verzögert oder blockiert wird.
+- **Erweitertes Audit-Logging für fehlerhafte Logins (`auth.js`, `AuditLog.jsx`)**: Fehlgeschlagene Login-Versuche mit falschem Passwort werden nun explizit als Audit-Ereignis (`login.failed`) mit dem Grund `"Falsches Passwort"` protokolliert und im Frontend unter *Audit-Protokoll* mit einem roten Warn-Badge (`Login fehlgeschlagen`, Icon `Lock`) hervorgehoben.
+
+### ⚙️ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank-Migrationen**: Keine Datenbankmigrationen erforderlich.
+- **Agent-Kompatibilität**: Keine Änderungen an der Kommunikation zwischen Server und Remote-Agenten (`panel-agent.js`).
+- **Neustart-/Session-Verhalten**: Ein Neustart des Backends ist erforderlich, um den neuen E-Mail-Versand und das Audit-Logging für fehlerhafte Anmeldeversuche zu aktivieren. Bestehende Sitzungen sind nicht betroffen.
+
+---
+
 ## [1.51.2] - 2026-07-31 (Build 280) — *Robustes Docker-Update & gehärtetes Image*
 
 ### 🐛 Bugfixes & Optimierungen
