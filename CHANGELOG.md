@@ -2,22 +2,49 @@
 
 Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkungen & Kompatibilität)** werden hier fortlaufend protokolliert.
 
----
+**Versionsschema `Major.Minor.Änderung.Fix`** (seit v1.55.0.0 auch rückwirkend auf die gesamte Historie angewandt):
 
-## [1.54.2] - 2026-08-01 (Build 289) — *Gemeinsame KI-Roadmap & Entwicklungsplan für zukünftige Phasen*
-
-### 📚 Dokumentation & KI-Agenten-Architektur
-- **Neue Projekt-Roadmap (`ROADMAP.md`)**: Erstellung des zentralen Entwicklungsplans im Projekt-Root für alle KI-Assistenten (Claude Code & Antigravity IDE). Enthält eine vollständige Bestandsaufnahme der umgesetzten Neuerungen (Modul 1 & Modul 2, feingranulare Rechte, User-Metadaten) sowie spezifizierte Architektur- und API-Konzepte für die nächsten Module (Modul 3 bis Modul 6).
-- **Verweis in `AGENTS.md`**: Erweitert das zentrale Agenten-Regelwerk (`AGENTS.md`) um Abschnitt 6 mit direkteinsehbaren Verweisen auf `ROADMAP.md`, damit nachfolgende Assistenten sofort an den nächsten Phasen (Prozess-Manager, Server-Notizbuch, Discord-Webhooks, Docker Stack Control) ansetzen können.
-
-### ⚙️ System-Auswirkungen & Nachwirken (Impact Analysis)
-- **Datenbank-Migrationen**: Keine Änderungen am Schema; rein dokumentarische Erweiterung für den Entwicklungs-Workflow.
-- **Agent-Kompatibilität**: Unverändert.
-- **Neustart-/Session-Verhalten**: Keine Auswirkungen auf bestehende Container oder Sitzungen.
+| Stelle | Beispiel | Wofür |
+|---|---|---|
+| 1 — Major | `2`.0.0.0 | Grundlegender Umbau / Breaking Change |
+| 2 — Minor | 1.`55`.0.0 | Größeres Update, neues Modul oder Feature |
+| 3 — Änderung | 1.55.`1`.0 | Kleinere Verbesserung, Design, Abhängigkeiten, Wartung |
+| 4 — Fix | 1.55.1.`1` | Reiner Bugfix |
 
 ---
 
-## [1.54.1] - 2026-08-01 (Build 288) — *Fix für Custom-Widget Titel-Parameter im Dashboard*
+## [1.55.0.0] - 2026-08-01 (Build 290) — *Vierstellige Versionierung*
+
+### ✨ Neue Funktionen & Features
+- **Vierstelliges Versionsschema eingeführt (`Major.Minor.Änderung.Fix`)**: Die Versionsnummer trennt ab sofort
+  kleinere Änderungen (3. Stelle) von reinen Bugfixes (4. Stelle). Bisher landeten beide gemeinsam in der
+  dritten Stelle, wodurch aus der Nummer allein nicht ablesbar war, ob ein Update etwas Neues bringt oder
+  lediglich einen Fehler behebt.
+- **Rückwirkende Umstellung der gesamten Historie**: Alle 56 Einträge dieses Changelogs wurden anhand ihres
+  tatsächlichen Inhalts neu eingestuft und umnummeriert — Bugfixes sind von der dritten in die vierte Stelle
+  gewandert. Beispiele: `1.54.1` → **`1.54.0.1`** (Bugfix), `1.52.2` → **`1.52.1.0`** (Abhängigkeits-Update),
+  `1.48.23` → **`1.48.16.2`** (Layout-Fix). Die Reihenfolge bleibt dabei lückenlos aufsteigend.
+- **Alle 47 Versions-Tags neu gesetzt**: Die Tags `v1.0.0` … `v1.22.0` wurden nach demselben Schema neu
+  vergeben (`v1.0.0.0` … `v1.22.0.0`) und zeigen unverändert auf ihre jeweiligen Commits.
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank-Migrationen**: Keine. Die Version wird ausschließlich aus `version.json` gelesen und nirgends
+  in der Datenbank vorgehalten.
+- **Agent-Kompatibilität**: Unverändert. Der Agent führt seine eigene Versionsnummer, das Schema hier
+  betrifft ihn nicht.
+- **Update-Prüfung**: Der Versionsvergleich in `updateCheck.js` wertet beliebig viele Stellen aus und
+  arbeitet mit vier Stellen unverändert korrekt. Da die Build-Nummer zusätzlich verglichen wird, bleibt die
+  Erkennung neuer Versionen auch über den Schemawechsel hinweg zuverlässig.
+- **Sichtbar für Benutzer**: In der Seitenleiste und unter *Einstellungen → System* erscheint die
+  Versionsnummer ab sofort vierstellig. Bestehende Sitzungen, Rechte und Layouts sind nicht betroffen.
+- **Git-Historie umgeschrieben**: Interne Arbeits- und Planungsdateien wurden aus allen Commits entfernt.
+  Dadurch haben sich sämtliche Commit-Hashes geändert; ein älterer Klon des Repositories muss einmalig mit
+  `git fetch origin && git reset --hard origin/master` nachgezogen werden. Der Produktivbetrieb ist nicht
+  betroffen, da das Panel über das Image `ghcr.io/roobiing/ueberwachungs-panel:latest` aktualisiert wird.
+
+---
+
+## [1.54.0.1] - 2026-08-01 (Build 288) — *Fix für Custom-Widget Titel-Parameter im Dashboard*
 
 ### 🐛 Bugfixes & Stabilität
 - **Behebung von `ReferenceError: item is not defined` im Dashboard (`Dashboard.jsx`)**: Korrektur der Funktionssignatur von `widgetTitle(id, serverName, item)`. Zuvor fehlte der dritte Parameter `item`, was beim Rendern von benutzerdefinierten Kacheln (`id.startsWith('custom:')`) zu einem Absturz beim Zugriff auf `item?.title` führte. Das Dashboard lädt nun mit individuellen Widgets einwandfrei.
@@ -29,7 +56,7 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
-## [1.54.0] - 2026-08-01 (Build 287) — *Modul 1 & 2: Custom Dashboard-Builder & DB-Sicherung im UI*
+## [1.54.0.0] - 2026-08-01 (Build 287) — *Modul 1 & 2: Custom Dashboard-Builder & DB-Sicherung im UI*
 
 ### ✨ Neue Features & UI-Verbesserungen
 - **Modul 1: Backup-Manager im Einstellungs-Panel (`backups.js` & `Settings.jsx`)**:
@@ -57,7 +84,7 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
-## [1.53.1] - 2026-08-01 (Build 286) — *Fix für User-Login Metadaten-Migration & Protokollierung*
+## [1.53.0.1] - 2026-08-01 (Build 286) — *Fix für User-Login Metadaten-Migration & Protokollierung*
 
 ### 🐛 Bugfixes & Stabilität
 - **Fehlende Datenbank-Migration nachgeholt (`db.js`)**: Behebt einen `SqliteError: no such column: last_login`-Fehler bei `/api/auth/me`, der bei neuen Container-Deployments dazu führte, dass angemeldete Benutzer nach 1 Sekunde automatisch wieder zur Login-Seite geleitet wurden. Die Spalten `last_login`, `last_login_ip` und `last_login_from` werden nun beim Start ordnungsgemäß via `ALTER TABLE` zur Tabelle `users` hinzugefügt.
@@ -70,7 +97,7 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
-## [1.53.0] - 2026-08-01 (Build 285) — *Feingranulares Rechtesystem & erweiterte Konto-Metadaten*
+## [1.53.0.0] - 2026-08-01 (Build 285) — *Feingranulares Rechtesystem & erweiterte Konto-Metadaten*
 
 ### 🔒 Sicherheit & Berechtigungen
 - **Vollständige Migration auf feingranulares Rechtesystem (`requirePermission`)**: Alle restlichen Backend-Routen (`settings.js`, `users.js`, `roles.js`, `panelLogs.js`, `dockhand.js`) wurden von starren `requireRole('admin')`-Prüfungen auf dynamische Berechtigungs-Checks umgestellt.
@@ -89,7 +116,7 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
-## [1.52.3] - 2026-08-01 (Build 284) — *PatchMon-Alert-Auswertung & präzises Dockhand-Stack-Matching*
+## [1.52.1.1] - 2026-08-01 (Build 284) — *PatchMon-Alert-Auswertung & präzises Dockhand-Stack-Matching*
 
 ### 🐛 Bugfixes & Optimierungen
 - **Präzises Dockhand-Stack- & Container-Matching für Panel-Updates (`update.js`)**: Im Updater-Suchfilter wurde das zu unspezifische Kriterium `n.includes('panel')` entfernt, welches dazu führte, dass fälschlicherweise fremde Stacks wie `root-panel` als Panel-Stack erkannt und mit unvollständiger ID (`ID: undefined`) aktualisiert wurden. Die Erkennung prüft nun exakt auf `ueberwachungs-panel` bzw. `ueberwachungs_panel` sowie auf eine gültige, nicht-leere Stack- oder Container-ID (`id`, `Id`, `_id`, `stackId`).
@@ -103,7 +130,7 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
-## [1.52.2] - 2026-08-01 (Build 283) — *Abhängigkeits-Update: @xterm/addon-fit 0.11.0 & lucide-react 0.577.0*
+## [1.52.1.0] - 2026-08-01 (Build 283) — *Abhängigkeits-Update: @xterm/addon-fit 0.11.0 & lucide-react 0.577.0*
 
 ### 📦 Abhängigkeiten & Chores
 - **Aktualisierung von Frontend-Paketen (`package.json`)**: Update von `@xterm/addon-fit` (`^0.10.0` → `^0.11.0`) für verbesserte Terminal-Größenanpassung sowie von `lucide-react` (`^0.378.0` → `^0.577.0`) für aktuelle Icons und SVG-Optimierungen (PR #22 von Dependabot).
@@ -115,7 +142,7 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
-## [1.52.1] - 2026-08-01 (Build 282) — *Robustes Docker-Update via Dockhand API, nsenter & docker.sock*
+## [1.52.0.1] - 2026-08-01 (Build 282) — *Robustes Docker-Update via Dockhand API, nsenter & docker.sock*
 
 ### 🐛 Bugfixes & Optimierungen
 - **Behebung des 404-Fehlers bei Container-Updates über die Dockhand Pro API (`update.js`, `dockhandClient.js`)**: Im Updater-Fallback für Container wurde fehlerhaft die Aktion `recreate` (`POST /api/containers/[id]/recreate`) aufgerufen, die in der Dockhand Pro API nicht existiert und mit `HTTP 404: Ressource nicht gefunden` abbrach. Der Client verwendet nun primär den offiziellen Endpunkt `POST /api/containers/[id]/update` und als zusätzlichen Fallback `POST /api/containers/batch-update` (`{ containerIds: [id], pull: true, forceRecreate: true }`). Zudem wurde der Stack-Suchfilter optimiert, sodass Stacks zuverlässiger über ID und Namen (`ueberwachungs-panel`, `ueberwachungs_panel`, `panel`) erkannt werden.
@@ -130,7 +157,7 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
-## [1.52.0] - 2026-08-01 (Build 281) — *E-Mail-Warnung bei fehlerhaften Login-Versuchen*
+## [1.52.0.0] - 2026-08-01 (Build 281) — *E-Mail-Warnung bei fehlerhaften Login-Versuchen*
 
 ### ✨ Neue Funktionen & Features
 - **Sicherheitswarnung per E-Mail bei fehlerhaften Login-Versuchen (`auth.js`, `AuditLog.jsx`)**: Wird beim Login (`POST /api/login`) ein gültiger Benutzername mit einem falschen Passwort verwendet, versendet das Backend automatisch eine Sicherheitswarnung per E-Mail an die im Benutzerkonto hinterlegte Adresse (`user.email`). Die E-Mail enthält Datum und Uhrzeit, die ermittelte IP-Adresse sowie Angaben zum Gerät bzw. Browser (`User-Agent`). Der Versand erfolgt asynchron, sodass die HTTP-Antwort nicht verzögert oder blockiert wird.
@@ -143,7 +170,7 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
-## [1.51.2] - 2026-07-31 (Build 280) — *Robustes Docker-Update & gehärtetes Image*
+## [1.51.1.1] - 2026-07-31 (Build 280) — *Robustes Docker-Update & gehärtetes Image*
 
 ### 🐛 Bugfixes & Optimierungen
 - **Behebung von Syntaxfehlern beim lokalen Docker-/nsenter-Update (`backend/src/routes/update.js`)**: Im Fallback-Update über den Host-Namespace (`nsenter`) und das lokale Docker-Socket schlug das Shell-Skript mit `sh: 1: Syntax error: "then" unexpected` (bzw. `/bin/sh: syntax error: unexpected "then"`) fehl, weil das Skript per `.replace(/\n\s+/g, ' ')` in eine einzeilige Befehlszeile ohne Semikola umgewandelt wurde. Alle Anweisungen im Update-Skript sind nun mit sauberen Semikola abgeschlossen (`echo "..."; TARGET="..."; if ...; fi;`), sodass das Skript syntaktisch 100 % korrekt in `/bin/sh` und via `nsenter -c` verarbeitet wird.
@@ -159,7 +186,7 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
-## [1.51.1] - 2026-07-31 (Build 279) — *Präzise Benachrichtigungen & Tag-Anzeige*
+## [1.51.1.0] - 2026-07-31 (Build 279) — *Präzise Benachrichtigungen & Tag-Anzeige*
 
 ### ✨ Neue Funktionen & Features
 - **Server-Tags in Alert-Benachrichtigungen (`alertEvaluator.js`, `mchost.js`, `Header.jsx`)**: Ist für einen Server ein Tag (z. B. bei MC-Host24 VServern) hinterlegt, wird dieser ab sofort sowohl in Webhook-Benachrichtigungen (Telegram & Discord) als auch im Frontend-Toast und in der Notification-Liste als Badge (`🏷️ Tag: ...`) angezeigt.
@@ -178,7 +205,7 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
-## [1.51.0] - 2026-07-28 (Build 278) — *Docker vereint & robuster Updater*
+## [1.51.0.0] - 2026-07-28 (Build 278) — *Docker vereint & robuster Updater*
 
 ### ✨ Neue Funktionen & Features
 - **„Docker" und „Docker-Ressourcen" zu einem Menüpunkt zusammengelegt**: Die Navigation führte zwei
@@ -213,7 +240,7 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
   Die Prüfung wertet Arrays jetzt wie die Sidebar als ODER aus.
 
 ### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
-- `version.json` synchron auf **`1.51.0` (Build 278)** erhöht — Minor, da sich die Navigation ändert.
+- `version.json` synchron auf **`1.51.0.0` (Build 278)** erhöht — Minor, da sich die Navigation ändert.
 - **Keine Datenbank-Migration**, keine Änderung an Rechten oder deren Namen. Die bestehenden
   `docker.*`-Berechtigungen gelten unverändert und steuern jetzt die Tabs statt zweier Seiten.
 - **Keine Agent-Aktualisierung nötig**, keine Änderung an WebSocket oder Metrik-Erfassung.
@@ -225,7 +252,7 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
-## [1.50.3] - 2026-07-28 (Build 277) — *Stabiler Image-Push*
+## [1.50.2.1] - 2026-07-28 (Build 277) — *Stabiler Image-Push*
 
 ### 🐛 Bugfixes & Optimierungen
 - **Sporadisch fehlschlagender Image-Push abgesichert (`docker-build.yml`)**: Ein Lauf brach mit
@@ -246,10 +273,10 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
   auch wenn dafür eine neue Hauptversion nötig wäre.
 
 ### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
-- `version.json` synchron auf **`1.50.3` (Build 277)** erhöht.
+- `version.json` synchron auf **`1.50.2.1` (Build 277)** erhöht.
 - **Reine CI-Änderung**, kein Eingriff in Backend, Frontend, Agent oder Datenbank.
 - **Der fehlgeschlagene Lauf hatte keine Auswirkung auf den Betrieb**: Der unmittelbar folgende Build
-  hat `latest` erfolgreich hochgeladen (Stand v1.50.2, Tag `da6e1be`). Auf dem Server genügt weiterhin
+  hat `latest` erfolgreich hochgeladen (Stand v1.50.2.0, Tag `da6e1be`). Auf dem Server genügt weiterhin
   `docker compose pull && up -d`.
 - **Zur Einordnung der Historie**: Drei ältere Fehlschläge desselben Workflows (27.07. sowie zweimal am
   28.07. gegen 15:50) hatten eine andere Ursache — dort scheiterte `npm run build` im Frontend an einem
@@ -259,7 +286,7 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
-## [1.50.2] - 2026-07-28 (Build 276) — *Express aktualisiert*
+## [1.50.2.0] - 2026-07-28 (Build 276) — *Express aktualisiert*
 
 ### 🔐 Sicherheit
 - **Express von fest `4.19.2` auf `^4.22.2` gehoben**: Der erste Lauf der neuen Abhängigkeitsprüfung meldete
@@ -275,7 +302,7 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
   verhinderte aber, dass Sicherheits-Patches innerhalb von Express 4 überhaupt ankommen.
 
 ### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
-- `version.json` synchron auf **`1.50.2` (Build 276)** erhöht.
+- `version.json` synchron auf **`1.50.2.0` (Build 276)** erhöht.
 - **Keine Code-Anpassung nötig**, keine Datenbank-Migration, keine Agent-Aktualisierung. Express 4.22 ist zu
   4.19 API-kompatibel; Routen, Middleware und `express.json()` verhalten sich unverändert.
 - **Wirksam mit dem nächsten Image-Build**, da die Abhängigkeiten dort neu installiert werden.
@@ -289,7 +316,7 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
-## [1.50.1] - 2026-07-28 (Build 275) — *Abhängigkeitsprüfung*
+## [1.50.1.0] - 2026-07-28 (Build 275) — *Abhängigkeitsprüfung*
 
 ### 🔐 Sicherheit
 - **Neuer Workflow „Abhängigkeiten prüfen" (`.github/workflows/security-audit.yml`)**: Führt `npm audit`
@@ -303,7 +330,7 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
   einzelne Paket ein eigener Pull Request entsteht.
 
 ### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
-- `version.json` synchron auf **`1.50.1` (Build 275)** erhöht.
+- `version.json` synchron auf **`1.50.1.0` (Build 275)** erhöht.
 - **Reine CI-Änderung.** Keine Auswirkung auf Backend, Frontend, Agent, Datenbank oder das Image —
   am Panel selbst ändert sich nichts.
 - **Voraussetzung für Dependabot**: Die Datei wirkt erst, wenn Dependabot in den Repository-Einstellungen
@@ -319,14 +346,14 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
-## [1.50.0] - 2026-07-28 (Build 274) — *Sicherheits-Audit*
+## [1.50.0.0] - 2026-07-28 (Build 274) — *Sicherheits-Audit*
 
 Vollständige Durchsicht von Backend, Agent und Frontend auf Sicherheitslücken und Bugs.
 Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ### 🔐 Sicherheit
 - **Befehlsinjektion als root auf dem Host geschlossen (kritisch, `POST /api/update/run`)**:
-  Das in v1.49.0 eingeführte Update-Ziel (`panel_container`) wurde ungeprüft in ein Shell-Skript eingesetzt,
+  Das in v1.49.0.0 eingeführte Update-Ziel (`panel_container`) wurde ungeprüft in ein Shell-Skript eingesetzt,
   das per `nsenter` als **root im Host-Namespace** läuft. Die einzige Absicherung war ein Escaping von
   Anführungszeichen — gegen `$(…)` und Backticks wirkungslos. Ein Wert wie `$(befehl)` hätte damit beliebigen
   Code als root auf dem Docker-Host ausgeführt, also weit außerhalb des Containers.
@@ -362,7 +389,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
   `dangerouslySetInnerHTML` rendert ausschließlich das serverseitig erzeugte QR-Code-SVG.
 
 ### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
-- `version.json` synchron auf **`1.50.0` (Build 274)** erhöht — Minor, da sich Abläufe sichtbar ändern.
+- `version.json` synchron auf **`1.50.0.0` (Build 274)** erhöht — Minor, da sich Abläufe sichtbar ändern.
 - **Keine Datenbank-Migration.** Die Tabellen `sessions` und `revoked_tokens` bestehen bereits und werden
   lediglich zusätzlich genutzt.
 - **Spürbare Verhaltensänderungen**: Nach einer Passwortänderung müssen sich alle *anderen* Geräte neu
@@ -375,7 +402,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.49.1] - 2026-07-28 (Build 273) — *Update-Ziel ohne Dubletten*
+## [1.49.0.1] - 2026-07-28 (Build 273) — *Update-Ziel ohne Dubletten*
 
 ### 🐛 Bugfixes & Optimierungen
 - **Jeder Container stand doppelt in der Auswahlliste „Ziel des Updates"**: `GET /api/update/targets` legte jeden
@@ -388,10 +415,10 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
   fallen weiterhin auf ihre ID zurück.
 
 ### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
-- `version.json` synchron auf **`1.49.1` (Build 273)** erhöht.
+- `version.json` synchron auf **`1.49.0.1` (Build 273)** erhöht.
 - **Keine Datenbank-Migration.** Rein serverseitige Änderung an der Zusammenstellung der Auswahlliste,
   das Frontend bleibt unverändert.
-- **Hinweis für bereits gesetzte Ziele**: Wer in v1.49.0 einen Eintrag ausgewählt hat, bei dem zufällig die
+- **Hinweis für bereits gesetzte Ziele**: Wer in v1.49.0.0 einen Eintrag ausgewählt hat, bei dem zufällig die
   Container-**ID** gespeichert wurde, muss nichts tun — die Suche in `/api/update/run` prüft weiterhin gegen ID
   und Name. Die Auswahl bleibt also gültig, taucht in der Liste aber nur noch einmal auf.
 - Da Dockhand-Container nun unter ihrem Namen geführt werden, erscheinen lokal gefundene Container weiterhin
@@ -399,7 +426,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.49.0] - 2026-07-28 (Build 272) — *Wählbares Update-Ziel*
+## [1.49.0.0] - 2026-07-28 (Build 272) — *Wählbares Update-Ziel*
 
 ### ✨ Neue Funktionen & Features
 - **Ziel-Container bzw. Stack für das Panel-Update frei wählbar**: Der Updater musste sich sein Ziel bisher
@@ -428,7 +455,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
   Container ein zweites Mal neu — mitten im laufenden ersten Recreate. Geprüft wird jetzt wieder `apiSuccess`.
 
 ### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
-- `version.json` synchron auf **`1.49.0` (Build 272)** erhöht (Minor, da neues Feature).
+- `version.json` synchron auf **`1.49.0.0` (Build 272)** erhöht (Minor, da neues Feature).
 - **Keine Datenbank-Migration nötig**: `panel_container` ist ein gewöhnlicher Schlüssel in der bestehenden
   Key-Value-Tabelle `settings` und wird erst beim ersten Speichern angelegt.
 - **Abwärtskompatibel**: Ohne gesetztes Ziel verhält sich der Updater exakt wie bisher (automatische Erkennung).
@@ -439,7 +466,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.48.23] - 2026-07-28 (Build 271) — *GitHub-Token Card Layout Fix*
+## [1.48.16.2] - 2026-07-28 (Build 271) — *GitHub-Token Card Layout Fix*
 
 ### 🎨 Design & UI-Verbesserungen
 - **Fehlendes Card-Layout beim GitHub-Token & Panel-Updater behoben (`Settings.jsx`)**: In den Einstellungen im Tab „System & Backup" fehlte beim Bereich „GitHub Update-Token / Panel-Updater" auf der linken Seite die umliegende `<Card>`-Komponente. Der Block war ohne Header und Rahmen direkt im Grid platziert. Die Komponente `GitHubTokenCard` wurde nun in eine vollwertige `<Card>` mit Titel und Icon eingebettet, sodass sie optisch perfekt zur Karte „Backup & Migration" auf der rechten Seite passt.
@@ -451,7 +478,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.48.22] - 2026-07-28 (Build 270) — *Update-Log Modal Changelog Fix*
+## [1.48.16.1] - 2026-07-28 (Build 270) — *Update-Log Modal Changelog Fix*
 
 ### 🐛 Bugfixes
 - **Anzeige des aktuellen Update-Logs im Popup gelöst (`Dockerfile`, `Sidebar.jsx`, `Settings.jsx`)**: Bisher zeigte das Erfolgs-Popup nach einem Panel-Update standardmäßig alten Fallback-Text zu 2FA/GitHub-Token an. Die Ursache war doppelt:
@@ -466,7 +493,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.48.21] - 2026-07-28 (Build 269) — *Dockhand Stack Deploy & Smart Compose Discovery Updater*
+## [1.48.16.0] - 2026-07-28 (Build 269) — *Dockhand Stack Deploy & Smart Compose Discovery Updater*
 
 ### ⚡ Updater & Docker-Optimierungen
 - **Dockhand Pro API Stack-Deploy im Updater (`update.js`)**: Der automatische Docker-Updater (`POST /api/update/run`) prüft in Dockhand nun primär, ob das Panel als Docker-Compose-Stack verwaltet wird. Wird ein Panel-Stack gefunden, wird direkt ein Stack-Deploy (`/api/stacks/:id/deploy` mit `pullImages: true` und `forceRecreate: true`) ausgeführt. Da ein Container-Restart (`/api/containers/:id/restart`) das alte Image beibehält und `/recreate` für Container in Dockhand nicht existiert, sorgt das Stack-Deploy für eine vollständige Erneuerung mit dem neu geladenen Image.
@@ -479,7 +506,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.48.20] - 2026-07-28 (Build 268) — *MC-Host24 Tag Routing Fix*
+## [1.48.15.1] - 2026-07-28 (Build 268) — *MC-Host24 Tag Routing Fix*
 
 ### 🐛 Bugfixes
 - **Fehler „Ungültige Aktion" beim Hinzufügen von MC-Host24-Tags behoben (`backend/src/routes/mchost.js`)**:
@@ -493,7 +520,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.48.19] - 2026-07-28 (Build 267) — *API-First Docker Updater & Comprehensive Console Error Logging*
+## [1.48.15.0] - 2026-07-28 (Build 267) — *API-First Docker Updater & Comprehensive Console Error Logging*
 
 ### ⚡ Updater & API-Optimierungen
 - **Dockhand Pro API als primäre Update-Methode (`update.js`)**: Der automatische Docker-Updater (`POST /api/update/run`) priorisiert in Container-Umgebungen ohne `.git` nun primär die **Dockhand Pro API** (falls in den Einstellungen konfiguriert). Das Image (`ghcr.io/roobiing/ueberwachungs-panel:latest`) wird dabei über den `/api/images/pull` Endpunkt geladen und der Panel-Container über `recreate` bzw. `restart` automatisiert erneuert.
@@ -506,7 +533,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.48.18] - 2026-07-28 (Build 266) — *Hosting-Provider Fusion & Settings Crash Fix*
+## [1.48.14.0] - 2026-07-28 (Build 266) — *Hosting-Provider Fusion & Settings Crash Fix*
 
 ### ✨ Features & UI-Optimierungen
 - **Zusammenführung der Hoster (Hetzner & MC-Host24)**: 
@@ -524,7 +551,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.48.17] - 2026-07-28 (Build 265) — *Frontend Build-Fix & GitHub Token UI Restoral*
+## [1.48.13.2] - 2026-07-28 (Build 265) — *Frontend Build-Fix & GitHub Token UI Restoral*
 
 ### 🐛 Bugfixes & Frontend
 - **Syntaxfehler im Settings-Build behoben**: Korrigiert fehlende schließende Tags (`</div>` und Tab-Bedingungen) in `Settings.jsx`, die beim Vite-Production-Build von Docker Action zu einem Abbruch gefühlt hatten.
@@ -537,7 +564,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.48.16] - 2026-07-28 (Build 264) — *Docker Updater Host-Namespace (nsenter) Priorisierung*
+## [1.48.13.1] - 2026-07-28 (Build 264) — *Docker Updater Host-Namespace (nsenter) Priorisierung*
 
 ### 🐛 Bugfixes & Updater
 - **Host-Namespace (`nsenter`) als primärer Docker-Updater (`update.js`)**: Behebt das Hängenbleiben des automatischen Klick-Updaters in der Sidebar. Zuvor wurde versucht, das Update primär über die Dockhand Pro API auszuführen, deren HTTP-Anfrage beim `pullImage` hängen bleiben konnte und so den weiteren Update-Verlauf blockierte.
@@ -550,7 +577,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.48.15] - 2026-07-28 (Build 263) — *MC-Host24 Laufzeit-Benachrichtigungen & Settings Cleanup*
+## [1.48.13.0] - 2026-07-28 (Build 263) — *MC-Host24 Laufzeit-Benachrichtigungen & Settings Cleanup*
 
 ### 🎨 Frontend & Einstellungen
 - **KI-Funktionen aus Firewall und Einstellungen entfernt**: Der `ScanSearch`-Aufruf in `Firewall.jsx` sowie das Claude-KI-Modul inklusive API-Key-Verwaltung in `Settings.jsx` wurden vollständig aus der Benutzeroberfläche entfernt.
@@ -572,7 +599,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.48.14] - 2026-07-28 (Build 262) — *GitHub Token Verifizierung & Dockhand Updater Integration*
+## [1.48.12.0] - 2026-07-28 (Build 262) — *GitHub Token Verifizierung & Dockhand Updater Integration*
 
 ### 🎨 Frontend & Design
 - **Redundantes Regenbogen-Icon entfernt (`Sidebar.jsx`)**: Da das Pride-Flag-Design den gesamten unteren Footer-Bereich der Sidebar als Hintergrund-Gradient ausfüllt, wurde das separate `🏳️‍🌈`-Emoji-Icon entfernt, um ein klares und aufgeräumtes Erscheinungsbild in eingeklappter und ausgenommener Seitenleiste zu gewährleisten.
@@ -592,7 +619,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.48.13] - 2026-07-28 (Build 261) — *Vollflächiges Pride Flag & Webhook-Fixes*
+## [1.48.11.0] - 2026-07-28 (Build 261) — *Vollflächiges Pride Flag & Webhook-Fixes*
 
 ### 🎨 Frontend & Design
 - **Vollflächige Progress Pride Flag in der Sidebar (`Sidebar.jsx`)**: Das Pride-Flag-Design beschränkt sich nicht mehr auf eine kleine Badge neben dem Benutzernamen, sondern füllt nun den **gesamten unteren Footer-Bereich** der Seitenleiste (Benutzernamen, Rolle, Version und Build) mit einem eleganten 135°-Gradienten.
@@ -606,14 +633,14 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 - **Aktive Webhooks gefiltert**: SQL-Queries im `alertEvaluator.js` und `actionNotify.js` prüfen nun explizit auf `w.active = 1`, um fehlerhafte Sendeversuche an deaktivierte Webhooks zu vermeiden.
 
 ### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
-- `version.json` synchron auf **`1.48.13` (Build 261)** erhöht.
+- `version.json` synchron auf **`1.48.11.0` (Build 261)** erhöht.
 - **Keine Breaking Changes:** Alle DB-Schemas, Endpunkte und Agent-Schnittstellen bleiben vollständig kompatibel.
 - **Keine DB-Migration erforderlich.**
 - **Keine Neustarts oder Session-Abbrüche nötig:** Bestehende Token und Logins bleiben unverändert gültig.
 
 ---
 
-## [1.48.12] - 2026-07-28 (Build 260) — *Gemeinsamer Wissensstand*
+## [1.48.10.0] - 2026-07-28 (Build 260) — *Gemeinsamer Wissensstand*
 
 ### 📚 Dokumentation
 - **`AGENTS.md` um den Abschnitt „Stand der Aufräumaktion vom 28.07.2026" erweitert**, damit jeder KI-Assistent
@@ -625,14 +652,14 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 - **Hinweis ergänzt**, dass `master` der einzige Branch auf GitHub ist und das so bleiben soll.
 
 ### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
-- `version.json` synchron auf **`1.48.12` (Build 260)** erhöht.
+- `version.json` synchron auf **`1.48.10.0` (Build 260)** erhöht.
 - **Reine Dokumentationsänderung.** Keine Auswirkungen auf Backend, Frontend, Agent, Datenbank, Rechte-System
   oder das Docker-Image. Keine DB-Migration, keine Agent-Aktualisierung, kein Einfluss auf laufende Sessions.
-- Das Image wird durch den Push regulär neu gebaut, Inhalt bleibt funktional identisch zu v1.48.11.
+- Das Image wird durch den Push regulär neu gebaut, Inhalt bleibt funktional identisch zu v1.48.9.0.
 
 ---
 
-## [1.48.11] - 2026-07-28 (Build 259) — *Bereinigte Git-Historie*
+## [1.48.9.0] - 2026-07-28 (Build 259) — *Bereinigte Git-Historie*
 
 ### 🔐 Sicherheit & Repository-Hygiene
 - **Git-Historie vollständig umgeschrieben** (`git filter-branch` über alle Branches und Tags). Aus **jedem** Commit
@@ -640,16 +667,16 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
   - `.claude/`, `.artifacts/` und `.agents/` — Arbeitsdaten der KI-Werkzeuge. Darin lag mit
     `.claude/settings.local.json` die einzige Datei, die je die produktive Panel-Domain enthielt
     (eingebracht in Build 71). Die Domain ist damit aus der gesamten Historie verschwunden, nicht nur aus dem
-    aktuellen Stand wie noch in v1.48.9.
+    aktuellen Stand wie noch in v1.48.7.0.
   - `android/` — die eingestellte Kotlin-App, endgültig auch aus der Vergangenheit entfernt.
 - **Verwaisten Branch `pre-session-5` gelöscht** (lokal und auf GitHub). Er stammte vom 26.05.2026, enthielt nie
   nach `master` übernommene Commits und hätte die entfernten Inhalte weiterhin auf GitHub zugänglich gemacht.
-- **Alle 47 Versions-Tags** (`v1.0.0` … `v1.22.0`) zeigen nach dem Rewrite auf die bereinigten Commits.
+- **Alle 47 Versions-Tags** (`v1.0.0.0` … `v1.22.0.0`) zeigen nach dem Rewrite auf die bereinigten Commits.
 
 ### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
-- `version.json` synchron auf **`1.48.11` (Build 259)** erhöht.
+- `version.json` synchron auf **`1.48.9.0` (Build 259)** erhöht.
 - **Keine** inhaltliche Änderung an Backend, Frontend, Agent, Datenbank oder Docker-Image. Der Dateibaum des
-  neuesten Commits ist identisch zu v1.48.10 — es wurde ausschließlich die Historie bereinigt.
+  neuesten Commits ist identisch zu v1.48.8.0 — es wurde ausschließlich die Historie bereinigt.
 - **Alle Commit-Hashes haben sich geändert.** Der Projektstand zählt jetzt 237 statt 256 Commits: 19 Commits
   bestanden ausschließlich aus den entfernten Verzeichnissen und sind dadurch leer geworden und entfallen.
 - **Bestehende Klone des Repositories passen nicht mehr zur Historie** und müssen einmalig nachgezogen werden:
@@ -662,7 +689,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.48.10] - 2026-07-28 (Build 258) — *Workflow-Actions auf Node 24*
+## [1.48.8.0] - 2026-07-28 (Build 258) — *Workflow-Actions auf Node 24*
 
 ### 🧹 Aufräumen & Struktur
 - **GitHub-Actions im Build-Workflow auf ihre aktuellen Major-Versionen gehoben** (`.github/workflows/docker-build.yml`).
@@ -680,10 +707,10 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
   Alle vier Ziel-Majors laufen nativ auf Node 24, damit verschwindet die Annotation vollständig.
 
 ### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
-- `version.json` synchron auf **`1.48.10` (Build 258)** erhöht.
+- `version.json` synchron auf **`1.48.8.0` (Build 258)** erhöht.
 - **Keine** Auswirkungen auf Backend, Frontend, Datenbank oder Agenten — geändert wurde ausschließlich die
   CI-Konfiguration. **Keine** DB-Migration, **keine** Agent-Aktualisierung, **kein** Einfluss auf laufende
-  Sessions oder Neustart-Verhalten. Das Panel selbst ist identisch zu v1.48.9.
+  Sessions oder Neustart-Verhalten. Das Panel selbst ist identisch zu v1.48.7.0.
 - **Image-Ergebnis unverändert**: Registry, Tags (`latest` + Kurz-SHA) und Build-Kontext bleiben exakt gleich.
   Auf dem Server genügt weiterhin `docker compose pull && up -d`.
 - **Breaking Changes der neuen Majors geprüft, keine betrifft diesen Workflow**: `actions/checkout@v6` legt die
@@ -698,11 +725,11 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.48.9] - 2026-07-28 (Build 257) — *Repo-Hygiene & Gemeinsame Agenten-Regeln*
+## [1.48.7.0] - 2026-07-28 (Build 257) — *Repo-Hygiene & Gemeinsame Agenten-Regeln*
 
 ### 🧹 Aufräumen & Struktur
 - **Android-App endgültig entfernt**: Der Ordner `android/` (Kotlin-App, Package `de.roobiin.panel`) war nach der
-  bewussten Entfernung in v1.45.0 durch einen späteren Commit versehentlich wieder ins Repository gelangt.
+  bewussten Entfernung in v1.45.0.0 durch einen späteren Commit versehentlich wieder ins Repository gelangt.
   Er wurde jetzt vollständig gelöscht (77 Dateien) und über `.gitignore` dauerhaft ausgeschlossen. Das nie
   fertiggestellte Jetpack-Compose-Remake wird nicht weiterverfolgt.
 - **Arbeitsdaten der KI-Werkzeuge aus dem Repository genommen**: `.claude/`, `.artifacts/` und `.agents/` werden
@@ -722,7 +749,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
   niemals ins Repository — inklusive Kurz-Checkliste vor jedem Push.
 
 ### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
-- `version.json` synchron auf **`1.48.9` (Build 257)** erhöht.
+- `version.json` synchron auf **`1.48.7.0` (Build 257)** erhöht.
 - **Keine** Auswirkungen auf Backend, Frontend, Datenbank oder Agenten — es wurde ausschließlich Nicht-Laufzeit-Code
   entfernt. Kein Datenbank-Migrationsbedarf, keine Agent-Aktualisierung nötig.
 - Das Docker-Image wird unverändert gebaut; `agent/` bleibt Teil des Build-Kontexts.
@@ -731,7 +758,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.48.8] - 2026-07-27 (Build 256) — *Progress Pride Sidebar Flag (Deaktivierbar)*
+## [1.48.6.0] - 2026-07-27 (Build 256) — *Progress Pride Sidebar Flag (Deaktivierbar)*
 
 ### ✨ Neue Funktionen & Features
 - **Progress Pride Flag Badge in der Seitenleiste (`Sidebar.jsx`)**:
@@ -743,12 +770,12 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
   - Die Änderung wirkt **sofort live** in der Seitenleiste ohne Neuladen der Seite (`localStorage` + `pride_flag_change` Event).
 
 ### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
-- `version.json` synchron auf **`1.48.8` (Build 256)** erhöht.
+- `version.json` synchron auf **`1.48.6.0` (Build 256)** erhöht.
 - Keine Backend-Datenbankmigrationen erforderlich, da die Anzeigepräferenz individuell pro Browser im `localStorage` hinterlegt wird (`show_pride_flag`).
 
 ---
 
-## [1.48.7] - 2026-07-27 (Build 255) — *Remove Top Accent Bar*
+## [1.48.5.0] - 2026-07-27 (Build 255) — *Remove Top Accent Bar*
 
 ### 🎨 Design & Layout Anpassungen
 - **Horizontale Regenbogen-Akzentlinie entfernt (`Layout.jsx` & `Sidebar.jsx`)**:
@@ -756,11 +783,11 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
   - Das SVG-Favicon für den Browser-Tab (`favicon.svg`) bleibt unverändert erhalten.
 
 ### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
-- `version.json` synchron auf **`1.48.7` (Build 255)** erhöht.
+- `version.json` synchron auf **`1.48.5.0` (Build 255)** erhöht.
 
 ---
 
-## [1.48.6] - 2026-07-27 (Build 254) — *Docker Background Updater (No HTTP 504 Timeout)*
+## [1.48.4.1] - 2026-07-27 (Build 254) — *Docker Background Updater (No HTTP 504 Timeout)*
 
 ### 🐛 Bugfixes & Optimierungen
 - **HTTP 504 Gateway Timeout beim Docker-Update (`POST /api/update/run`) behoben**:
@@ -768,43 +795,43 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
   - Der Endpunkt antwortet ab sofort in < 10ms mit `HTTP 200 OK` und startet das Ziehen des Images sowie das Neuladen des Containers (`docker pull ... && docker compose up -d`) asynchron im Hintergrund über den Host-Namespace (`nsenter`).
 
 ### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
-- `version.json` auf **`1.48.6` (Build 254)** erhöht.
+- `version.json` auf **`1.48.4.1` (Build 254)** erhöht.
 - Das Web-UI erhält beim Klick auf den Update-Button sofortige Bestätigung ohne Timeout.
 
 ---
 
-## [1.48.5] - 2026-07-27 (Build 253) — *New Rainbow Flag (Progress Pride)*
+## [1.48.4.0] - 2026-07-27 (Build 253) — *New Rainbow Flag (Progress Pride)*
 
 ### ✨ Neue Funktionen & Features
 - **New Rainbow Flag (Progress Pride) Akzentleiste**: 11-farbiger Regenbogen-Gradient am oberen Fensterrand (`Layout.jsx`) und an der Oberkante des Sidebar-Headers (`Sidebar.jsx`).
 - **Custom SVG Favicon (`favicon.svg`)**: Reines Vektorgrafik-Favicon für den Browser-Tab (`index.html`) mit der New Rainbow Flag (Progress Pride) Linie und dem Panel-Emblem statt generischer Browser-Standardicons.
 
 ### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
-- `version.json` synchron auf **`1.48.5` (Build 253)** erhöht.
+- `version.json` synchron auf **`1.48.4.0` (Build 253)** erhöht.
 - Das neue SVG-Favicon wird im Browser automatisch als Tab-Icon gerendert.
 
 ---
 
-## [1.48.4] - 2026-07-27 (Build 252) — *Retroactive Versioning & Version Sync Rule*
+## [1.48.3.0] - 2026-07-27 (Build 252) — *Retroactive Versioning & Version Sync Rule*
 
 ### ✨ Neue Funktionen & Features
 - **Verpflichtende SemVer-Synchronisation (`AGENTS.md`)**: Bei jeder Erhöhung der Build-Nummer muss ab sofort auch die SemVer-Versionsnummer (`version.json`) zwingend erhöht werden (Patch-Release bei Fixes/Chores, Minor-Release bei neuen Features).
-- **Rückwirkende Versionierung**: Alle neueren Builds im `CHANGELOG.md` und in `version.json` wurden rückwirkend getrennt versioniert (`1.48.0` für Build 248 bis `1.48.4` für Build 252).
+- **Rückwirkende Versionierung**: Alle neueren Builds im `CHANGELOG.md` und in `version.json` wurden rückwirkend getrennt versioniert (`1.48.0.0` für Build 248 bis `1.48.3.0` für Build 252).
 
 ### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
-- `version.json` auf `1.48.4` (Build 252) aktualisiert.
+- `version.json` auf `1.48.3.0` (Build 252) aktualisiert.
 
 ---
 
-## [1.48.3] - 2026-07-27 (Build 251) — *Full Changelog History v1.0.0 – v1.48.0*
+## [1.48.2.0] - 2026-07-27 (Build 251) — *Full Changelog History v1.0.0.0 – v1.48.0.0*
 
 ### ✨ Neue Funktionen & Features
-- **Vollständiges Release-Log**: Gesamte Projektgeschichte seit Mai 2026 (`v1.0.0` / Build 1) inklusive aller Meilensteine in `CHANGELOG.md` übernommen.
+- **Vollständiges Release-Log**: Gesamte Projektgeschichte seit Mai 2026 (`v1.0.0.0` / Build 1) inklusive aller Meilensteine in `CHANGELOG.md` übernommen.
 - **Regel zur ständigen Changelog-Pflege (`AGENTS.md`)**: In `.agents/AGENTS.md` verankert, dass `CHANGELOG.md` vor jedem Commit und Push dokumentiert werden muss.
 
 ---
 
-## [1.48.2] - 2026-07-27 (Build 250) — *Docker Auto-Update per Host nsenter & Robuste E-Mail-2FA*
+## [1.48.1.1] - 2026-07-27 (Build 250) — *Docker Auto-Update per Host nsenter & Robuste E-Mail-2FA*
 
 ### 🐛 Bugfixes & Optimierungen
 - **Docker Auto-Updater (`POST /api/update/run`)**: Erkennt Docker-Umgebungen ohne `.git`-Verzeichnis in `update.js` — führt stattdessen ein Docker Image Update (`docker pull ghcr.io/roobiing/ueberwachungs-panel:latest` und Container-Restart) per `nsenter` auf dem Host aus.
@@ -812,7 +839,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.48.1] - 2026-07-27 (Build 249) — *GitHub Update-Log & System Impact Analysis*
+## [1.48.1.0] - 2026-07-27 (Build 249) — *GitHub Update-Log & System Impact Analysis*
 
 ### ✨ Neue Funktionen & Features
 - **Update-Log Modal (`UpdateLogModal.jsx`)**: Tab-Ansicht zwischen Changelog und Git-Commits sowie direkter Link auf GitHub.
@@ -820,7 +847,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.48.0] - 2026-07-27 (Build 248) — *Automatischer Panel-Updater & 2FA Security*
+## [1.48.0.0] - 2026-07-27 (Build 248) — *Automatischer Panel-Updater & 2FA Security*
 
 ### ✨ Neue Funktionen & Features
 - **Automatischer Panel-Updater (`POST /api/update/run`)**: Direktes Auslösen von `git pull` aus dem Panel heraus.
@@ -842,7 +869,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.47.0] - 2026-07-27 (Build 246) — *Modular & Smart Updates*
+## [1.47.0.0] - 2026-07-27 (Build 246) — *Modular & Smart Updates*
 
 ### ✨ Neue Funktionen
 - **Aktive Module konfigurieren**: Modul-Toggles in `Settings.jsx` (`Docker`, `PatchMon`, `Hetzner`, `MC-Host24` etc.) zum benutzerdefinierten Ein-/Ausblenden in der Sidebar.
@@ -855,7 +882,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.46.0] - 2026-07-20 (Build 240) — *MC-Host24 & Storage Box Metriken*
+## [1.46.0.0] - 2026-07-20 (Build 240) — *MC-Host24 & Storage Box Metriken*
 
 ### ✨ Neue Funktionen
 - **MC-Host24 Server-Details**: Exakte Anzeige der VServer-Laufzeit (`mchost_runtime`), Server-Spezifikationen und direkter API-Status im Server-Detail-Modal.
@@ -868,7 +895,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.45.0] - 2026-07-16 (Build 230) — *Server-Backup & Automatisierte Agent-Migration*
+## [1.45.0.0] - 2026-07-16 (Build 230) — *Server-Backup & Automatisierte Agent-Migration*
 
 ### ✨ Neue Funktionen
 - **Automatisierte Agent-Migration & Backups**: Neues System zur Sicherung und Migration von Server-Konfigurationen und verbundenen Remote-Agenten.
@@ -880,7 +907,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.44.0] - 2026-07-12 (Build 123) — *Mobile-Version & Responsive Dockhand UI*
+## [1.44.0.0] - 2026-07-12 (Build 123) — *Mobile-Version & Responsive Dockhand UI*
 
 ### ✨ Neue Funktionen
 - **Mobile-App Interface**: Automatische Erkennung von Smartphones mit Touch-optimierter Bottom-Tab-Bar und Drawer für schnelle Bedienung unterwegs.
@@ -892,7 +919,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.43.0] - 2026-07-12 (Build 122) — *Dockhand (Docker-Stacks, Images, Volumes & Netzwerke)*
+## [1.43.0.0] - 2026-07-12 (Build 122) — *Dockhand (Docker-Stacks, Images, Volumes & Netzwerke)*
 
 ### ✨ Neue Funktionen
 - **Dockhand-Engine**: Vollwertiges Docker-Management-System (Ersatz für einfache Portainer-Anwendungsfälle).
@@ -904,7 +931,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.42.0] - 2026-07-12 (Build 121) — *Hetzner Storage Boxes Integration*
+## [1.42.0.0] - 2026-07-12 (Build 121) — *Hetzner Storage Boxes Integration*
 
 ### ✨ Neue Funktionen
 - **Hetzner Storage Boxes**: Nahtlose Anzeige von Speicherplatz, Quota und Zugangsdaten direkt über den Hetzner-API-Token.
@@ -915,7 +942,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.41.0] - 2026-07-09 (Build 118) — *Freies Dashboard-Grid & Mini-Verlaufscharts*
+## [1.41.0.0] - 2026-07-09 (Build 118) — *Freies Dashboard-Grid & Mini-Verlaufscharts*
 
 ### ✨ Neue Funktionen
 - **Frei konfigurierbares Dashboard**: Drag & Drop Grid (`react-grid-layout`) für individuelle Anordnung und Größenänderung der Widgets.
@@ -927,7 +954,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.35.0] - 2026-07-06 (Build 107) — *PatchMon-Integration (Linux System-Updates)*
+## [1.35.0.0] - 2026-07-06 (Build 107) — *PatchMon-Integration (Linux System-Updates)*
 
 ### ✨ Neue Funktionen
 - **PatchMon System-Update-Monitor**: Automatische Erkennung ausstehender Linux-Paket-Updates (APT/YUM/DNF/Pacman) sowie notwendiger Systemneustarts (`needs_reboot`).
@@ -939,7 +966,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.33.0] - 2026-06-12 (Build 102) — *Monitoring Performance & Remote Live-Stats*
+## [1.33.0.0] - 2026-06-12 (Build 102) — *Monitoring Performance & Remote Live-Stats*
 
 ### ✨ Neue Funktionen
 - **3s/5s Remote-Live-Polling**: Schnelles Polling für externe Agenten via `metricsCache` ohne unnötige DB-Last.
@@ -951,7 +978,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.32.0] - 2026-06-12 (Build 100) — *Firewall-Redesign (UFW/iptables/nftables/firewalld)*
+## [1.32.0.0] - 2026-06-12 (Build 100) — *Firewall-Redesign (UFW/iptables/nftables/firewalld)*
 
 ### ✨ Neue Funktionen
 - **Multi-Firewall Unterstützung**: Einheitliches Interface für UFW, iptables, nftables und firewalld auf lokalen und entfernten Servern.
@@ -963,7 +990,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.30.0] - 2026-06-03 (Build 85) — *Passkeys (WebAuthn) & SMTP Passwort-Reset*
+## [1.30.0.0] - 2026-06-03 (Build 85) — *Passkeys (WebAuthn) & SMTP Passwort-Reset*
 
 ### ✨ Neue Funktionen
 - **Passkeys (FIDO2 / WebAuthn)**: Passwortloser, biometrischer Login via TouchID, FaceID, Windows Hello oder YubiKey.
@@ -975,7 +1002,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.22.0] - 2026-05-26 (Build 60) — *Granulares Rechte-System & GeoIP Audit-Log*
+## [1.22.0.0] - 2026-05-26 (Build 60) — *Granulares Rechte-System & GeoIP Audit-Log*
 
 ### ✨ Neue Funktionen
 - **Granulares Rollen- & Berechtigungssystem**: Feingranulare Steuerung, welche Nutzer Server anlegen, Firewall steuern oder Docker verwalten dürfen (`requirePermission`).
@@ -987,7 +1014,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.15.0] - 2026-05-26 (Build 40) — *Alert-Engine & Uptime Kuma Integration*
+## [1.15.0.0] - 2026-05-26 (Build 40) — *Alert-Engine & Uptime Kuma Integration*
 
 ### ✨ Neue Funktionen
 - **Alert-Engine & Benachrichtigungen**: In-App-Alerts und externe Benachrichtigungen bei CPU-, RAM- oder Festplatten-Engpässen.
@@ -999,7 +1026,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.10.0] - 2026-05-25 (Build 25) — *CheckMK-artiger Remote-Server Agent*
+## [1.10.0.0] - 2026-05-25 (Build 25) — *CheckMK-artiger Remote-Server Agent*
 
 ### ✨ Neue Funktionen
 - **Remote-Agent Architektur**: Leichtgewichtiger Agent für entfernte Linux-Server (Debian, Ubuntu, AlmaLinux, Alpine).
@@ -1011,7 +1038,7 @@ Vier Befunde wurden behoben, der schwerwiegendste stammte aus der Vorversion.
 
 ---
 
-## [1.0.0] - 2026-05-25 (Build 1) — *Initiales Release & Grundgerüst*
+## [1.0.0.0] - 2026-05-25 (Build 1) — *Initiales Release & Grundgerüst*
 
 ### ✨ Neue Funktionen
 - **Projekt-Start & Grundgerüst**: Initiales Release des Überwachungs-Panels.
