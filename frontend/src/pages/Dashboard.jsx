@@ -61,11 +61,19 @@ const mkDefaultRgl = (serverKeys, wantStorage) => {
 };
 
 // Gespeichertes RGL-Layout mit aktueller Serverliste + Storage abgleichen
-const reconcileRgl = (list, serverKeys, wantStorage) => {
+//
+// Wichtig: Eine Kachel darf nur verschwinden, wenn sie wirklich nicht mehr existiert — nicht
+// schon dann, wenn ein Abruf gerade nichts geliefert hat. Sonst fällt sie kurz aus dem Layout,
+// alles darunter rutscht durch `compactType="vertical"` nach oben, und beim nächsten
+// erfolgreichen Abruf landet sie ganz unten wieder. Über `onLayoutChange` wurde dieses
+// Zwischenergebnis auch noch gespeichert — genau daher kamen die wandernden Widgets.
+const reconcileRgl = (list, serverKeys, wantStorage, serverListeGeladen) => {
   const wantServer = new Set(serverKeys.map(k => 'server:' + k));
   const out = (list || []).filter(it => {
-    if (String(it.i).startsWith('server:')) return wantServer.has(it.i);
-    if (it.i === 'hetzner_storage')          return wantStorage;   // nur wenn Storage Boxes vorhanden
+    // Server-Kacheln erst aussortieren, wenn die Agentenliste tatsächlich geladen ist
+    if (String(it.i).startsWith('server:')) return serverListeGeladen ? wantServer.has(it.i) : true;
+    // Die Storage-Kachel bleibt liegen; sie zeigt selbst an, wenn keine Box vorhanden ist
+    if (it.i === 'hetzner_storage')          return true;
     return true;
   });
   const have = new Set(out.map(it => it.i));
@@ -594,20 +602,28 @@ export default function Dashboard({ liveStats }) {
   const [rgl, setRgl] = useState(null);   // gespeichertes RGL-Layout (null = Standard)
   const [showAddWidget, setShowAddWidget] = useState(false);
   const persistRef    = useRef(null);
-  const readyRef      = useRef(false);    // erst nach dem Laden darf persistiert werden
+  const readyRef      = useRef(false);    // gespeichertes Layout geladen?
+  const agentsRef     = useRef(false);    // Serverliste geladen?
+  const [agentsGeladen, setAgentsGeladen] = useState(false);
 
   // ── Initial-Daten ──────────────────────────────────────────────────────────
   useEffect(() => {
     axios.get('/api/system/stats').then(r => setLocalInfo(r.data)).catch(() => {});
-    axios.get('/api/agents').then(r => setAgents(r.data)).catch(() => {});
+    // Auch im Fehlerfall als "geladen" markieren — sonst bliebe das Layout dauerhaft gesperrt
+    axios.get('/api/agents')
+      .then(r => setAgents(r.data))
+      .catch(() => {})
+      .finally(() => { agentsRef.current = true; setAgentsGeladen(true); });
     // PatchMon-Gesamtübersicht (fail-soft — nicht konfiguriert = Kachel ausblenden)
     axios.get('/api/patchmon/hosts').then(r => setPatchmonHosts(r.data.hosts || [])).catch(() => setPatchmonHosts([]));
   }, []);
 
   // ── Hetzner Storage Boxes (fail-soft, alle 60s) ─────────────────────────────
   useEffect(() => {
+    // Bei einem Fehlschlag den letzten bekannten Stand behalten statt auf leer zu setzen —
+    // ein kurzer Aussetzer der Hetzner-API darf die Kachel nicht aus dem Layout werfen.
     const load = () => axios.get('/api/hetzner/storage_boxes')
-      .then(r => setHetznerBoxes(r.data.boxes || [])).catch(() => setHetznerBoxes([]));
+      .then(r => setHetznerBoxes(r.data.boxes || [])).catch(() => {});
     load();
     const t = setInterval(load, 60_000);
     return () => clearInterval(t);
@@ -748,9 +764,13 @@ export default function Dashboard({ liveStats }) {
   const serverKeys = [...(hideLocal ? [] : ['local']), ...agents.map(a => String(a.id))];
   const hasStorage = hetznerBoxes.length > 0;
   const gridLayout = useMemo(
-    () => reconcileRgl(rgl ?? mkDefaultRgl(serverKeys, hasStorage), serverKeys, hasStorage),
-    [rgl, serverKeys.join(','), hasStorage], // eslint-disable-line react-hooks/exhaustive-deps
+    () => reconcileRgl(rgl ?? mkDefaultRgl(serverKeys, hasStorage), serverKeys, hasStorage, agentsGeladen),
+    [rgl, serverKeys.join(','), hasStorage, agentsGeladen], // eslint-disable-line react-hooks/exhaustive-deps
   );
+
+  // Anordnung eines Layouts als Zeichenkette — zum Vergleich, ob sich wirklich etwas geändert hat
+  const layoutSignatur = (list) =>
+    (list || []).map(it => `${it.i}:${it.x},${it.y},${it.w},${it.h}`).sort().join('|');
 
   const onLayoutChange = (l) => {
     const merged = l.map(newItem => {
@@ -758,7 +778,12 @@ export default function Dashboard({ liveStats }) {
       return { ...existing, ...newItem, v: LAYOUT_VERSION };
     });
     setRgl(merged);
-    if (!readyRef.current) return; // gespeichertes Layout nicht überschreiben, bevor es geladen ist
+    // Erst speichern, wenn das gespeicherte Layout UND die Serverliste geladen sind. Sonst
+    // würde eine Momentaufnahme abgelegt, die noch gar nicht alle Kacheln kennt.
+    if (!readyRef.current || !agentsRef.current) return;
+    // react-grid-layout meldet auch Umsortierungen, die es selbst ausgelöst hat. Ohne diesen
+    // Vergleich schrieb jede davon das gespeicherte Layout um.
+    if (layoutSignatur(merged) === layoutSignatur(rgl)) return;
     clearTimeout(persistRef.current);
     persistRef.current = setTimeout(() => { axios.put('/api/dashboard/home-layout', { layout: merged }).catch(() => {}); }, 700);
   };

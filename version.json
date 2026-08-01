@@ -1,6 +1,6 @@
 {
-  "version": "5.1.1.1",
-  "build": 292,
+  "version": "5.1.1.2",
+  "build": 293,
   "date": "2026-08-01",
-  "codename": "Updater startet den Container zuverlässig, Widgets wieder löschbar"
+  "codename": "Dashboard-Widgets bleiben an ihrem Platz"
 }

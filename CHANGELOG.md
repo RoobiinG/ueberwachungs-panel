@@ -18,6 +18,40 @@ Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweis
 
 ---
 
+## [5.1.1.2] - 2026-08-01 (Build 293) — *Dashboard-Widgets bleiben an ihrem Platz*
+
+### 🐛 Bugfixes & Stabilität
+- **Widgets wechselten von selbst ihre Position (`Dashboard.jsx`)**: Kacheln wurden nicht verschoben,
+  sondern kurzzeitig **aus dem Layout geworfen und danach unten wieder angehängt**. Zwei Auslöser:
+  - Die **Hetzner-Storage-Kachel** wurde entfernt, sobald der Abruf der Storage Boxes einmal nichts
+    lieferte. Dieser Abruf läuft alle 60 Sekunden und setzte im Fehlerfall auf eine leere Liste — jeder
+    kurze Aussetzer der Hetzner-API ließ die Kachel also verschwinden und kurz darauf an neuer Stelle
+    wieder auftauchen.
+  - Alle **Server-Kacheln** flogen aus dem Layout, solange die Agentenliste noch nicht geladen war —
+    beim Aufruf der Startseite also regelmäßig für einen Moment.
+
+  Da das Raster mit `compactType="vertical"` arbeitet, rutschte bei jedem dieser Aussetzer alles
+  Darunterliegende nach oben. Dieses Zwischenergebnis wurde über `onLayoutChange` auch noch **gespeichert**,
+  wodurch sich die Anordnung dauerhaft veränderte. Behoben durch:
+  - Eine Kachel verschwindet nur noch, wenn sie **wirklich nicht mehr existiert**, nicht schon bei einer
+    leeren Antwort. Die Storage-Kachel bleibt liegen und zeigt selbst an, wenn keine Box vorhanden ist;
+    Server-Kacheln werden erst aussortiert, wenn die Agentenliste tatsächlich geladen ist.
+  - Gespeichert wird erst, wenn **sowohl das abgelegte Layout als auch die Serverliste** geladen sind.
+  - Ein Vergleich der Anordnung vor dem Speichern: Meldet das Raster nur eine selbst ausgelöste
+    Umsortierung ohne echte Änderung, wird nichts mehr geschrieben.
+- **Aussetzer der Hetzner-API leert die Kachel nicht mehr (`Dashboard.jsx`)**: Schlägt der Abruf fehl,
+  bleibt der zuletzt bekannte Stand stehen, statt auf eine leere Liste zurückzufallen.
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank-Migrationen**: Keine.
+- **Agent-Kompatibilität**: Unverändert.
+- **Neustart-/Session-Verhalten**: Bestehende Sitzungen bleiben gültig.
+- **Bereits verschobene Layouts**: Eine durch den Fehler entstandene Anordnung bleibt zunächst so
+  gespeichert, wie sie zuletzt war. Sie lässt sich über *Layout zurücksetzen* in der Kopfzeile der
+  Startseite auf die Standard-Anordnung bringen; ab dann bleibt sie stabil.
+
+---
+
 ## [5.1.1.1] - 2026-08-01 (Build 292) — *Updater startet den Container zuverlässig, Widgets wieder löschbar*
 
 ### 🐛 Bugfixes & Stabilität
