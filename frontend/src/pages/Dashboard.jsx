@@ -427,11 +427,13 @@ function AddWidgetModal({ isOpen, onClose, onAdd, serverKeys, serverName }) {
   const [singleServer, setSingleServer] = useState(serverKeys[0] || 'local');
   const [metric, setMetric]             = useState('cpu');
 
+  // Vorauswahl nur beim Öffnen setzen. `serverKeys` ist bei jedem Render der Startseite ein
+  // neues Array — als Abhängigkeit lief der Effekt dadurch ständig und hat eine vom Benutzer
+  // geleerte Auswahl sofort wieder mit den ersten beiden Servern gefüllt.
   useEffect(() => {
-    if (serverKeys.length && !selectedServers.length) {
-      setSelectedServers(serverKeys.slice(0, 2));
-    }
-  }, [serverKeys]);
+    if (!isOpen) return;
+    setSelectedServers(prev => (prev.length ? prev : serverKeys.slice(0, 2)));
+  }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isOpen) return null;
 
@@ -1212,10 +1214,13 @@ export default function Dashboard({ liveStats }) {
         onLayoutChange={onLayoutChange}
         useCSSTransforms
       >
+        {/* Individuelle Widgets haben oben rechts im Kopf ihren eigenen Löschen-Knopf.
+            Der Verschieben-Griff muss dort daneben liegen, sonst deckt er ihn ab und das
+            Widget lässt sich nicht mehr entfernen. */}
         {gridLayout.map(it => (
           <div key={it.i} className="group relative">
             <button type="button"
-              className="wdrag absolute top-2 right-2 z-10 p-1 rounded-md bg-panel-surface/90 border border-panel-border/60 text-panel-muted opacity-0 group-hover:opacity-100 transition-opacity cursor-move"
+              className={`wdrag absolute top-2 ${String(it.i).startsWith('custom:') ? 'right-10' : 'right-2'} z-10 p-1 rounded-md bg-panel-surface/90 border border-panel-border/60 text-panel-muted opacity-0 group-hover:opacity-100 transition-opacity cursor-move`}
               title={`${widgetTitle(it.i, serverName, it)} verschieben`}
               aria-label="Widget verschieben"
             >

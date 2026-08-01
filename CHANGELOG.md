@@ -18,6 +18,46 @@ Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweis
 
 ---
 
+## [5.1.1.1] - 2026-08-01 (Build 292) — *Updater startet den Container zuverlässig, Widgets wieder löschbar*
+
+### 🐛 Bugfixes & Stabilität
+- **Neuer Container blieb nach dem Update stehen, statt zu starten (`update.js`)**: Der Updater legte den
+  Container zwar neu an, startete ihn aber nicht — das Panel blieb nach dem Update aus. Ursache war, dass
+  `docker compose up -d --force-recreate` zuerst den alten Panel-Container stoppt. Der Update-Befehl lief
+  jedoch als **Kindprozess genau dieses Containers** und wurde dabei mitten im Vorgang mitgetötet. Der neue
+  Container blieb dann im Zustand `created` liegen, ohne dass ihn noch jemand startete. Behoben durch drei
+  Änderungen:
+  - Das Update-Skript wird nun auf dem Host abgelegt und per `setsid` (ersatzweise `nohup`) **aus dem
+    Prozessbaum des Containers gelöst**. Es überlebt damit das Herunterfahren des Panels und läuft zu Ende.
+  - Am Ende prüft eine **Nachlaufschleife** bis zu zwölfmal den Status des Containers und startet ihn per
+    `docker start` nach, falls er nicht läuft.
+  - Der Verlauf landet auf dem Host in `/tmp/panel-update.log` und ist damit auch dann nachvollziehbar,
+    wenn das Panel zwischenzeitlich nicht erreichbar war.
+- **Update über die Dockhand-API galt als erfolgreich, sobald der Auftrag angenommen war (`update.js`)**:
+  Ob der Container danach auch tatsächlich lief, wurde nicht geprüft — blieb er stehen, griff kein Fallback
+  mehr, weil der Updater sich bereits beendet hatte. Ein entkoppelter **Wächter** auf dem Host übernimmt
+  jetzt auch auf diesem Weg das Nachstarten.
+- **Individuelle Dashboard-Widgets ließen sich nicht löschen (`Dashboard.jsx`)**: Der Verschieben-Griff lag
+  mit `absolute top-2 right-2 z-10` genau über dem Löschen-Knopf im Kopf der Widgets. Beide erscheinen beim
+  Überfahren mit der Maus an derselben Stelle, wodurch der Griff jeden Klick abfing. Bei individuellen
+  Widgets sitzt der Griff nun daneben.
+- **Server-Auswahl im Dialog „Widget hinzufügen" ließ sich nicht leeren (`Dashboard.jsx`)**: Die
+  Vorauswahl-Logik hing an der Server-Liste, die bei jedem Neuzeichnen der Startseite als neues Array
+  entsteht. Dadurch lief sie fortlaufend mit und füllte eine gerade abgewählte Auswahl sofort wieder mit den
+  ersten beiden Servern. Die Vorauswahl greift jetzt nur noch beim Öffnen des Dialogs.
+
+### ⚡ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank-Migrationen**: Keine.
+- **Agent-Kompatibilität**: Unverändert — am Agenten-Protokoll ändert sich nichts.
+- **Neustart-/Session-Verhalten**: Bestehende Sitzungen und gespeicherte Dashboard-Layouts bleiben erhalten.
+- **Wirksam erst beim übernächsten Update**: Der Fix sitzt im Updater selbst. Das Einspielen *dieser*
+  Version läuft noch über den alten Weg — bleibt der Container dabei erneut stehen, hilft einmalig ein
+  `docker start <container>` bzw. `docker compose up -d` auf dem Host. Ab dem darauffolgenden Update greift
+  die neue Absicherung.
+- **Neue Voraussetzung auf dem Host**: keine. Fehlt `setsid`, wird automatisch `nohup` verwendet.
+
+---
+
 ## [5.1.1.0] - 2026-08-01 (Build 291) — *Durchgehende Zählung ab 1.0.0.0*
 
 ### 🔢 Versionierung

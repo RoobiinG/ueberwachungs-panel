@@ -189,6 +189,43 @@ router.post('/run', requirePermission('system.update'), async (req, res) => {
       let apiSuccess = false;
       let stackUpdated = false;
 
+      // Wächter: stellt entkoppelt auf dem Host sicher, dass der Panel-Container nach einem
+      // Recreate auch wirklich läuft. Nötig, weil ein Recreate den Container stoppt, in dem
+      // dieser Prozess selbst läuft — bricht der Vorgang dabei ab, bleibt der neu erstellte
+      // Container als "created" liegen und niemand startet ihn.
+      const starteWatchdog = (ziel) => {
+        const wd = [
+          '#!/bin/sh',
+          'sleep 10',
+          `TARGET="${ziel}"`,
+          'i=0',
+          'while [ $i -lt 12 ]; do',
+          '  ST=$(docker inspect -f \'{{.State.Status}}\' "$TARGET" 2>/dev/null)',
+          '  if [ "$ST" = "running" ]; then echo "[Watchdog] $TARGET laeuft."; exit 0; fi',
+          '  echo "[Watchdog] $TARGET ist \\"$ST\\" — starte nach."',
+          '  docker start "$TARGET" >/dev/null 2>&1',
+          '  i=$((i+1))',
+          '  sleep 5',
+          'done',
+          'echo "[Watchdog] $TARGET konnte nicht gestartet werden."',
+        ].join('\n');
+        const r = "cat > /tmp/panel-watchdog.sh <<'PANELEOF'\n" + wd + "\nPANELEOF\n" +
+          'chmod +x /tmp/panel-watchdog.sh; ' +
+          'if command -v setsid >/dev/null 2>&1; then ' +
+            'setsid /bin/sh /tmp/panel-watchdog.sh > /tmp/panel-watchdog.log 2>&1 < /dev/null & ' +
+          'else ' +
+            'nohup /bin/sh /tmp/panel-watchdog.sh > /tmp/panel-watchdog.log 2>&1 < /dev/null & ' +
+          'fi';
+        const q = `'${r.replace(/'/g, `'\\''`)}'`;
+        exec(`nsenter --target 1 --mount --uts --ipc --net --pid -- sh -c ${q}`, { timeout: 20000 }, (e) => {
+          if (!e) return console.log('[Update] Wächter über den Host-Namespace gestartet.');
+          exec(r, { timeout: 20000 }, (e2) => {
+            console.log(e2 ? '[Update] Wächter konnte nicht gestartet werden: ' + e2.message
+                           : '[Update] Wächter über das lokale Docker-Socket gestartet.');
+          });
+        });
+      };
+
       if (dhToken && dhUrl) {
         try {
           const envId = db.prepare("SELECT value FROM settings WHERE key = 'dockhandLocalEnvId'").get()?.value || '1';
@@ -291,6 +328,9 @@ router.post('/run', requirePermission('system.update'), async (req, res) => {
       // ist das Update durch — dann darf der Host-Fallback nicht nochmal recreaten.
       if (apiSuccess) {
         logPanel('info', `Update über die Dockhand-API ausgeführt (${stackUpdated ? 'Stack-Deploy' : 'Container-Recreate'}).`);
+        // Dockhand meldet Erfolg, sobald es den Auftrag angenommen hat — ob der Container
+        // danach auch läuft, sagt das nicht. Der Wächter startet ihn nach, falls nicht.
+        starteWatchdog(configuredTarget || 'ueberwachungs-panel');
         updateLaeuftSeit = 0;
         return;
       }
@@ -298,75 +338,119 @@ router.post('/run', requirePermission('system.update'), async (req, res) => {
       // 2. Lokaler Host-Namespace Fallback (nsenter / docker inspect)
       // WICHTIG: Zuerst nsenter nutzen, da nur im Host-Namespace die Compose-Pfade (/home/robin/...) existieren!
       const targetName = configuredTarget || 'ueberwachungs-panel';
-      const hostScript = `echo "[Update] Starte lokales Docker-Update für Ziel: ${targetName}..."; ` +
-        `TARGET="${targetName}"; ` +
-        `if [ -z "$TARGET" ] || [ "$TARGET" = "ueberwachungs-panel" ]; then ` +
-          `DETECTED=$(docker ps --format '{{.Names}} {{.Image}}' 2>/dev/null | grep -iE 'roobiing|ueberwachungs-panel' | awk '{print $1}' | head -n 1); ` +
-          `if [ -n "$DETECTED" ]; then ` +
-            `TARGET="$DETECTED"; ` +
-            `echo "[Update] Automatisch erkannter Container-Name: $TARGET"; ` +
-          `fi; ` +
-        `fi; ` +
-        `echo "[Update] Pulle neues Image ghcr.io/roobiing/ueberwachungs-panel:latest..."; ` +
-        `docker pull ghcr.io/roobiing/ueberwachungs-panel:latest; ` +
-        `WDIR=$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' "$TARGET" 2>/dev/null); ` +
-        `CFG=$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project.config_files" }}' "$TARGET" 2>/dev/null); ` +
-        `if [ -n "$WDIR" ] && [ -d "$WDIR" ]; then ` +
-          `echo "[Update] Compose Working-Directory von $TARGET gefunden: $WDIR"; ` +
-          `cd "$WDIR" && docker compose pull && docker compose up -d --force-recreate && exit 0; ` +
-        `fi; ` +
-        `if [ -n "$CFG" ] && [ -f "$CFG" ]; then ` +
-          `echo "[Update] Compose Config-File von $TARGET gefunden: $CFG"; ` +
-          `docker compose -f "$CFG" pull && docker compose -f "$CFG" up -d --force-recreate && exit 0; ` +
-        `fi; ` +
-        `for d in /root /root/* /home/* /home/*/* /opt /opt/* /var/docker /var/docker/* /srv /srv/* /app /app/* $(pwd); do ` +
-          `if [ -f "$d/docker-compose.yml" ] && grep -iE 'roobiing|ueberwachungs-panel' "$d/docker-compose.yml" >/dev/null 2>&1; then ` +
-            `echo "[Update] Prüfe Compose-Datei in $d"; ` +
-            `cd "$d" && docker compose pull && docker compose up -d --force-recreate && exit 0; ` +
-          `fi; ` +
-          `if [ -f "$d/docker-compose.prod.yml" ] && grep -iE 'roobiing|ueberwachungs-panel' "$d/docker-compose.prod.yml" >/dev/null 2>&1; then ` +
-            `echo "[Update] Prüfe Compose-Datei in $d"; ` +
-            `cd "$d" && docker compose pull && docker compose up -d --force-recreate && exit 0; ` +
-          `fi; ` +
-        `done; ` +
-        `echo "[Update] Fallback: Standalone Recreate für Container $TARGET..."; ` +
-        `docker restart "$TARGET"`;
 
-      const nsenterCmd = `nsenter --target 1 --mount --uts --ipc --net --pid -- sh -c '${hostScript.replace(/'/g, "'\\''")}'`;
-      const dockerDirectCmd = hostScript;
+      // Das Update stoppt den Container, in dem dieser Prozess selbst läuft. Lief der
+      // Update-Befehl als Kind dieses Containers, wurde er dabei mitgetötet — der neue
+      // Container blieb dann im Zustand "created" liegen und wurde nie gestartet.
+      // Deshalb wird das Skript auf dem Host abgelegt und per `setsid` aus dem Prozessbaum
+      // gelöst. Es überlebt das Herunterfahren des Panels und stellt am Ende in einer
+      // Nachlaufschleife sicher, dass der Container tatsächlich läuft.
+      const updateScript = [
+        '#!/bin/sh',
+        `TARGET="${targetName}"`,
+        'if [ -z "$TARGET" ] || [ "$TARGET" = "ueberwachungs-panel" ]; then',
+        "  DETECTED=$(docker ps --format '{{.Names}} {{.Image}}' 2>/dev/null | grep -iE 'roobiing|ueberwachungs-panel' | awk '{print $1}' | head -n 1)",
+        '  if [ -n "$DETECTED" ]; then TARGET="$DETECTED"; fi',
+        'fi',
+        'echo "[Update] Ziel-Container: $TARGET"',
+        'echo "[Update] Pulle ghcr.io/roobiing/ueberwachungs-panel:latest ..."',
+        'docker pull ghcr.io/roobiing/ueberwachungs-panel:latest',
+        'UPDATED=0',
+        'WDIR=$(docker inspect -f \'{{ index .Config.Labels "com.docker.compose.project.working_dir" }}\' "$TARGET" 2>/dev/null)',
+        'CFG=$(docker inspect -f \'{{ index .Config.Labels "com.docker.compose.project.config_files" }}\' "$TARGET" 2>/dev/null)',
+        'if [ -n "$WDIR" ] && [ -d "$WDIR" ]; then',
+        '  echo "[Update] Compose Working-Directory: $WDIR"',
+        '  cd "$WDIR" && docker compose pull && docker compose up -d --force-recreate && UPDATED=1',
+        'fi',
+        'if [ "$UPDATED" = "0" ] && [ -n "$CFG" ] && [ -f "$CFG" ]; then',
+        '  echo "[Update] Compose Config-File: $CFG"',
+        '  docker compose -f "$CFG" pull && docker compose -f "$CFG" up -d --force-recreate && UPDATED=1',
+        'fi',
+        'if [ "$UPDATED" = "0" ]; then',
+        '  for d in /root /root/* /home/* /home/*/* /opt /opt/* /var/docker /var/docker/* /srv /srv/* /app /app/*; do',
+        '    for f in docker-compose.yml docker-compose.prod.yml; do',
+        '      if [ "$UPDATED" = "0" ] && [ -f "$d/$f" ] && grep -iE \'roobiing|ueberwachungs-panel\' "$d/$f" >/dev/null 2>&1; then',
+        '        echo "[Update] Compose-Datei gefunden: $d/$f"',
+        '        cd "$d" && docker compose -f "$f" pull && docker compose -f "$f" up -d --force-recreate && UPDATED=1',
+        '      fi',
+        '    done',
+        '  done',
+        'fi',
+        'if [ "$UPDATED" = "0" ]; then',
+        '  echo "[Update] Kein Compose-Projekt gefunden — einfacher Neustart des Containers."',
+        '  docker restart "$TARGET"',
+        'fi',
+        '# Nachlauf: Der Recreate kann abbrechen, sobald der alte Container stirbt. Dann liegt',
+        '# der neue Container als "created" vor und muss von Hand gestartet werden.',
+        'i=0',
+        'while [ $i -lt 12 ]; do',
+        '  ST=$(docker inspect -f \'{{.State.Status}}\' "$TARGET" 2>/dev/null)',
+        '  if [ "$ST" = "running" ]; then',
+        '    echo "[Update] Container \\"$TARGET\\" laeuft."',
+        '    exit 0',
+        '  fi',
+        '  echo "[Update] Status von $TARGET ist \\"$ST\\" — starte nach (Versuch $i)."',
+        '  docker start "$TARGET" >/dev/null 2>&1',
+        '  i=$((i+1))',
+        '  sleep 5',
+        'done',
+        'echo "[Update] FEHLER: Container \\"$TARGET\\" konnte nicht gestartet werden."',
+        'exit 1',
+      ].join('\n');
+
+      // Skript auf dem Host ablegen und entkoppelt starten. Das Heredoc ist mit Anführungs-
+      // zeichen begrenzt ('PANELEOF'), damit die Shell darin nichts expandiert — die
+      // Variablen sollen erst beim Ausführen des Skripts ausgewertet werden.
+      const runner =
+        "cat > /tmp/panel-update.sh <<'PANELEOF'\n" + updateScript + "\nPANELEOF\n" +
+        'chmod +x /tmp/panel-update.sh; ' +
+        // setsid gehört zu util-linux und fehlt auf schlanken Hosts — dann tut es nohup.
+        'if command -v setsid >/dev/null 2>&1; then ' +
+          'setsid /bin/sh /tmp/panel-update.sh > /tmp/panel-update.log 2>&1 < /dev/null & ' +
+        'else ' +
+          'nohup /bin/sh /tmp/panel-update.sh > /tmp/panel-update.log 2>&1 < /dev/null & ' +
+        'fi; ' +
+        'echo "[Update] Update-Skript entkoppelt gestartet (Log auf dem Host: /tmp/panel-update.log)"';
+
+      const shQuote     = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
+      const nsPrefix    = 'nsenter --target 1 --mount --uts --ipc --net --pid --';
+      const nsenterCmd  = `${nsPrefix} sh -c ${shQuote(runner)}`;
+      const directCmd   = runner;
+
+      // Da das Skript entkoppelt läuft, kehrt der Aufruf sofort zurück und kann nicht mehr
+      // aussagen, ob das Update geklappt hat. Welcher Weg überhaupt möglich ist, wird deshalb
+      // vorher mit einem kurzen `docker version` geprüft — so bleibt die Fallback-Kette intakt.
+      const starteUpdate = (weg, probeCmd, runCmd, weiter) => {
+        exec(probeCmd, { timeout: 15000 }, (probeErr) => {
+          if (probeErr) {
+            console.warn(`[Update] ${weg} nicht verfügbar: ${probeErr.message}`);
+            return weiter(probeErr);
+          }
+          exec(runCmd, { timeout: 30000 }, (runErr, stdout, stderr) => {
+            if (runErr) {
+              console.error(`[Update] ${weg}: Skript konnte nicht gestartet werden:`, runErr.message);
+              if (stderr) console.error('[Update] STDERR:', stderr);
+              return weiter(runErr);
+            }
+            if (stdout) console.log('[Update] STDOUT:', stdout.trim());
+            console.log(`[Update] ERFOLG: Update-Skript über ${weg} gestartet. Der Container wird gleich neu erstellt und gestartet.`);
+            logPanel('info', `Update über ${weg} gestartet. Ziel: ${targetName}. Verlauf auf dem Host in /tmp/panel-update.log`);
+            updateLaeuftSeit = 0;
+          });
+        });
+      };
 
       console.log('[Update] Primär lokales Update über Host-Namespace (nsenter)...');
-      exec(nsenterCmd, { timeout: 120000 }, (errNs, stdoutNs, stderrNs) => {
-        if (!errNs) {
-          console.log('[Update] ERFOLG: Docker-Container über nsenter (Host-Namespace) mit neuem Image aktualisiert und neu gestartet.');
-          if (stdoutNs) console.log('[Update] nsenter STDOUT:', stdoutNs);
-          logPanel('info', `Update über den Host-Namespace (nsenter) ausgeführt. Ziel: ${targetName}`);
-          updateLaeuftSeit = 0;
-          return;
-        }
-        console.error('[Update] FEHLER bei nsenter-Update:', errNs.message);
-        if (stdoutNs) console.error('[Update] nsenter STDOUT:', stdoutNs);
-        if (stderrNs) console.error('[Update] nsenter STDERR:', stderrNs);
-
+      starteUpdate('den Host-Namespace (nsenter)', `${nsPrefix} docker version`, nsenterCmd, (errNs) => {
         console.log('[Update] Fallback: Versuche Update über lokales Docker-Socket (/var/run/docker.sock)...');
-        exec(dockerDirectCmd, { timeout: 120000 }, (errDirect, stdoutDirect, stderrDirect) => {
-          if (!errDirect) {
-            console.log('[Update] ERFOLG: Docker-Container über lokales Docker-Socket aktualisiert und neu gestartet.');
-            if (stdoutDirect) console.log('[Update] Docker STDOUT:', stdoutDirect);
-            logPanel('info', `Update über das lokale Docker-Socket ausgeführt. Ziel: ${targetName}`);
-            updateLaeuftSeit = 0;
-            return;
-          }
-          console.error('[Update] FEHLER beim lokalen Docker-Socket Update:', errDirect.message);
-          if (stdoutDirect) console.error('[Update] Docker STDOUT:', stdoutDirect);
-          if (stderrDirect) console.error('[Update] Docker STDERR:', stderrDirect);
+        starteUpdate('das lokale Docker-Socket', 'docker version', directCmd, (errDirect) => {
           console.error('[Update] KRITISCH: Alle Update-Methoden sind fehlgeschlagen!');
           // In die Panel-Logs schreiben: Der Container läuft ja weiter, also sieht der Nutzer
           // die Meldung dort auch tatsächlich. Ohne das bliebe der Fehlschlag unbemerkt.
           logPanel('error',
             'Alle Update-Wege sind fehlgeschlagen (Dockhand-API, Host-Namespace via nsenter, Docker-Socket). ' +
             `Letzter Fehler: ${errDirect.message}`,
-            [stderrDirect, stderrNs].filter(Boolean).join('\n---\n'));
+            [errNs?.message, errDirect?.message].filter(Boolean).join('\n---\n'));
           updateLaeuftSeit = 0;   // Sperre lösen, damit ein neuer Versuch möglich ist
         });
       });

@@ -1,6 +1,6 @@
 {
-  "version": "5.1.1.0",
-  "build": 291,
+  "version": "5.1.1.1",
+  "build": 292,
   "date": "2026-08-01",
-  "codename": "Durchgehende Zählung ab 1.0.0.0"
+  "codename": "Updater startet den Container zuverlässig, Widgets wieder löschbar"
 }
