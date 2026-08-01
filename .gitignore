@@ -17,13 +17,13 @@ docker-compose.prod.yml
 .agents/
 *.local.json
 
-# Agenten-Regelwerk & Planung — bleiben rein lokal (seit v1.55.0.0, Projektordner
+# Agenten-Regelwerk & Planung — bleiben rein lokal (seit v5.1.0.0, Projektordner
 # liegt in einer Nextcloud und ist darüber gesichert). Nicht mit -f einchecken!
 AGENTS.md
 CLAUDE.md
 ROADMAP.md
 
-# Eingestellte Android-App (entfernt in v1.48.7.0) — nicht wieder einchecken
+# Eingestellte Android-App (entfernt in v4.4.7.0) — nicht wieder einchecken
 android/
 .gradle_home/
 .kotlin/
