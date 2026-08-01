@@ -4,6 +4,20 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.52.3] - 2026-08-01 (Build 284) — *PatchMon-Alert-Auswertung & präzises Dockhand-Stack-Matching*
+
+### 🐛 Bugfixes & Optimierungen
+- **Präzises Dockhand-Stack- & Container-Matching für Panel-Updates (`update.js`)**: Im Updater-Suchfilter wurde das zu unspezifische Kriterium `n.includes('panel')` entfernt, welches dazu führte, dass fälschlicherweise fremde Stacks wie `root-panel` als Panel-Stack erkannt und mit unvollständiger ID (`ID: undefined`) aktualisiert wurden. Die Erkennung prüft nun exakt auf `ueberwachungs-panel` bzw. `ueberwachungs_panel` sowie auf eine gültige, nicht-leere Stack- oder Container-ID (`id`, `Id`, `_id`, `stackId`).
+- **Zuverlässige Auswertung von PatchMon-Alerts (`alertEvaluator.js`)**: Behebung eines Typspezifikations-Fehlers bei der Evaluierung von PatchMon-Regeln (`patchmon_updates`, `patchmon_security`) im Alert-Evaluator. Da die PatchMon v2 API die Host-ID (`h.id`) als Zahl zurückgibt, die verknüpften IDs in `remote_agents` jedoch als Text gespeichert werden, schlug der strikte Vergleich (`===`) fehl. Der Vergleich erfolgt nun typsicher per `String(h.id) === String(hostId)`, sodass PatchMon-Benachrichtigungen unter Benachrichtigungen korrekt auslösen.
+- **Ganzzahlige Anzeige für PatchMon-Metriken (`alertEvaluator.js`)**: Formatierung der Update-Zahlen (`patchmon_updates`, `patchmon_security`) in ausgelösten Benachrichtigungen und Erholungsnachrichten (Telegram, Gotify, Webhooks) als ganze Zahlen ohne Nachkommastellen (`Math.round()` statt `.toFixed(1)`).
+
+### ⚙️ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank-Migrationen**: Keine Datenbankmigrationen erforderlich.
+- **Agent-Kompatibilität**: Keine Änderungen am Kommunikationsprotokoll der Remote-Agenten (`panel-agent.js`).
+- **Neustart-/Session-Verhalten**: Der Backend-Service erfordert nach dem Deploy einen Neustart, um die korrigierte PatchMon-Alert-Logik sowie das fehlerfreie Dockhand-Update-Matching aktiv zu schalten.
+
+---
+
 ## [1.52.2] - 2026-08-01 (Build 283) — *Abhängigkeits-Update: @xterm/addon-fit 0.11.0 & lucide-react 0.577.0*
 
 ### 📦 Abhängigkeiten & Chores

@@ -1,6 +1,6 @@
 {
-  "version": "1.52.2",
-  "build": 283,
+  "version": "1.52.3",
+  "build": 284,
   "date": "2026-08-01",
-  "codename": "Abhängigkeits-Update: @xterm/addon-fit 0.11.0 & lucide-react 0.577.0"
+  "codename": "PatchMon-Alert-Auswertung & präzises Dockhand-Stack-Matching"
 }

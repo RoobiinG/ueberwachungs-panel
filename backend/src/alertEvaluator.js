@@ -109,7 +109,7 @@ async function getMetricValue(metric, agentId, targetRef) {
     if (!hostId) return null;
     const hosts = await getPatchmonHosts();
     if (!hosts) return null;
-    const host = hosts.find(h => h.id === hostId);
+    const host = hosts.find(h => String(h.id) === String(hostId));
     if (!host) return null;
     return metric === 'patchmon_security' ? (host.securityCount || 0) : (host.updatesCount || 0);
   }
@@ -286,7 +286,9 @@ async function evaluate() {
             const detailLines = results.map(r => {
               const u = METRIC_UNIT[r.cond.metric] ?? '%';
               const c = r.cond.condition === 'gt' ? '>' : '<';
-              return `📊 <b>${METRIC_LABELS[r.cond.metric] ?? r.cond.metric}:</b> ${r.value.toFixed(1)}${u} (Schwelle: ${c} ${r.cond.threshold}${u})`;
+              const isIntMetric = r.cond.metric === 'patchmon_updates' || r.cond.metric === 'patchmon_security';
+              const valStr = isIntMetric ? Math.round(r.value) : r.value.toFixed(1);
+              return `📊 <b>${METRIC_LABELS[r.cond.metric] ?? r.cond.metric}:</b> ${valStr}${u} (Schwelle: ${c} ${r.cond.threshold}${u})`;
             }).join('\n');
             message = `⚠️ <b>Alert ausgelöst:</b> ${rule.name}${logicStr}\n\n🖥️ <b>Server:</b> ${srv.name}${tagLine}\n${detailLines}`;
           }
@@ -344,7 +346,9 @@ async function evaluate() {
             const recoveryLines = results.map(r => {
               const u   = METRIC_UNIT[r.cond.metric] ?? '%';
               const dir = r.cond.condition === 'gt' ? 'über' : 'unter';
-              return `📊 <b>${METRIC_LABELS[r.cond.metric] ?? r.cond.metric}:</b> ${r.value.toFixed(1)}${u} ✓ (war ${dir} ${r.cond.threshold}${u})`;
+              const isIntMetric = r.cond.metric === 'patchmon_updates' || r.cond.metric === 'patchmon_security';
+              const valStr = isIntMetric ? Math.round(r.value) : r.value.toFixed(1);
+              return `📊 <b>${METRIC_LABELS[r.cond.metric] ?? r.cond.metric}:</b> ${valStr}${u} ✓ (war ${dir} ${r.cond.threshold}${u})`;
             }).join('\n');
             message = `✅ <b>Erholt:</b> ${rule.name}\n\n🖥️ <b>Server:</b> ${srv.name}${tagLine}\n${recoveryLines}`;
           }

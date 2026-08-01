@@ -207,26 +207,32 @@ router.post('/run', requireRole('admin'), async (req, res) => {
             const stacksRes = await dockhand.getStacks(envId);
             const stacksList = Array.isArray(stacksRes) ? stacksRes : (Array.isArray(stacksRes.data) ? stacksRes.data : (stacksRes?.data && Array.isArray(stacksRes.data.data) ? stacksRes.data.data : []));
             const panelStack = stacksList.find(s => {
-              const n = (s.name || '').toLowerCase();
+              const sId = String(s.id || s.Id || s._id || s.stackId || s.ID || '');
+              const n = (s.name || s.Name || s.stackName || '').toLowerCase();
               if (configuredTarget && configuredTarget !== 'ueberwachungs-panel') {
-                return s.id === configuredTarget || n === configuredTarget.toLowerCase();
+                return sId === configuredTarget || n === configuredTarget.toLowerCase();
               }
-              return s.id === configuredTarget || n === configuredTarget.toLowerCase() || n.includes('ueberwachungs-panel') || n.includes('ueberwachungs_panel') || n.includes('panel');
+              return sId === configuredTarget || n === configuredTarget.toLowerCase() || n === 'ueberwachungs-panel' || n === 'ueberwachungs_panel';
             });
 
             if (panelStack) {
-              const sName = panelStack.name || panelStack.id;
-              console.log(`[Update] Panel-Stack (${sName}, ID: ${panelStack.id}) gefunden! Starte Stack Deploy via Dockhand API...`);
-              await dockhand.updateStack(envId, panelStack.id, {
-                pull: true,
-                build: false,
-                forceRecreate: true,
-                pullImages: true,
-                buildImages: false,
-              });
-              console.log(`[Update] ERFOLG: Stack "${sName}" wurde über Dockhand Pro API neu deployed und recreated!`);
-              apiSuccess = true;
-              stackUpdated = true;
+              const stackId = panelStack.id || panelStack.Id || panelStack._id || panelStack.stackId || panelStack.ID || panelStack.name;
+              const sName = panelStack.name || panelStack.Name || stackId;
+              if (stackId && stackId !== 'undefined') {
+                console.log(`[Update] Panel-Stack (${sName}, ID: ${stackId}) gefunden! Starte Stack Deploy via Dockhand API...`);
+                await dockhand.updateStack(envId, stackId, {
+                  pull: true,
+                  build: false,
+                  forceRecreate: true,
+                  pullImages: true,
+                  buildImages: false,
+                });
+                console.log(`[Update] ERFOLG: Stack "${sName}" (ID: ${stackId}) wurde über Dockhand Pro API neu deployed und recreated!`);
+                apiSuccess = true;
+                stackUpdated = true;
+              } else {
+                console.log('[Update] Panel-Stack gefunden, hat aber keine gültige ID.');
+              }
             } else {
               console.log('[Update] Kein Stack für das Panel über Dockhand API gefunden.');
             }
@@ -239,33 +245,37 @@ router.post('/run', requireRole('admin'), async (req, res) => {
             const res = await dockhand.getContainers(envId);
             const list = Array.isArray(res) ? res : (Array.isArray(res.data) ? res.data : (res?.data && Array.isArray(res.data.data) ? res.data.data : []));
             const panelContainer = list.find(c => {
-              if (configuredTarget) {
-                return c.id === configuredTarget || (c.name || '').toLowerCase() === configuredTarget.toLowerCase();
+              const cId = String(c.id || c.Id || c._id || '');
+              const n = (c.name || c.Name || '').toLowerCase();
+              if (configuredTarget && configuredTarget !== 'ueberwachungs-panel') {
+                return cId === configuredTarget || n === configuredTarget.toLowerCase();
               }
-              const n = (c.name || '').toLowerCase();
               const img = (c.image || '').toLowerCase();
-              return n.includes('ueberwachungs-panel') || n.includes('panel') || img.includes('ueberwachungs-panel') || img.includes('roobiing');
+              return cId === configuredTarget || n === configuredTarget.toLowerCase() || n === 'ueberwachungs-panel' || n === 'ueberwachungs_panel' || n.includes('ueberwachungs-panel') || n.includes('ueberwachungs_panel') || img.includes('roobiing/ueberwachungs-panel');
             });
 
             if (panelContainer) {
-              const cName = panelContainer.name || panelContainer.id;
-              console.log(`[Update] Panel-Container (${cName}, ID: ${panelContainer.id}) gefunden! Versuche Update via Dockhand API...`);
-              let containerUpdated = false;
-              try {
-                await dockhand.updateContainer(envId, panelContainer.id, { pull: true, forceRecreate: true });
-                console.log(`[Update] ERFOLG: Container ${cName} wurde über Dockhand API (/api/containers/[id]/update) aktualisiert!`);
-                apiSuccess = true;
-                containerUpdated = true;
-              } catch (updateErr1) {
-                console.warn(`[Update] Warnung bei /api/containers/[id]/update via Dockhand API (${updateErr1.message}). Versuche Fallback /api/containers/batch-update...`);
+              const containerId = panelContainer.id || panelContainer.Id || panelContainer._id;
+              const cName = panelContainer.name || panelContainer.Name || containerId;
+              if (containerId && containerId !== 'undefined') {
+                console.log(`[Update] Panel-Container (${cName}, ID: ${containerId}) gefunden! Versuche Update via Dockhand API...`);
+                let containerUpdated = false;
                 try {
-                  await dockhand.batchUpdateContainers(envId, [panelContainer.id], { pull: true, forceRecreate: true });
-                  console.log(`[Update] ERFOLG: Container ${cName} wurde über Dockhand API (/api/containers/batch-update) aktualisiert!`);
+                  await dockhand.updateContainer(envId, containerId, { pull: true, forceRecreate: true });
+                  console.log(`[Update] ERFOLG: Container ${cName} wurde über Dockhand API (/api/containers/[id]/update) aktualisiert!`);
                   apiSuccess = true;
                   containerUpdated = true;
-                } catch (updateErr2) {
-                  console.error('[Update] FEHLER bei Container-Update via Dockhand API:', updateErr2.message);
-                  console.log(`[Update] HINWEIS: Führe Host-Namespace Fallback aus, um Container-Update mit neuem Image sicherzustellen...`);
+                } catch (updateErr1) {
+                  console.warn(`[Update] Warnung bei /api/containers/[id]/update via Dockhand API (${updateErr1.message}). Versuche Fallback /api/containers/batch-update...`);
+                  try {
+                    await dockhand.batchUpdateContainers(envId, [containerId], { pull: true, forceRecreate: true });
+                    console.log(`[Update] ERFOLG: Container ${cName} wurde über Dockhand API (/api/containers/batch-update) aktualisiert!`);
+                    apiSuccess = true;
+                    containerUpdated = true;
+                  } catch (updateErr2) {
+                    console.error('[Update] FEHLER bei Container-Update via Dockhand API:', updateErr2.message);
+                    console.log(`[Update] HINWEIS: Führe Host-Namespace Fallback aus, um Container-Update mit neuem Image sicherzustellen...`);
+                  }
                 }
               }
             } else {
