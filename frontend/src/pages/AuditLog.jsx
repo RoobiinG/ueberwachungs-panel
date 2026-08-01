@@ -12,6 +12,7 @@ import { Button } from '../components/ui/Button';
 // Aktions-Kategorien mit Farben + Icons
 const ACTION_META = {
   login:                  { label: 'Login',             color: 'text-panel-green',  icon: User },
+  'login.failed':         { label: 'Login fehlgeschlagen', color: 'text-panel-red', icon: Lock },
   'password.change':      { label: 'Passwort geändert', color: 'text-panel-orange', icon: Lock },
   'user.create':          { label: 'Benutzer erstellt', color: 'text-panel-accent', icon: User },
   'user.delete':          { label: 'Benutzer gelöscht', color: 'text-panel-red',    icon: User },

@@ -1,6 +1,6 @@
 {
-  "version": "1.51.2",
-  "build": 280,
-  "date": "2026-07-31",
-  "codename": "Robustes Docker-Update & gehärtetes Image"
+  "version": "1.52.0",
+  "build": 281,
+  "date": "2026-08-01",
+  "codename": "E-Mail-Warnung bei fehlerhaften Login-Versuchen"
 }

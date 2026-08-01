@@ -102,13 +102,45 @@ async function send2faMail(toEmail, code) {
   });
 }
 
+async function sendFailedLoginMail(toEmail, username, ip, userAgent) {
+  const nodemailer = require('nodemailer');
+  const smtp = getSmtp();
+  if (!smtp.host) throw new Error('SMTP nicht konfiguriert');
+  const transporter = nodemailer.createTransport({
+    host: smtp.host, port: smtp.port, secure: smtp.secure,
+    auth: smtp.user ? { user: smtp.user, pass: smtp.pass } : undefined,
+  });
+  const timeStr = new Date().toLocaleString('de-DE');
+  await transporter.sendMail({
+    from:    smtp.from,
+    to:      toEmail,
+    subject: 'Sicherheitswarnung: Fehlgeschlagener Anmeldeversuch — Überwachungs-Panel',
+    text:    `Hallo ${username},\n\nes gab gerade einen fehlgeschlagenen Anmeldeversuch am Überwachungs-Panel mit einem falschen Passwort.\n\nDetails:\n• Zeit: ${timeStr}\n• IP-Adresse: ${ip || 'Unbekannt'}\n• Gerät/Browser: ${userAgent || 'Unbekannt'}\n\nFalls du das nicht warst, empfehlen wir dir dringend, dein Passwort zu prüfen und 2FA zu aktivieren.`,
+    html:    `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;color:#333;"><p>Hallo <strong>${username}</strong>,</p><p>es gab gerade einen fehlgeschlagenen Anmeldeversuch am Überwachungs-Panel mit einem falschen Passwort.</p><div style="background:#1e293b;padding:16px;border-radius:8px;margin:16px 0;font-family:monospace;color:#f8fafc;"><p style="margin:4px 0;"><strong>Zeit:</strong> ${timeStr}</p><p style="margin:4px 0;"><strong>IP-Adresse:</strong> ${ip || 'Unbekannt'}</p><p style="margin:4px 0;"><strong>Gerät/Browser:</strong> ${userAgent || 'Unbekannt'}</p></div><p>Falls du das nicht warst, empfehlen wir dir dringend, dein Passwort zu prüfen und 2FA zu aktivieren.</p></div>`,
+  });
+}
+
 // ─── Login ────────────────────────────────────────────────────────────────────
 
 router.post('/login', loginLimiter, async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) return res.status(400).json({ error: 'Benutzername und Passwort erforderlich' });
   const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
-  if (!user || !bcrypt.compareSync(password, user.password)) {
+  if (!user) {
+    return res.status(401).json({ error: 'Ungültige Anmeldedaten' });
+  }
+  if (!bcrypt.compareSync(password, user.password)) {
+    auditLog(req, 'login.failed', 'user', user.username, { reason: 'Falsches Passwort' });
+    if (user.email) {
+      const rawIp = (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+                    || req.socket?.remoteAddress
+                    || req.connection?.remoteAddress
+                    || 'Unbekannt';
+      const userAgent = req.headers['user-agent'] || 'Unbekannt';
+      sendFailedLoginMail(user.email, user.username, rawIp, userAgent).catch((err) => {
+        console.warn('[Failed Login Mail] E-Mail-Versand fehlgeschlagen:', err.message);
+      });
+    }
     return res.status(401).json({ error: 'Ungültige Anmeldedaten' });
   }
 
