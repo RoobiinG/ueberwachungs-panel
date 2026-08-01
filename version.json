@@ -1,6 +1,6 @@
 {
-  "version": "1.52.0",
-  "build": 281,
+  "version": "1.52.1",
+  "build": 282,
   "date": "2026-08-01",
-  "codename": "E-Mail-Warnung bei fehlerhaften Login-Versuchen"
+  "codename": "Robustes Docker-Update via Dockhand API, nsenter & docker.sock"
 }

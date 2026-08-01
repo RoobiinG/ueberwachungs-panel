@@ -207,21 +207,22 @@ router.post('/run', requireRole('admin'), async (req, res) => {
             const stacksRes = await dockhand.getStacks(envId);
             const stacksList = Array.isArray(stacksRes) ? stacksRes : (Array.isArray(stacksRes.data) ? stacksRes.data : (stacksRes?.data && Array.isArray(stacksRes.data.data) ? stacksRes.data.data : []));
             const panelStack = stacksList.find(s => {
-              if (configuredTarget) {
-                return s.id === configuredTarget || (s.name || '').toLowerCase() === configuredTarget.toLowerCase();
-              }
               const n = (s.name || '').toLowerCase();
-              return n.includes('ueberwachungs-panel') || n.includes('panel');
+              if (configuredTarget && configuredTarget !== 'ueberwachungs-panel') {
+                return s.id === configuredTarget || n === configuredTarget.toLowerCase();
+              }
+              return s.id === configuredTarget || n === configuredTarget.toLowerCase() || n.includes('ueberwachungs-panel') || n.includes('ueberwachungs_panel') || n.includes('panel');
             });
 
             if (panelStack) {
               const sName = panelStack.name || panelStack.id;
               console.log(`[Update] Panel-Stack (${sName}, ID: ${panelStack.id}) gefunden! Starte Stack Deploy via Dockhand API...`);
               await dockhand.updateStack(envId, panelStack.id, {
-                pullImages: true,
-                pullImage: true,
-                buildImages: false,
+                pull: true,
+                build: false,
                 forceRecreate: true,
+                pullImages: true,
+                buildImages: false,
               });
               console.log(`[Update] ERFOLG: Stack "${sName}" wurde über Dockhand Pro API neu deployed und recreated!`);
               apiSuccess = true;
@@ -248,14 +249,24 @@ router.post('/run', requireRole('admin'), async (req, res) => {
 
             if (panelContainer) {
               const cName = panelContainer.name || panelContainer.id;
-              console.log(`[Update] Panel-Container (${cName}, ID: ${panelContainer.id}) gefunden! Versuche Recreate via Dockhand API...`);
+              console.log(`[Update] Panel-Container (${cName}, ID: ${panelContainer.id}) gefunden! Versuche Update via Dockhand API...`);
+              let containerUpdated = false;
               try {
-                await dockhand.containerAction(envId, panelContainer.id, 'recreate');
-                console.log(`[Update] ERFOLG: Container ${cName} wurde über Dockhand API recreated!`);
+                await dockhand.updateContainer(envId, panelContainer.id, { pull: true, forceRecreate: true });
+                console.log(`[Update] ERFOLG: Container ${cName} wurde über Dockhand API (/api/containers/[id]/update) aktualisiert!`);
                 apiSuccess = true;
-              } catch (recreateErr) {
-                console.error('[Update] FEHLER bei action "recreate" via Dockhand API:', recreateErr.message);
-                console.log(`[Update] HINWEIS: Führe Host-Namespace Fallback aus, um Container-Recreate mit neuem Image sicherzustellen...`);
+                containerUpdated = true;
+              } catch (updateErr1) {
+                console.warn(`[Update] Warnung bei /api/containers/[id]/update via Dockhand API (${updateErr1.message}). Versuche Fallback /api/containers/batch-update...`);
+                try {
+                  await dockhand.batchUpdateContainers(envId, [panelContainer.id], { pull: true, forceRecreate: true });
+                  console.log(`[Update] ERFOLG: Container ${cName} wurde über Dockhand API (/api/containers/batch-update) aktualisiert!`);
+                  apiSuccess = true;
+                  containerUpdated = true;
+                } catch (updateErr2) {
+                  console.error('[Update] FEHLER bei Container-Update via Dockhand API:', updateErr2.message);
+                  console.log(`[Update] HINWEIS: Führe Host-Namespace Fallback aus, um Container-Update mit neuem Image sicherzustellen...`);
+                }
               }
             } else {
               console.log(`[Update] HINWEIS: Kein Panel-Container in Dockhand Environment ${envId} gefunden.`);
@@ -299,7 +310,11 @@ router.post('/run', requireRole('admin'), async (req, res) => {
           `docker compose -f "$CFG" pull && docker compose -f "$CFG" up -d --force-recreate && exit 0; ` +
         `fi; ` +
         `for d in /root /root/* /home/* /home/*/* /opt /opt/* /var/docker /var/docker/* /srv /srv/* /app /app/* $(pwd); do ` +
-          `if [ -f "$d/docker-compose.yml" ] || [ -f "$d/docker-compose.prod.yml" ]; then ` +
+          `if [ -f "$d/docker-compose.yml" ] && grep -iE 'roobiing|ueberwachungs-panel' "$d/docker-compose.yml" >/dev/null 2>&1; then ` +
+            `echo "[Update] Prüfe Compose-Datei in $d"; ` +
+            `cd "$d" && docker compose pull && docker compose up -d --force-recreate && exit 0; ` +
+          `fi; ` +
+          `if [ -f "$d/docker-compose.prod.yml" ] && grep -iE 'roobiing|ueberwachungs-panel' "$d/docker-compose.prod.yml" >/dev/null 2>&1; then ` +
             `echo "[Update] Prüfe Compose-Datei in $d"; ` +
             `cd "$d" && docker compose pull && docker compose up -d --force-recreate && exit 0; ` +
           `fi; ` +
@@ -307,7 +322,7 @@ router.post('/run', requireRole('admin'), async (req, res) => {
         `echo "[Update] Fallback: Standalone Recreate für Container $TARGET..."; ` +
         `docker restart "$TARGET"`;
 
-      const nsenterCmd = `nsenter --target 1 --mount --uts --ipc --net --pid -- sh -c "${hostScript.replace(/"/g, '\\"')}"`;
+      const nsenterCmd = `nsenter --target 1 --mount --uts --ipc --net --pid -- sh -c '${hostScript.replace(/'/g, "'\\''")}'`;
       const dockerDirectCmd = hostScript;
 
       console.log('[Update] Primär lokales Update über Host-Namespace (nsenter)...');

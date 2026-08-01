@@ -20,9 +20,11 @@ FROM node:22-alpine
 WORKDIR /app/backend
 
 # Alle Systempakete auf den neuesten Sicherheitsstand bringen und benötigte Tools installieren
-# (sqlite-libs: SQLite runtime; util-linux: nsenter für Host-Namespace-Zugriff; git + curl für Updater)
+# (sqlite-libs: SQLite runtime; util-linux: nsenter für Host-Namespace-Zugriff; git + curl für Updater; docker-cli + docker-cli-compose für lokales Sock-Update)
 RUN apk update && apk upgrade --no-cache && \
-    apk add --no-cache sqlite-libs util-linux git curl
+    apk add --no-cache sqlite-libs util-linux git curl docker-cli docker-cli-compose && \
+    npm install -g npm@latest && \
+    npm cache clean --force
 
 COPY --from=backend-builder /app/backend ./
 COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
