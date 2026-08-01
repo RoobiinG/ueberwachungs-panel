@@ -4,6 +4,19 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.53.1] - 2026-08-01 (Build 286) — *Fix für User-Login Metadaten-Migration & Protokollierung*
+
+### 🐛 Bugfixes & Stabilität
+- **Fehlende Datenbank-Migration nachgeholt (`db.js`)**: Behebt einen `SqliteError: no such column: last_login`-Fehler bei `/api/auth/me`, der bei neuen Container-Deployments dazu führte, dass angemeldete Benutzer nach 1 Sekunde automatisch wieder zur Login-Seite geleitet wurden. Die Spalten `last_login`, `last_login_ip` und `last_login_from` werden nun beim Start ordnungsgemäß via `ALTER TABLE` zur Tabelle `users` hinzugefügt.
+- **Zuverlässige Aufzeichnung der Login-Metadaten (`auth.js` & `audit.js`)**: Beim erfolgreichen Login (`storeSession`) wird die `users`-Tabelle nun bei jedem Anmeldeverfahren (Passwort, 2FA, Passkeys) automatisch mit dem aktuellen Zeitstempel (`CURRENT_TIMESTAMP`), der Client-IP sowie dem per GeoIP aufgelösten Standort (`resolveLocation`) aktualisiert.
+
+### ⚙️ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank-Migrationen**: Sicheres Try-Catch-Verfahren (`ALTER TABLE users ADD COLUMN ...`) in `backend/src/db.js` legt die fehlenden Login-Metadaten-Spalten in bestehenden und neuen SQLite-Datenbanken an.
+- **Agent-Kompatibilität**: Keine Änderungen am Agenten-Protokoll oder Remote-Server-Zugriff (`panel-agent.js`).
+- **Neustart-/Session-Verhalten**: Bestehende Anmeldungen sind sofort wieder stabil und werden bei `/api/auth/me` korrekt verarbeitet.
+
+---
+
 ## [1.53.0] - 2026-08-01 (Build 285) — *Feingranulares Rechtesystem & erweiterte Konto-Metadaten*
 
 ### 🔒 Sicherheit & Berechtigungen

@@ -92,4 +92,4 @@ function auditLog(req, action, targetType = null, targetName = null, details = n
   }
 }
 
-module.exports = { auditLog };
+module.exports = { auditLog, resolveLocation };

@@ -6,7 +6,7 @@ const rateLimit = require('express-rate-limit');
 const db        = require('../db');
 const authMiddleware = require('../middleware/auth');
 const { getPermissions } = require('../middleware/requirePermission');
-const { auditLog } = require('../utils/audit');
+const { auditLog, resolveLocation } = require('../utils/audit');
 
 const hashToken   = (t) => crypto.createHash('sha256').update(t).digest('hex');
 
@@ -36,6 +36,23 @@ const revokeUserSessions = (userId, exceptTokenHash = null) => {
 };
 
 const storeSession = (token, userId, req) => {
+  try {
+    const rawIp = (req.headers['x-forwarded-for'] || '').split(',')[0].trim()
+                  || req.socket?.remoteAddress
+                  || req.connection?.remoteAddress
+                  || req.ip
+                  || '—';
+    const location = resolveLocation(rawIp) || 'Unbekannt';
+    db.prepare(`
+      UPDATE users
+      SET last_login = CURRENT_TIMESTAMP,
+          last_login_ip = ?,
+          last_login_from = ?
+      WHERE id = ?
+    `).run(rawIp, location, userId);
+  } catch (err) {
+    console.warn('[storeSession] Fehler beim Aktualisieren des User-Logins:', err.message);
+  }
   try {
     db.prepare(`
       INSERT OR IGNORE INTO sessions (user_id, token_hash, ip, user_agent)

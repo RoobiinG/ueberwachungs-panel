@@ -274,6 +274,10 @@ try { db.exec('ALTER TABLE audit_log ADD COLUMN location TEXT'); } catch {}
 try { db.exec('ALTER TABLE remote_agents ADD COLUMN dockhand_env_id INTEGER'); } catch {}
 // PatchMon-Integration: Verknüpfung zu einem PatchMon-Host (dessen id) pro Remote-Agent
 try { db.exec('ALTER TABLE remote_agents ADD COLUMN patchmon_host_id TEXT'); } catch {}
+// Users: Letzter Login-Zeitpunkt, IP und Herkunft
+try { db.exec('ALTER TABLE users ADD COLUMN last_login DATETIME'); } catch {}
+try { db.exec('ALTER TABLE users ADD COLUMN last_login_ip TEXT'); } catch {}
+try { db.exec('ALTER TABLE users ADD COLUMN last_login_from TEXT'); } catch {}
 // Panel-Logs: Frontend-Fehler + API-Fehler persistent speichern
 db.exec(`
   CREATE TABLE IF NOT EXISTS panel_logs (
