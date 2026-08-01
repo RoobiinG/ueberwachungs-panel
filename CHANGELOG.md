@@ -4,6 +4,21 @@ Alle Änderungen, neue Module, Bugfixes und das **Nachwirken (System-Auswirkunge
 
 ---
 
+## [1.52.1] - 2026-08-01 (Build 282) — *Robustes Docker-Update via Dockhand API, nsenter & docker.sock*
+
+### 🐛 Bugfixes & Optimierungen
+- **Behebung des 404-Fehlers bei Container-Updates über die Dockhand Pro API (`update.js`, `dockhandClient.js`)**: Im Updater-Fallback für Container wurde fehlerhaft die Aktion `recreate` (`POST /api/containers/[id]/recreate`) aufgerufen, die in der Dockhand Pro API nicht existiert und mit `HTTP 404: Ressource nicht gefunden` abbrach. Der Client verwendet nun primär den offiziellen Endpunkt `POST /api/containers/[id]/update` und als zusätzlichen Fallback `POST /api/containers/batch-update` (`{ containerIds: [id], pull: true, forceRecreate: true }`). Zudem wurde der Stack-Suchfilter optimiert, sodass Stacks zuverlässiger über ID und Namen (`ueberwachungs-panel`, `ueberwachungs_panel`, `panel`) erkannt werden.
+- **Behebung von leeren Variablen beim Host-Namespace-Update (`nsenter` in `update.js`)**: Da die Befehlszeichenkette in `nsenterCmd` in doppelte Anführungszeichen (`"..."`) gefasst war, expandierte die äußere Shell im Container Variablen wie `$TARGET`, `$WDIR` oder `$CFG` vorab zu Leerstrings (`docker restart ""` -> `invalid container name or ID: value is empty`). Der Aufruf an `sh -c` erfolgt nun über einfache Anführungszeichen (`'...'` mit Escaping in `hostScript`), sodass alle Shell-Variablen erst durch die Host-Shell in `nsenter` ausgewertet werden.
+- **Integration von Docker-CLI im Image für Socket-Updates (`Dockerfile`)**: Im finalen Alpine-Container-Image (`Dockerfile`) werden nun die Pakete `docker-cli` und `docker-cli-compose` standardmäßig installiert. Dadurch schlägt der Fallback über das eingebundene Docker-Socket (`/var/run/docker.sock`) nicht mehr mit `/bin/sh: docker: not found` fehl.
+- **Härtung gegen Scanner-Schwachstellen (`Dockerfile`)**: Beim Build der finalen Stage wird zusätzlich `npm install -g npm@latest` ausgeführt, um Sicherheitslücken in der gebündelten Node-Paketverwaltung (ReDoS/Tar-CVEs) für Scanner-Tools wie Trivy/Dockhand zu eliminieren.
+
+### ⚙️ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank-Migrationen**: Keine Datenbankmigrationen erforderlich.
+- **Agent-Kompatibilität**: Keine Änderungen an der Kommunikation zwischen Server und Remote-Agenten (`panel-agent.js`).
+- **Neustart-/Session-Verhalten**: Ein Container-Neustart bzw. Image-Rebuild ist erforderlich. Danach greifen alle drei Update-Wege (Dockhand Pro API, Host-Namespace via `nsenter` sowie lokales Docker-Socket) zuverlässig ineinander.
+
+---
+
 ## [1.52.0] - 2026-08-01 (Build 281) — *E-Mail-Warnung bei fehlerhaften Login-Versuchen*
 
 ### ✨ Neue Funktionen & Features

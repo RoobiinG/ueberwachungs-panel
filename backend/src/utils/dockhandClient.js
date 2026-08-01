@@ -84,6 +84,8 @@ module.exports = {
   getContainerStats: (envId, id)    => call('GET', `/api/containers/${encodeURIComponent(id)}/stats?env=${encodeURIComponent(envId)}`),
   getContainerLogs:  (envId, id, n) => call('GET', `/api/containers/${encodeURIComponent(id)}/logs?env=${encodeURIComponent(envId)}&tail=${n || 100}`),
   containerAction:   (envId, id, a) => call('POST', `/api/containers/${encodeURIComponent(id)}/${encodeURIComponent(a)}?env=${encodeURIComponent(envId)}`),
+  updateContainer:   (envId, id, body = { pull: true, forceRecreate: true }) => call('POST', `/api/containers/${encodeURIComponent(id)}/update?env=${encodeURIComponent(envId)}`, { data: body, timeout: 120000 }),
+  batchUpdateContainers: (envId, ids, body = {}) => call('POST', `/api/containers/batch-update?env=${encodeURIComponent(envId)}`, { data: { containerIds: ids, pull: true, forceRecreate: true, ...body }, timeout: 120000 }),
   getDashboardStats: ()             => call('GET', '/api/dashboard/stats'),
   getActivity:       (envId)        => call('GET', `/api/activity${envId ? `?environmentId=${encodeURIComponent(envId)}` : ''}`),
 
