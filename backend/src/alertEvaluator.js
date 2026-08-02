@@ -36,7 +36,24 @@ const broadcast = (data) => {
   _broadcast?.(data);
 };
 
+// ─── Wartungsfenster-Prüfung (Modul 4) ───────────────────────────────────────
+function isServerInMaintenance(srvKey, agentId) {
+  try {
+    const keys = [srvKey, agentId ? String(agentId) : null].filter(Boolean);
+    for (const k of keys) {
+      const row = db.prepare(`
+        SELECT id FROM maintenance_windows
+        WHERE server_id = ? AND CURRENT_TIMESTAMP BETWEEN start_time AND end_time
+        LIMIT 1
+      `).get(k);
+      if (row) return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
 // ─── In-Memory-Zustand pro (Regel × Server) ──────────────────────────────────
+
 // Schlüssel: "<ruleId>:<serverId>" → { activeSince, lastFiredAt, hasFired, lastFiredThreshold }
 const state = new Map();
 const getState = (ruleId, srvKey) => {
@@ -201,12 +218,13 @@ async function evaluateConditions(conditions, agentId, targetRef) {
 async function evaluate() {
   const now   = Math.floor(Date.now() / 1000);
   const rules = db.prepare(`
-    SELECT r.*, w.type AS wtype, w.url AS wurl, a.name AS agent_name
+    SELECT r.*, w.type AS wtype, w.url AS wurl, w.method AS wmethod, w.headers AS wheaders, w.template AS wtemplate, a.name AS agent_name
     FROM alert_rules r
     JOIN webhooks w ON r.webhook_id = w.id
     LEFT JOIN remote_agents a ON r.agent_id = a.id
     WHERE r.enabled = 1 AND r.metric != 'action' AND w.active = 1
   `).all();
+
 
   for (const rule of rules) {
     // Bedingungen lesen (neu: conditions-Array, Fallback: alter Einzel-Wert)
@@ -293,24 +311,28 @@ async function evaluate() {
             message = `⚠️ <b>Alert ausgelöst:</b> ${rule.name}${logicStr}\n\n🖥️ <b>Server:</b> ${srv.name}${tagLine}\n${detailLines}`;
           }
 
-          try {
-            await sendWebhook({ type: rule.wtype, url: rule.wurl }, message);
-          } catch (err) {
-            console.error(`[AlertEvaluator] Webhook "${rule.name}" fehlgeschlagen:`, err.message);
+          const inMaintenance = isServerInMaintenance(srv.key, srv.agentId);
+          if (!inMaintenance) {
+            try {
+              await sendWebhook({ type: rule.wtype, url: rule.wurl, method: rule.wmethod, headers: rule.wheaders, template: rule.wtemplate }, message, { ruleName: rule.name, serverName: srv.name, value: currentMetThreshold ?? (results[0]?.value ?? 0), alertType: 'fired' });
+            } catch (err) {
+              console.error(`[AlertEvaluator] Webhook "${rule.name}" fehlgeschlagen:`, err.message);
+            }
           }
           s.lastFiredAt = now;
           s.hasFired    = true;
           if (currentMetThreshold !== null) s.lastFiredThreshold = currentMetThreshold;
 
           try {
-            db.prepare("INSERT INTO alert_history (rule_id, value, message, type, server_key) VALUES (?, ?, ?, 'fired', ?)")
-              .run(rule.id, currentMetThreshold ?? (results[0]?.value ?? 0), message, srv.key);
+            db.prepare("INSERT INTO alert_history (rule_id, value, message, type, server_key) VALUES (?, ?, ?, ?, ?)")
+              .run(rule.id, currentMetThreshold ?? (results[0]?.value ?? 0), inMaintenance ? `[Wartungsmodus] ${message}` : message, inMaintenance ? 'suppressed' : 'fired', srv.key);
           } catch {
             try {
-              db.prepare("INSERT INTO alert_history (rule_id, value, message, type) VALUES (?, ?, ?, 'fired')")
-                .run(rule.id, currentMetThreshold ?? (results[0]?.value ?? 0), message);
+              db.prepare("INSERT INTO alert_history (rule_id, value, message, type) VALUES (?, ?, ?, ?)")
+                .run(rule.id, currentMetThreshold ?? (results[0]?.value ?? 0), inMaintenance ? `[Wartungsmodus] ${message}` : message, inMaintenance ? 'suppressed' : 'fired');
             } catch {}
           }
+
 
           broadcast({
             type: 'alert',
@@ -353,21 +375,25 @@ async function evaluate() {
             message = `✅ <b>Erholt:</b> ${rule.name}\n\n🖥️ <b>Server:</b> ${srv.name}${tagLine}\n${recoveryLines}`;
           }
 
-          try {
-            await sendWebhook({ type: rule.wtype, url: rule.wurl }, message);
-          } catch (err) {
-            console.error(`[AlertEvaluator] Resolved-Webhook "${rule.name}" fehlgeschlagen:`, err.message);
+          const inMaintenance = isServerInMaintenance(srv.key, srv.agentId);
+          if (!inMaintenance) {
+            try {
+              await sendWebhook({ type: rule.wtype, url: rule.wurl, method: rule.wmethod, headers: rule.wheaders, template: rule.wtemplate }, message, { ruleName: rule.name, serverName: srv.name, value: results[0]?.value ?? 0, alertType: 'resolved' });
+            } catch (err) {
+              console.error(`[AlertEvaluator] Resolved-Webhook "${rule.name}" fehlgeschlagen:`, err.message);
+            }
           }
 
           try {
-            db.prepare("INSERT INTO alert_history (rule_id, value, message, type, server_key) VALUES (?, ?, ?, 'resolved', ?)")
-              .run(rule.id, results[0]?.value ?? 0, message, srv.key);
+            db.prepare("INSERT INTO alert_history (rule_id, value, message, type, server_key) VALUES (?, ?, ?, ?, ?)")
+              .run(rule.id, results[0]?.value ?? 0, inMaintenance ? `[Wartungsmodus] ${message}` : message, inMaintenance ? 'suppressed' : 'resolved', srv.key);
           } catch {
             try {
-              db.prepare("INSERT INTO alert_history (rule_id, value, message, type) VALUES (?, ?, ?, 'resolved')")
-                .run(rule.id, results[0]?.value ?? 0, message);
+              db.prepare("INSERT INTO alert_history (rule_id, value, message, type) VALUES (?, ?, ?, ?)")
+                .run(rule.id, results[0]?.value ?? 0, inMaintenance ? `[Wartungsmodus] ${message}` : message, inMaintenance ? 'suppressed' : 'resolved');
             } catch {}
           }
+
 
           broadcast({
             type: 'alert',

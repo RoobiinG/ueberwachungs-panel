@@ -180,6 +180,50 @@ async function serviceAction(name, action) {
   return stdout;
 }
 
+// ─── Prozess-Manager ──────────────────────────────────────────────────────────
+async function getProcesses() {
+  try {
+    const { stdout } = await execAsync(
+      'ps -eo pid,user,%cpu,%mem,command --sort=-%cpu --no-headers | head -n 25',
+      { timeout: 8000 }
+    );
+    return stdout
+      .trim()
+      .split('\n')
+      .map(line => {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length < 5) return null;
+        const pid = parseInt(parts[0], 10);
+        const user = parts[1];
+        const cpu = parseFloat(parts[2]) || 0;
+        const memory = parseFloat(parts[3]) || 0;
+        const command = parts.slice(4).join(' ');
+        return { pid, user, cpu, memory, command };
+      })
+      .filter(p => p && !isNaN(p.pid));
+  } catch {
+    return [];
+  }
+}
+
+async function killProcess(pid, signal = 'SIGTERM') {
+  const targetPid = parseInt(pid, 10);
+  if (isNaN(targetPid) || targetPid <= 0) {
+    throw new Error('Ungültige PID');
+  }
+  // Schutz vor Beenden kritischer Prozesse
+  if (targetPid === 1 || targetPid === process.pid || targetPid === process.ppid) {
+    throw new Error('Kritische System- oder Agenten-PID kann nicht beendet werden (Sicherheits-Schutz)');
+  }
+  const validSignals = ['SIGTERM', 'SIGKILL', '15', '9'];
+  const sig = validSignals.includes(String(signal).toUpperCase())
+    ? (String(signal).toUpperCase() === 'SIGKILL' || String(signal) === '9' ? '-9' : '-15')
+    : '-15';
+  await execAsync(`kill ${sig} ${targetPid}`, { timeout: 5000 });
+  return `Prozess ${targetPid} beendet (${sig === '-9' ? 'SIGKILL' : 'SIGTERM'})`;
+}
+
+
 // ─── Firewall (Multi-Tool: UFW, iptables, nftables, firewalld) ───────────────
 
 const _IPV4_RE   = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
@@ -457,6 +501,18 @@ async function handler(req, res) {
       const parts = url.split('/');
       const output = await serviceAction(decodeURIComponent(parts[2]), parts[3]);
       respond(res, 200, { success: true, output });
+
+    } else if (url === '/processes' && req.method === 'GET') {
+      respond(res, 200, await getProcesses());
+
+    } else if (url.startsWith('/processes/') && url.endsWith('/kill') && req.method === 'POST') {
+      const parts = url.split('/');
+      const pid = decodeURIComponent(parts[2]);
+      const raw = await new Promise((resolve) => { let d = ''; req.on('data', c => d += c); req.on('end', () => resolve(d)); });
+      const { signal } = JSON.parse(raw || '{}');
+      const output = await killProcess(pid, signal);
+      respond(res, 200, { success: true, message: output });
+
 
     // ── Firewall ──────────────────────────────────────────────────────────────
     } else if (url === '/firewall/detect' && req.method === 'GET') {

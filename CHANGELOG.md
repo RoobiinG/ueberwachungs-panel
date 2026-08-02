@@ -18,7 +18,30 @@ Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweis
 
 ---
 
+## [5.2.0.0] - 2026-08-02 (Build 294) — *Prozess-Manager, Notizbuch & Discord-Embeds*
+
+### ✨ Neue Module & Funktionen
+- **Modul 3: Interaktiver Prozess-Manager & Dienst-Steuerung (`/api/agents/:id/processes`)**:
+  - **Live-Prozessliste im Server-Detail-Dialog**: Neuer Reiter **„Prozesse“** zeigt die Top 25 Prozesse nach CPU- & RAM-Auslastung (`PID`, `USER`, `CPU %`, `RAM %`, `COMMAND`).
+  - **Such- und Sortierfunktion**: Schnelles Filtern nach Prozessname, PID oder Befehlszeile sowie Umschalten der Sortierung zwischen CPU und RAM.
+  - **Sicherer Prozess-Abbruch**: Interaktiver Kill-Button mit Bestätigungs-Modal für sanftes Beenden (`SIGTERM`) oder sofortiges Schließen (`SIGKILL`).
+  - **Audit & Rechte**: Neue Berechtigung `agents.manage_processes` sowie Audit-Log-Einträge bei jedem Prozessabbruch.
+- **Modul 4: Server-Notizbuch & Wartungs-Kalender („Maintenance Mode“)**:
+  - **Wartungsmodus („Alarme unterdrücken“)**: Server können vorübergehend um +1h, +2h, +4h, +12h oder +24h in den Wartungsmodus versetzt werden. Solange ein Wartungsfenster aktiv ist, zeigt der Header ein orangefarbenes Warnbanner („Wartung bis HH:mm“) und **unterdrückt automatisch alle Alarm-Benachrichtigungen** (Status `suppressed` in der Historie).
+  - **Server-Notizbuch (`/api/agents/:id/notes`)**: Neuer Reiter **„Notizbuch“** im Server-Dialog. Ermöglicht das Anlegen, Formatieren und Speichern von Markdown-Notizen, Befehlslisten und Betriebsanleitungen pro Server.
+- **Modul 5: Erweiterte Benachrichtigungs-Kanäle (Discord Rich Embeds & Custom Webhooks)**:
+  - **Discord Rich Embeds**: Discord-Webhooks versenden nun farblich formatierte Rich Embeds statt reinem Text (Roter Balken `#ef4444` für ausgelöste Alarme, Grüner Balken `#3fb950` für Entwarnungen/Recovery).
+  - **Custom JSON-Webhooks (`method`, `headers`, `template`)**: Neuer Webhook-Typ „Custom“ für universelle Schnittstellen (z. B. Gotify, Matrix, Microsoft Teams, n8n) mit frei definierbarem JSON-Template und automatischen Platzhaltern (`{{server_name}}`, `{{alert_title}}`, `{{severity}}`, `{{value}}`, `{{message}}`).
+
+### ⚙️ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen**: Automatischer Try-Catch-Block in `backend/src/db.js` erstellt beim Start der App die neuen Tabellen `server_notes` und `maintenance_windows` sowie die Spalten `method`, `headers` und `template` in der `webhooks`-Tabelle. Kein manueller Eingriff oder Datenbank-Reset erforderlich.
+- **Agent-Kompatibilität**: Der Remote-Agent wurde in `agent/panel-agent.js` um die Routen `/processes` und `/processes/:pid/kill` erweitert. Ältere Agenten funktionieren weiterhin reibungslos; im Prozesse-Reiter wird bei alten Agenten lediglich ein leerer Zustand („Keine Prozesse gefunden“) angezeigt.
+- **Neustart-/Session-Verhalten**: Vorhandene Login-Sessions und Webhooks bleiben unberührt. Bestehende Discord-Webhooks wechseln automatisch in das neue Rich-Embed-Design.
+
+---
+
 ## [5.1.1.2] - 2026-08-01 (Build 293) — *Dashboard-Widgets bleiben an ihrem Platz*
+
 
 ### 🐛 Bugfixes & Stabilität
 - **Widgets wechselten von selbst ihre Position (`Dashboard.jsx`)**: Kacheln wurden nicht verschoben,

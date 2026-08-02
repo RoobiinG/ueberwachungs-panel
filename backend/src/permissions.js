@@ -12,6 +12,8 @@ const PERMISSIONS = [
   { key: 'agents.edit',         category: 'Remote-Server',      label: 'Server bearbeiten',               description: 'URL, Name und Token ändern' },
   { key: 'agents.delete',       category: 'Remote-Server',      label: 'Server löschen',                  description: 'Remote-Server entfernen' },
   { key: 'agents.update',       category: 'Remote-Server',      label: 'Agent aktualisieren',             description: 'Agent-Software auf Servern aktualisieren' },
+  { key: 'agents.manage_processes', category: 'Remote-Server',  label: 'Prozesse verwalten',              description: 'Top-Prozesse auf Remote-Servern ansehen und hängende Prozesse beenden' },
+
 
   // ─── Docker ───────────────────────────────────────────────────────────────
   { key: 'docker.view',         category: 'Docker',             label: 'Container anzeigen',              description: 'Container-Liste und Stats einsehen' },
@@ -96,7 +98,8 @@ const ALL_KEYS = PERMISSIONS.map(p => p.key);
 
 const OPERATOR_PERMISSIONS = [
   'dashboard.view',
-  'agents.view', 'agents.add', 'agents.edit', 'agents.update',
+  'agents.view', 'agents.add', 'agents.edit', 'agents.update', 'agents.manage_processes',
+
   'docker.view', 'docker.control', 'docker.logs', 'docker.label',
   'docker.images.view', 'docker.images.control',
   'docker.volumes.view', 'docker.volumes.control',

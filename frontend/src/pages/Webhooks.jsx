@@ -27,7 +27,7 @@ export default function Webhooks() {
   const { canWrite } = useAuth();
   const [webhooks,    setWebhooks]    = useState([]);
   const [showAdd,     setShowAdd]     = useState(false);
-  const [form,        setForm]        = useState({ name: '', type: 'telegram', url: '' });
+  const [form,        setForm]        = useState({ name: '', type: 'telegram', url: '', method: 'POST', headers: '{}', template: '' });
   const [tgToken,     setTgToken]     = useState('');
   const [tgChatId,    setTgChatId]    = useState('');
   const [testLoading, setTestLoading] = useState({});
@@ -41,10 +41,11 @@ export default function Webhooks() {
   useEffect(() => { load(); }, []);
 
   const resetForm = () => {
-    setForm({ name: '', type: 'telegram', url: '' });
+    setForm({ name: '', type: 'telegram', url: '', method: 'POST', headers: '{}', template: '' });
     setTgToken('');
     setTgChatId('');
   };
+
 
   const canSave = () => {
     if (!form.name.trim()) return false;
@@ -165,7 +166,8 @@ export default function Webhooks() {
             <div className="flex gap-2">
               {[
                 { value: 'telegram', label: '✈️ Telegram', desc: 'Bot-Token + Chat-ID' },
-                { value: 'discord',  label: '🎮 Discord',  desc: 'Webhook-URL' },
+                { value: 'discord',  label: '🎮 Discord',  desc: 'Webhook-URL (Rich Embed)' },
+                { value: 'custom',   label: '🔗 Custom',   desc: 'JSON Webhook / Template' },
               ].map(t => (
                 <button
                   key={t.value}
@@ -245,8 +247,61 @@ export default function Webhooks() {
               </p>
             </div>
           )}
+
+          {/* Custom — URL, Method, Headers, Template */}
+          {form.type === 'custom' && (
+            <div className="space-y-3">
+              <div className="grid grid-cols-4 gap-2">
+                <div className="col-span-1">
+                  <label className="block text-xs text-panel-muted mb-1">Methode</label>
+                  <select
+                    value={form.method || 'POST'}
+                    onChange={e => set('method', e.target.value)}
+                    className={inputCls}
+                  >
+                    <option value="POST">POST</option>
+                    <option value="PUT">PUT</option>
+                  </select>
+                </div>
+                <div className="col-span-3">
+                  <label className="block text-xs text-panel-muted mb-1">Webhook-URL</label>
+                  <input
+                    value={form.url}
+                    onChange={e => set('url', e.target.value)}
+                    placeholder="https://api.gotify.net/message?token=..."
+                    className={inputCls}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs text-panel-muted mb-1">Headers (JSON)</label>
+                <input
+                  value={form.headers || '{}'}
+                  onChange={e => set('headers', e.target.value)}
+                  placeholder='{"Authorization": "Bearer TOKEN"}'
+                  className={inputCls + ' font-mono text-xs'}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-panel-muted mb-1">JSON Template</label>
+                <textarea
+                  rows={4}
+                  value={form.template || ''}
+                  onChange={e => set('template', e.target.value)}
+                  placeholder='{"title": "{{alert_title}}", "message": "{{message}}", "server": "{{server_name}}"}'
+                  className={inputCls + ' font-mono text-xs'}
+                />
+                <p className="text-[11px] text-panel-muted mt-1">
+                  Verfügbare Platzhalter: <code className="bg-panel-card px-1 rounded">{"{{server_name}}"}</code>, <code className="bg-panel-card px-1 rounded">{"{{alert_title}}"}</code>, <code className="bg-panel-card px-1 rounded">{"{{severity}}"}</code>, <code className="bg-panel-card px-1 rounded">{"{{value}}"}</code>, <code className="bg-panel-card px-1 rounded">{"{{message}}"}</code>
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       </Modal>
+
     </div>
   );
 }

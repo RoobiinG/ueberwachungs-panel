@@ -11,25 +11,44 @@ router.get('/', requirePermission('webhooks.view'), (req, res) => {
 });
 
 router.post('/', requirePermission('webhooks.manage'), (req, res) => {
-  const { name, type, url, events = [] } = req.body;
+  const { name, type, url, events = [], method = 'POST', headers = '{}', template = '' } = req.body;
   if (!name || !type || !url) return res.status(400).json({ error: 'name, type, url required' });
   try { validatePublicUrl(url); } catch (e) { return res.status(400).json({ error: e.message }); }
-  const result = db.prepare('INSERT INTO webhooks (name, type, url, events) VALUES (?, ?, ?, ?)').run(name, type, url, JSON.stringify(events));
+  const result = db.prepare('INSERT INTO webhooks (name, type, url, events, method, headers, template) VALUES (?, ?, ?, ?, ?, ?, ?)').run(name, type, url, JSON.stringify(events), method, headers, template);
   auditLog(req, 'webhook.create', 'webhook', name, { type });
-  res.status(201).json({ id: result.lastInsertRowid, name, type, url, events });
+  res.status(201).json({ id: result.lastInsertRowid, name, type, url, events, method, headers, template });
 });
 
 router.put('/:id', requirePermission('webhooks.manage'), (req, res) => {
-  const { name, url, events, active } = req.body;
+  const { name, url, events, active, method, headers, template } = req.body;
   if (url !== undefined) {
     try { validatePublicUrl(url); } catch (e) { return res.status(400).json({ error: e.message }); }
   }
   const existing = db.prepare('SELECT name FROM webhooks WHERE id = ?').get(req.params.id);
-  db.prepare('UPDATE webhooks SET name = COALESCE(?, name), url = COALESCE(?, url), events = COALESCE(?, events), active = COALESCE(?, active) WHERE id = ?')
-    .run(name ?? null, url ?? null, events ? JSON.stringify(events) : null, active ?? null, req.params.id);
+  db.prepare(`
+    UPDATE webhooks SET
+      name = COALESCE(?, name),
+      url = COALESCE(?, url),
+      events = COALESCE(?, events),
+      active = COALESCE(?, active),
+      method = COALESCE(?, method),
+      headers = COALESCE(?, headers),
+      template = COALESCE(?, template)
+    WHERE id = ?
+  `).run(
+    name ?? null,
+    url ?? null,
+    events ? JSON.stringify(events) : null,
+    active ?? null,
+    method ?? null,
+    headers ?? null,
+    template ?? null,
+    req.params.id
+  );
   auditLog(req, 'webhook.edit', 'webhook', existing?.name || req.params.id);
   res.json({ success: true });
 });
+
 
 router.delete('/:id', requirePermission('webhooks.manage'), (req, res) => {
   const existing = db.prepare('SELECT name FROM webhooks WHERE id = ?').get(req.params.id);

@@ -265,7 +265,121 @@ router.post('/:id/services/:name/:action', requirePermission('services.control')
   }
 });
 
+// ── Prozesse ─────────────────────────────────────────────────────────────────
+
+router.get('/:id/processes', requirePermission('agents.view'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  try {
+    const { data } = await agentApi(agent).get('/processes');
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.response?.data?.error || err.message });
+  }
+});
+
+router.post('/:id/processes/:pid/kill', requirePermission('agents.manage_processes'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const { pid } = req.params;
+  const { signal = 'SIGTERM' } = req.body || {};
+  try {
+    const { data } = await agentApi(agent).post(`/processes/${encodeURIComponent(pid)}/kill`, { signal });
+    auditLog(req, 'agent.process.kill', 'process', `${pid} (${signal})`, { agentId: agent.id, server: agent.name });
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.response?.data?.error || err.message });
+  }
+});
+
+// ── Server-Notizbuch & Wartungsmodus (Modul 4) ───────────────────────────────
+
+router.get('/:id/notes', requirePermission('agents.view'), (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  try {
+    const row = db.prepare('SELECT title, content_md, updated_at FROM server_notes WHERE server_id = ?').get(String(agent.id));
+    res.json(row || { title: '', content_md: '', updated_at: null });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/:id/notes', requirePermission('agents.edit'), (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const { title = '', content_md = '' } = req.body || {};
+  try {
+    db.prepare(`
+      INSERT INTO server_notes (server_id, title, content_md, updated_at)
+      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(server_id) DO UPDATE SET
+        title = excluded.title,
+        content_md = excluded.content_md,
+        updated_at = CURRENT_TIMESTAMP
+    `).run(String(agent.id), title, content_md);
+    auditLog(req, 'agent.notes.update', 'agent', agent.name, { id: agent.id });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/:id/maintenance', requirePermission('agents.view'), (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  try {
+    const row = db.prepare(`
+      SELECT * FROM maintenance_windows
+      WHERE server_id = ? AND CURRENT_TIMESTAMP BETWEEN start_time AND end_time
+      ORDER BY end_time DESC LIMIT 1
+    `).get(String(agent.id));
+    res.json({ active: !!row, window: row || null });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/maintenance', requirePermission('agents.edit'), (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const { hours = 1, reason = 'Geplante Wartung' } = req.body || {};
+  try {
+    db.prepare('DELETE FROM maintenance_windows WHERE end_time < CURRENT_TIMESTAMP').run();
+    const result = db.prepare(`
+      INSERT INTO maintenance_windows (server_id, start_time, end_time, reason, created_by)
+      VALUES (?, CURRENT_TIMESTAMP, datetime(CURRENT_TIMESTAMP, '+' || ? || ' hours'), ?, ?)
+    `).run(String(agent.id), Number(hours) || 1, reason, req.user?.username || 'admin');
+    auditLog(req, 'agent.maintenance.enable', 'agent', agent.name, { hours, reason });
+    const row = db.prepare('SELECT * FROM maintenance_windows WHERE id = ?').get(result.lastInsertRowid);
+    res.json({ success: true, window: row });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/:id/maintenance', requirePermission('agents.edit'), (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  try {
+    db.prepare('DELETE FROM maintenance_windows WHERE server_id = ?').run(String(agent.id));
+    auditLog(req, 'agent.maintenance.disable', 'agent', agent.name, { id: agent.id });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 // ── Version & Update ─────────────────────────────────────────────────────────
+
 
 router.get('/:id/version', requirePermission('agents.view'), async (req, res) => {
   const agent = getOne(req.params.id);

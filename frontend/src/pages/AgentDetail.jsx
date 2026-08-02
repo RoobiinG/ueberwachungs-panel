@@ -6,12 +6,15 @@ import {
   Play, Square, RotateCcw, Layers, Network, Database, Zap,
   Package, CircleAlert, ChevronDown, ChevronUp,
   Container, Activity, Pause, CheckCircle2, ArrowUpCircle,
-  Terminal, Copy, Check
+  Terminal, Copy, Check,
+  FileText, ShieldAlert, Wrench, XCircle, Trash2, Search, Save, AlertTriangle
 } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
+import { Modal } from '../components/ui/Modal';
 import { useAuth } from '../context/AuthContext';
+
 import { useLiveInterval } from '../hooks/useLiveInterval';
 
 // ── Hilfsfunktionen ────────────────────────────────────────────────────────
@@ -175,7 +178,20 @@ export default function AgentDetail() {
   const [pmHost,     setPmHost]           = useState(null);
   const [pmSystem,   setPmSystem]         = useState(null);
 
+  // ── Modul 3 & Modul 4 States ───────────────────────────────────────────────
+  const [processes,       setProcesses]       = useState([]);
+  const [processFilter,   setProcessFilter]   = useState('');
+  const [processSort,     setProcessSort]     = useState('cpu'); // 'cpu' oder 'mem'
+  const [killModal,       setKillModal]       = useState(null);  // { pid, command }
+  const [killingPid,      setKillingPid]      = useState(false);
+  const [serverNotes,     setServerNotes]     = useState({ title: '', content_md: '' });
+  const [savingNotes,     setSavingNotes]     = useState(false);
+  const [notesSaved,      setNotesSaved]      = useState(false);
+  const [maintenance,     setMaintenance]     = useState(null);
+  const [settingMaintenance, setSettingMaintenance] = useState(false);
+
   const load = useCallback(async (silent = false) => {
+
     if (!silent) setLoading(true);
     else setRefreshing(true);
     setError('');
@@ -191,19 +207,65 @@ export default function AgentDetail() {
       setStats(statsRes.data);
       setServices(servicesRes.data);
 
-      // Docker parallel laden (kein Fehler wenn nicht verfügbar)
-      const [dockerRes, containersRes] = await Promise.all([
+      // Docker + Prozesse + Notizen + Wartungsfenster parallel laden
+      const [dockerRes, containersRes, procRes, notesRes, maintRes] = await Promise.all([
         axios.get(`/api/agents/${id}/docker`).catch(() => null),
         axios.get(`/api/agents/${id}/docker/containers`).catch(() => null),
+        axios.get(`/api/agents/${id}/processes`).catch(() => null),
+        axios.get(`/api/agents/${id}/notes`).catch(() => null),
+        axios.get(`/api/agents/${id}/maintenance`).catch(() => null),
       ]);
       setDocker(dockerRes?.data || null);
       setContainers(containersRes?.data || null);
+      if (procRes?.data) setProcesses(Array.isArray(procRes.data) ? procRes.data : []);
+      if (notesRes?.data) setServerNotes(notesRes.data);
+      if (maintRes?.data) setMaintenance(maintRes.data);
     } catch (err) {
       setError(err.response?.data?.error || 'Agent nicht erreichbar');
     }
     setLoading(false);
     setRefreshing(false);
   }, [id]);
+
+  const killProcess = async (pid, signal = 'SIGTERM') => {
+    setKillingPid(true);
+    try {
+      await axios.post(`/api/agents/${id}/processes/${pid}/kill`, { signal });
+      setKillModal(null);
+      setTimeout(() => load(true), 800);
+    } catch (err) {
+      alert(err.response?.data?.error || 'Fehler beim Beenden des Prozesses');
+    }
+    setKillingPid(false);
+  };
+
+  const saveNotes = async () => {
+    setSavingNotes(true);
+    try {
+      await axios.put(`/api/agents/${id}/notes`, serverNotes);
+      setNotesSaved(true);
+      setTimeout(() => setNotesSaved(false), 3000);
+    } catch (err) {
+      alert('Fehler beim Speichern der Notiz');
+    }
+    setSavingNotes(false);
+  };
+
+  const toggleMaintenance = async (hours) => {
+    setSettingMaintenance(true);
+    try {
+      if (hours === 0 || (maintenance && maintenance.active && !hours)) {
+        await axios.delete(`/api/agents/${id}/maintenance`);
+      } else {
+        await axios.post(`/api/agents/${id}/maintenance`, { hours, reason: 'Geplante Server-Wartung' });
+      }
+      setTimeout(() => load(true), 400);
+    } catch (err) {
+      alert('Fehler beim Ändern des Wartungsmodus');
+    }
+    setSettingMaintenance(false);
+  };
+
 
   useEffect(() => { load(); }, [load]);
 
@@ -304,8 +366,10 @@ export default function AgentDetail() {
   // Tabs anpassen: Docker-Tab nur wenn verfügbar
   const tabs = [
     ...(dockerAvailable ? [{ id: 'docker', label: 'Docker', icon: Container }] : []),
-    { id: 'system',   label: 'System',   icon: Server },
-    { id: 'services', label: 'Services', icon: Activity },
+    { id: 'system',    label: 'System',    icon: Server },
+    { id: 'services',  label: 'Services',  icon: Activity },
+    { id: 'processes', label: 'Prozesse',  icon: Cpu },
+    { id: 'notes',     label: 'Notizbuch', icon: FileText },
   ];
 
   // Initialen Tab setzen wenn Docker nicht verfügbar
@@ -320,12 +384,20 @@ export default function AgentDetail() {
             <ArrowLeft size={13} className="mr-1" />Zurück
           </Button>
           <div>
-            <h2 className="text-sm font-semibold text-panel-text">{agentName || `Server #${id}`}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-sm font-semibold text-panel-text">{agentName || `Server #${id}`}</h2>
+              {maintenance?.active && (
+                <Badge color="orange">
+                  <Wrench size={11} className="mr-1 inline" />Wartung bis {new Date(maintenance.window.end_time).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}
+                </Badge>
+              )}
+            </div>
             {stats?.os && (
               <p className="text-xs text-panel-muted">{stats.os.hostname} · {stats.os.distro} · Up {fmtUptime(stats.os.uptime)}</p>
             )}
           </div>
         </div>
+
         <div className="flex items-center gap-2">
           {agentVersion && (
             <span className="text-xs text-panel-muted font-mono hidden sm:block">v{agentVersion}</span>
@@ -822,6 +894,251 @@ export default function AgentDetail() {
           )}
         </Card>
       )}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          TAB: PROZESSE (Modul 3)
+      ═══════════════════════════════════════════════════════════════════ */}
+      {currentTab === 'processes' && (
+        <Card title="Top-Prozesse (CPU & RAM)">
+          <div className="space-y-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+              <div className="relative flex-1">
+                <Search size={14} className="absolute left-2.5 top-2.5 text-panel-muted" />
+                <input
+                  type="text"
+                  value={processFilter}
+                  onChange={e => setProcessFilter(e.target.value)}
+                  placeholder="Prozesse durchsuchen (PID, Name, Befehl)..."
+                  className="w-full bg-panel-surface border border-panel-border rounded-lg pl-8 pr-3 py-1.5 text-xs text-panel-text focus:outline-none focus:border-panel-accent"
+                />
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setProcessSort('cpu')}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                    processSort === 'cpu'
+                      ? 'border-panel-accent bg-panel-accent/10 text-panel-accent'
+                      : 'border-panel-border text-panel-muted hover:text-panel-text'
+                  }`}
+                >
+                  Nach CPU sortieren
+                </button>
+                <button
+                  onClick={() => setProcessSort('mem')}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
+                    processSort === 'mem'
+                      ? 'border-panel-accent bg-panel-accent/10 text-panel-accent'
+                      : 'border-panel-border text-panel-muted hover:text-panel-text'
+                  }`}
+                >
+                  Nach RAM sortieren
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-panel-border text-panel-muted">
+                    <th className="py-2 px-2">PID</th>
+                    <th className="py-2 px-2">USER</th>
+                    <th className="py-2 px-2 text-right">CPU %</th>
+                    <th className="py-2 px-2 text-right">RAM %</th>
+                    <th className="py-2 px-2">COMMAND</th>
+                    {canWrite && <th className="py-2 px-2 text-right">AKTION</th>}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-panel-border/40 font-mono">
+                  {processes
+                    .filter(p => {
+                      if (!processFilter.trim()) return true;
+                      const q = processFilter.toLowerCase();
+                      return (
+                        String(p.pid).includes(q) ||
+                        String(p.user).toLowerCase().includes(q) ||
+                        String(p.command).toLowerCase().includes(q)
+                      );
+                    })
+                    .sort((a, b) => processSort === 'cpu' ? (b.cpu - a.cpu) : (b.mem - a.mem))
+                    .map(p => (
+                      <tr key={p.pid} className="hover:bg-panel-surface/60 transition-colors">
+                        <td className="py-2 px-2 text-panel-text">{p.pid}</td>
+                        <td className="py-2 px-2 text-panel-muted">{p.user}</td>
+                        <td className={`py-2 px-2 text-right font-semibold ${p.cpu > 50 ? 'text-panel-red' : p.cpu > 20 ? 'text-panel-orange' : 'text-panel-text'}`}>
+                          {p.cpu.toFixed(1)}%
+                        </td>
+                        <td className={`py-2 px-2 text-right font-semibold ${p.mem > 50 ? 'text-panel-red' : p.mem > 20 ? 'text-panel-orange' : 'text-panel-text'}`}>
+                          {p.mem.toFixed(1)}%
+                        </td>
+                        <td className="py-2 px-2 text-panel-text truncate max-w-xs sm:max-w-md" title={p.command}>
+                          {p.command}
+                        </td>
+                        {canWrite && (
+                          <td className="py-2 px-2 text-right">
+                            <button
+                              onClick={() => setKillModal(p)}
+                              className="px-2 py-0.5 rounded border border-panel-red/30 text-panel-red hover:bg-panel-red/10 transition-colors text-[11px]"
+                              title="Prozess beenden"
+                            >
+                              Kill
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  {processes.length === 0 && (
+                    <tr>
+                      <td colSpan={canWrite ? 6 : 5} className="py-8 text-center text-panel-muted">
+                        Keine Prozesse gefunden (oder vom Agenten nicht zurückgegeben).
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          TAB: NOTIZBUCH & WARTUNG (Modul 4)
+      ═══════════════════════════════════════════════════════════════════ */}
+      {currentTab === 'notes' && (
+        <div className="space-y-4">
+          {/* Wartungsfenster-Steuerung */}
+          <Card title="Wartungsmodus (Alarme unterdrücken)">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                <div className={`p-2 rounded-lg ${maintenance?.active ? 'bg-panel-orange/15 text-panel-orange' : 'bg-panel-surface text-panel-muted'}`}>
+                  <Wrench size={18} />
+                </div>
+                <div>
+                  <h4 className="text-sm font-semibold text-panel-text">
+                    {maintenance?.active ? 'Wartungsmodus ist aktiv' : 'Keine Wartung aktiv'}
+                  </h4>
+                  <p className="text-xs text-panel-muted">
+                    {maintenance?.active
+                      ? `Alle Alarm-Webhooks sind bis ${new Date(maintenance.window.end_time).toLocaleString('de-DE')} stummgeschaltet.`
+                      : 'Schalte Alarm-Benachrichtigungen für diesen Server vorübergehend aus (z. B. während Reboots oder Updates).'}
+                  </p>
+                </div>
+              </div>
+
+              {canWrite && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {maintenance?.active ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => toggleMaintenance(0)}
+                      disabled={settingMaintenance}
+                      className="border border-panel-border text-panel-red hover:bg-panel-red/10"
+                    >
+                      Wartung beenden
+                    </Button>
+                  ) : (
+                    <>
+                      {[1, 2, 4, 12, 24].map(h => (
+                        <button
+                          key={h}
+                          onClick={() => toggleMaintenance(h)}
+                          disabled={settingMaintenance}
+                          className="px-2.5 py-1.5 text-xs font-medium rounded-lg border border-panel-border text-panel-text hover:border-panel-accent hover:bg-panel-accent/10 transition-colors"
+                        >
+                          +{h}h
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </Card>
+
+          {/* Server-Notizbuch Editor */}
+          <Card
+            title="Server-Notizbuch (Runbook & Doku)"
+            action={
+              canWrite && (
+                <Button size="sm" onClick={saveNotes} disabled={savingNotes}>
+                  <Save size={14} className="mr-1" />
+                  {savingNotes ? 'Speichert...' : notesSaved ? 'Gespeichert ✓' : 'Speichern'}
+                </Button>
+              )
+            }
+          >
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs text-panel-muted mb-1">Titel / Überschrift</label>
+                <input
+                  type="text"
+                  value={serverNotes.title || ''}
+                  onChange={e => setServerNotes(s => ({ ...s, title: e.target.value }))}
+                  placeholder="z.B. Produktions-Datenbank Server (#1)"
+                  disabled={!canWrite}
+                  className="w-full bg-panel-surface border border-panel-border rounded-lg px-3 py-1.5 text-sm text-panel-text focus:outline-none focus:border-panel-accent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-panel-muted mb-1">
+                  Notizen & Befehlssammlung (Markdown unterstützt)
+                </label>
+                <textarea
+                  rows={10}
+                  value={serverNotes.content_md || ''}
+                  onChange={e => setServerNotes(s => ({ ...s, content_md: e.target.value }))}
+                  placeholder="# Wichtige Befehle&#10;`docker compose logs -f`&#10;&#10;## Besonderheiten&#10;- Nginx läuft auf Port 80/443"
+                  disabled={!canWrite}
+                  className="w-full bg-panel-surface border border-panel-border rounded-lg p-3 text-xs text-panel-text font-mono focus:outline-none focus:border-panel-accent"
+                />
+              </div>
+
+              {serverNotes.updated_at && (
+                <p className="text-[11px] text-panel-muted">
+                  Zuletzt geändert: {new Date(serverNotes.updated_at).toLocaleString('de-DE')}
+                </p>
+              )}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* ── Kill Process Modal (Modul 3) ───────────────────────────────── */}
+      <Modal
+        open={!!killModal}
+        onClose={() => setKillModal(null)}
+        title="Prozess beenden"
+        footer={
+          <>
+            <Button variant="ghost" size="sm" onClick={() => setKillModal(null)}>Abbrechen</Button>
+            <Button size="sm" variant="danger" onClick={() => killProcess(killModal?.pid, 'SIGTERM')} disabled={killingPid}>
+              SIGTERM (Sanft beenden)
+            </Button>
+            <Button size="sm" variant="danger" onClick={() => killProcess(killModal?.pid, 'SIGKILL')} disabled={killingPid}>
+              SIGKILL (Sofort beenden)
+            </Button>
+          </>
+        }
+      >
+        {killModal && (
+          <div className="space-y-3 text-xs">
+            <p className="text-panel-text">
+              Möchtest du den folgenden Prozess wirklich beenden?
+            </p>
+            <div className="bg-panel-surface p-3 rounded-lg border border-panel-border font-mono space-y-1">
+              <p><span className="text-panel-muted">PID:</span> <span className="text-panel-text font-semibold">{killModal.pid}</span></p>
+              <p><span className="text-panel-muted">USER:</span> <span className="text-panel-text">{killModal.user}</span></p>
+              <p><span className="text-panel-muted">CPU/RAM:</span> <span className="text-panel-text">{killModal.cpu}% / {killModal.mem}%</span></p>
+              <p className="break-all"><span className="text-panel-muted">COMMAND:</span> <span className="text-panel-text">{killModal.command}</span></p>
+            </div>
+            <p className="text-panel-muted">
+              <strong className="text-panel-red">Hinweis:</strong> SIGTERM bittet den Prozess sich ordentlich zu beenden. SIGKILL schließt ihn sofort ohne Aufräumen.
+            </p>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
+

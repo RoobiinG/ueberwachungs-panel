@@ -232,8 +232,34 @@ db.exec(`
     PRIMARY KEY (user_id)
   );
 `);
+// ── Modul 4 & Modul 5 Migrationen ─────────────────────────────────────────────
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS server_notes (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      server_id  TEXT NOT NULL UNIQUE,
+      title      TEXT DEFAULT '',
+      content_md TEXT NOT NULL DEFAULT '',
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS maintenance_windows (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      server_id  TEXT NOT NULL,
+      start_time DATETIME NOT NULL,
+      end_time   DATETIME NOT NULL,
+      reason     TEXT DEFAULT '',
+      created_by TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+} catch (e) { console.warn('[DB] Migration Modul 4 fehlgeschlagen:', e.message); }
+try { db.exec("ALTER TABLE webhooks ADD COLUMN method TEXT DEFAULT 'POST'"); } catch {}
+try { db.exec("ALTER TABLE webhooks ADD COLUMN headers TEXT DEFAULT '{}'"); } catch {}
+try { db.exec("ALTER TABLE webhooks ADD COLUMN template TEXT DEFAULT ''"); } catch {}
+
 // Metrics: server_id-Spalte für Multi-Server-Langzeit-Monitoring
 try {
+
   const has = db.prepare("SELECT COUNT(*) AS c FROM pragma_table_info('metrics') WHERE name='server_id'").get().c > 0;
   if (!has) {
     db.exec(`
