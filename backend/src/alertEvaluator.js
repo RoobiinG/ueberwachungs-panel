@@ -201,6 +201,45 @@ function getServerList(rule) {
   return [{ key: 'local', name: 'Lokal', agentId: null }];
 }
 
+// ─── Server-Liste für PatchMon-Regeln ────────────────────────────────────────
+// PatchMon-Alerts gelten für *alle* Server mit PatchMon-Verknüpfung (lokaler Server
+// + Remote-Agenten), nicht nur für den lokalen. Eine Auswahl in agent_ids grenzt
+// zusätzlich ein; ohne Auswahl zählen alle verknüpften Server.
+const warnedPatchmonRules = new Set();
+function getPatchmonServerList(rule) {
+  let selected = [];
+  try { selected = JSON.parse(rule.agent_ids || '[]'); } catch {}
+  if (selected.length === 0 && rule.agent_id) selected = [String(rule.agent_id)];
+  const wanted = new Set(selected.map(String));
+  const all    = wanted.size === 0;
+
+  const list = [];
+  if ((all || wanted.has('local')) && getSetting('patchmonLocalHostId')) {
+    list.push({ key: 'local', name: 'Lokal', agentId: null });
+  }
+
+  let rows = [];
+  try {
+    rows = db.prepare(
+      "SELECT id, name FROM remote_agents WHERE patchmon_host_id IS NOT NULL AND TRIM(patchmon_host_id) != ''"
+    ).all();
+  } catch {}
+  for (const a of rows) {
+    if (all || wanted.has(String(a.id))) list.push({ key: String(a.id), name: a.name, agentId: a.id });
+  }
+
+  // Ohne jede Verknüpfung liefe die Regel still ins Leere → einmalig im Log melden.
+  if (list.length === 0) {
+    if (!warnedPatchmonRules.has(rule.id)) {
+      warnedPatchmonRules.add(rule.id);
+      console.warn(`[AlertEvaluator] PatchMon-Regel "${rule.name}" hat keinen verknüpften Server — unter Einstellungen › PatchMon-Server-Verknüpfung zuordnen.`);
+    }
+  } else {
+    warnedPatchmonRules.delete(rule.id);
+  }
+  return list;
+}
+
 // ─── Alle Metrik-Werte für eine Bedingungsliste holen ────────────────────────
 async function evaluateConditions(conditions, agentId, targetRef) {
   const results = [];
@@ -241,8 +280,9 @@ async function evaluate() {
       if (rule.target_ref) targetRefs = [String(rule.target_ref)];
     }
 
-    const isStorage = conditions.some(c => c.metric === 'hetzner_storage_usage');
-    const isMCHost  = conditions.some(c => c.metric === 'mchost_runtime');
+    const isStorage  = conditions.some(c => c.metric === 'hetzner_storage_usage');
+    const isMCHost   = conditions.some(c => c.metric === 'mchost_runtime');
+    const isPatchmon = conditions.some(c => c.metric === 'patchmon_updates' || c.metric === 'patchmon_security');
     const servers = [];
     if (isStorage) {
       const boxes = (await getStorageBoxesSafe()) || [];
@@ -252,6 +292,8 @@ async function evaluate() {
       const mcs = (await getMCHostServersSafe()) || [];
       const relevant = targetRefs.length > 0 ? mcs.filter(m => targetRefs.includes(String(m.id))) : mcs;
       for (const m of relevant) servers.push({ key: 'mchost:' + m.id, name: m.name || `VServer ${m.id}`, tag: getServerTagString(m), agentId: null, targetRef: String(m.id) });
+    } else if (isPatchmon) {
+      for (const s of getPatchmonServerList(rule)) servers.push({ ...s, tag: null, targetRef: null });
     } else {
       for (const s of getServerList(rule)) servers.push({ ...s, tag: getServerTagString(s), targetRef: null });
     }

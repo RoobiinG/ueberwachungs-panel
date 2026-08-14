@@ -18,6 +18,38 @@ Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweis
 
 ---
 
+## [5.2.0.1] - 2026-08-15 (Build 295) — *PatchMon-Alerts erreichen alle Server*
+
+### 🐛 Bugfixes
+- **PatchMon-Alarme lösten nie aus**: Regeln vom Typ „🔧 PatchMon-Updates“ wurden ausschließlich für den
+  **lokalen Panel-Server** ausgewertet. Alle über einen Remote-Agenten angebundenen Server blieben
+  unberücksichtigt — auch dann, wenn sie in den Einstellungen sauber mit einem PatchMon-Host verknüpft waren.
+  War zusätzlich der lokale Server nicht verknüpft, verwarf der Alert-Evaluator die Regel bei jedem Durchlauf
+  stillschweigend, sodass **überhaupt keine** PatchMon-Benachrichtigung versendet wurde.
+  Ursache war die fehlende PatchMon-Verzweigung in `backend/src/alertEvaluator.js`: ohne Server-Auswahl fiel
+  die Regel auf den Standardwert `local` zurück, statt wie bei Storage-Boxen und MC-Host24 automatisch alle
+  passenden Ziele einzusammeln. PatchMon-Regeln prüfen jetzt **alle verknüpften Server** (lokal + Agenten).
+- **Server-Auswahl bei PatchMon-Regeln fehlte**: Im Regel-Dialog war die Server-Liste für den PatchMon-Typ
+  komplett ausgeblendet, wodurch sich eine Regel gar nicht auf einzelne Server eingrenzen ließ. Die Auswahl
+  ist nun sichtbar; ohne Auswahl gelten weiterhin alle verknüpften Server.
+- **Stille Fehlkonfiguration wird gemeldet**: Findet eine PatchMon-Regel keinen einzigen verknüpften Server,
+  schreibt der Alert-Evaluator jetzt einmalig eine Warnung ins Panel-Log statt kommentarlos nichts zu tun.
+  Der Hinweistext im Regel-Dialog verweist zusätzlich direkt auf *Einstellungen › PatchMon-Server-Verknüpfung*.
+
+### ⚙️ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen**: Keine. Die Änderung nutzt ausschließlich vorhandene Felder
+  (`remote_agents.patchmon_host_id` und die Einstellung `patchmonLocalHostId`).
+- **Agent-Kompatibilität**: Unverändert — die PatchMon-Werte stammen aus der PatchMon-API, nicht vom Agenten.
+  Ein Agent-Update ist nicht erforderlich.
+- **Neustart-/Session-Verhalten**: Sessions und Webhooks bleiben unberührt. Bestehende PatchMon-Regeln greifen
+  nach dem Update sofort und ohne Bearbeitung. **Zu erwarten ist direkt nach dem Neustart ein Schwung
+  Benachrichtigungen**, weil die bislang nie ausgewerteten Server ihre Schwelle bereits überschreiten — pro
+  Regel und Server wird einmalig ausgelöst, danach erst wieder nach einer Entwarnung.
+- **Voraussetzung**: Ein Server meldet nur, wenn er unter *Einstellungen › PatchMon-Server-Verknüpfung* einem
+  PatchMon-Host zugeordnet ist. Nicht verknüpfte Server bleiben bewusst stumm.
+
+---
+
 ## [5.2.0.0] - 2026-08-02 (Build 294) — *Prozess-Manager, Notizbuch & Discord-Embeds*
 
 ### ✨ Neue Module & Funktionen

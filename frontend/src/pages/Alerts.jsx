@@ -224,10 +224,13 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
         </div>
 
         {/* Server / Target Auswahl */}
-        {!isAction && !isPatchmon && (
+        {!isAction && (
         <div>
           <label className="text-xs text-panel-muted block mb-1">
-            {isStorage ? 'Storage Boxes' : isMCHost ? 'MC-Host24 VServer' : 'Server'} <span className="text-panel-muted/60 font-normal">(keine Auswahl = alle automatisch)</span>
+            {isStorage ? 'Storage Boxes' : isMCHost ? 'MC-Host24 VServer' : 'Server'}{' '}
+            <span className="text-panel-muted/60 font-normal">
+              {isPatchmon ? '(keine Auswahl = alle verknüpften Server)' : '(keine Auswahl = alle automatisch)'}
+            </span>
           </label>
           <div className="flex flex-wrap gap-1.5 p-2 bg-panel-surface border border-panel-border rounded-md">
             {isStorage ? (
@@ -313,7 +316,9 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
               </span>
             </div>
             <p className="text-xs text-panel-muted mt-1">
-              Meldet nur Server, die mit einem PatchMon-Host verknüpft sind (Server-Editor oder Einstellungen).
+              Meldet nur Server, die mit einem PatchMon-Host verknüpft sind — die Zuordnung steht unter
+              <span className="text-panel-text"> Einstellungen › PatchMon-Server-Verknüpfung</span> (oder im Server-Editor).
+              Ohne Verknüpfung löst die Regel nie aus.
             </p>
           </div>
         )}
