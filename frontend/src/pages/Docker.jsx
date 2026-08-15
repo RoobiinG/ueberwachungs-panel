@@ -8,7 +8,7 @@ import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { ServerSelector } from '../components/ui/ServerSelector';
-import { RefreshCw, Play, Square, RotateCcw, Tag, Check, X, ScrollText, ChevronDown, ChevronUp, Zap, Shield } from 'lucide-react';
+import { RefreshCw, Play, Square, RotateCcw, Tag, Check, X, ScrollText, ChevronDown, ChevronUp, Zap, Shield, Terminal } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useWSMessage } from '../context/WSContext';
 
@@ -187,6 +187,17 @@ export default function Docker() {
       setLogsContent(p => ({ ...p, [cid]: `Fehler: ${err.response?.data?.error || err.message}` }));
     }
     setLogsLoading(p => ({ ...p, [cid]: false }));
+  };
+
+  // ── Konsole (Terminal) via Dockhand ────────────────────────────────────────
+  const openTerminal = async (cid) => {
+    try {
+      const server = selectedServer || 'local';
+      const { data } = await axios.get(`/api/dockhand/terminal-url/${cid}?server=${server}`);
+      window.open(data.url, '_blank');
+    } catch (err) {
+      alert(err.response?.data?.error || 'Fehler beim Öffnen der Konsole');
+    }
   };
 
   // ── Aktionen (Start/Stop/Restart) ─────────────────────────────────────────
@@ -369,6 +380,16 @@ export default function Docker() {
                           </button>
                         )}
                       </>
+                    )}
+                    {/* Terminal-Button — nur mit docker.control (canWrite) */}
+                    {canWrite && isRun && (
+                      <button
+                        onClick={() => openTerminal(c.id)}
+                        title="Terminal öffnen (Dockhand)"
+                        className="p-1.5 rounded transition-colors text-panel-muted hover:text-panel-text hover:bg-panel-card"
+                      >
+                        <Terminal size={13} />
+                      </button>
                     )}
                     {/* Logs-Button — nur mit docker.logs Recht */}
                     {canLogs && (

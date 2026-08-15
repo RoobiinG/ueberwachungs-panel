@@ -1,6 +1,6 @@
 {
-  "version": "5.2.1.1",
-  "build": 297,
+  "version": "5.2.2.0",
+  "build": 298,
   "date": "2026-08-15",
-  "codename": "SMTP UI & Passkey Fix"
+  "codename": "Dockhand Terminal Integration"
 }

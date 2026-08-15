@@ -18,6 +18,18 @@ Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweis
 
 ---
 
+## [5.2.2.0] - 2026-08-15 (Build 298) — *Dockhand Terminal Integration*
+
+### ✨ Features & Verbesserungen
+- **Dockhand Terminal-Verknüpfung**: In der Docker-Übersicht gibt es nun bei laufenden Containern einen neuen „Konsole“-Button. Dieser fragt dynamisch die zugehörige Dockhand Environment-ID des Servers (lokal oder Remote-Agent) ab und öffnet das Dockhand-Webterminal nahtlos in einem neuen Tab.
+
+### ⚙️ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen**: Keine.
+- **Voraussetzungen**: Die Dockhand-URL muss in den Panel-Einstellungen hinterlegt und das passende Environment zugewiesen sein (wie bisher auch für die Container-Auflistung).
+- **Berechtigungen**: Der Terminal-Button wird nur Administratoren und Nutzern mit der Erlaubnis zur Docker-Steuerung (`docker.control`) angezeigt.
+
+---
+
 ## [5.2.1.1] - 2026-08-15 (Build 297) — *SMTP UI & Passkey Fix*
 
 ### ✨ Features & Verbesserungen

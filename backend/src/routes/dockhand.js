@@ -24,6 +24,25 @@ router.get('/config', requirePermission('settings.view'), (req, res) => {
   });
 });
 
+// ── GET /api/dockhand/terminal-url/:containerId ───────────────────────────────
+router.get('/terminal-url/:containerId', requirePermission('docker.control'), (req, res) => {
+  const { server } = req.query; // 'local' or agentId
+  const dhUrl = getSetting('dockhandUrl');
+  if (!dhUrl) return res.status(400).json({ error: 'Dockhand URL nicht konfiguriert' });
+
+  let envId = null;
+  if (!server || server === 'local' || server === 'null') {
+    envId = getSetting('dockhandLocalEnvId');
+  } else {
+    const agent = db.prepare('SELECT dockhand_env_id FROM remote_agents WHERE id = ?').get(server);
+    envId = agent?.dockhand_env_id;
+  }
+  
+  if (!envId) return res.status(400).json({ error: 'Kein Dockhand-Environment für diesen Server zugewiesen' });
+  
+  res.json({ url: `${dhUrl.replace(/\/$/, '')}/terminal?env=${encodeURIComponent(envId)}&id=${encodeURIComponent(req.params.containerId)}` });
+});
+
 // ── POST /api/dockhand/config ─────────────────────────────────────────────────
 router.post('/config', requirePermission('settings.manage'), (req, res) => {
   const { url, apiToken, localEnvId } = req.body;
