@@ -542,8 +542,8 @@ async function handler(req, res) {
 
     } else if (url === '/config' && req.method === 'POST') {
       const body = await new Promise((resolve) => {
-        let d = ''; req.on('data', c => { d += c; });
-        req.on('end', () => { try { resolve(JSON.parse(d || '{}')); } catch { resolve({}); } });
+        const chunks = []; req.on('data', c => chunks.push(c));
+        req.on('end', () => { try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')); } catch { resolve({}); } });
       });
       if (body.panelUrl !== undefined) {
         const envPath = path.join(DIR, '.env');
@@ -565,9 +565,9 @@ async function handler(req, res) {
 
       // Body lesen (Panel schickt { script: "..." } direkt)
       const body = await new Promise((resolve) => {
-        let d = '';
-        req.on('data', c => { d += c; });
-        req.on('end', () => { try { resolve(JSON.parse(d || '{}')); } catch { resolve({}); } });
+        const chunks = [];
+        req.on('data', c => chunks.push(c));
+        req.on('end', () => { try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')); } catch { resolve({}); } });
       });
 
       try {
@@ -614,7 +614,7 @@ async function handler(req, res) {
     } else if (url.startsWith('/processes/') && url.endsWith('/kill') && req.method === 'POST') {
       const parts = url.split('/');
       const pid = decodeURIComponent(parts[2]);
-      const raw = await new Promise((resolve) => { let d = ''; req.on('data', c => d += c); req.on('end', () => resolve(d)); });
+      const raw = await new Promise((resolve) => { const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8'))); });
       const { signal } = JSON.parse(raw || '{}');
       const output = await killProcess(pid, signal);
       respond(res, 200, { success: true, message: output });
@@ -625,7 +625,7 @@ async function handler(req, res) {
       respond(res, 200, await detectAgentFirewall());
 
     } else if (url === '/firewall/toggle' && req.method === 'POST') {
-      const raw = await new Promise((resolve) => { let d = ''; req.on('data', c => d += c); req.on('end', () => resolve(d)); });
+      const raw = await new Promise((resolve) => { const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8'))); });
       const { enable, tool: reqTool } = JSON.parse(raw || '{}');
       if (typeof enable !== 'boolean') return respond(res, 400, { error: 'enable (bool) erforderlich' });
       const { tool } = await detectAgentFirewall();
@@ -651,7 +651,7 @@ async function handler(req, res) {
       respond(res, 200, { tool, rules: await getFirewallRules() });
 
     } else if ((url === '/firewall/allow' || url === '/firewall/deny') && req.method === 'POST') {
-      const raw = await new Promise((resolve) => { let d = ''; req.on('data', c => d += c); req.on('end', () => resolve(d)); });
+      const raw = await new Promise((resolve) => { const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8'))); });
       const { port, proto, from } = JSON.parse(raw || '{}');
       const action = url.endsWith('/allow') ? 'allow' : 'deny';
       await firewallAllow(port, proto, from, action);
@@ -712,7 +712,7 @@ async function handler(req, res) {
       await execAsync('docker image prune -a -f', { timeout: 60000 });
       respond(res, 200, { success: true });
     } else if (url === '/docker/images/pull' && req.method === 'POST') {
-      const raw = await new Promise((resolve) => { let d = ''; req.on('data', c => d += c); req.on('end', () => resolve(d)); });
+      const raw = await new Promise((resolve) => { const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8'))); });
       const { image } = JSON.parse(raw || '{}');
       if (!image) return respond(res, 400, { error: 'image fehlt' });
       await execAsync(`docker pull ${image}`, { timeout: 300000 });

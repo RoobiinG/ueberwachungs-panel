@@ -16,6 +16,11 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.3.1.1] - 2026-08-16 (Build 301) — *Agent Update Hotfix*
+
+### 🐛 Bugfixes
+- **Agent Update Signatur**: Ein Fehler wurde behoben, bei dem das automatische Agent-Update auf Remote-Servern mit dem Fehler "Ungültige HMAC-Signatur — Update abgelehnt" fehlschlug. Dies lag daran, dass mehrzeilige Payloads (wie das Agent-Script) vom Panel stückweise per POST gesendet wurden und die unvollständige String-Konkatenierung der Chunks bei Multi-Byte UTF-8 Zeichen zu einer veränderten Datei führte, die nicht mehr zur errechneten Signatur passte. Der Agent nutzt nun korrekte Puffer (`Buffer.concat`).
+
 ---
 
 ## [5.3.1.0] - 2026-08-16 (Build 300) — *Native Agent Docker Integration & Global Mixed Mode*
