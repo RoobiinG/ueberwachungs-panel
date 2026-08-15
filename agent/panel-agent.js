@@ -13,7 +13,7 @@ const { promisify } = require('util');
 const fs = require('fs');
 
 const execAsync = promisify(exec);
-const VERSION = '2.4.2';
+const VERSION = '2.5.0';
 const REPO_RAW = 'https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master/agent/panel-agent.js';
 const PORT  = parseInt(process.env.PANEL_AGENT_PORT || '7331');
 const TOKEN = process.env.PANEL_AGENT_TOKEN || '';
