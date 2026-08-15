@@ -5,7 +5,7 @@ const { requirePermission } = require('../middleware/requirePermission');
 const { auditLog } = require('../utils/audit');
 
 router.get('/', requirePermission('users.view'), (req, res) => {
-  const users = db.prepare('SELECT id, username, role, created_at, last_login, last_login_ip, last_login_from FROM users').all();
+  const users = db.prepare('SELECT id, username, email, role, twofa_type, created_at, last_login, last_login_ip, last_login_from FROM users').all();
   const roles = db.prepare('SELECT name, label FROM roles').all();
   const roleMap = Object.fromEntries(roles.map(r => [r.name, r.label]));
   res.json(users.map(u => ({ ...u, roleLabel: roleMap[u.role] || u.role })));
@@ -30,13 +30,28 @@ router.post('/', requirePermission('users.manage'), (req, res) => {
 });
 
 router.put('/:id', requirePermission('users.manage'), (req, res) => {
-  const { role, password } = req.body;
+  const { role, password, username, email } = req.body;
   const userId = parseInt(req.params.id);
 
-  const target = db.prepare('SELECT id, role FROM users WHERE id = ?').get(userId);
+  const target = db.prepare('SELECT id, role, username, email FROM users WHERE id = ?').get(userId);
   if (!target) return res.status(404).json({ error: 'Benutzer nicht gefunden' });
 
-  if (role) {
+  if (username && username !== target.username) {
+    try {
+      db.prepare('UPDATE users SET username = ? WHERE id = ?').run(username, userId);
+      auditLog(req, 'user.update_username', 'user', userId.toString(), { oldUsername: target.username, newUsername: username });
+    } catch (err) {
+      if (err.message.includes('UNIQUE')) return res.status(409).json({ error: 'Benutzername bereits vergeben' });
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
+  if (email !== undefined && email !== target.email) {
+    db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email, userId);
+    auditLog(req, 'user.update_email', 'user', userId.toString(), { oldEmail: target.email, newEmail: email });
+  }
+
+  if (role && role !== target.role) {
     if (role === 'admin') return res.status(403).json({ error: 'Admin-Rolle kann nicht vergeben werden' });
     const validRole = db.prepare('SELECT name FROM roles WHERE name = ?').get(role);
     if (!validRole) return res.status(400).json({ error: 'Ungültige Rolle' });
@@ -47,6 +62,7 @@ router.put('/:id', requirePermission('users.manage'), (req, res) => {
     db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, userId);
     auditLog(req, 'user.role_change', 'user', target.id.toString(), { newRole: role, previousRole: target.role });
   }
+  
   if (password) {
     if (!password.trim()) return res.status(400).json({ error: 'Passwort darf nicht leer sein' });
     db.prepare('UPDATE users SET password = ? WHERE id = ?').run(bcrypt.hashSync(password, 10), userId);
@@ -61,6 +77,19 @@ router.delete('/:id', requirePermission('users.manage'), (req, res) => {
   const delUser = db.prepare('SELECT username FROM users WHERE id = ?').get(userId);
   db.prepare('DELETE FROM users WHERE id = ?').run(userId);
   auditLog(req, 'user.delete', 'user', delUser?.username || userId.toString());
+  res.json({ success: true });
+});
+
+router.post('/:id/disable-2fa', requirePermission('users.manage'), (req, res) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Nur Administratoren können 2FA für andere Benutzer deaktivieren' });
+  }
+  const userId = parseInt(req.params.id);
+  const target = db.prepare('SELECT username FROM users WHERE id = ?').get(userId);
+  if (!target) return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+
+  db.prepare("UPDATE users SET twofa_type = 'none', twofa_secret = NULL, twofa_code = NULL, twofa_expires = NULL WHERE id = ?").run(userId);
+  auditLog(req, 'user.disable_2fa', 'user', target.username);
   res.json({ success: true });
 });
 

@@ -18,6 +18,19 @@ Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweis
 
 ---
 
+## [5.2.1.0] - 2026-08-15 (Build 296) — *Benutzerverwaltung erweitert*
+
+### ✨ Features & Verbesserungen
+- **Benutzerprofile bearbeiten**: Die Verwaltung von Benutzern wurde vervollständigt. Neben der Rolle und dem Passwort können nun auch der **Benutzername** und die **E-Mail-Adresse** nachträglich geändert werden. 
+- **2FA-Notfall-Reset für Administratoren**: Super-Admins können ab sofort jegliche Form der Zwei-Faktor-Authentifizierung (TOTP-App oder E-Mail) für andere Benutzer per Knopfdruck aus der Benutzerliste deaktivieren. Dies hilft sofort, wenn sich Benutzer selbst ausgesperrt haben, ohne dass manuelle Datenbankeingriffe nötig sind.
+
+### ⚙️ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen**: Keine Schema-Änderungen. Die Endpunkte greifen auf bestehende Felder zurück (`username`, `email`, `twofa_type` etc.).
+- **Audit-Log**: Neue Protokoll-Ereignisse für die Änderungen am Profil (`user.update_username`, `user.update_email`) sowie für das Zurücksetzen der 2FA (`user.disable_2fa`) stellen sicher, dass Admins jeden Eingriff nachvollziehen können.
+- **Sicherheit**: Die E-Mail-Adresse wird nun proaktiv in der Listenansicht mit angezeigt. Die 2FA-Deaktivierungs-Funktion ist serverseitig strikt auf die systemweite `admin`-Rolle beschränkt.
+
+---
+
 ## [5.2.0.1] - 2026-08-15 (Build 295) — *PatchMon-Alerts erreichen alle Server*
 
 ### 🐛 Bugfixes

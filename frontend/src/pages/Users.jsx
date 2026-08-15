@@ -4,7 +4,7 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
-import { Plus, Trash2, Lock } from 'lucide-react';
+import { Plus, Trash2, Lock, ShieldOff } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const inputCls = 'w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:border-panel-accent';
@@ -15,7 +15,7 @@ export default function Users() {
   const [showAdd,    setShowAdd]    = useState(false);
   const [form,       setForm]       = useState({ username: '', password: '', role: 'guest' });
   const [editUser,   setEditUser]   = useState(null);
-  const [editRole,   setEditRole]   = useState('');
+  const [editForm,   setEditForm]   = useState({ username: '', email: '', password: '', role: '' });
   const { user: me } = useAuth();
 
   const load = async () => {
@@ -41,10 +41,25 @@ export default function Users() {
     }
   };
 
-  const saveRole = async () => {
+  const saveUser = async () => {
     try {
-      await axios.put(`/api/users/${editUser.id}`, { role: editRole });
+      await axios.put(`/api/users/${editUser.id}`, {
+        username: editForm.username,
+        email: editForm.email,
+        password: editForm.password || undefined,
+        role: editForm.role
+      });
       setEditUser(null);
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Fehler');
+    }
+  };
+
+  const disable2FA = async (id) => {
+    if (!confirm('2FA für diesen Benutzer wirklich deaktivieren?')) return;
+    try {
+      await axios.post(`/api/users/${id}/disable-2fa`);
       load();
     } catch (err) {
       alert(err.response?.data?.error || 'Fehler');
@@ -92,6 +107,12 @@ export default function Users() {
                     ) : (
                       <span className="text-panel-muted/60 italic">Bisher kein Login</span>
                     )}
+                    {u.email && <span className="text-panel-muted/60">• {u.email}</span>}
+                    {u.twofa_type && u.twofa_type !== 'none' && (
+                      <span className="text-panel-accent/80 border border-panel-accent/30 bg-panel-accent/10 px-1 rounded flex items-center gap-1">
+                        <Lock size={10} /> 2FA
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -99,9 +120,17 @@ export default function Users() {
                 <Badge color={u.role === 'admin' ? 'orange' : 'blue'}>
                   {u.roleLabel || u.role}
                 </Badge>
+                {me?.role === 'admin' && u.twofa_type && u.twofa_type !== 'none' && u.id !== me?.id && (
+                  <Button size="sm" variant="ghost" onClick={() => disable2FA(u.id)} title="2FA deaktivieren">
+                    <ShieldOff size={14} className="text-panel-orange" />
+                  </Button>
+                )}
                 {u.id !== me?.id && u.role !== 'admin' && (
-                  <Button size="sm" variant="ghost" onClick={() => { setEditUser(u); setEditRole(u.role); }}>
-                    Rolle
+                  <Button size="sm" variant="ghost" onClick={() => { 
+                    setEditUser(u); 
+                    setEditForm({ username: u.username, email: u.email || '', password: '', role: u.role }); 
+                  }}>
+                    Bearbeiten
                   </Button>
                 )}
                 {u.id !== me?.id && u.role !== 'admin' && (
@@ -142,19 +171,31 @@ export default function Users() {
         </div>
       </Modal>
 
-      {/* Modal: Rolle ändern */}
+      {/* Modal: Benutzer bearbeiten */}
       {editUser && (
         <Modal open={!!editUser} onClose={() => setEditUser(null)}
-          title={`Rolle ändern: ${editUser.username}`}
+          title={`Benutzer bearbeiten: ${editUser.username}`}
           footer={<>
             <Button variant="ghost" size="sm" onClick={() => setEditUser(null)}>Abbrechen</Button>
-            <Button size="sm" onClick={saveRole}>Speichern</Button>
+            <Button size="sm" onClick={saveUser}>Speichern</Button>
           </>}
         >
           <div className="space-y-3">
             <div>
-              <label className="block text-xs text-panel-muted mb-1">Neue Rolle</label>
-              <select value={editRole} onChange={e => setEditRole(e.target.value)} className={inputCls}>
+              <label className="block text-xs text-panel-muted mb-1">Benutzername</label>
+              <input value={editForm.username} onChange={e => setEditForm(f => ({ ...f, username: e.target.value }))} className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs text-panel-muted mb-1">E-Mail-Adresse</label>
+              <input type="email" value={editForm.email} onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))} className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs text-panel-muted mb-1">Neues Passwort (optional)</label>
+              <input type="password" placeholder="Leer lassen, um das Passwort beizubehalten" value={editForm.password} onChange={e => setEditForm(f => ({ ...f, password: e.target.value }))} className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs text-panel-muted mb-1">Rolle</label>
+              <select value={editForm.role} onChange={e => setEditForm(f => ({ ...f, role: e.target.value }))} className={inputCls}>
                 {roles.map(r => (
                   <option key={r.id} value={r.name}>{r.label}</option>
                 ))}
