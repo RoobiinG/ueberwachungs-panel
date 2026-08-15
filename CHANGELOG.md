@@ -18,6 +18,20 @@ Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweis
 
 ---
 
+## [5.2.1.1] - 2026-08-15 (Build 297) — *SMTP UI & Passkey Fix*
+
+### ✨ Features & Verbesserungen
+- **SMTP-Einstellungen wieder da**: Die Eingabemasken zur Konfiguration des SMTP-Servers (inklusive Test-Mail-Funktion) wurden in den Einstellungen unter „System & Backup“ wieder eingebaut.
+
+### 🐛 Bugfixes
+- **Passkey-Registrierung fehlgeschlagen**: Die Registrierung und Anmeldung mit Passkeys brach mit HTTP 400 (`User verification was required, but user could not be verified`) ab, wenn der verwendete Authenticator keine Biometrie oder PIN-Abfrage unterstützte. Die Verifizierung wurde angepasst, sodass „bevorzugte“ Nutzerüberprüfung nicht mehr fälschlicherweise serverseitig als zwingend vorausgesetzt wird.
+
+### ⚙️ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen**: Keine.
+- **Kompatibilität**: Die SMTP-Einstellungen greifen sofort auf die bereits im Backend vorhandenen Endpunkte zu. Passkey-Logins funktionieren nun auch reibungslos mit Passwortmanagern ohne Windows Hello (z.B. Enpass).
+
+---
+
 ## [5.2.1.0] - 2026-08-15 (Build 296) — *Benutzerverwaltung erweitert*
 
 ### ✨ Features & Verbesserungen

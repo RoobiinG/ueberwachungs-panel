@@ -1860,6 +1860,74 @@ export default function Settings() {
           {/* ── GitHub Update-Token ── */}
           <GitHubTokenCard status={status} onReload={loadAdmin} />
 
+          {/* ── SMTP-Server (E-Mail) ── */}
+          {isAdmin && (
+            <Card title={<span className="flex items-center gap-2"><Send size={14} />SMTP-Server (E-Mail-Versand)</span>}>
+              <div className="space-y-3">
+                <p className="text-xs text-panel-muted mb-2">
+                  Wird benötigt, um Passwort-Reset-Links und E-Mail-Bestätigungscodes für 2FA zu versenden.
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs text-panel-muted mb-1">SMTP-Host</label>
+                    <input type="text" value={smtp.host} onChange={e => setSmtp(s => ({ ...s, host: e.target.value }))} placeholder="smtp.beispiel.de" className={inputCls} />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-panel-muted mb-1">Port</label>
+                    <input type="number" value={smtp.port} onChange={e => setSmtp(s => ({ ...s, port: Number(e.target.value) }))} placeholder="587" className={inputCls} />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-panel-muted mb-1">Absender-E-Mail (From)</label>
+                  <input type="email" value={smtp.from} onChange={e => setSmtp(s => ({ ...s, from: e.target.value }))} placeholder="noreply@beispiel.de" className={inputCls} />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs text-panel-muted mb-1">Benutzername (User)</label>
+                    <input type="text" value={smtp.user} onChange={e => setSmtp(s => ({ ...s, user: e.target.value }))} placeholder="postmaster@beispiel.de" className={inputCls} />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-panel-muted mb-1">Passwort</label>
+                    <div className="relative">
+                      <input
+                        type={showSmtpPw ? 'text' : 'password'}
+                        value={smtp.pass}
+                        onChange={e => setSmtp(s => ({ ...s, pass: e.target.value }))}
+                        placeholder={status.smtp_pass ? '(Gesetzt)' : '••••••••'}
+                        className={inputCls + ' pr-9'}
+                      />
+                      <button type="button" onClick={() => setShowSmtpPw(v => !v)}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
+                        {showSmtpPw ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <input
+                    type="checkbox"
+                    id="smtpSecure"
+                    checked={smtp.secure}
+                    onChange={e => setSmtp(s => ({ ...s, secure: e.target.checked }))}
+                    className="rounded border-panel-border bg-panel-surface text-panel-accent focus:ring-panel-accent/50"
+                  />
+                  <label htmlFor="smtpSecure" className="text-xs text-panel-text cursor-pointer">
+                    SSL/TLS Verbindung (Secure / Port 465) erzwingen
+                  </label>
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <Button onClick={saveSmtp} disabled={loading.smtp || !smtp.host} size="sm">
+                    Speichern
+                  </Button>
+                  <Button onClick={testSmtp} disabled={loading.smtp_test || !smtp.host} size="sm" variant="ghost">
+                    <Send size={12} className="mr-1" /> Test-Mail senden
+                  </Button>
+                </div>
+                <Msg msg={msgs.smtp} />
+              </div>
+            </Card>
+          )}
+
           {/* ── SQLite Backup Manager (Modul 1) ── */}
           {hasPermission('system.backup') && <BackupManagerCard />}
 

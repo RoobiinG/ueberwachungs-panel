@@ -97,6 +97,7 @@ router.post('/register/finish', async (req, res) => {
       expectedChallenge: stored.challenge,
       expectedOrigin:    getOrigin(req),
       expectedRPID:      getRpId(req),
+      requireUserVerification: false,
     });
 
     if (!verification.verified) return res.status(400).json({ error: 'Verifizierung fehlgeschlagen' });
@@ -169,6 +170,7 @@ const loginFinish = async (req, res) => {
       expectedChallenge:     stored.challenge,
       expectedOrigin:        getOrigin(req),
       expectedRPID:          getRpId(req),
+      requireUserVerification: false,
       credential: {
         id:        pk.credential_id,
         publicKey: Buffer.from(pk.public_key, 'base64url'),

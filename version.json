@@ -1,6 +1,6 @@
 {
-  "version": "5.2.1.0",
-  "build": 296,
+  "version": "5.2.1.1",
+  "build": 297,
   "date": "2026-08-15",
-  "codename": "Benutzerverwaltung erweitert"
+  "codename": "SMTP UI & Passkey Fix"
 }
