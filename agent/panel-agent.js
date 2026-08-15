@@ -312,6 +312,112 @@ async function getFirewallRules() {
   return rules;
 }
 
+// ─── Docker ───────────────────────────────────────────────────────────────────
+
+async function getDockerContainers() {
+  try {
+    const { stdout } = await execAsync("docker ps -a --format '{{json .}}'", { timeout: 10000 });
+    return stdout.trim().split('\n').filter(Boolean).map(line => {
+      const c = JSON.parse(line);
+      return {
+        id: c.ID,
+        name: c.Names,
+        image: c.Image,
+        state: c.State,
+        status: c.Status,
+        ports: c.Ports ? c.Ports.split(',').map(p => p.trim()) : []
+      };
+    });
+  } catch { throw new Error('Docker nicht erreichbar oder nicht installiert'); }
+}
+
+async function getDockerImages() {
+  try {
+    const { stdout } = await execAsync("docker images --format '{{json .}}'", { timeout: 10000 });
+    return stdout.trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+  } catch { return []; }
+}
+
+async function getDockerStats(id) {
+  try {
+    const { stdout } = await execAsync(`docker stats ${id} --no-stream --format '{{json .}}'`, { timeout: 10000 });
+    if (!stdout.trim()) throw new Error('404');
+    const s = JSON.parse(stdout.trim().split('\n')[0]);
+    const parseMem = (str) => {
+      if (!str) return 0;
+      const v = parseFloat(str);
+      if (str.includes('GiB') || str.includes('GB')) return v * 1024 * 1024 * 1024;
+      if (str.includes('MiB') || str.includes('MB')) return v * 1024 * 1024;
+      if (str.includes('KiB') || str.includes('kB') || str.includes('KB')) return v * 1024;
+      return v;
+    };
+    const memParts = (s.MemUsage || '0/0').split('/');
+    const netParts = (s.NetIO || '0/0').split('/');
+    return {
+      cpuPercent: parseFloat(s.CPUPerc) || 0,
+      memUsage: parseMem(memParts[0]),
+      memLimit: parseMem(memParts[1]),
+      netRx: parseMem(netParts[0]),
+      netTx: parseMem(netParts[1])
+    };
+  } catch { throw new Error('Ressource nicht gefunden'); }
+}
+
+async function getDockerLogs(id, tail) {
+  try {
+    // Both stdout and stderr
+    const { stdout, stderr } = await execAsync(`docker logs --tail ${tail} ${id}`, { timeout: 10000 });
+    return stdout + stderr;
+  } catch { throw new Error('Ressource nicht gefunden'); }
+}
+
+async function dockerAction(id, action) {
+  try {
+    const valid = ['start', 'stop', 'restart', 'pause', 'unpause', 'kill'];
+    if (!valid.includes(action)) throw new Error('Ungültige Aktion');
+    await execAsync(`docker ${action} ${id}`, { timeout: 30000 });
+    return { success: true };
+  } catch (e) { throw new Error(e.message); }
+}
+
+async function getDockerStacks() {
+  try {
+    const { stdout } = await execAsync("docker compose ls -a --format '{{json .}}'", { timeout: 10000 });
+    return stdout.trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+  } catch { return []; }
+}
+
+async function dockerStackAction(id, action) {
+  try {
+    const stacks = await getDockerStacks();
+    const stack = stacks.find(s => s.Name === id);
+    if (!stack || !stack.ConfigFiles) throw new Error('Stack nicht gefunden');
+    const path = stack.ConfigFiles;
+    const valid = ['up', 'down', 'pull', 'restart'];
+    if (!valid.includes(action)) throw new Error('Ungültige Aktion');
+    
+    if (action === 'up') await execAsync(`docker compose -f "${path}" up -d`, { timeout: 60000 });
+    if (action === 'down') await execAsync(`docker compose -f "${path}" down`, { timeout: 60000 });
+    if (action === 'pull') await execAsync(`docker compose -f "${path}" pull`, { timeout: 60000 });
+    if (action === 'restart') await execAsync(`docker compose -f "${path}" restart`, { timeout: 60000 });
+    return { success: true };
+  } catch (e) { throw new Error(e.message); }
+}
+
+async function getDockerVolumes() {
+  try {
+    const { stdout } = await execAsync("docker volume ls --format '{{json .}}'", { timeout: 10000 });
+    return stdout.trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+  } catch { return []; }
+}
+
+async function getDockerNetworks() {
+  try {
+    const { stdout } = await execAsync("docker network ls --format '{{json .}}'", { timeout: 10000 });
+    return stdout.trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+  } catch { return []; }
+}
+
 // Firewall-Regel hinzufügen/löschen
 async function firewallAllow(port, proto, from, action) {
   const { tool } = await detectAgentFirewall();
@@ -556,7 +662,66 @@ async function handler(req, res) {
       await firewallDeleteRule(id);
       respond(res, 200, { success: true });
 
-    // ── Netzwerk ──────────────────────────────────────────────────────────────
+    // ── Docker ────────────────────────────────────────────────────────────────
+    } else if (url === '/docker/containers' && req.method === 'GET') {
+      respond(res, 200, await getDockerContainers());
+    } else if (url === '/docker/images' && req.method === 'GET') {
+      respond(res, 200, await getDockerImages());
+    } else if (url.startsWith('/docker/containers/') && url.endsWith('/stats') && req.method === 'GET') {
+      const id = url.split('/')[3];
+      respond(res, 200, await getDockerStats(id));
+    } else if (url.startsWith('/docker/containers/') && url.endsWith('/logs') && req.method === 'GET') {
+      const id = url.split('/')[3];
+      const tail = (req.url.match(/tail=(\d+)/) || [])[1] || 100;
+      respond(res, 200, await getDockerLogs(id, tail));
+    } else if (url.startsWith('/docker/containers/') && req.method === 'POST') {
+      const parts = url.split('/');
+      if (parts.length === 5) {
+        respond(res, 200, await dockerAction(parts[3], parts[4]));
+      } else { respond(res, 404, { error: 'Not found' }); }
+      
+    } else if (url === '/docker/stacks' && req.method === 'GET') {
+      respond(res, 200, await getDockerStacks());
+    } else if (url.startsWith('/docker/stacks/') && req.method === 'POST') {
+      const parts = url.split('/');
+      if (parts.length === 5) {
+        respond(res, 200, await dockerStackAction(parts[3], parts[4]));
+      } else { respond(res, 404, { error: 'Not found' }); }
+      
+    } else if (url === '/docker/volumes' && req.method === 'GET') {
+      respond(res, 200, await getDockerVolumes());
+    } else if (url === '/docker/volumes/prune' && req.method === 'POST') {
+      await execAsync('docker volume prune -f', { timeout: 30000 });
+      respond(res, 200, { success: true });
+    } else if (url.startsWith('/docker/volumes/') && req.method === 'DELETE') {
+      const id = url.split('/')[3];
+      await execAsync(`docker volume rm ${id}`, { timeout: 10000 });
+      respond(res, 200, { success: true });
+      
+    } else if (url === '/docker/networks' && req.method === 'GET') {
+      respond(res, 200, await getDockerNetworks());
+    } else if (url === '/docker/networks/prune' && req.method === 'POST') {
+      await execAsync('docker network prune -f', { timeout: 30000 });
+      respond(res, 200, { success: true });
+    } else if (url.startsWith('/docker/networks/') && req.method === 'DELETE') {
+      const id = url.split('/')[3];
+      await execAsync(`docker network rm ${id}`, { timeout: 10000 });
+      respond(res, 200, { success: true });
+      
+    } else if (url === '/docker/images/prune' && req.method === 'POST') {
+      await execAsync('docker image prune -a -f', { timeout: 60000 });
+      respond(res, 200, { success: true });
+    } else if (url === '/docker/images/pull' && req.method === 'POST') {
+      const raw = await new Promise((resolve) => { let d = ''; req.on('data', c => d += c); req.on('end', () => resolve(d)); });
+      const { image } = JSON.parse(raw || '{}');
+      if (!image) return respond(res, 400, { error: 'image fehlt' });
+      await execAsync(`docker pull ${image}`, { timeout: 300000 });
+      respond(res, 200, { success: true });
+    } else if (url.startsWith('/docker/images/') && req.method === 'DELETE') {
+      const id = url.split('/')[3];
+      await execAsync(`docker rmi -f ${id}`, { timeout: 10000 });
+      respond(res, 200, { success: true });
+
     } else if (url === '/network/interfaces' && req.method === 'GET') {
       respond(res, 200, getNetworkInterfaces());
 
@@ -617,3 +782,68 @@ server.listen(PORT, '0.0.0.0', () => {
     console.error('           Bitte /etc/panel-agent/env konfigurieren und den Service neu starten.');
   }
 });
+
+// ─── WebSocket Terminal ────────────────────────────────────────────────────────
+try {
+  const WebSocketServer = require('ws').Server;
+  const pty = require('node-pty');
+  
+  const wss = new WebSocketServer({ server });
+  
+  wss.on('connection', (ws, req) => {
+    // Authentifizierung via Header oder URL (für Browser)
+    const tokenHeader = req.headers['x-agent-token'];
+    let tokenUrl = '';
+    try {
+      const u = new URL(req.url, `http://${req.headers.host}`);
+      tokenUrl = u.searchParams.get('token');
+    } catch {}
+    
+    if (!TOKEN || (tokenHeader !== TOKEN && tokenUrl !== TOKEN)) {
+      ws.close(1008, 'Unauthorized');
+      return;
+    }
+
+    const match = req.url.match(/^\/docker\/containers\/(.+)\/terminal/);
+    if (!match) {
+      ws.close(1008, 'Invalid endpoint');
+      return;
+    }
+    const containerId = match[1];
+
+    // pseudo-tty erstellen mit docker exec -it
+    const term = pty.spawn('docker', ['exec', '-it', containerId, 'bash'], {
+      name: 'xterm-color',
+      cols: 80,
+      rows: 24,
+      cwd: process.env.HOME,
+      env: process.env
+    });
+
+    term.onData((data) => {
+      if (ws.readyState === 1) ws.send(data);
+    });
+
+    ws.on('message', (msg) => {
+      // Wenn die Nachricht Resize-Infos enthält, Terminalgröße anpassen (oft als JSON-String {cols, rows})
+      try {
+        const obj = JSON.parse(msg);
+        if (obj.cols && obj.rows) {
+          term.resize(obj.cols, obj.rows);
+          return;
+        }
+      } catch {}
+      term.write(msg);
+    });
+
+    ws.on('close', () => {
+      try { term.kill(); } catch {}
+    });
+    
+    term.onExit(() => {
+      if (ws.readyState === 1) ws.close();
+    });
+  });
+} catch (e) {
+  console.log('Terminal WebSocket-Support deaktiviert (ws oder node-pty fehlt).');
+}

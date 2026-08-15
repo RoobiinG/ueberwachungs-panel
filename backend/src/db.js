@@ -45,6 +45,7 @@ db.exec(`
     url TEXT NOT NULL,
     token TEXT NOT NULL DEFAULT '',
     fingerprint TEXT NOT NULL DEFAULT '',
+    docker_engine TEXT NOT NULL DEFAULT 'agents',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -123,6 +124,10 @@ db.exec(`
 
 // ─── Migrationen ─────────────────────────────────────────────────────────────
 try { db.exec('ALTER TABLE remote_agents ADD COLUMN fingerprint TEXT NOT NULL DEFAULT ""'); } catch {}
+try { 
+  db.exec("ALTER TABLE remote_agents ADD COLUMN docker_engine TEXT NOT NULL DEFAULT 'agents'");
+  db.exec("UPDATE remote_agents SET docker_engine = 'dockhand'");
+} catch {}
 try { db.exec('ALTER TABLE users ADD COLUMN email TEXT'); } catch {}
 try { db.exec('ALTER TABLE users ADD COLUMN reset_token TEXT'); } catch {}
 try { db.exec('ALTER TABLE users ADD COLUMN reset_expires INTEGER'); } catch {}

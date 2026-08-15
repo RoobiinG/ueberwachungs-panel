@@ -26,6 +26,8 @@ async function fetchLatestVersion() {
 
 const getOne = (id) => db.prepare('SELECT * FROM remote_agents WHERE id = ?').get(id);
 
+const getSetting = k => db.prepare('SELECT value FROM settings WHERE key = ?').get(k)?.value ?? null;
+
 // Prüft ob ein Nutzer Zugriff auf einen bestimmten Agent hat
 const canAccessAgent = (agentId, roleName) => {
   const role = db.prepare('SELECT id, is_admin, restrict_agents FROM roles WHERE name = ?').get(roleName);
@@ -103,21 +105,24 @@ router.get('/download-script', requirePermission('agents.update'), (req, res) =>
 router.get('/', requirePermission('agents.view'), (req, res) => {
   const roleName = req.user?.role;
   const role = db.prepare('SELECT id, is_admin, restrict_agents FROM roles WHERE name = ?').get(roleName);
+  const dockerEngine = getSetting('dockerEngine') || 'agents';
 
+  let agents;
   if (!role || role.is_admin || !role.restrict_agents) {
-    return res.json(db.prepare(
+    agents = db.prepare(
       'SELECT id, name, url, fingerprint, dockhand_env_id, patchmon_host_id, created_at FROM remote_agents ORDER BY name'
-    ).all());
+    ).all();
+  } else {
+    agents = db.prepare(`
+      SELECT ra.id, ra.name, ra.url, ra.fingerprint, ra.dockhand_env_id, ra.patchmon_host_id, ra.created_at
+      FROM remote_agents ra
+      INNER JOIN agent_grants ag ON ag.agent_id = ra.id
+      WHERE ag.role_id = ?
+      ORDER BY ra.name
+    `).all(role.id);
   }
 
-  // Eingeschränkte Rolle: nur gewährte Server
-  return res.json(db.prepare(`
-    SELECT ra.id, ra.name, ra.url, ra.fingerprint, ra.dockhand_env_id, ra.patchmon_host_id, ra.created_at
-    FROM remote_agents ra
-    INNER JOIN agent_grants ag ON ag.agent_id = ra.id
-    WHERE ag.role_id = ?
-    ORDER BY ra.name
-  `).all(role.id));
+  res.json(agents.map(a => ({ ...a, docker_engine: dockerEngine })));
 });
 
 router.post('/', requirePermission('agents.add'), async (req, res) => {
@@ -439,6 +444,29 @@ router.get('/:id/docker', requirePermission('docker.view'), async (req, res) => 
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  
+  if (getSetting('dockerEngine') !== 'dockhand') {
+    try {
+      const [{ data: containers }, { data: images }] = await Promise.all([
+        agentApi(agent).get('/docker/containers').catch(() => ({ data: [] })),
+        agentApi(agent).get('/docker/images').catch(() => ({ data: [] }))
+      ]);
+      const running = containers.filter(c => c.state === 'running').length;
+      const stopped = containers.filter(c => c.state !== 'running').length;
+      return res.json({
+        images: images.length,
+        volumes: null,
+        networks: null,
+        serverVersion: 'Agent Nativ',
+        envName: agent.name,
+        envStatus: 'online',
+        containers: { running, stopped }
+      });
+    } catch (err) {
+      return res.status(502).json({ error: err.response?.data?.error || err.message });
+    }
+  }
+
   if (!requireDockhandEnv(agent, res)) return;
   try {
     const envId = agent.dockhand_env_id;
@@ -467,6 +495,16 @@ router.get('/:id/docker/containers', requirePermission('docker.view'), async (re
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  
+  if (getSetting('dockerEngine') !== 'dockhand') {
+    try {
+      const { data } = await agentApi(agent).get('/docker/containers');
+      return res.json(data);
+    } catch (err) {
+      return res.status(502).json({ error: err.response?.data?.error || err.message });
+    }
+  }
+
   if (!requireDockhandEnv(agent, res)) return;
   try {
     const { data } = await dockhand.getContainers(agent.dockhand_env_id);
@@ -480,6 +518,17 @@ router.get('/:id/docker/containers/:containerId/stats', requirePermission('docke
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  
+  if (getSetting('dockerEngine') !== 'dockhand') {
+    try {
+      const { data } = await agentApi(agent).get(`/docker/containers/${req.params.containerId}/stats`);
+      return res.json(data);
+    } catch (err) {
+      if (err.response?.status === 404) return res.json({ cpu_percent: 0, memory_usage: 0, not_running: true });
+      return res.status(502).json({ error: err.response?.data?.error || err.message });
+    }
+  }
+
   if (!requireDockhandEnv(agent, res)) return;
   try {
     const { data } = await dockhand.getContainerStats(agent.dockhand_env_id, req.params.containerId);
@@ -496,6 +545,18 @@ router.get('/:id/docker/containers/:containerId/logs', requirePermission('docker
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  
+  if (getSetting('dockerEngine') !== 'dockhand') {
+    try {
+      const tail = Math.max(1, Math.min(10000, parseInt(req.query.tail) || 100));
+      const { data } = await agentApi(agent).get(`/docker/containers/${req.params.containerId}/logs?tail=${tail}`);
+      return res.json(data);
+    } catch (err) {
+      if (err.response?.status === 404) return res.json([]);
+      return res.status(502).json({ error: err.response?.data?.error || err.message });
+    }
+  }
+
   if (!requireDockhandEnv(agent, res)) return;
   try {
     const tail = Math.max(1, Math.min(10000, parseInt(req.query.tail) || 100));
@@ -513,10 +574,21 @@ router.post('/:id/docker/containers/:containerId/:action', requirePermission('do
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
-  if (!requireDockhandEnv(agent, res)) return;
   const { containerId, action } = req.params;
   const valid = ['start', 'stop', 'restart', 'pause', 'unpause', 'kill'];
   if (!valid.includes(action)) return res.status(400).json({ error: 'Ungültige Aktion' });
+  
+  if (getSetting('dockerEngine') !== 'dockhand') {
+    try {
+      await agentApi(agent).post(`/docker/containers/${containerId}/${action}`);
+      auditLog(req, `docker.${action}`, 'container', containerId.slice(0, 12), { agentId: req.params.id });
+      return res.json({ success: true });
+    } catch (err) {
+      return res.status(502).json({ error: err.response?.data?.error || err.message });
+    }
+  }
+
+  if (!requireDockhandEnv(agent, res)) return;
   try {
     await dockhand.containerAction(agent.dockhand_env_id, containerId, action);
     auditLog(req, `docker.${action}`, 'container', containerId.slice(0, 12), { agentId: req.params.id });
@@ -531,6 +603,16 @@ router.get('/:id/docker/images', requirePermission('docker.images.view'), async 
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  
+  if (getSetting('dockerEngine') !== 'dockhand') {
+    try {
+      const { data } = await agentApi(agent).get('/docker/images');
+      return res.json(data || []);
+    } catch (err) {
+      return res.status(502).json({ error: err.response?.data?.error || err.message });
+    }
+  }
+
   if (!requireDockhandEnv(agent, res)) return;
   try { res.json((await dockhand.getImages(agent.dockhand_env_id)).data || []); }
   catch (err) { res.status(502).json({ error: err.message }); }
@@ -542,9 +624,20 @@ router.post('/:id/docker/images/pull', requirePermission('docker.images.control'
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
-  if (!requireDockhandEnv(agent, res)) return;
   const image = (req.body?.image || '').trim();
   if (!validImageRef(image)) return res.status(400).json({ error: 'Ungültige Image-Referenz' });
+
+  if (getSetting('dockerEngine') !== 'dockhand') {
+    try {
+      await agentApi(agent).post('/docker/images/pull', { image });
+      auditLog(req, 'docker.image.pull', 'image', image, { agentId: agent.id });
+      return res.json({ success: true });
+    } catch (err) {
+      return res.status(502).json({ error: err.response?.data?.error || err.message });
+    }
+  }
+
+  if (!requireDockhandEnv(agent, res)) return;
   try {
     await dockhand.pullImage(agent.dockhand_env_id, image);
     auditLog(req, 'docker.image.pull', 'image', image, { agentId: agent.id });
@@ -556,6 +649,17 @@ router.post('/:id/docker/images/prune', requirePermission('docker.images.control
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+
+  if (getSetting('dockerEngine') !== 'dockhand') {
+    try {
+      await agentApi(agent).post('/docker/images/prune');
+      auditLog(req, 'docker.image.prune', 'image', 'ungenutzte', { agentId: agent.id });
+      return res.json({ success: true });
+    } catch (err) {
+      return res.status(502).json({ error: err.response?.data?.error || err.message });
+    }
+  }
+
   if (!requireDockhandEnv(agent, res)) return;
   try {
     const { data } = await dockhand.pruneImages(agent.dockhand_env_id);
@@ -568,6 +672,17 @@ router.delete('/:id/docker/images/:imageId', requirePermission('docker.images.co
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+
+  if (getSetting('dockerEngine') !== 'dockhand') {
+    try {
+      await agentApi(agent).delete(`/docker/images/${encodeURIComponent(req.params.imageId)}`);
+      auditLog(req, 'docker.image.delete', 'image', String(req.params.imageId).slice(0, 20), { agentId: agent.id });
+      return res.json({ success: true });
+    } catch (err) {
+      return res.status(502).json({ error: err.response?.data?.error || err.message });
+    }
+  }
+
   if (!requireDockhandEnv(agent, res)) return;
   try {
     await dockhand.removeImage(agent.dockhand_env_id, req.params.imageId);
@@ -581,6 +696,16 @@ router.get('/:id/docker/volumes', requirePermission('docker.volumes.view'), asyn
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+
+  if (getSetting('dockerEngine') !== 'dockhand') {
+    try {
+      const { data } = await agentApi(agent).get('/docker/volumes');
+      return res.json(data || []);
+    } catch (err) {
+      return res.status(502).json({ error: err.response?.data?.error || err.message });
+    }
+  }
+
   if (!requireDockhandEnv(agent, res)) return;
   try { res.json((await dockhand.getVolumes(agent.dockhand_env_id)).data || []); }
   catch (err) { res.status(502).json({ error: err.message }); }
@@ -590,6 +715,17 @@ router.delete('/:id/docker/volumes/:volumeName', requirePermission('docker.volum
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+
+  if (getSetting('dockerEngine') !== 'dockhand') {
+    try {
+      await agentApi(agent).delete(`/docker/volumes/${encodeURIComponent(req.params.volumeName)}`);
+      auditLog(req, 'docker.volume.delete', 'volume', String(req.params.volumeName).slice(0, 40), { agentId: agent.id });
+      return res.json({ success: true });
+    } catch (err) {
+      return res.status(502).json({ error: err.response?.data?.error || err.message });
+    }
+  }
+
   if (!requireDockhandEnv(agent, res)) return;
   try {
     await dockhand.removeVolume(agent.dockhand_env_id, req.params.volumeName);
@@ -602,6 +738,17 @@ router.post('/:id/docker/volumes/prune', requirePermission('docker.volumes.contr
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+
+  if (getSetting('dockerEngine') !== 'dockhand') {
+    try {
+      await agentApi(agent).post('/docker/volumes/prune');
+      auditLog(req, 'docker.volume.prune', 'volume', 'ungenutzte', { agentId: agent.id });
+      return res.json({ success: true });
+    } catch (err) {
+      return res.status(502).json({ error: err.response?.data?.error || err.message });
+    }
+  }
+
   if (!requireDockhandEnv(agent, res)) return;
   try {
     const { data } = await dockhand.pruneVolumes(agent.dockhand_env_id);
@@ -615,6 +762,16 @@ router.get('/:id/docker/networks', requirePermission('docker.networks.view'), as
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+
+  if (getSetting('dockerEngine') !== 'dockhand') {
+    try {
+      const { data } = await agentApi(agent).get('/docker/networks');
+      return res.json(data || []);
+    } catch (err) {
+      return res.status(502).json({ error: err.response?.data?.error || err.message });
+    }
+  }
+
   if (!requireDockhandEnv(agent, res)) return;
   try { res.json((await dockhand.getNetworks(agent.dockhand_env_id)).data || []); }
   catch (err) { res.status(502).json({ error: err.message }); }
@@ -624,6 +781,17 @@ router.delete('/:id/docker/networks/:networkId', requirePermission('docker.netwo
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+
+  if (getSetting('dockerEngine') !== 'dockhand') {
+    try {
+      await agentApi(agent).delete(`/docker/networks/${encodeURIComponent(req.params.networkId)}`);
+      auditLog(req, 'docker.network.delete', 'network', String(req.params.networkId).slice(0, 20), { agentId: agent.id });
+      return res.json({ success: true });
+    } catch (err) {
+      return res.status(502).json({ error: err.response?.data?.error || err.message });
+    }
+  }
+
   if (!requireDockhandEnv(agent, res)) return;
   try {
     await dockhand.removeNetwork(agent.dockhand_env_id, req.params.networkId);
@@ -636,6 +804,17 @@ router.post('/:id/docker/networks/prune', requirePermission('docker.networks.con
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+
+  if (getSetting('dockerEngine') !== 'dockhand') {
+    try {
+      await agentApi(agent).post('/docker/networks/prune');
+      auditLog(req, 'docker.network.prune', 'network', 'ungenutzte', { agentId: agent.id });
+      return res.json({ success: true });
+    } catch (err) {
+      return res.status(502).json({ error: err.response?.data?.error || err.message });
+    }
+  }
+
   if (!requireDockhandEnv(agent, res)) return;
   try {
     const { data } = await dockhand.pruneNetworks(agent.dockhand_env_id);
@@ -649,6 +828,16 @@ router.get('/:id/docker/stacks', requirePermission('docker.stacks.view'), async 
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+
+  if (getSetting('dockerEngine') !== 'dockhand') {
+    try {
+      const { data } = await agentApi(agent).get('/docker/stacks');
+      return res.json(data || []);
+    } catch (err) {
+      return res.status(502).json({ error: err.response?.data?.error || err.message });
+    }
+  }
+
   if (!requireDockhandEnv(agent, res)) return;
   try { res.json((await dockhand.getStacks(agent.dockhand_env_id)).data || []); }
   catch (err) { res.status(502).json({ error: err.message }); }
@@ -658,6 +847,18 @@ router.delete('/:id/docker/stacks/:stackId', requirePermission('docker.stacks.co
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+
+  if (getSetting('dockerEngine') !== 'dockhand') {
+    try {
+      // Löschen für native Stacks führt ein docker compose down aus (kein Löschen der yml Dateien)
+      await agentApi(agent).post(`/docker/stacks/${encodeURIComponent(req.params.stackId)}/down`);
+      auditLog(req, 'docker.stack.delete', 'stack', String(req.params.stackId).slice(0, 40), { agentId: agent.id });
+      return res.json({ success: true });
+    } catch (err) {
+      return res.status(502).json({ error: err.response?.data?.error || err.message });
+    }
+  }
+
   if (!requireDockhandEnv(agent, res)) return;
   try {
     await dockhand.removeStack(agent.dockhand_env_id, req.params.stackId);
@@ -670,8 +871,32 @@ router.post('/:id/docker/stacks/:stackId/:action', requirePermission('docker.sta
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
-  if (!requireDockhandEnv(agent, res)) return;
   const { stackId, action } = req.params;
+  
+  if (getSetting('dockerEngine') !== 'dockhand') {
+    const validNativeActions = ['start', 'stop', 'update', 'restart']; // We mapped up, down, pull in agent, but UI might send start, stop, update
+    if (!validNativeActions.includes(action)) return res.status(400).json({ error: 'Invalid action' });
+    
+    // Map UI actions to docker compose actions
+    let agentAction = action;
+    if (action === 'start') agentAction = 'up';
+    if (action === 'stop') agentAction = 'down';
+    if (action === 'update') agentAction = 'pull';
+    
+    try {
+      await agentApi(agent).post(`/docker/stacks/${encodeURIComponent(stackId)}/${agentAction}`);
+      // if it was a pull, we also need to restart (up -d)
+      if (agentAction === 'pull') {
+        await agentApi(agent).post(`/docker/stacks/${encodeURIComponent(stackId)}/up`);
+      }
+      auditLog(req, `docker.stack.${action}`, 'stack', String(stackId).slice(0, 40), { agentId: agent.id });
+      return res.json({ success: true });
+    } catch (err) {
+      return res.status(502).json({ error: err.response?.data?.error || err.message });
+    }
+  }
+
+  if (!requireDockhandEnv(agent, res)) return;
   if (!['start', 'stop', 'update'].includes(action)) return res.status(400).json({ error: 'Invalid action' });
   try {
     if (action === 'start') await dockhand.startStack(agent.dockhand_env_id, stackId);

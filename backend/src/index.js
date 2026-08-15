@@ -118,6 +118,78 @@ app.get(/^(?!\/api).*/, (req, res) => {
 
 require('./metricsCache').start();     // Muss VOR websocket + metricsRecorder starten
 setupWS(server);
+
+// ─── Terminal WebSocket Proxy (Frontend -> Backend -> Agent) ───────────
+const WebSocket = require('ws');
+const jwt = require('jsonwebtoken');
+server.on('upgrade', (request, socket, head) => {
+  if (request.url.startsWith('/api/agents/') && request.url.includes('/terminal')) {
+    const url = new URL(request.url, `http://${request.headers.host}`);
+    const token = url.searchParams.get('token');
+    
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      if (!decoded.id) throw new Error('Invalid user');
+    } catch (err) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
+    const match = url.pathname.match(/^\/api\/agents\/(\d+)\/docker\/containers\/(.+)\/terminal$/);
+    if (!match) {
+      socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+    const agentId = match[1];
+    const containerId = match[2];
+
+    try {
+      // Wir holen den Agent direkt aus der DB
+      const db = require('./db');
+      const agent = db.prepare('SELECT * FROM remote_agents WHERE id = ?').get(agentId);
+      if (!agent || agent.docker_engine !== 'agents') {
+        socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
+        socket.destroy();
+        return;
+      }
+
+      const targetUrl = agent.url.replace(/^http/, 'ws') + `/docker/containers/${containerId}/terminal`;
+      const agentWs = new WebSocket(targetUrl, {
+        headers: { 'x-agent-token': agent.token },
+        rejectUnauthorized: false
+      });
+
+      agentWs.on('open', () => {
+        const wssTerm = new WebSocket.Server({ noServer: true });
+        wssTerm.handleUpgrade(request, socket, head, (clientWs) => {
+          clientWs.on('message', (data) => {
+            if (agentWs.readyState === WebSocket.OPEN) agentWs.send(data);
+          });
+          agentWs.on('message', (data) => {
+            if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
+          });
+          clientWs.on('close', () => agentWs.close());
+          agentWs.on('close', () => clientWs.close());
+          clientWs.on('error', () => agentWs.close());
+          agentWs.on('error', () => clientWs.close());
+        });
+      });
+
+      agentWs.on('error', (err) => {
+        if (!socket.destroyed) {
+          socket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+          socket.destroy();
+        }
+      });
+    } catch (err) {
+      socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
+      socket.destroy();
+    }
+  }
+});
+
 require('./metricsRecorder').start();
 require('./metricsAggregator').start();
 require('./alertEvaluator').start();

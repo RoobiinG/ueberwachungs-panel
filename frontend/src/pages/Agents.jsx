@@ -566,6 +566,13 @@ export default function Agents() {
               </p>
             </div>
             <div>
+              <label className="block text-xs text-panel-muted mb-1">Docker Verwaltung</label>
+              <select className={inputCls} value={editDockerEngine} onChange={e => setEditDockerEngine(e.target.value)}>
+                <option value="agents">Direkt via Agent (Nativ)</option>
+                <option value="dockhand">Dockhand Pro (Legacy)</option>
+              </select>
+            </div>
+            <div>
               <label className="block text-xs text-panel-muted mb-1">
                 PatchMon-Host <span className="text-panel-muted font-normal">(optional — zeigt Update-Infos am Server)</span>
               </label>

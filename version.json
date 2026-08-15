@@ -1,6 +1,6 @@
 {
-  "version": "5.2.2.0",
-  "build": 298,
-  "date": "2026-08-15",
-  "codename": "Dockhand Terminal Integration"
+  "version": "5.3.1.0",
+  "build": 300,
+  "date": "2026-08-16",
+  "codename": "Native Agent Docker Integration & Global Mixed Mode"
 }

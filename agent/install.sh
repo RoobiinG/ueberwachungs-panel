@@ -35,6 +35,21 @@ echo "Node.js $(node -v) gefunden"
 
 mkdir -p "$INSTALL_DIR"
 
+echo "Installiere Abhängigkeiten für Terminal-Support..."
+cd "$INSTALL_DIR"
+if [ ! -f package.json ]; then
+  npm init -y >/dev/null
+fi
+if command -v apt &>/dev/null; then
+  apt install -y build-essential python3 make g++ || true
+elif command -v dnf &>/dev/null; then
+  dnf groupinstall -y "Development Tools" || dnf install -y gcc-c++ make python3 || true
+elif command -v yum &>/dev/null; then
+  yum groupinstall -y "Development Tools" || yum install -y gcc-c++ make python3 || true
+fi
+npm install --save ws node-pty || echo "WARNUNG: node-pty Installation fehlgeschlagen (Terminal evtl. eingeschränkt)"
+
+
 # Agent-Script vom Panel laden (oder GitHub als Fallback)
 if echo "$PANEL_SOURCE" | grep -qv 'githubusercontent'; then
   echo "Lade Agent-Script vom Panel (${PANEL_SOURCE})..."

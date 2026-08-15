@@ -11,6 +11,7 @@ import { ServerSelector } from '../components/ui/ServerSelector';
 import { RefreshCw, Play, Square, RotateCcw, Tag, Check, X, ScrollText, ChevronDown, ChevronUp, Zap, Shield, Terminal } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useWSMessage } from '../context/WSContext';
+import { TerminalModal } from '../components/TerminalModal';
 
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
@@ -57,6 +58,7 @@ export default function Docker() {
   const [portSuggestion, setPortSuggestion] = useState(null); // { containerId, containerName, ports }
   const [portAdding, setPortAdding]         = useState(false);
   const [portAdded,  setPortAdded]          = useState([]);   // Liste bereits hinzugefügter Ports
+  const [terminalState, setTerminalState]   = useState(null); // { agentId, containerId, containerName }
 
   // WS: Docker-Port-Vorschlag empfangen
   useWSMessage('docker_ports', (msg) => {
@@ -189,12 +191,16 @@ export default function Docker() {
     setLogsLoading(p => ({ ...p, [cid]: false }));
   };
 
-  // ── Konsole (Terminal) via Dockhand ────────────────────────────────────────
-  const openTerminal = async (cid) => {
+  // ── Konsole (Terminal) ────────────────────────────────────────
+  const openTerminal = async (c) => {
     try {
       const server = selectedServer || 'local';
-      const { data } = await axios.get(`/api/dockhand/terminal-url/${cid}?server=${server}`);
-      window.open(data.url, '_blank');
+      const { data } = await axios.get(`/api/dockhand/terminal-url/${c.id}?server=${server}`);
+      if (data.native) {
+        setTerminalState({ agentId: data.agentId, containerId: c.id, containerName: c.name });
+      } else {
+        window.open(data.url, '_blank');
+      }
     } catch (err) {
       alert(err.response?.data?.error || 'Fehler beim Öffnen der Konsole');
     }
@@ -384,7 +390,7 @@ export default function Docker() {
                     {/* Terminal-Button — nur mit docker.control (canWrite) */}
                     {canWrite && isRun && (
                       <button
-                        onClick={() => openTerminal(c.id)}
+                        onClick={() => openTerminal(c)}
                         title="Terminal öffnen (Dockhand)"
                         className="p-1.5 rounded transition-colors text-panel-muted hover:text-panel-text hover:bg-panel-card"
                       >
@@ -499,6 +505,15 @@ export default function Docker() {
             </button>
           </div>
         </div>
+      )}
+
+      {terminalState && (
+        <TerminalModal
+          agentId={terminalState.agentId}
+          containerId={terminalState.containerId}
+          containerName={terminalState.containerName}
+          onClose={() => setTerminalState(null)}
+        />
       )}
     </div>
   );

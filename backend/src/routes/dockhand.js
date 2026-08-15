@@ -21,6 +21,7 @@ router.get('/config', requirePermission('settings.view'), (req, res) => {
     url:          getSetting('dockhandUrl')        || '',
     hasToken:     !!getSetting('dockhandApiToken'),
     localEnvId:   getSetting('dockhandLocalEnvId') || '',
+    dockerEngine: getSetting('dockerEngine')       || 'agents',
   });
 });
 
@@ -34,6 +35,10 @@ router.get('/terminal-url/:containerId', requirePermission('docker.control'), (r
   if (!server || server === 'local' || server === 'null') {
     envId = getSetting('dockhandLocalEnvId');
   } else {
+    const engine = getSetting('dockerEngine') || 'agents';
+    if (engine !== 'dockhand') {
+      return res.json({ native: true, agentId: server });
+    }
     const agent = db.prepare('SELECT dockhand_env_id FROM remote_agents WHERE id = ?').get(server);
     envId = agent?.dockhand_env_id;
   }
@@ -45,10 +50,11 @@ router.get('/terminal-url/:containerId', requirePermission('docker.control'), (r
 
 // ── POST /api/dockhand/config ─────────────────────────────────────────────────
 router.post('/config', requirePermission('settings.manage'), (req, res) => {
-  const { url, apiToken, localEnvId } = req.body;
-  if (url        !== undefined) setSetting('dockhandUrl',        url.trim());
-  if (apiToken   !== undefined) setSetting('dockhandApiToken',   apiToken.trim());
-  if (localEnvId !== undefined) setSetting('dockhandLocalEnvId', String(localEnvId).trim());
+  const { url, apiToken, localEnvId, dockerEngine } = req.body;
+  if (url          !== undefined) setSetting('dockhandUrl',        url.trim());
+  if (apiToken     !== undefined) setSetting('dockhandApiToken',   apiToken.trim());
+  if (localEnvId   !== undefined) setSetting('dockhandLocalEnvId', String(localEnvId).trim());
+  if (dockerEngine !== undefined) setSetting('dockerEngine',       dockerEngine);
   res.json({ ok: true });
 });
 

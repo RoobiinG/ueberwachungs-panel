@@ -18,6 +18,32 @@ Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweis
 
 ---
 
+## [5.3.1.0] - 2026-08-16 (Build 300) — *Native Agent Docker Integration & Global Mixed Mode*
+
+### ✨ Features & Verbesserungen
+- **Globaler Mixed Mode**: Die Entscheidung zwischenativer Docker-Verwaltung und Dockhand Pro wird nun nicht mehr pro Server getroffen, sondern in den globalen Einstellungen unter *Docker & Dockhand Verwaltung* festgelegt. Man hat die Wahl zwischen *Direkt via Agent (Nativ)*, *Nativ & Dockhand Pro (Mixed)* und *Dockhand Pro (Legacy)*.
+- **Volle native Parität**: Der Panel-Agent unterstützt nun nativ das Auslesen, Starten/Stoppen und Prunen von Docker Stacks (`docker compose`), Volumes, Networks und das Pullen/Löschen von Images.
+
+### ⚙️ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Einstellungen**: Das Feld `docker_engine` in `remote_agents` wird nicht mehr verwendet (der Wert wird nun aus `settings.dockerEngine` bezogen).
+- **Agent Update**: Es wird dringend empfohlen, den Panel-Agent über das Panel auf allen Servern zu aktualisieren, um die volle Funktionalität für Volumes, Netzwerke und Stacks zu erhalten.
+
+---
+
+## [5.3.0.0] - 2026-08-16 (Build 299) — *Native Agent Docker Integration*
+
+### ✨ Features & Verbesserungen
+- **Native Docker-Agent Integration**: Docker-Container auf Remote-Servern können nun wahlweise über "Dockhand Pro" (Legacy) oder direkt via Panel-Agent (Nativ) verwaltet werden.
+- **Interaktive Agent-Terminals**: Die native Integration beinhaltet ein eingebautes XTerm.js-Webterminal, das per WebSocket-Proxy direkt über den Panel-Agent mit den Containern kommuniziert (`node-pty`).
+- **Einstellungen**: Das Docker-Verwaltungs-Backend (Dockhand vs. Nativ) kann pro Server im Panel beim Hinzufügen oder Bearbeiten ausgewählt werden.
+
+### ⚙️ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen**: Keine neuen Schemas (Feld `docker_engine` war bereits vorhanden).
+- **Voraussetzungen**: Der Agent (`panel-agent.js`) verwendet nun `ws` und `node-pty`. Das Installationsskript (`install.sh`) installiert automatisch die nötigen Build-Tools (`build-essential`, `python3`) und NPM-Abhängigkeiten. Bestehende Agents sollten aktualisiert oder neu installiert werden, um das neue native Terminal zu nutzen.
+- **Agent-Kompatibilität**: Abwärtskompatibel. Alte Agents ohne `node-pty` funktionieren weiterhin, allerdings steht dort das neue interaktive Terminal nicht zur Verfügung.
+
+---
+
 ## [5.2.2.0] - 2026-08-15 (Build 298) — *Dockhand Terminal Integration*
 
 ### ✨ Features & Verbesserungen

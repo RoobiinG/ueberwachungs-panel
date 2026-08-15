@@ -848,6 +848,7 @@ export default function Settings() {
   const [dockhandUrl,      setDockhandUrl]      = useState('');
   const [dockhandToken,    setDockhandToken]    = useState('');
   const [dockhandEnvId,    setDockhandEnvId]    = useState('');
+  const [dockerEngine,     setDockerEngine]     = useState('agents');
   const [dockhandEnvs,     setDockhandEnvs]     = useState([]); // [{id,name}] aus Dockhand
   const [dockhandAgents,   setDockhandAgents]   = useState([]); // remote_agents mit dockhand_env_id
   const [showDockhandToken, setShowDockhandToken] = useState(false);
@@ -889,6 +890,7 @@ export default function Settings() {
       const { data } = await axios.get('/api/dockhand/config');
       setDockhandUrl(data.url || '');
       setDockhandEnvId(data.localEnvId || '');
+      setDockerEngine(data.dockerEngine || 'agents');
     } catch {}
     // Agents mit dockhand_env_id laden
     try {
@@ -1177,6 +1179,7 @@ export default function Settings() {
         url:        dockhandUrl,
         ...(dockhandToken ? { apiToken: dockhandToken } : {}),
         localEnvId: dockhandEnvId,
+        dockerEngine: dockerEngine
       });
       setDockhandToken('');
       feedback('dockhand', 'ok', 'Dockhand-Einstellungen gespeichert');
@@ -1728,6 +1731,23 @@ export default function Settings() {
                 Verbindet das Panel mit einer laufenden Dockhand-Instanz. Der API-Token wird unter
                 Dockhand → Settings → Authentication → API Tokens generiert.
               </p>
+
+              <div>
+                <label className="block text-xs text-panel-muted mb-1">Docker Verwaltung (Remote-Server)</label>
+                <select
+                  value={dockerEngine}
+                  onChange={e => {
+                    const v = e.target.value;
+                    setDockerEngine(v);
+                    axios.post('/api/dockhand/config', { dockerEngine: v }).catch(() => {});
+                  }}
+                  className="w-full bg-panel-surface border border-panel-border rounded px-3 py-2 text-sm text-panel-text focus:outline-none focus:border-panel-accent"
+                >
+                  <option value="agents">Direkt via Agent (Nativ)</option>
+                  <option value="mixed">Nativ & Dockhand Pro (Mixed)</option>
+                  <option value="dockhand">Dockhand Pro (Legacy)</option>
+                </select>
+              </div>
 
               <div>
                 <label className="block text-xs text-panel-muted mb-1">Dockhand URL</label>
