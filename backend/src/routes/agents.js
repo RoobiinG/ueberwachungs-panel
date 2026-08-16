@@ -1,6 +1,5 @@
 const router      = require('express').Router();
 const axios       = require('axios');
-const https       = require('https');
 const tls         = require('tls');
 const fs          = require('fs');
 const path        = require('path');
@@ -10,6 +9,8 @@ const { requirePermission } = require('../middleware/requirePermission');
 const { validatePublicUrl } = require('../utils/validateUrl');
 const { auditLog } = require('../utils/audit');
 const { canAccessAgent } = require('../utils/agentAccess');
+const { agentClient } = require('../utils/agentTls');
+const terminalTickets = require('../utils/terminalTickets');
 
 const AGENT_RAW_URL = 'https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master/agent/panel-agent.js';
 
@@ -44,33 +45,8 @@ const fetchFingerprint = (urlStr) => new Promise((resolve, reject) => {
   setTimeout(() => { socket.destroy(); reject(new Error('TLS-Verbindungs-Timeout')); }, 6000);
 });
 
-// Axios-Instanz mit Fingerprint-Pinning für HTTPS-Agents
-const agentApi = (agent) => {
-  const cfg = {
-    baseURL: agent.url.replace(/\/$/, ''),
-    timeout: 8000,
-    headers: agent.token ? { 'x-agent-token': agent.token } : {},
-  };
-
-  if (agent.url.startsWith('https://')) {
-    cfg.httpsAgent = new https.Agent({
-      rejectUnauthorized: false, // Selbstsigniert — wir pinnen manuell
-      checkServerIdentity: agent.fingerprint
-        ? (hostname, cert) => {
-            const got      = (cert.fingerprint256 || '').replace(/:/g, '').toLowerCase();
-            const expected = agent.fingerprint.replace(/:/g, '').toLowerCase();
-            if (got !== expected) {
-              return new Error(
-                `TLS-Fingerprint stimmt nicht überein!\nErwartet: ${expected}\nErhalten:  ${got}`
-              );
-            }
-          }
-        : () => undefined, // Kein Fingerprint gespeichert: akzeptieren (TOFU)
-    });
-  }
-
-  return axios.create(cfg);
-};
+// Axios-Instanz mit Fingerprint-Pinning für HTTPS-Agents (siehe utils/agentTls.js)
+const agentApi = (agent) => agentClient(agent, 8000);
 
 // Neueste verfügbare Agent-Version — aus lokalem Script (kein GitHub nötig)
 router.get('/latest-version', requirePermission('agents.view'), (req, res) => {
@@ -437,16 +413,46 @@ const requireDockhandEnv = (agent, res) => {
   return true;
 };
 
+// ─── Betriebsart: nativ / mixed / dockhand ───────────────────────────────────
+// 'agents'   → ausschließlich über den Panel-Agent
+// 'mixed'    → zuerst der Agent, bei Fehler Rückfall auf Dockhand Pro
+// 'dockhand' → ausschließlich über Dockhand Pro
+const engineMode = () => getSetting('dockerEngine') || 'agents';
+const useNative  = () => engineMode() !== 'dockhand';
+
+// Gedrosselte Meldung je Agent, damit die pollende Docker-Seite das Log nicht flutet.
+const _fallbackSeen = new Map();
+const FALLBACK_QUIET_MS = 5 * 60 * 1000;
+
+// Entscheidet nach einem gescheiterten Agent-Aufruf, ob auf Dockhand ausgewichen wird.
+// Der Rückfall passiert bewusst *nicht* stillschweigend: Sonst verdeckt er dauerhaft
+// einen ausgefallenen Agenten, und niemand merkt, dass nativ längst nichts mehr geht.
+const allowFallback = (req, agent, what, err) => {
+  if (engineMode() !== 'mixed') return false;
+  if (!agent.dockhand_env_id)   return false;   // ohne Environment gibt es nichts zum Ausweichen
+
+  const last = _fallbackSeen.get(agent.id) || 0;
+  if (Date.now() - last > FALLBACK_QUIET_MS) {
+    _fallbackSeen.set(agent.id, Date.now());
+    console.warn(`[Docker] Agent "${agent.name}" antwortet nicht (${err.message}) — Rückfall auf Dockhand Pro`);
+    auditLog(req, 'docker.fallback.dockhand', 'agent', agent.name, { grund: err.message, aufruf: what });
+  }
+  return true;
+};
+
 router.get('/:id/docker', requirePermission('docker.view'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   
-  if (getSetting('dockerEngine') !== 'dockhand') {
+  if (useNative()) {
     try {
+      // Bewusst ohne .catch()-Unterdrückung: Sonst meldete die Übersicht auch bei
+      // totem Agenten "online" mit 0 Containern, statt den Fehler zu zeigen bzw. im
+      // Mixed-Modus auf Dockhand auszuweichen.
       const [{ data: containers }, { data: images }] = await Promise.all([
-        agentApi(agent).get('/docker/containers').catch(() => ({ data: [] })),
-        agentApi(agent).get('/docker/images').catch(() => ({ data: [] }))
+        agentApi(agent).get('/docker/containers'),
+        agentApi(agent).get('/docker/images'),
       ]);
       const running = containers.filter(c => c.state === 'running').length;
       const stopped = containers.filter(c => c.state !== 'running').length;
@@ -460,7 +466,10 @@ router.get('/:id/docker', requirePermission('docker.view'), async (req, res) => 
         containers: { running, stopped }
       });
     } catch (err) {
-      return res.status(502).json({ error: err.response?.data?.error || err.message });
+      // Mixed-Modus: Agent-Fehler faellt unten auf Dockhand zurueck
+      if (!allowFallback(req, agent, req.originalUrl, err)) {
+        return res.status(502).json({ error: err.response?.data?.error || err.message });
+      }
     }
   }
 
@@ -493,12 +502,15 @@ router.get('/:id/docker/containers', requirePermission('docker.view'), async (re
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   
-  if (getSetting('dockerEngine') !== 'dockhand') {
+  if (useNative()) {
     try {
       const { data } = await agentApi(agent).get('/docker/containers');
       return res.json(data);
     } catch (err) {
-      return res.status(502).json({ error: err.response?.data?.error || err.message });
+      // Mixed-Modus: Agent-Fehler faellt unten auf Dockhand zurueck
+      if (!allowFallback(req, agent, req.originalUrl, err)) {
+        return res.status(502).json({ error: err.response?.data?.error || err.message });
+      }
     }
   }
 
@@ -516,13 +528,16 @@ router.get('/:id/docker/containers/:containerId/stats', requirePermission('docke
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   
-  if (getSetting('dockerEngine') !== 'dockhand') {
+  if (useNative()) {
     try {
       const { data } = await agentApi(agent).get(`/docker/containers/${req.params.containerId}/stats`);
       return res.json(data);
     } catch (err) {
+      // 404 heißt "Container läuft nicht" — eine gültige Antwort, kein Agent-Ausfall.
       if (err.response?.status === 404) return res.json({ cpu_percent: 0, memory_usage: 0, not_running: true });
-      return res.status(502).json({ error: err.response?.data?.error || err.message });
+      if (!allowFallback(req, agent, req.originalUrl, err)) {
+        return res.status(502).json({ error: err.response?.data?.error || err.message });
+      }
     }
   }
 
@@ -543,14 +558,16 @@ router.get('/:id/docker/containers/:containerId/logs', requirePermission('docker
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   
-  if (getSetting('dockerEngine') !== 'dockhand') {
+  if (useNative()) {
     try {
       const tail = Math.max(1, Math.min(10000, parseInt(req.query.tail) || 100));
       const { data } = await agentApi(agent).get(`/docker/containers/${req.params.containerId}/logs?tail=${tail}`);
       return res.json(data);
     } catch (err) {
       if (err.response?.status === 404) return res.json([]);
-      return res.status(502).json({ error: err.response?.data?.error || err.message });
+      if (!allowFallback(req, agent, req.originalUrl, err)) {
+        return res.status(502).json({ error: err.response?.data?.error || err.message });
+      }
     }
   }
 
@@ -567,6 +584,27 @@ router.get('/:id/docker/containers/:containerId/logs', requirePermission('docker
   }
 });
 
+// Einmal-Ticket für den Terminal-WebSocket. Muss vor der generischen :action-Route
+// stehen, sonst würde die 'terminal-ticket' als Container-Aktion auffassen.
+router.post('/:id/docker/containers/:containerId/terminal-ticket', requirePermission('docker.control'), (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+
+  if (!useNative()) {
+    return res.status(400).json({ error: 'Natives Terminal ist im Dockhand-Modus nicht verfügbar' });
+  }
+
+  const ticket = terminalTickets.issue({
+    userId:      req.user?.id,
+    username:    req.user?.username,
+    role:        req.user?.role,
+    agentId:     agent.id,
+    containerId: req.params.containerId,
+  });
+  res.json({ ticket });
+});
+
 router.post('/:id/docker/containers/:containerId/:action', requirePermission('docker.control'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
@@ -575,13 +613,16 @@ router.post('/:id/docker/containers/:containerId/:action', requirePermission('do
   const valid = ['start', 'stop', 'restart', 'pause', 'unpause', 'kill'];
   if (!valid.includes(action)) return res.status(400).json({ error: 'Ungültige Aktion' });
   
-  if (getSetting('dockerEngine') !== 'dockhand') {
+  if (useNative()) {
     try {
       await agentApi(agent).post(`/docker/containers/${containerId}/${action}`);
       auditLog(req, `docker.${action}`, 'container', containerId.slice(0, 12), { agentId: req.params.id });
       return res.json({ success: true });
     } catch (err) {
-      return res.status(502).json({ error: err.response?.data?.error || err.message });
+      // Mixed-Modus: Agent-Fehler faellt unten auf Dockhand zurueck
+      if (!allowFallback(req, agent, req.originalUrl, err)) {
+        return res.status(502).json({ error: err.response?.data?.error || err.message });
+      }
     }
   }
 
@@ -601,12 +642,15 @@ router.get('/:id/docker/images', requirePermission('docker.images.view'), async 
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   
-  if (getSetting('dockerEngine') !== 'dockhand') {
+  if (useNative()) {
     try {
       const { data } = await agentApi(agent).get('/docker/images');
       return res.json(data || []);
     } catch (err) {
-      return res.status(502).json({ error: err.response?.data?.error || err.message });
+      // Mixed-Modus: Agent-Fehler faellt unten auf Dockhand zurueck
+      if (!allowFallback(req, agent, req.originalUrl, err)) {
+        return res.status(502).json({ error: err.response?.data?.error || err.message });
+      }
     }
   }
 
@@ -624,13 +668,16 @@ router.post('/:id/docker/images/pull', requirePermission('docker.images.control'
   const image = (req.body?.image || '').trim();
   if (!validImageRef(image)) return res.status(400).json({ error: 'Ungültige Image-Referenz' });
 
-  if (getSetting('dockerEngine') !== 'dockhand') {
+  if (useNative()) {
     try {
       await agentApi(agent).post('/docker/images/pull', { image });
       auditLog(req, 'docker.image.pull', 'image', image, { agentId: agent.id });
       return res.json({ success: true });
     } catch (err) {
-      return res.status(502).json({ error: err.response?.data?.error || err.message });
+      // Mixed-Modus: Agent-Fehler faellt unten auf Dockhand zurueck
+      if (!allowFallback(req, agent, req.originalUrl, err)) {
+        return res.status(502).json({ error: err.response?.data?.error || err.message });
+      }
     }
   }
 
@@ -647,13 +694,16 @@ router.post('/:id/docker/images/prune', requirePermission('docker.images.control
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
 
-  if (getSetting('dockerEngine') !== 'dockhand') {
+  if (useNative()) {
     try {
       await agentApi(agent).post('/docker/images/prune');
       auditLog(req, 'docker.image.prune', 'image', 'ungenutzte', { agentId: agent.id });
       return res.json({ success: true });
     } catch (err) {
-      return res.status(502).json({ error: err.response?.data?.error || err.message });
+      // Mixed-Modus: Agent-Fehler faellt unten auf Dockhand zurueck
+      if (!allowFallback(req, agent, req.originalUrl, err)) {
+        return res.status(502).json({ error: err.response?.data?.error || err.message });
+      }
     }
   }
 
@@ -670,13 +720,16 @@ router.delete('/:id/docker/images/:imageId', requirePermission('docker.images.co
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
 
-  if (getSetting('dockerEngine') !== 'dockhand') {
+  if (useNative()) {
     try {
       await agentApi(agent).delete(`/docker/images/${encodeURIComponent(req.params.imageId)}`);
       auditLog(req, 'docker.image.delete', 'image', String(req.params.imageId).slice(0, 20), { agentId: agent.id });
       return res.json({ success: true });
     } catch (err) {
-      return res.status(502).json({ error: err.response?.data?.error || err.message });
+      // Mixed-Modus: Agent-Fehler faellt unten auf Dockhand zurueck
+      if (!allowFallback(req, agent, req.originalUrl, err)) {
+        return res.status(502).json({ error: err.response?.data?.error || err.message });
+      }
     }
   }
 
@@ -694,12 +747,15 @@ router.get('/:id/docker/volumes', requirePermission('docker.volumes.view'), asyn
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
 
-  if (getSetting('dockerEngine') !== 'dockhand') {
+  if (useNative()) {
     try {
       const { data } = await agentApi(agent).get('/docker/volumes');
       return res.json(data || []);
     } catch (err) {
-      return res.status(502).json({ error: err.response?.data?.error || err.message });
+      // Mixed-Modus: Agent-Fehler faellt unten auf Dockhand zurueck
+      if (!allowFallback(req, agent, req.originalUrl, err)) {
+        return res.status(502).json({ error: err.response?.data?.error || err.message });
+      }
     }
   }
 
@@ -713,13 +769,16 @@ router.delete('/:id/docker/volumes/:volumeName', requirePermission('docker.volum
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
 
-  if (getSetting('dockerEngine') !== 'dockhand') {
+  if (useNative()) {
     try {
       await agentApi(agent).delete(`/docker/volumes/${encodeURIComponent(req.params.volumeName)}`);
       auditLog(req, 'docker.volume.delete', 'volume', String(req.params.volumeName).slice(0, 40), { agentId: agent.id });
       return res.json({ success: true });
     } catch (err) {
-      return res.status(502).json({ error: err.response?.data?.error || err.message });
+      // Mixed-Modus: Agent-Fehler faellt unten auf Dockhand zurueck
+      if (!allowFallback(req, agent, req.originalUrl, err)) {
+        return res.status(502).json({ error: err.response?.data?.error || err.message });
+      }
     }
   }
 
@@ -736,13 +795,16 @@ router.post('/:id/docker/volumes/prune', requirePermission('docker.volumes.contr
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
 
-  if (getSetting('dockerEngine') !== 'dockhand') {
+  if (useNative()) {
     try {
       await agentApi(agent).post('/docker/volumes/prune');
       auditLog(req, 'docker.volume.prune', 'volume', 'ungenutzte', { agentId: agent.id });
       return res.json({ success: true });
     } catch (err) {
-      return res.status(502).json({ error: err.response?.data?.error || err.message });
+      // Mixed-Modus: Agent-Fehler faellt unten auf Dockhand zurueck
+      if (!allowFallback(req, agent, req.originalUrl, err)) {
+        return res.status(502).json({ error: err.response?.data?.error || err.message });
+      }
     }
   }
 
@@ -760,12 +822,15 @@ router.get('/:id/docker/networks', requirePermission('docker.networks.view'), as
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
 
-  if (getSetting('dockerEngine') !== 'dockhand') {
+  if (useNative()) {
     try {
       const { data } = await agentApi(agent).get('/docker/networks');
       return res.json(data || []);
     } catch (err) {
-      return res.status(502).json({ error: err.response?.data?.error || err.message });
+      // Mixed-Modus: Agent-Fehler faellt unten auf Dockhand zurueck
+      if (!allowFallback(req, agent, req.originalUrl, err)) {
+        return res.status(502).json({ error: err.response?.data?.error || err.message });
+      }
     }
   }
 
@@ -779,13 +844,16 @@ router.delete('/:id/docker/networks/:networkId', requirePermission('docker.netwo
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
 
-  if (getSetting('dockerEngine') !== 'dockhand') {
+  if (useNative()) {
     try {
       await agentApi(agent).delete(`/docker/networks/${encodeURIComponent(req.params.networkId)}`);
       auditLog(req, 'docker.network.delete', 'network', String(req.params.networkId).slice(0, 20), { agentId: agent.id });
       return res.json({ success: true });
     } catch (err) {
-      return res.status(502).json({ error: err.response?.data?.error || err.message });
+      // Mixed-Modus: Agent-Fehler faellt unten auf Dockhand zurueck
+      if (!allowFallback(req, agent, req.originalUrl, err)) {
+        return res.status(502).json({ error: err.response?.data?.error || err.message });
+      }
     }
   }
 
@@ -802,13 +870,16 @@ router.post('/:id/docker/networks/prune', requirePermission('docker.networks.con
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
 
-  if (getSetting('dockerEngine') !== 'dockhand') {
+  if (useNative()) {
     try {
       await agentApi(agent).post('/docker/networks/prune');
       auditLog(req, 'docker.network.prune', 'network', 'ungenutzte', { agentId: agent.id });
       return res.json({ success: true });
     } catch (err) {
-      return res.status(502).json({ error: err.response?.data?.error || err.message });
+      // Mixed-Modus: Agent-Fehler faellt unten auf Dockhand zurueck
+      if (!allowFallback(req, agent, req.originalUrl, err)) {
+        return res.status(502).json({ error: err.response?.data?.error || err.message });
+      }
     }
   }
 
@@ -826,12 +897,15 @@ router.get('/:id/docker/stacks', requirePermission('docker.stacks.view'), async 
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
 
-  if (getSetting('dockerEngine') !== 'dockhand') {
+  if (useNative()) {
     try {
       const { data } = await agentApi(agent).get('/docker/stacks');
       return res.json(data || []);
     } catch (err) {
-      return res.status(502).json({ error: err.response?.data?.error || err.message });
+      // Mixed-Modus: Agent-Fehler faellt unten auf Dockhand zurueck
+      if (!allowFallback(req, agent, req.originalUrl, err)) {
+        return res.status(502).json({ error: err.response?.data?.error || err.message });
+      }
     }
   }
 
@@ -845,14 +919,17 @@ router.delete('/:id/docker/stacks/:stackId', requirePermission('docker.stacks.co
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
 
-  if (getSetting('dockerEngine') !== 'dockhand') {
+  if (useNative()) {
     try {
       // Löschen für native Stacks führt ein docker compose down aus (kein Löschen der yml Dateien)
       await agentApi(agent).post(`/docker/stacks/${encodeURIComponent(req.params.stackId)}/down`);
       auditLog(req, 'docker.stack.delete', 'stack', String(req.params.stackId).slice(0, 40), { agentId: agent.id });
       return res.json({ success: true });
     } catch (err) {
-      return res.status(502).json({ error: err.response?.data?.error || err.message });
+      // Mixed-Modus: Agent-Fehler faellt unten auf Dockhand zurueck
+      if (!allowFallback(req, agent, req.originalUrl, err)) {
+        return res.status(502).json({ error: err.response?.data?.error || err.message });
+      }
     }
   }
 
@@ -870,7 +947,7 @@ router.post('/:id/docker/stacks/:stackId/:action', requirePermission('docker.sta
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   const { stackId, action } = req.params;
   
-  if (getSetting('dockerEngine') !== 'dockhand') {
+  if (useNative()) {
     const validNativeActions = ['start', 'stop', 'update', 'restart']; // We mapped up, down, pull in agent, but UI might send start, stop, update
     if (!validNativeActions.includes(action)) return res.status(400).json({ error: 'Invalid action' });
     
@@ -889,7 +966,10 @@ router.post('/:id/docker/stacks/:stackId/:action', requirePermission('docker.sta
       auditLog(req, `docker.stack.${action}`, 'stack', String(stackId).slice(0, 40), { agentId: agent.id });
       return res.json({ success: true });
     } catch (err) {
-      return res.status(502).json({ error: err.response?.data?.error || err.message });
+      // Mixed-Modus: Agent-Fehler faellt unten auf Dockhand zurueck
+      if (!allowFallback(req, agent, req.originalUrl, err)) {
+        return res.status(502).json({ error: err.response?.data?.error || err.message });
+      }
     }
   }
 

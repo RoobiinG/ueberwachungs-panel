@@ -18,6 +18,15 @@ const CONDITION_LABELS = { gt: 'über', lt: 'unter' };
 const THRESHOLD_MAX  = { cpu: 100, memory: 100, disk: 100, net_rx: 1000, net_tx: 1000, patchmon_updates: 9999, patchmon_security: 9999, hetzner_storage_usage: 100, mchost_runtime: 365 };
 const THRESHOLD_STEP = { cpu: 1, memory: 1, disk: 1, net_rx: 0.5, net_tx: 0.5, patchmon_updates: 1, patchmon_security: 1, hetzner_storage_usage: 1, mchost_runtime: 1 };
 
+// Darstellung der Historien-Einträge je Status. 'failed' bedeutet: Der Alarm hat ausgelöst,
+// aber der Webhook kam nicht durch — das darf nicht wie ein normaler Alarm aussehen.
+const HISTORY_STYLES = {
+  fired:      { label: '⚠️ Ausgelöst',          icon: AlertTriangle, box: 'bg-panel-surface border-panel-border/50',    text: 'text-panel-text',  iconCls: null },
+  resolved:   { label: '✅ Erholt',              icon: CheckCircle,   box: 'bg-panel-green/5 border-panel-green/20',     text: 'text-panel-green', iconCls: 'text-panel-green' },
+  failed:     { label: '❌ Zustellung fehlgeschlagen', icon: XCircle, box: 'bg-panel-red/10 border-panel-red/30',        text: 'text-panel-red',   iconCls: 'text-panel-red' },
+  suppressed: { label: '🔧 Unterdrückt (Wartung)', icon: Clock,       box: 'bg-panel-bg border-panel-border/40 opacity-75', text: 'text-panel-muted', iconCls: 'text-panel-muted' },
+};
+
 const emptyCondition = () => ({ metric: 'cpu', condition: 'gt', threshold: 80 });
 
 const defaultForm = {
@@ -646,28 +655,30 @@ export default function Alerts() {
           <div className="space-y-1.5">
             {history.map(h => {
               const isResolved = h.type === 'resolved';
-              // Detail-Zeilen aus der gespeicherten Nachricht extrahieren
-              // (erste Zeile = Header, letzte = "Server: …" → beide überspringen)
-              const cleanMsg = String(h.message || '').replace(/<[^>]+>/g, '');
+              const isFailed   = h.type === 'failed';
+              const style = HISTORY_STYLES[h.type] || HISTORY_STYLES.fired;
+              const Icon  = style.icon;
+
+              let cleanMsg = String(h.message || '').replace(/<[^>]+>/g, '');
+              // Vorangestellte Notiz in eckigen Klammern abtrennen — z.B. der Grund einer
+              // fehlgeschlagenen Zustellung oder der Hinweis auf den Wartungsmodus.
+              let notice = null;
+              const noticeMatch = cleanMsg.match(/^\[([^\]]+)\]\s*\n?/);
+              if (noticeMatch) {
+                notice   = noticeMatch[1];
+                cleanMsg = cleanMsg.slice(noticeMatch[0].length);
+              }
+              // Detail-Zeilen extrahieren (erste Zeile = Header, "Server: …" überspringen)
               const detailLines = cleanMsg
                 ? cleanMsg.split('\n').slice(1).filter(l => l.trim() && !l.startsWith('Server:') && !l.startsWith('🖥️'))
                 : [];
+
               return (
-                <div key={h.id}
-                  className={`p-2.5 rounded-lg text-xs border
-                    ${isResolved
-                      ? 'bg-panel-green/5 border-panel-green/20'
-                      : 'bg-panel-surface border-panel-border/50'
-                    }`}>
+                <div key={h.id} className={`p-2.5 rounded-lg text-xs border ${style.box}`}>
                   {/* ── Kopfzeile ── */}
                   <div className="flex items-center gap-2 flex-wrap">
-                    {isResolved
-                      ? <CheckCircle size={13} className="text-panel-green flex-shrink-0" />
-                      : <AlertTriangle size={13} className={`${METRIC_COLORS[h.metric] || 'text-panel-orange'} flex-shrink-0`} />
-                    }
-                    <span className={`font-semibold ${isResolved ? 'text-panel-green' : 'text-panel-text'}`}>
-                      {isResolved ? '✅ Erholt' : '⚠️ Ausgelöst'}
-                    </span>
+                    <Icon size={13} className={`${style.iconCls || METRIC_COLORS[h.metric] || 'text-panel-orange'} flex-shrink-0`} />
+                    <span className={`font-semibold ${style.text}`}>{style.label}</span>
                     <span className="text-panel-text font-medium">{h.rule_name || 'Gelöschte Regel'}</span>
                     <span className="text-panel-muted">{fmtDate(h.triggered_at)}</span>
                     {(h.agent_name || h.agent_id) && (
@@ -676,6 +687,12 @@ export default function Alerts() {
                       </span>
                     )}
                   </div>
+                  {/* ── Notiz (Zustellfehler / Wartung / abgeschaltete Entwarnung) ── */}
+                  {notice && (
+                    <p className={`mt-1.5 pl-5 text-[11px] ${isFailed ? 'text-panel-red' : 'text-panel-muted'}`}>
+                      {notice}
+                    </p>
+                  )}
                   {/* ── Detail-Zeilen (Metrik / Wert / Schwelle) ── */}
                   {detailLines.length > 0 && (
                     <div className="mt-1.5 pl-5 space-y-0.5">

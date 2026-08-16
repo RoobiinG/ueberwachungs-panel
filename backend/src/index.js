@@ -121,31 +121,11 @@ setupWS(server);
 
 // ─── Terminal WebSocket Proxy (Frontend -> Backend -> Agent) ───────────
 const WebSocket = require('ws');
-const jwt       = require('jsonwebtoken');
-const crypto    = require('crypto');
-const { getPermissions } = require('./middleware/requirePermission');
-const { canAccessAgent } = require('./utils/agentAccess');
-const { auditLog }       = require('./utils/audit');
-
-// Session-Prüfung analog zu middleware/auth.js — Browser-WebSockets können keine
-// Authorization-Header setzen, deshalb kommt das Token aus der Query.
-// Wichtig: Rolle immer frisch aus der DB lesen (kann sich seit Ausstellung geändert
-// haben) und Widerruf prüfen, sonst gilt eine abgemeldete Session hier weiter.
-function authenticateTerminalToken(token) {
-  if (!token) return null;
-  const decoded = jwt.verify(token, process.env.JWT_SECRET);   // wirft bei ungültig/abgelaufen
-  if (!decoded?.id) return null;
-  if (decoded.is2fa) return null;                              // Zwischen-Token vor 2FA-Abschluss
-
-  const db   = require('./db');
-  const user = db.prepare('SELECT id, username, role FROM users WHERE id = ?').get(decoded.id);
-  if (!user) return null;
-
-  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-  if (db.prepare('SELECT 1 FROM revoked_tokens WHERE token_hash = ?').get(tokenHash)) return null;
-
-  return user;
-}
+const { getPermissions }         = require('./middleware/requirePermission');
+const { canAccessAgent }         = require('./utils/agentAccess');
+const { checkServerIdentityFor } = require('./utils/agentTls');
+const { auditLog }               = require('./utils/audit');
+const terminalTickets            = require('./utils/terminalTickets');
 
 server.on('upgrade', (request, socket, head) => {
   if (!request.url.startsWith('/api/agents/') || !request.url.includes('/terminal')) return;
@@ -159,22 +139,27 @@ server.on('upgrade', (request, socket, head) => {
 
   const url = new URL(request.url, `http://${request.headers.host}`);
 
-  let user = null;
-  try { user = authenticateTerminalToken(url.searchParams.get('token')); } catch { user = null; }
-  if (!user) return deny(401, 'Unauthorized');
-
   const match = url.pathname.match(/^\/api\/agents\/(\d+)\/docker\/containers\/(.+)\/terminal$/);
   if (!match) return deny(404, 'Not Found');
   const agentId     = match[1];
   const containerId = match[2];
+
+  // Authentifizierung über ein Einmal-Ticket, das zuvor per regulärer API geholt wurde.
+  // So landet kein Session-JWT in den Access-Logs des Reverse Proxy.
+  const ticket = terminalTickets.redeem(url.searchParams.get('ticket'), agentId, containerId);
+  if (!ticket) return deny(401, 'Unauthorized');
 
   try {
     const db    = require('./db');
     const agent = db.prepare('SELECT * FROM remote_agents WHERE id = ?').get(agentId);
     if (!agent) return deny(404, 'Not Found');
 
-    // Dieselben Prüfungen wie bei jeder HTTP-Docker-Route: Recht + Agenten-Freigabe
-    // der Rolle. Ohne sie wäre das Terminal ein Weg an der Rechteverwaltung vorbei.
+    // Rechte erneut prüfen: Das Ticket ist zwar kurzlebig, die Rolle kann sich in der
+    // Zwischenzeit aber geändert haben. Rolle dafür frisch aus der DB lesen — dieselben
+    // Bedingungen wie bei jeder HTTP-Docker-Route, sonst wäre das Terminal ein Weg an
+    // der Rechteverwaltung vorbei.
+    const user = db.prepare('SELECT id, username, role FROM users WHERE id = ?').get(ticket.userId);
+    if (!user) return deny(401, 'Unauthorized');
     if (!getPermissions(user.role).includes('docker.control')) return deny(403, 'Forbidden');
     if (!canAccessAgent(agent.id, user.role))                  return deny(403, 'Forbidden');
 
@@ -185,11 +170,17 @@ server.on('upgrade', (request, socket, head) => {
     if (engine === 'dockhand') return deny(400, 'Bad Request');
 
     const targetUrl = agent.url.replace(/^http/, 'ws') + `/docker/containers/${containerId}/terminal`;
-    const agentWs = new WebSocket(targetUrl, {
+    const wsOptions = {
       headers: { 'x-agent-token': agent.token },
-      rejectUnauthorized: false,
       handshakeTimeout: 10000,   // sonst hängt ein nicht antwortender Agent stumm
-    });
+    };
+    if (targetUrl.startsWith('wss://')) {
+      // Selbstsigniert — deshalb kein rejectUnauthorized, aber Fingerprint gepinnt,
+      // genau wie bei den HTTP-Aufrufen über agentApi.
+      wsOptions.rejectUnauthorized  = false;
+      wsOptions.checkServerIdentity = checkServerIdentityFor(agent);
+    }
+    const agentWs = new WebSocket(targetUrl, wsOptions);
 
     // Ab dem erfolgreichen Upgrade ist `socket` ein WebSocket — dann darf dort keine
     // HTTP-Antwort mehr hineingeschrieben werden (das erzeugt nur Müll-Frames).
@@ -208,15 +199,26 @@ server.on('upgrade', (request, socket, head) => {
         agentWs.on('message', (data) => {
           if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
         });
-        clientWs.on('close', () => agentWs.close());
-        agentWs.on('close', () => clientWs.close());
-        clientWs.on('error', () => agentWs.close());
-        agentWs.on('error', () => clientWs.close());
+
+        // Ohne Datenverkehr trennt der Reverse Proxy die Verbindung (NGINX Proxy
+        // Manager: proxy_read_timeout, Standard 60 s). Regelmäßige Pings halten ein
+        // im Leerlauf stehendes Terminal offen.
+        const keepAlive = setInterval(() => {
+          try { if (clientWs.readyState === WebSocket.OPEN) clientWs.ping(); } catch {}
+          try { if (agentWs.readyState  === WebSocket.OPEN) agentWs.ping();  } catch {}
+        }, 30_000);
+        const stop = () => clearInterval(keepAlive);
+
+        clientWs.on('close', () => { stop(); agentWs.close(); });
+        agentWs.on('close',  () => { stop(); clientWs.close(); });
+        clientWs.on('error', () => { stop(); agentWs.close(); });
+        agentWs.on('error',  () => { stop(); clientWs.close(); });
       });
     });
 
-    agentWs.on('error', () => {
+    agentWs.on('error', (err) => {
       if (upgraded) { try { agentWs.close(); } catch {} return; }
+      console.warn(`[Terminal] Agent "${agent.name}" nicht erreichbar:`, err.message);
       deny(502, 'Bad Gateway');
     });
   } catch (err) {

@@ -61,19 +61,50 @@ const getState = (ruleId, srvKey) => {
   if (!state.has(key)) {
     let hasFired = false;
     let lastFiredThreshold = null;
+    let lastFiredAt = null;
     try {
       const row = db.prepare(
-        "SELECT type, value FROM alert_history WHERE rule_id = ? AND (server_key = ? OR server_key IS NULL) ORDER BY triggered_at DESC, id DESC LIMIT 1"
+        "SELECT type, value, CAST(strftime('%s', triggered_at) AS INTEGER) AS ts FROM alert_history WHERE rule_id = ? AND (server_key = ? OR server_key IS NULL) ORDER BY triggered_at DESC, id DESC LIMIT 1"
       ).get(ruleId, srvKey);
-      if (row && row.type === 'fired') {
+      // 'failed' zählt wie 'fired' — der Alarm hat ausgelöst, nur die Zustellung nicht.
+      if (row && (row.type === 'fired' || row.type === 'failed')) {
         hasFired = true;
         lastFiredThreshold = row.value;
+        lastFiredAt = row.ts ?? null;   // damit der Cooldown einen Neustart übersteht
       }
     } catch {}
-    state.set(key, { activeSince: null, lastFiredAt: null, hasFired, lastFiredThreshold });
+    state.set(key, { activeSince: null, lastFiredAt, hasFired, lastFiredThreshold });
   }
   return state.get(key);
 };
+
+// Webhook zustellen und zurückmelden, ob es geklappt hat.
+async function deliverWebhook(rule, message, ctx) {
+  try {
+    await sendWebhook(
+      { type: rule.wtype, url: rule.wurl, method: rule.wmethod, headers: rule.wheaders, template: rule.wtemplate },
+      message,
+      ctx
+    );
+    return { ok: true, error: null };
+  } catch (err) {
+    console.error(`[AlertEvaluator] Webhook "${rule.name}" (${ctx.alertType}) fehlgeschlagen:`, err.message);
+    return { ok: false, error: err.message };
+  }
+}
+
+// Historien-Eintrag schreiben, mit Rückfall auf das alte Schema ohne server_key.
+function writeHistory(ruleId, value, message, type, serverKey) {
+  try {
+    db.prepare("INSERT INTO alert_history (rule_id, value, message, type, server_key) VALUES (?, ?, ?, ?, ?)")
+      .run(ruleId, value, message, type, serverKey);
+  } catch {
+    try {
+      db.prepare("INSERT INTO alert_history (rule_id, value, message, type) VALUES (?, ?, ?, ?)")
+        .run(ruleId, value, message, type);
+    } catch {}
+  }
+}
 
 const METRIC_LABELS = { cpu: 'CPU', memory: 'RAM', disk: 'Disk', net_rx: 'Netz ↓', net_tx: 'Netz ↑', action: 'Aktion', patchmon_updates: 'PatchMon Updates', patchmon_security: 'PatchMon Security', hetzner_storage_usage: 'Storage Box', mchost_runtime: 'MC-Host Laufzeit' };
 const METRIC_UNIT   = { cpu: '%', memory: '%', disk: '%', net_rx: ' MB/s', net_tx: ' MB/s', action: '', patchmon_updates: '', patchmon_security: '', hetzner_storage_usage: '%', mchost_runtime: ' Tage' };
@@ -325,11 +356,18 @@ async function evaluate() {
         let shouldFire = false;
         if (activeFor >= (rule.duration_seconds || 0)) {
           if (!s.hasFired) {
-            shouldFire = true;
+            shouldFire = true;   // Erstmeldung immer sofort, ohne Cooldown
           } else if (currentMetThreshold !== null && s.lastFiredThreshold !== null) {
             const isGt = metConditions[0]?.cond.condition === 'gt';
-            if (isGt && currentMetThreshold > s.lastFiredThreshold) shouldFire = true;
-            if (!isGt && currentMetThreshold < s.lastFiredThreshold) shouldFire = true;
+            const escalated = isGt
+              ? currentMetThreshold > s.lastFiredThreshold
+              : currentMetThreshold < s.lastFiredThreshold;
+            // Nachmeldung bei verschärfter Schwelle erst nach Ablauf des Cooldowns.
+            // Bis v5.3.1.2 galt cooldown_minutes nur für Aktions-Alerts und war hier
+            // wirkungslos, obwohl das Feld im Regel-Dialog angeboten wird.
+            const cooldownSec = (rule.cooldown_minutes || 0) * 60;
+            const cooldownOver = s.lastFiredAt === null || (now - s.lastFiredAt) >= cooldownSec;
+            shouldFire = escalated && cooldownOver;
           }
         }
 
@@ -354,26 +392,30 @@ async function evaluate() {
           }
 
           const inMaintenance = isServerInMaintenance(srv.key, srv.agentId);
-          if (!inMaintenance) {
-            try {
-              await sendWebhook({ type: rule.wtype, url: rule.wurl, method: rule.wmethod, headers: rule.wheaders, template: rule.wtemplate }, message, { ruleName: rule.name, serverName: srv.name, value: currentMetThreshold ?? (results[0]?.value ?? 0), alertType: 'fired' });
-            } catch (err) {
-              console.error(`[AlertEvaluator] Webhook "${rule.name}" fehlgeschlagen:`, err.message);
+          const fireValue     = currentMetThreshold ?? (results[0]?.value ?? 0);
+
+          let histType = 'fired';
+          let histMsg  = message;
+          if (inMaintenance) {
+            histType = 'suppressed';
+            histMsg  = `[Wartungsmodus] ${message}`;
+          } else {
+            const sent = await deliverWebhook(rule, message, {
+              ruleName: rule.name, serverName: srv.name, value: fireValue, alertType: 'fired',
+            });
+            // Scheitert die Zustellung, darf das nicht als erfolgreicher Alarm in der
+            // Historie stehen — sonst sucht man den Fehler beim Messenger statt im Panel.
+            if (!sent.ok) {
+              histType = 'failed';
+              histMsg  = `[Zustellung fehlgeschlagen: ${sent.error}]\n${message}`;
             }
           }
+
           s.lastFiredAt = now;
           s.hasFired    = true;
           if (currentMetThreshold !== null) s.lastFiredThreshold = currentMetThreshold;
 
-          try {
-            db.prepare("INSERT INTO alert_history (rule_id, value, message, type, server_key) VALUES (?, ?, ?, ?, ?)")
-              .run(rule.id, currentMetThreshold ?? (results[0]?.value ?? 0), inMaintenance ? `[Wartungsmodus] ${message}` : message, inMaintenance ? 'suppressed' : 'fired', srv.key);
-          } catch {
-            try {
-              db.prepare("INSERT INTO alert_history (rule_id, value, message, type) VALUES (?, ?, ?, ?)")
-                .run(rule.id, currentMetThreshold ?? (results[0]?.value ?? 0), inMaintenance ? `[Wartungsmodus] ${message}` : message, inMaintenance ? 'suppressed' : 'fired');
-            } catch {}
-          }
+          writeHistory(rule.id, fireValue, histMsg, histType, srv.key);
 
 
           broadcast({
@@ -418,23 +460,29 @@ async function evaluate() {
           }
 
           const inMaintenance = isServerInMaintenance(srv.key, srv.agentId);
-          if (!inMaintenance) {
-            try {
-              await sendWebhook({ type: rule.wtype, url: rule.wurl, method: rule.wmethod, headers: rule.wheaders, template: rule.wtemplate }, message, { ruleName: rule.name, serverName: srv.name, value: results[0]?.value ?? 0, alertType: 'resolved' });
-            } catch (err) {
-              console.error(`[AlertEvaluator] Resolved-Webhook "${rule.name}" fehlgeschlagen:`, err.message);
+          const okValue       = results[0]?.value ?? 0;
+
+          let histType = 'resolved';
+          let histMsg  = message;
+          if (inMaintenance) {
+            histType = 'suppressed';
+            histMsg  = `[Wartungsmodus] ${message}`;
+          } else if (!rule.notify_resolved) {
+            // Die Entwarnung wird nur protokolliert, nicht versendet. Das Feld wurde bis
+            // v5.3.1.2 nie ausgewertet — Entwarnungen gingen immer raus.
+            histMsg = `[Entwarnung nicht versendet — in der Regel abgeschaltet]\n${message}`;
+          } else {
+            const sent = await deliverWebhook(rule, message, {
+              ruleName: rule.name, serverName: srv.name, value: okValue, alertType: 'resolved',
+            });
+            if (!sent.ok) {
+              histType = 'failed';
+              histMsg  = `[Zustellung fehlgeschlagen: ${sent.error}]\n${message}`;
             }
           }
 
-          try {
-            db.prepare("INSERT INTO alert_history (rule_id, value, message, type, server_key) VALUES (?, ?, ?, ?, ?)")
-              .run(rule.id, results[0]?.value ?? 0, inMaintenance ? `[Wartungsmodus] ${message}` : message, inMaintenance ? 'suppressed' : 'resolved', srv.key);
-          } catch {
-            try {
-              db.prepare("INSERT INTO alert_history (rule_id, value, message, type) VALUES (?, ?, ?, ?)")
-                .run(rule.id, results[0]?.value ?? 0, inMaintenance ? `[Wartungsmodus] ${message}` : message, inMaintenance ? 'suppressed' : 'resolved');
-            } catch {}
-          }
+          s.lastFiredAt = null;   // Cooldown zurücksetzen, der nächste Alarm meldet sofort
+          writeHistory(rule.id, okValue, histMsg, histType, srv.key);
 
 
           broadcast({

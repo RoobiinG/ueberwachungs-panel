@@ -179,6 +179,17 @@ try { db.exec("ALTER TABLE alert_rules ADD COLUMN agent_ids TEXT NOT NULL DEFAUL
 try { db.exec("ALTER TABLE alert_rules ADD COLUMN conditions TEXT NOT NULL DEFAULT '[]'"); } catch {}
 try { db.exec("ALTER TABLE alert_rules ADD COLUMN logic TEXT NOT NULL DEFAULT 'and'"); } catch {}
 try { db.exec("ALTER TABLE alert_rules ADD COLUMN notify_resolved INTEGER NOT NULL DEFAULT 0"); } catch {}
+// Einmalig (v5.3.1.3): notify_resolved wurde bis dahin nie ausgewertet — Entwarnungen gingen
+// unabhängig von der Einstellung immer raus. Da die Spalte standardmäßig auf 0 steht, würden
+// alle Bestandsregeln nach dem Update schlagartig verstummen. Deshalb behalten sie ihr
+// bisheriges Verhalten; für neue Regeln entscheidet der Schalter im Regel-Dialog.
+try {
+  const done = db.prepare("SELECT value FROM settings WHERE key = 'migratedNotifyResolved'").get();
+  if (!done) {
+    db.prepare('UPDATE alert_rules SET notify_resolved = 1').run();
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('migratedNotifyResolved', '1')").run();
+  }
+} catch {}
 // Ziel-Referenz für nicht-server-gebundene Alerts (z.B. Hetzner-Storage-Box-ID)
 try { db.exec("ALTER TABLE alert_rules ADD COLUMN target_ref TEXT"); } catch {}
 // Bestehende Einzel-Regeln in conditions migrieren

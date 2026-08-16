@@ -8,11 +8,15 @@ const https  = require('https');
 const os     = require('os');
 const path   = require('path');
 const crypto = require('crypto');
-const { exec } = require('child_process');
+const { exec, execFile } = require('child_process');
 const { promisify } = require('util');
 const fs = require('fs');
 
 const execAsync = promisify(exec);
+// Für alles, wo Namen oder IDs aus der Anfrage in den Befehl wandern: keine Shell,
+// sondern ein Argument-Array. Sonderzeichen in Volume-/Netzwerk-/Image-Namen können
+// so nicht als Shell-Syntax gedeutet werden.
+const execFileAsync = promisify(execFile);
 const VERSION = '2.5.1';
 const REPO_RAW = 'https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master/agent/panel-agent.js';
 const PORT  = parseInt(process.env.PANEL_AGENT_PORT || '7331');
@@ -340,7 +344,7 @@ async function getDockerImages() {
 
 async function getDockerStats(id) {
   try {
-    const { stdout } = await execAsync(`docker stats ${id} --no-stream --format '{{json .}}'`, { timeout: 10000 });
+    const { stdout } = await execFileAsync('docker', ['stats', id, '--no-stream', '--format', '{{json .}}'], { timeout: 10000 });
     if (!stdout.trim()) throw new Error('404');
     const s = JSON.parse(stdout.trim().split('\n')[0]);
     const parseMem = (str) => {
@@ -366,7 +370,7 @@ async function getDockerStats(id) {
 async function getDockerLogs(id, tail) {
   try {
     // Both stdout and stderr
-    const { stdout, stderr } = await execAsync(`docker logs --tail ${tail} ${id}`, { timeout: 10000 });
+    const { stdout, stderr } = await execFileAsync('docker', ['logs', '--tail', String(tail), id], { timeout: 10000 });
     return stdout + stderr;
   } catch { throw new Error('Ressource nicht gefunden'); }
 }
@@ -375,7 +379,7 @@ async function dockerAction(id, action) {
   try {
     const valid = ['start', 'stop', 'restart', 'pause', 'unpause', 'kill'];
     if (!valid.includes(action)) throw new Error('Ungültige Aktion');
-    await execAsync(`docker ${action} ${id}`, { timeout: 30000 });
+    await execFileAsync('docker', [action, id], { timeout: 30000 });
     return { success: true };
   } catch (e) { throw new Error(e.message); }
 }
@@ -396,10 +400,8 @@ async function dockerStackAction(id, action) {
     const valid = ['up', 'down', 'pull', 'restart'];
     if (!valid.includes(action)) throw new Error('Ungültige Aktion');
     
-    if (action === 'up') await execAsync(`docker compose -f "${path}" up -d`, { timeout: 60000 });
-    if (action === 'down') await execAsync(`docker compose -f "${path}" down`, { timeout: 60000 });
-    if (action === 'pull') await execAsync(`docker compose -f "${path}" pull`, { timeout: 60000 });
-    if (action === 'restart') await execAsync(`docker compose -f "${path}" restart`, { timeout: 60000 });
+    const args = { up: ['up', '-d'], down: ['down'], pull: ['pull'], restart: ['restart'] }[action];
+    await execFileAsync('docker', ['compose', '-f', path, ...args], { timeout: 60000 });
     return { success: true };
   } catch (e) { throw new Error(e.message); }
 }
@@ -668,24 +670,24 @@ async function handler(req, res) {
     } else if (url === '/docker/images' && req.method === 'GET') {
       respond(res, 200, await getDockerImages());
     } else if (url.startsWith('/docker/containers/') && url.endsWith('/stats') && req.method === 'GET') {
-      const id = url.split('/')[3];
+      const id = decodeURIComponent(url.split('/')[3] || '');
       respond(res, 200, await getDockerStats(id));
     } else if (url.startsWith('/docker/containers/') && url.endsWith('/logs') && req.method === 'GET') {
-      const id = url.split('/')[3];
+      const id = decodeURIComponent(url.split('/')[3] || '');
       const tail = (req.url.match(/tail=(\d+)/) || [])[1] || 100;
       respond(res, 200, await getDockerLogs(id, tail));
     } else if (url.startsWith('/docker/containers/') && req.method === 'POST') {
       const parts = url.split('/');
       if (parts.length === 5) {
-        respond(res, 200, await dockerAction(parts[3], parts[4]));
+        respond(res, 200, await dockerAction(decodeURIComponent(parts[3]), parts[4]));
       } else { respond(res, 404, { error: 'Not found' }); }
-      
+
     } else if (url === '/docker/stacks' && req.method === 'GET') {
       respond(res, 200, await getDockerStacks());
     } else if (url.startsWith('/docker/stacks/') && req.method === 'POST') {
       const parts = url.split('/');
       if (parts.length === 5) {
-        respond(res, 200, await dockerStackAction(parts[3], parts[4]));
+        respond(res, 200, await dockerStackAction(decodeURIComponent(parts[3]), parts[4]));
       } else { respond(res, 404, { error: 'Not found' }); }
       
     } else if (url === '/docker/volumes' && req.method === 'GET') {
@@ -694,20 +696,22 @@ async function handler(req, res) {
       await execAsync('docker volume prune -f', { timeout: 30000 });
       respond(res, 200, { success: true });
     } else if (url.startsWith('/docker/volumes/') && req.method === 'DELETE') {
-      const id = url.split('/')[3];
-      await execAsync(`docker volume rm ${id}`, { timeout: 10000 });
+      const id = decodeURIComponent(url.split('/')[3] || '');
+      if (!id) return respond(res, 400, { error: 'Volume-Name fehlt' });
+      await execFileAsync('docker', ['volume', 'rm', id], { timeout: 10000 });
       respond(res, 200, { success: true });
-      
+
     } else if (url === '/docker/networks' && req.method === 'GET') {
       respond(res, 200, await getDockerNetworks());
     } else if (url === '/docker/networks/prune' && req.method === 'POST') {
       await execAsync('docker network prune -f', { timeout: 30000 });
       respond(res, 200, { success: true });
     } else if (url.startsWith('/docker/networks/') && req.method === 'DELETE') {
-      const id = url.split('/')[3];
-      await execAsync(`docker network rm ${id}`, { timeout: 10000 });
+      const id = decodeURIComponent(url.split('/')[3] || '');
+      if (!id) return respond(res, 400, { error: 'Netzwerk-ID fehlt' });
+      await execFileAsync('docker', ['network', 'rm', id], { timeout: 10000 });
       respond(res, 200, { success: true });
-      
+
     } else if (url === '/docker/images/prune' && req.method === 'POST') {
       await execAsync('docker image prune -a -f', { timeout: 60000 });
       respond(res, 200, { success: true });
@@ -715,11 +719,16 @@ async function handler(req, res) {
       const raw = await new Promise((resolve) => { const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8'))); });
       const { image } = JSON.parse(raw || '{}');
       if (!image) return respond(res, 400, { error: 'image fehlt' });
-      await execAsync(`docker pull ${image}`, { timeout: 300000 });
+      // Der Agent verlässt sich nicht darauf, dass das Panel bereits validiert hat.
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9._/:@-]{0,220}$/.test(image)) {
+        return respond(res, 400, { error: 'Ungültige Image-Referenz' });
+      }
+      await execFileAsync('docker', ['pull', image], { timeout: 300000 });
       respond(res, 200, { success: true });
     } else if (url.startsWith('/docker/images/') && req.method === 'DELETE') {
-      const id = url.split('/')[3];
-      await execAsync(`docker rmi -f ${id}`, { timeout: 10000 });
+      const id = decodeURIComponent(url.split('/')[3] || '');
+      if (!id) return respond(res, 400, { error: 'Image-ID fehlt' });
+      await execFileAsync('docker', ['rmi', '-f', id], { timeout: 10000 });
       respond(res, 200, { success: true });
 
     } else if (url === '/network/interfaces' && req.method === 'GET') {
@@ -804,12 +813,12 @@ try {
       return;
     }
 
-    const match = req.url.match(/^\/docker\/containers\/(.+)\/terminal/);
+    const match = req.url.match(/^\/docker\/containers\/([^/?]+)\/terminal/);
     if (!match) {
       ws.close(1008, 'Invalid endpoint');
       return;
     }
-    const containerId = match[1];
+    const containerId = decodeURIComponent(match[1]);
 
     // pseudo-tty erstellen mit docker exec -it.
     // Nicht fest auf bash gehen: Alpine-basierte Images (nginx:alpine, redis:alpine, …)

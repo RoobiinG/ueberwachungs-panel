@@ -1,16 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
+import axios from 'axios';
 import { Modal } from './ui/Modal';
 import { Terminal } from 'xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import 'xterm/css/xterm.css';
-import { useAuth } from '../context/AuthContext';
 
 export function TerminalModal({ agentId, containerId, containerName, onClose }) {
   const terminalRef = useRef(null);
   const termInstance = useRef(null);
   const wsRef = useRef(null);
   const fitAddon = useRef(null);
-  const { token } = useAuth();
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -35,29 +34,48 @@ export function TerminalModal({ agentId, containerId, containerName, onClose }) 
       if (fitAddon.current) fitAddon.current.fit();
     }, 50);
 
-    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/agents/${agentId}/docker/containers/${containerId}/terminal?token=${token}`;
-    
-    wsRef.current = new WebSocket(wsUrl);
-
-    wsRef.current.onopen = () => {
-      termInstance.current.focus();
-      // Initiale Größe senden
-      if (termInstance.current.cols && termInstance.current.rows) {
-        wsRef.current.send(JSON.stringify({ cols: termInstance.current.cols, rows: termInstance.current.rows }));
+    // Erst ein Einmal-Ticket über die reguläre API holen (Header-authentifiziert),
+    // dann damit verbinden. Das Session-Token darf nicht in die WebSocket-URL —
+    // der Reverse Proxy protokolliert vollständige URLs.
+    let cancelled = false;
+    (async () => {
+      let ticket;
+      try {
+        const { data } = await axios.post(
+          `/api/agents/${agentId}/docker/containers/${encodeURIComponent(containerId)}/terminal-ticket`
+        );
+        ticket = data.ticket;
+      } catch (err) {
+        setError(err.response?.data?.error || 'Terminal-Zugriff verweigert.');
+        return;
       }
-    };
+      if (cancelled || !ticket) return;
 
-    wsRef.current.onmessage = (ev) => {
-      termInstance.current.write(ev.data);
-    };
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${proto}//${window.location.host}/api/agents/${agentId}/docker/containers/${encodeURIComponent(containerId)}/terminal?ticket=${encodeURIComponent(ticket)}`;
 
-    wsRef.current.onerror = () => {
-      setError('Verbindung zum Terminal fehlgeschlagen.');
-    };
+      wsRef.current = new WebSocket(wsUrl);
 
-    wsRef.current.onclose = () => {
-      termInstance.current.write('\r\n\x1b[31m[Terminal geschlossen]\x1b[0m\r\n');
-    };
+      wsRef.current.onopen = () => {
+        termInstance.current?.focus();
+        // Initiale Größe senden
+        if (termInstance.current?.cols && termInstance.current?.rows) {
+          wsRef.current.send(JSON.stringify({ cols: termInstance.current.cols, rows: termInstance.current.rows }));
+        }
+      };
+
+      wsRef.current.onmessage = (ev) => {
+        termInstance.current?.write(ev.data);
+      };
+
+      wsRef.current.onerror = () => {
+        setError('Verbindung zum Terminal fehlgeschlagen.');
+      };
+
+      wsRef.current.onclose = () => {
+        termInstance.current?.write('\r\n\x1b[31m[Terminal geschlossen]\x1b[0m\r\n');
+      };
+    })();
 
     termInstance.current.onData((data) => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -80,15 +98,18 @@ export function TerminalModal({ agentId, containerId, containerName, onClose }) 
     window.addEventListener('resize', handleResize);
 
     return () => {
+      cancelled = true;   // verhindert einen Verbindungsaufbau nach dem Schließen
       window.removeEventListener('resize', handleResize);
       if (wsRef.current) {
         wsRef.current.close();
+        wsRef.current = null;
       }
       if (termInstance.current) {
         termInstance.current.dispose();
+        termInstance.current = null;
       }
     };
-  }, [agentId, containerId, token]);
+  }, [agentId, containerId]);
 
   return (
     <Modal

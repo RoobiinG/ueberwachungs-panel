@@ -16,6 +16,85 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.4.0.0] - 2026-08-16 (Build 303) — *Mixed-Rückfall, sichere Terminals & verlässliche Benachrichtigungen*
+
+### ✨ Features & Verbesserungen
+- **„Nativ & Dockhand Pro (Mixed)" tut jetzt tatsächlich etwas**: Die Auswahl war bislang wirkungslos —
+  der Modus verhielt sich in jeder Code-Stelle exakt wie „Nativ". Mixed bedeutet ab sofort:
+  **zuerst der Panel-Agent, bei einem Fehler automatischer Rückfall auf Dockhand Pro.**
+  Das gilt für alle Docker-Aufrufe eines Remote-Servers — Container, Images, Volumes, Netzwerke,
+  Stacks, Logs und Statistiken.
+  - **Der Rückfall passiert nicht stillschweigend.** Er landet als Warnung im Panel-Log und als
+    `docker.fallback.dockhand` im Audit-Log (je Agent auf einen Eintrag alle 5 Minuten gedrosselt,
+    damit die pollende Docker-Seite das Log nicht flutet). Sonst würde ein dauerhaft ausgefallener
+    Agent monatelang unbemerkt bleiben, weil scheinbar alles funktioniert.
+  - **Konsole im Mixed-Modus**: Da sich ein bereits geöffnetes Terminal nicht nachträglich umleiten
+    lässt, wird der Agent vorab angepingt. Antwortet er nicht, öffnet sich stattdessen das
+    Dockhand-Terminal — mit einem Hinweis, dass ausgewichen wurde.
+  - Ein Rückfall setzt ein zugewiesenes Dockhand-Environment voraus. Fehlt es, bleibt es beim
+    Agent-Fehler statt einer irreführenden Ersatzmeldung.
+- **Docker-Übersicht meldet Agent-Ausfälle statt sie zu verstecken**: Die Kachelansicht eines
+  Remote-Servers unterdrückte Fehler des Agenten und zeigte stattdessen „online" mit 0 Containern.
+  Jetzt erscheint der tatsächliche Fehler bzw. im Mixed-Modus der Rückfall.
+- **Hinweis zum lokalen Server**: Auf der Docker-Seite steht nun sichtbar, dass die Container des
+  Panel-Servers selbst immer über Dockhand laufen — die Einstellung „Docker Verwaltung" gilt
+  ausschließlich für Remote-Server.
+
+### 🔒 Sicherheit
+- **Kein Session-Token mehr in der Terminal-URL**: Das Web-Terminal hängte das JWT als Query-Parameter
+  an die WebSocket-Adresse, wo es im Klartext in den Access-Logs des Reverse Proxy landete und die
+  Sitzung überdauerte. Stattdessen holt das Frontend jetzt über die reguläre API ein **Einmal-Ticket**:
+  30 Sekunden gültig, genau einmal einlösbar und fest an diesen einen Container auf diesem einen
+  Agenten gebunden.
+- **TLS zum Agenten wird auch beim Terminal geprüft**: Der WebSocket-Proxy verband sich bisher mit
+  vollständig abgeschalteter Zertifikatsprüfung, während alle übrigen Agent-Aufrufe den gespeicherten
+  Fingerprint pinnen. Beide Wege nutzen jetzt dieselbe Prüfung (`utils/agentTls.js`), womit auch drei
+  auseinandergelaufene Kopien derselben Logik zusammengeführt sind.
+- **Agent baut Docker-Befehle ohne Shell**: Alle Aufrufe, in die Namen oder IDs aus der Anfrage
+  einfließen (Volumes, Netzwerke, Images, Container-Aktionen, Logs, Statistiken, Compose-Stacks),
+  laufen jetzt über `execFile` mit Argument-Array statt über einen zusammengesetzten Shell-String.
+  Über das Panel war das nicht ausnutzbar — es validiert vorher —, der Agent verließ sich dabei aber
+  vollständig auf den Aufrufer. Zusätzlich prüft er Image-Referenzen nun selbst.
+
+### 🐛 Bugfixes
+- **„Entwarnung senden" hatte keine Wirkung**: Das Feld `notify_resolved` wurde gespeichert und im
+  Regel-Dialog angeboten, vom Alert-Evaluator aber nie gelesen — Entwarnungen gingen immer raus.
+  Der Schalter greift jetzt. Ist er aus, wird die Entwarnung nur noch in der Historie vermerkt.
+- **„Cooldown" galt nur für Aktions-Alerts**: Bei Schwellenwert-, PatchMon-, Storage- und
+  MC-Host-Regeln war die Einstellung wirkungslos. Sie begrenzt jetzt Nachmeldungen bei verschärfter
+  Schwelle und übersteht dank Auswertung der Historie auch einen Neustart. Die Erstmeldung eines
+  Alarms erfolgt weiterhin sofort.
+- **Fehlgeschlagene Benachrichtigungen sahen aus wie erfolgreiche**: Kam ein Webhook nicht durch,
+  landete der Fehler nur in der Server-Konsole — in der Alert-Historie stand trotzdem „ausgelöst".
+  Neuer Status **`failed`** mit Fehlertext, in der Historie rot dargestellt. Auch unterdrückte
+  Wartungs-Alarme sind jetzt als solche erkennbar statt als normale Alarme.
+- **Custom-Webhooks zerbrachen an Anführungszeichen**: In JSON-Templates wurde nur `{{message}}`
+  maskiert, und auch dort keine Backslashes. Ein Regel- oder Servername mit einem `"` machte das JSON
+  ungültig, woraufhin der rohe kaputte Text mit `Content-Type: application/json` verschickt wurde.
+  Alle Platzhalter werden nun über `JSON.stringify` korrekt maskiert; ergibt ein Template trotzdem
+  kein gültiges JSON, scheitert der Versand jetzt mit klarer Meldung statt still kaputte Daten zu senden.
+- **Agent verarbeitet kodierte Namen korrekt**: Volumes und Netzwerke mit Sonderzeichen im Namen
+  schlugen stumm fehl, weil der Agent die URL-Segmente nicht dekodierte.
+
+### ⚙️ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen**: Eine einmalige Angleichung setzt `notify_resolved = 1` für **alle bestehenden**
+  Alarm-Regeln. Grund: Das Feld steht standardmäßig auf 0, wurde bisher aber ignoriert — ohne diese
+  Angleichung würden nach dem Update schlagartig überhaupt keine Entwarnungen mehr verschickt.
+  Bestandsregeln verhalten sich damit unverändert; für neue Regeln entscheidet der Schalter.
+  Wer keine Entwarnungen möchte, hakt sie in der jeweiligen Regel ab.
+- **Agent-Kompatibilität**: Der Panel-Agent bleibt auf **2.5.1** (unverändert seit Build 302), die
+  Härtung betrifft nur seine interne Befehlsausführung. Ein Agent-Update ist empfohlen, aber für die
+  Panel-seitigen Korrekturen dieser Version nicht erforderlich. Ältere Agenten funktionieren weiter.
+- **Neustart-/Session-Verhalten**: Sessions bleiben gültig. Offene Terminal-Fenster müssen nach dem
+  Update einmal neu geöffnet werden, da die Anmeldung am Terminal auf Tickets umgestellt wurde.
+- **Zu erwarten**: Wer den Mixed-Modus nutzt, sieht bei einem nicht erreichbaren Agenten künftig
+  Einträge `docker.fallback.dockhand` im Audit-Log. Das ist kein Fehler, sondern der beabsichtigte
+  Hinweis darauf, dass gerade nicht nativ gearbeitet wird.
+- **Unverändert**: Container des lokalen Panel-Servers laufen weiterhin über Dockhand — in allen drei
+  Betriebsarten.
+
+---
+
 ## [5.3.1.2] - 2026-08-16 (Build 302) — *Docker-Konsole funktionsfähig & abgesichert*
 
 ### 🔒 Sicherheit

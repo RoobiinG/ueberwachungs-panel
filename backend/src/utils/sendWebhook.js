@@ -90,19 +90,38 @@ async function sendWebhook(webhook, message, context = {}) {
     }
 
     let payloadStr = webhook.template || '{"message": "{{message}}"}';
+
+    // Die Platzhalter werden in einen JSON-String eingesetzt, bevor der geparst wird.
+    // Jeder Wert muss deshalb JSON-gerecht escaped werden — auch Regel- und Servernamen,
+    // die durchaus Anführungszeichen oder Umbrüche enthalten können. JSON.stringify
+    // erledigt das vollständig (inkl. Backslashes und Steuerzeichen), die äußeren
+    // Anführungszeichen schneiden wir ab, weil im Template bereits welche stehen.
+    const jsonEscape = (v) => JSON.stringify(String(v ?? '')).slice(1, -1);
+
     const rep = {
-      '{{server_name}}': String(context.serverName || 'Server'),
-      '{{alert_title}}': String(context.ruleName || 'Alert'),
-      '{{severity}}': context.alertType === 'resolved' ? 'ok' : 'danger',
-      '{{time}}': new Date().toISOString(),
-      '{{value}}': String(context.value || '0'),
-      '{{message}}': String(message || '').replace(/"/g, '\\"').replace(/\n/g, '\\n'),
+      '{{server_name}}': jsonEscape(context.serverName || 'Server'),
+      '{{alert_title}}': jsonEscape(context.ruleName || 'Alert'),
+      '{{severity}}':    jsonEscape(context.alertType === 'resolved' ? 'ok' : 'danger'),
+      '{{time}}':        jsonEscape(new Date().toISOString()),
+      '{{value}}':       jsonEscape(context.value ?? 0),
+      '{{message}}':     jsonEscape(message || ''),
     };
     for (const [k, v] of Object.entries(rep)) {
       payloadStr = payloadStr.split(k).join(v);
     }
+
+    // Bleibt das Ergebnis ungültiges JSON, liegt das am Template selbst. Dann lieber
+    // klar scheitern als einen kaputten Body mit Content-Type: application/json senden.
     let data;
-    try { data = JSON.parse(payloadStr); } catch { data = payloadStr; }
+    try {
+      data = JSON.parse(payloadStr);
+    } catch (e) {
+      const ct = headers['Content-Type'] || headers['content-type'];
+      if (String(ct).includes('json')) {
+        throw new Error(`Custom-Webhook-Template ergibt kein gültiges JSON: ${e.message}`);
+      }
+      data = payloadStr;   // bewusst anderer Content-Type → Rohtext ist gewollt
+    }
 
     await axios({
       method,

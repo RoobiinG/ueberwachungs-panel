@@ -1,6 +1,6 @@
 {
-  "version": "5.3.1.2",
-  "build": 302,
+  "version": "5.4.0.0",
+  "build": 303,
   "date": "2026-08-16",
-  "codename": "Docker-Konsole funktionsfähig & abgesichert"
+  "codename": "Mixed-Rückfall, sichere Terminals & verlässliche Benachrichtigungen"
 }

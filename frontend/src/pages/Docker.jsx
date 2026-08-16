@@ -8,7 +8,7 @@ import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { ServerSelector } from '../components/ui/ServerSelector';
-import { RefreshCw, Play, Square, RotateCcw, Tag, Check, X, ScrollText, ChevronDown, ChevronUp, Zap, Shield, Terminal } from 'lucide-react';
+import { RefreshCw, Play, Square, RotateCcw, Tag, Check, X, ScrollText, ChevronDown, ChevronUp, Zap, Shield, Terminal, Info } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useWSMessage } from '../context/WSContext';
 import { TerminalModal } from '../components/TerminalModal';
@@ -199,6 +199,11 @@ export default function Docker() {
       if (data.native) {
         setTerminalState({ agentId: data.agentId, containerId: c.id, containerName: c.name });
       } else {
+        // Im Mixed-Modus kann das Backend auf Dockhand ausweichen, wenn der Agent
+        // nicht antwortet — das soll nicht unbemerkt passieren.
+        if (data.fallback) {
+          alert('Der Agent antwortet nicht — die Konsole wird über Dockhand Pro geöffnet.');
+        }
         window.open(data.url, '_blank');
       }
     } catch (err) {
@@ -230,6 +235,15 @@ export default function Docker() {
           <RefreshCw size={14} className="mr-1" />Aktualisieren
         </Button>
       </div>
+
+      {/* Der lokale Panel-Server wird immer über Dockhand bedient — auch im Nativ-Modus. */}
+      {!selectedServer && (
+        <p className="text-[11px] text-panel-muted flex items-center gap-1.5">
+          <Info size={11} className="flex-shrink-0" />
+          Container des lokalen Panel-Servers laufen über Dockhand Pro — die Einstellung
+          „Docker Verwaltung" gilt nur für Remote-Server.
+        </p>
+      )}
 
       {error && (
         <div className="bg-panel-orange/10 border border-panel-orange/30 text-panel-orange text-sm rounded-md px-3 py-2">
