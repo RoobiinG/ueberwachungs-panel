@@ -28,23 +28,35 @@ router.get('/config', requirePermission('settings.view'), (req, res) => {
 // ── GET /api/dockhand/terminal-url/:containerId ───────────────────────────────
 router.get('/terminal-url/:containerId', requirePermission('docker.control'), (req, res) => {
   const { server } = req.query; // 'local' or agentId
+  const isLocal    = !server || server === 'local' || server === 'null';
+  const engine     = getSetting('dockerEngine') || 'agents';
+
+  // Nativ zuerst: Im Agent-Betrieb läuft das Terminal komplett über den Panel-Agent,
+  // Dockhand ist dort gar nicht beteiligt. Die Dockhand-Prüfungen darunter würden
+  // sonst greifen, obwohl Dockhand bewusst nicht eingerichtet ist.
+  if (!isLocal && engine !== 'dockhand') {
+    return res.json({ native: true, agentId: server });
+  }
+
   const dhUrl = getSetting('dockhandUrl');
-  if (!dhUrl) return res.status(400).json({ error: 'Dockhand URL nicht konfiguriert' });
+  if (!dhUrl) {
+    return res.status(400).json({
+      error: isLocal
+        ? 'Für Container des lokalen Servers wird derzeit Dockhand benötigt — Dockhand-URL ist nicht konfiguriert.'
+        : 'Dockhand URL nicht konfiguriert',
+    });
+  }
 
   let envId = null;
-  if (!server || server === 'local' || server === 'null') {
+  if (isLocal) {
     envId = getSetting('dockhandLocalEnvId');
   } else {
-    const engine = getSetting('dockerEngine') || 'agents';
-    if (engine !== 'dockhand') {
-      return res.json({ native: true, agentId: server });
-    }
     const agent = db.prepare('SELECT dockhand_env_id FROM remote_agents WHERE id = ?').get(server);
     envId = agent?.dockhand_env_id;
   }
-  
+
   if (!envId) return res.status(400).json({ error: 'Kein Dockhand-Environment für diesen Server zugewiesen' });
-  
+
   res.json({ url: `${dhUrl.replace(/\/$/, '')}/terminal?env=${encodeURIComponent(envId)}&id=${encodeURIComponent(req.params.containerId)}` });
 });
 

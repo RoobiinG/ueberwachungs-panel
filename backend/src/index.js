@@ -121,72 +121,106 @@ setupWS(server);
 
 // ─── Terminal WebSocket Proxy (Frontend -> Backend -> Agent) ───────────
 const WebSocket = require('ws');
-const jwt = require('jsonwebtoken');
+const jwt       = require('jsonwebtoken');
+const crypto    = require('crypto');
+const { getPermissions } = require('./middleware/requirePermission');
+const { canAccessAgent } = require('./utils/agentAccess');
+const { auditLog }       = require('./utils/audit');
+
+// Session-Prüfung analog zu middleware/auth.js — Browser-WebSockets können keine
+// Authorization-Header setzen, deshalb kommt das Token aus der Query.
+// Wichtig: Rolle immer frisch aus der DB lesen (kann sich seit Ausstellung geändert
+// haben) und Widerruf prüfen, sonst gilt eine abgemeldete Session hier weiter.
+function authenticateTerminalToken(token) {
+  if (!token) return null;
+  const decoded = jwt.verify(token, process.env.JWT_SECRET);   // wirft bei ungültig/abgelaufen
+  if (!decoded?.id) return null;
+  if (decoded.is2fa) return null;                              // Zwischen-Token vor 2FA-Abschluss
+
+  const db   = require('./db');
+  const user = db.prepare('SELECT id, username, role FROM users WHERE id = ?').get(decoded.id);
+  if (!user) return null;
+
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  if (db.prepare('SELECT 1 FROM revoked_tokens WHERE token_hash = ?').get(tokenHash)) return null;
+
+  return user;
+}
+
 server.on('upgrade', (request, socket, head) => {
-  if (request.url.startsWith('/api/agents/') && request.url.includes('/terminal')) {
-    const url = new URL(request.url, `http://${request.headers.host}`);
-    const token = url.searchParams.get('token');
-    
-    try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      if (!decoded.id) throw new Error('Invalid user');
-    } catch (err) {
-      socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+  if (!request.url.startsWith('/api/agents/') || !request.url.includes('/terminal')) return;
+
+  const deny = (code, text) => {
+    if (!socket.destroyed) {
+      socket.write(`HTTP/1.1 ${code} ${text}\r\n\r\n`);
       socket.destroy();
-      return;
     }
+  };
 
-    const match = url.pathname.match(/^\/api\/agents\/(\d+)\/docker\/containers\/(.+)\/terminal$/);
-    if (!match) {
-      socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
-      socket.destroy();
-      return;
-    }
-    const agentId = match[1];
-    const containerId = match[2];
+  const url = new URL(request.url, `http://${request.headers.host}`);
 
-    try {
-      // Wir holen den Agent direkt aus der DB
-      const db = require('./db');
-      const agent = db.prepare('SELECT * FROM remote_agents WHERE id = ?').get(agentId);
-      if (!agent || agent.docker_engine !== 'agents') {
-        socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
-        socket.destroy();
-        return;
-      }
+  let user = null;
+  try { user = authenticateTerminalToken(url.searchParams.get('token')); } catch { user = null; }
+  if (!user) return deny(401, 'Unauthorized');
 
-      const targetUrl = agent.url.replace(/^http/, 'ws') + `/docker/containers/${containerId}/terminal`;
-      const agentWs = new WebSocket(targetUrl, {
-        headers: { 'x-agent-token': agent.token },
-        rejectUnauthorized: false
-      });
+  const match = url.pathname.match(/^\/api\/agents\/(\d+)\/docker\/containers\/(.+)\/terminal$/);
+  if (!match) return deny(404, 'Not Found');
+  const agentId     = match[1];
+  const containerId = match[2];
 
-      agentWs.on('open', () => {
-        const wssTerm = new WebSocket.Server({ noServer: true });
-        wssTerm.handleUpgrade(request, socket, head, (clientWs) => {
-          clientWs.on('message', (data) => {
-            if (agentWs.readyState === WebSocket.OPEN) agentWs.send(data);
-          });
-          agentWs.on('message', (data) => {
-            if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
-          });
-          clientWs.on('close', () => agentWs.close());
-          agentWs.on('close', () => clientWs.close());
-          clientWs.on('error', () => agentWs.close());
-          agentWs.on('error', () => clientWs.close());
+  try {
+    const db    = require('./db');
+    const agent = db.prepare('SELECT * FROM remote_agents WHERE id = ?').get(agentId);
+    if (!agent) return deny(404, 'Not Found');
+
+    // Dieselben Prüfungen wie bei jeder HTTP-Docker-Route: Recht + Agenten-Freigabe
+    // der Rolle. Ohne sie wäre das Terminal ein Weg an der Rechteverwaltung vorbei.
+    if (!getPermissions(user.role).includes('docker.control')) return deny(403, 'Forbidden');
+    if (!canAccessAgent(agent.id, user.role))                  return deny(403, 'Forbidden');
+
+    // Betriebsart kommt global aus den Einstellungen. Die alte Spalte
+    // remote_agents.docker_engine wird seit v5.3.1.0 nicht mehr gepflegt und stand
+    // durch die Migration bei Bestands-Agenten dauerhaft auf 'dockhand'.
+    const engine = db.prepare("SELECT value FROM settings WHERE key = 'dockerEngine'").get()?.value || 'agents';
+    if (engine === 'dockhand') return deny(400, 'Bad Request');
+
+    const targetUrl = agent.url.replace(/^http/, 'ws') + `/docker/containers/${containerId}/terminal`;
+    const agentWs = new WebSocket(targetUrl, {
+      headers: { 'x-agent-token': agent.token },
+      rejectUnauthorized: false,
+      handshakeTimeout: 10000,   // sonst hängt ein nicht antwortender Agent stumm
+    });
+
+    // Ab dem erfolgreichen Upgrade ist `socket` ein WebSocket — dann darf dort keine
+    // HTTP-Antwort mehr hineingeschrieben werden (das erzeugt nur Müll-Frames).
+    let upgraded = false;
+
+    agentWs.on('open', () => {
+      upgraded = true;
+      request.user = user;   // für auditLog
+      auditLog(request, 'docker.terminal.open', 'container', containerId, { agentId: agent.id, agentName: agent.name });
+
+      const wssTerm = new WebSocket.Server({ noServer: true });
+      wssTerm.handleUpgrade(request, socket, head, (clientWs) => {
+        clientWs.on('message', (data) => {
+          if (agentWs.readyState === WebSocket.OPEN) agentWs.send(data);
         });
+        agentWs.on('message', (data) => {
+          if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
+        });
+        clientWs.on('close', () => agentWs.close());
+        agentWs.on('close', () => clientWs.close());
+        clientWs.on('error', () => agentWs.close());
+        agentWs.on('error', () => clientWs.close());
       });
+    });
 
-      agentWs.on('error', (err) => {
-        if (!socket.destroyed) {
-          socket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n');
-          socket.destroy();
-        }
-      });
-    } catch (err) {
-      socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
-      socket.destroy();
-    }
+    agentWs.on('error', () => {
+      if (upgraded) { try { agentWs.close(); } catch {} return; }
+      deny(502, 'Bad Gateway');
+    });
+  } catch (err) {
+    deny(500, 'Internal Server Error');
   }
 });
 

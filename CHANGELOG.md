@@ -16,6 +16,64 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.3.1.2] - 2026-08-16 (Build 302) — *Docker-Konsole funktionsfähig & abgesichert*
+
+### 🔒 Sicherheit
+- **Terminal-WebSocket ohne Rechteprüfung**: Der Proxy für das native Container-Terminal prüfte
+  ausschließlich, ob das übergebene JWT gültig ist. Weder die Berechtigung `docker.control` noch die
+  Agenten-Freigabe der Rolle (`restrict_agents` / `agent_grants`) wurden ausgewertet — anders als bei
+  jeder HTTP-Docker-Route. **Jeder angemeldete Benutzer konnte damit eine interaktive Shell in jedem
+  Container auf jedem Agenten öffnen**, auch mit einer reinen Lese-Rolle ohne jedes Docker-Recht.
+  Der Upgrade prüft jetzt dieselben Bedingungen wie die HTTP-Routen und lehnt sonst mit `403` ab.
+- **Session-Prüfung nachgezogen**: Die Terminal-Verbindung übernimmt nun die vollständige Logik der
+  regulären Auth-Middleware — die Rolle wird frisch aus der Datenbank gelesen (statt der womöglich
+  veralteten Angabe im Token), gelöschte Benutzer und **widerrufene Sessions** werden abgewiesen, und
+  das Zwischen-Token vor abgeschlossener 2FA wird nicht mehr akzeptiert.
+- **Terminal-Zugriffe im Audit-Log**: Das Öffnen einer Container-Konsole wird als
+  `docker.terminal.open` mit Benutzer, Container, Agent, IP und Standort protokolliert.
+
+### 🐛 Bugfixes
+- **Container-Konsole ließ sich überhaupt nicht öffnen**: Gleich drei unabhängige Ursachen verhinderten
+  das native Terminal — jede für sich allein hätte schon gereicht:
+  - Der WebSocket-Proxy entschied anhand der **veralteten Spalte** `remote_agents.docker_engine`, ob
+    nativ gearbeitet wird. Diese Spalte wird seit v5.3.1.0 nicht mehr gepflegt (die Betriebsart kommt
+    aus `settings.dockerEngine`) und wurde von der damaligen Migration bei **allen** bereits
+    vorhandenen Agenten dauerhaft auf `dockhand` gesetzt. Ergebnis: `400 Bad Request` beim Verbinden,
+    das Terminal-Fenster ging auf und schloss sofort wieder — sowohl im Modus „Nativ" als auch
+    „Mixed". Nur nach dem Update neu angelegte Agenten funktionierten. Der Proxy liest die Betriebsart
+    jetzt aus den globalen Einstellungen.
+  - Die Route `/api/dockhand/terminal-url/:containerId` brach mit **„Dockhand URL nicht konfiguriert"**
+    ab, bevor sie überhaupt zur Nativ-Weiche kam. Wer Dockhand bewusst nicht eingerichtet hatte — im
+    Modus „Direkt via Agent (Nativ)" der Normalfall — konnte die Konsole deshalb nie öffnen. Die
+    Nativ-Prüfung steht nun vor der Dockhand-Prüfung.
+  - Der Agent startete im Container fest `bash`. Alpine-basierte Images (`nginx:alpine`,
+    `redis:alpine`, `postgres:alpine` und ähnliche) haben nur `sh`, wodurch `docker exec` sofort
+    abbrach und die Verbindung kommentarlos zuging. Der Agent wählt die Shell jetzt im Container
+    selbst (`bash`, sonst `sh`).
+- **Terminal-Fehler bleiben nicht mehr unsichtbar**: Beendet sich die Container-Shell sofort, wird die
+  Meldung von `docker exec` noch an den Browser ausgeliefert, bevor die Verbindung geschlossen wird.
+  Zusätzlich bricht ein nicht antwortender Agent nach 10 Sekunden mit einem Fehler ab, statt stumm zu
+  hängen, und eine Störung nach dem Verbindungsaufbau erzeugt keine defekten Protokoll-Frames mehr.
+
+### ⚙️ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen**: Keine. Die Spalte `remote_agents.docker_engine` bleibt bestehen, wird aber von
+  keiner Code-Stelle mehr ausgewertet — ein Angleichen der Altbestände ist nicht nötig.
+- **Agent-Kompatibilität**: Der Panel-Agent steigt auf **2.5.1**. Der Shell-Fallback wirkt erst nach
+  einem Agent-Update auf dem jeweiligen Zielserver; bis dahin funktioniert die Konsole dort weiterhin
+  nur bei Containern mit `bash`. Alle übrigen Korrekturen dieser Version liegen im Panel und greifen
+  sofort. Ältere Agenten bleiben ansonsten voll kompatibel.
+- **Berechtigungen**: Benutzer ohne `docker.control` verlieren den Zugang zur Container-Konsole — das
+  war die Absicht, entsprach aber bisher nicht dem tatsächlichen Verhalten. Rollen mit eingeschränkter
+  Agenten-Auswahl erreichen nur noch die ihnen zugewiesenen Server. Wer die Konsole bisher ohne
+  passendes Recht genutzt hat, braucht künftig `docker.control` in seiner Rolle.
+- **Neustart-/Session-Verhalten**: Offene Terminal-Fenster brechen beim Neustart wie bisher ab.
+  Bestehende Anmeldungen bleiben gültig; widerrufene Sessions verlieren allerdings sofort auch den
+  Terminal-Zugriff, den sie zuvor behalten hatten.
+- **Unverändert**: Container des lokalen Panel-Servers laufen weiterhin über Dockhand — auch im Modus
+  „Nativ". Die Einstellung „Nativ & Dockhand Pro (Mixed)" verhält sich unverändert wie „Nativ".
+
+---
+
 ## [5.3.1.1] - 2026-08-16 (Build 301) — *Agent Update Hotfix*
 
 ### 🐛 Bugfixes

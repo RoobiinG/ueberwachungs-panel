@@ -13,7 +13,7 @@ const { promisify } = require('util');
 const fs = require('fs');
 
 const execAsync = promisify(exec);
-const VERSION = '2.5.0';
+const VERSION = '2.5.1';
 const REPO_RAW = 'https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master/agent/panel-agent.js';
 const PORT  = parseInt(process.env.PANEL_AGENT_PORT || '7331');
 const TOKEN = process.env.PANEL_AGENT_TOKEN || '';
@@ -811,8 +811,13 @@ try {
     }
     const containerId = match[1];
 
-    // pseudo-tty erstellen mit docker exec -it
-    const term = pty.spawn('docker', ['exec', '-it', containerId, 'bash'], {
+    // pseudo-tty erstellen mit docker exec -it.
+    // Nicht fest auf bash gehen: Alpine-basierte Images (nginx:alpine, redis:alpine, …)
+    // haben nur sh. Die Shell wird deshalb im Container selbst ausgewählt.
+    const term = pty.spawn('docker', [
+      'exec', '-it', containerId,
+      'sh', '-c', 'if command -v bash >/dev/null 2>&1; then exec bash; else exec sh; fi'
+    ], {
       name: 'xterm-color',
       cols: 80,
       rows: 24,
@@ -840,8 +845,10 @@ try {
       try { term.kill(); } catch {}
     });
     
+    // Kurz warten, damit eine letzte Fehlermeldung von `docker exec` (z. B. wenn der
+    // Container gar keine Shell hat) noch beim Browser ankommt, bevor zugemacht wird.
     term.onExit(() => {
-      if (ws.readyState === 1) ws.close();
+      setTimeout(() => { if (ws.readyState === 1) ws.close(); }, 100);
     });
   });
 } catch (e) {

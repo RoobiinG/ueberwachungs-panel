@@ -9,6 +9,7 @@ const db          = require('../db');
 const { requirePermission } = require('../middleware/requirePermission');
 const { validatePublicUrl } = require('../utils/validateUrl');
 const { auditLog } = require('../utils/audit');
+const { canAccessAgent } = require('../utils/agentAccess');
 
 const AGENT_RAW_URL = 'https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master/agent/panel-agent.js';
 
@@ -28,12 +29,8 @@ const getOne = (id) => db.prepare('SELECT * FROM remote_agents WHERE id = ?').ge
 
 const getSetting = k => db.prepare('SELECT value FROM settings WHERE key = ?').get(k)?.value ?? null;
 
-// Prüft ob ein Nutzer Zugriff auf einen bestimmten Agent hat
-const canAccessAgent = (agentId, roleName) => {
-  const role = db.prepare('SELECT id, is_admin, restrict_agents FROM roles WHERE name = ?').get(roleName);
-  if (!role || role.is_admin || !role.restrict_agents) return true;
-  return !!db.prepare('SELECT 1 FROM agent_grants WHERE role_id = ? AND agent_id = ?').get(role.id, agentId);
-};
+// canAccessAgent liegt in utils/agentAccess.js — der Terminal-WebSocket-Proxy in index.js
+// braucht dieselbe Prüfung und kann keine Express-Middleware verwenden.
 
 // TLS-Fingerprint eines HTTPS-Endpunkts abrufen (ohne Zertifikats-Validierung)
 const fetchFingerprint = (urlStr) => new Promise((resolve, reject) => {
