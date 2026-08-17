@@ -3,6 +3,7 @@ import axios from 'axios';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
+import { ActionMenu } from '../components/ui/ActionMenu';
 import {
   RefreshCw, Play, Square, PowerOff, RotateCcw, HardDrive,
   ChevronDown, ChevronUp, Plus, Tag, X, Copy, Check,
@@ -298,15 +299,43 @@ export default function MCHost() {
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1">
-                    {canStart   && <Button size="sm" variant="success" onClick={() => act(s.id, 'start')} disabled={busy[`${s.id}_start`]}><Play size={12} /></Button>}
-                    {canStop    && <Button size="sm" variant="danger" onClick={() => act(s.id, 'stop')} disabled={busy[`${s.id}_stop`]}><Square size={12} /></Button>}
-                    {canStop    && <Button size="sm" variant="warning" onClick={() => act(s.id, 'shutdown')} disabled={busy[`${s.id}_shutdown`]}><PowerOff size={12} /></Button>}
-                    {canRestart && <Button size="sm" variant="ghost" onClick={() => act(s.id, 'restart')} disabled={busy[`${s.id}_restart`]}><RotateCcw size={12} /></Button>}
-                    <Button size="sm" variant="ghost" onClick={() => toggleBackups(s.id)}>
-                      <HardDrive size={12} />
+                  {/* „Herunterfahren" (sanft) und „Hart ausschalten" waren als reine
+                      Symbole praktisch nicht auseinanderzuhalten — jetzt benannt, und
+                      die harte Variante liegt eine Ebene tiefer im Menü. */}
+                  <div className="flex items-center gap-1 flex-wrap justify-end">
+                    {canStart && (
+                      <Button size="sm" variant="success" onClick={() => act(s.id, 'start')} disabled={busy[`${s.id}_start`]}>
+                        <Play size={12} />{busy[`${s.id}_start`] ? 'Startet…' : 'Start'}
+                      </Button>
+                    )}
+                    {canStop && (
+                      <Button size="sm" variant="warning" onClick={() => act(s.id, 'shutdown')} disabled={busy[`${s.id}_shutdown`]}
+                        title="Betriebssystem geordnet herunterfahren">
+                        <PowerOff size={12} />{busy[`${s.id}_shutdown`] ? 'Fährt herunter…' : 'Herunterfahren'}
+                      </Button>
+                    )}
+                    {canRestart && (
+                      <Button size="sm" variant="ghost" onClick={() => act(s.id, 'restart')} disabled={busy[`${s.id}_restart`]}>
+                        <RotateCcw size={12} />{busy[`${s.id}_restart`] ? 'Startet neu…' : 'Neustart'}
+                      </Button>
+                    )}
+                    <Button size="sm" variant="ghost" onClick={() => toggleBackups(s.id)}
+                      title="Backups dieses VServers anzeigen">
+                      <HardDrive size={12} />Backups
                       {expanded[s.id] ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                     </Button>
+                    <ActionMenu
+                      items={[
+                        canStop && {
+                          icon: Square,
+                          label: 'Hart ausschalten',
+                          danger: true,
+                          disabled: busy[`${s.id}_stop`],
+                          title: 'Sofort abschalten, ohne das Betriebssystem herunterzufahren — Datenverlust möglich',
+                          onClick: () => act(s.id, 'stop'),
+                        },
+                      ]}
+                    />
                   </div>
                 </div>
 

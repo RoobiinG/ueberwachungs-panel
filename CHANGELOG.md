@@ -16,6 +16,47 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.4.2.0] - 2026-08-17 (Build 305) — *Beschriftete Aktionen statt Symbolraten*
+
+### 🔧 Änderungen
+- **Alle Aktions-Knöpfe im Panel sind jetzt beschriftet.** Bisher standen in den Listen nur Symbole
+  nebeneinander — ohne Text war kaum zu erkennen, welches davon startet, stoppt, neu startet oder
+  löscht. Jedes davon trägt nun Symbol **und** Wort.
+  - **Häufige Aktionen bleiben direkt sichtbar** (Start, Stopp, Neustart, Bearbeiten, Logs),
+    seltene wandern in ein neues **„⋯ Mehr"-Menü** — dort ebenfalls voll benannt. Damit bleiben die
+    Zeilen schlank, obwohl mehr Text darin steht.
+  - **Laufende Aktionen sagen es**: Während eine Aktion läuft, steht am Knopf „Startet…",
+    „Stoppt…" oder „Startet neu…" statt eines stummen ausgegrauten Symbols.
+  - Betroffen sind Docker-Container, Docker-Stacks/Images/Volumes/Netzwerke, Remote-Server und deren
+    Detailseite, Systemd-Dienste, Hetzner-Server, MC-Host24-VServer, Firewall-Regeln, Alert-Regeln,
+    Benutzer, Webhooks, Backups, Sitzungen, Passkeys, Freigabe-Links, PatchMon und Uptime Kuma.
+- **Gefährliche Aktionen sind als solche erkennbar** und liegen eine Ebene tiefer im Menü, rot
+  markiert und mit Erklärung: „Kill (SIGKILL)", „Hart ausschalten", „Agent deinstallieren",
+  „Aus Panel entfernen", „Stack löschen".
+- **MC-Host24: „Herunterfahren" und „Hart ausschalten" waren nicht auseinanderzuhalten** — zwei
+  ähnliche Symbole direkt nebeneinander, eines davon mit möglichem Datenverlust. Das geordnete
+  Herunterfahren steht jetzt beschriftet in der Zeile, das harte Abschalten im Menü mit Warnhinweis.
+- **Alert-Regeln zeigen ihren Zustand im Klartext**: Statt eines Schiebesymbols steht am Knopf
+  „Aktiv" oder „Inaktiv"; das Ergebnis eines Testversands erscheint daneben als Häkchen oder Kreuz.
+- **Kleine Symbole ohne Beschriftung bleiben bewusst erhalten**, wo Text nur stören würde: IP
+  kopieren, Aufklapp-Pfeile, Widget-Griffe, Dialog schließen. Sie haben durchgängig einen Tooltip.
+
+### 🐛 Bugfixes
+- **Tooltips an Knöpfen waren wirkungslos**: Die zentrale Schaltflächen-Komponente reichte das
+  `title`-Attribut nicht an das HTML-Element weiter. Überall dort, wo ein Knopf nur aus einem Symbol
+  bestand und der Tooltip die einzige Erklärung war, erschien beim Daraufzeigen also nichts.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Rein visuell**: Keine Änderung an Backend, API, Datenbank oder Agent. Es wurden keine Aktionen
+  hinzugefügt, entfernt oder in ihrer Wirkung verändert — nur ihre Darstellung und Erreichbarkeit.
+- **Rechte**: Unverändert. Ein Knopf oder Menüeintrag erscheint weiterhin genau dann, wenn die Rolle
+  das jeweilige Recht besitzt; das Menü blendet sich komplett aus, wenn kein Eintrag übrig bleibt.
+- **Bedienung**: Aktionen, die bisher ein einzelner Klick waren, brauchen teilweise zwei (Menü öffnen,
+  Eintrag wählen) — betroffen sind ausschließlich seltene oder gefährliche Aktionen. Das Menü schließt
+  bei Escape, Klick daneben und beim Scrollen.
+- **Neustart & Sessions**: Nur der übliche Panel-Neustart durch das Update, keine Auswirkung auf
+  angemeldete Sitzungen.
+
 ## [5.4.1.0] - 2026-08-17 (Build 304) — *Container-Konsole ausschließlich nativ*
 
 ### 🔧 Änderungen

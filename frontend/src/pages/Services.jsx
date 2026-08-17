@@ -115,22 +115,16 @@ export default function Services() {
                     {canWrite && (
                       <>
                         {!isActive
-                          ? <button onClick={() => act(s.name, 'start')} disabled={!!actBusy[s.name]}
-                              title="Starten"
-                              className="p-1 rounded text-panel-green hover:bg-panel-green/15 disabled:opacity-40 transition-colors">
-                              <Play size={11} />
-                            </button>
-                          : <button onClick={() => act(s.name, 'stop')} disabled={!!actBusy[s.name]}
-                              title="Stoppen"
-                              className="p-1 rounded text-panel-red hover:bg-panel-red/15 disabled:opacity-40 transition-colors">
-                              <Square size={11} />
-                            </button>
+                          ? <Button size="sm" variant="success" onClick={() => act(s.name, 'start')} disabled={!!actBusy[s.name]}>
+                              <Play size={11} />Start
+                            </Button>
+                          : <Button size="sm" variant="danger" onClick={() => act(s.name, 'stop')} disabled={!!actBusy[s.name]}>
+                              <Square size={11} />Stopp
+                            </Button>
                         }
-                        <button onClick={() => act(s.name, 'restart')} disabled={!!actBusy[s.name]}
-                          title="Neustarten"
-                          className="p-1 rounded text-panel-muted hover:text-panel-text hover:bg-panel-card disabled:opacity-40 transition-colors">
-                          <RotateCcw size={11} />
-                        </button>
+                        <Button size="sm" variant="ghost" onClick={() => act(s.name, 'restart')} disabled={!!actBusy[s.name]}>
+                          <RotateCcw size={11} />Neustart
+                        </Button>
                       </>
                     )}
                   </div>

@@ -344,14 +344,13 @@ export default function Firewall() {
                     {/* Aktionen auf Mobil oben rechts, auf Desktop am Ende */}
                     {canWrite && (
                       <div className="flex sm:hidden items-center gap-1">
-                        <button onClick={() => openEdit(r, displayId)} title="Bearbeiten"
-                          className="text-panel-muted hover:text-panel-accent p-1 rounded hover:bg-panel-accent/10 transition-colors">
-                          <Pencil size={12} />
-                        </button>
-                        <button onClick={() => deleteRule(displayId)} title="Löschen"
-                          className="text-panel-muted hover:text-panel-red p-1 rounded hover:bg-panel-red/10 transition-colors">
-                          <Trash2 size={12} />
-                        </button>
+                        <Button size="sm" variant="ghost" onClick={() => openEdit(r, displayId)}>
+                          <Pencil size={11} />Bearbeiten
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => deleteRule(displayId)}
+                          className="text-panel-red hover:border-panel-red/40">
+                          <Trash2 size={11} />Löschen
+                        </Button>
                       </div>
                     )}
                   </div>
@@ -391,14 +390,13 @@ export default function Firewall() {
                   {/* Aktionen Desktop */}
                   {canWrite && (
                     <div className="hidden sm:flex items-center gap-1 justify-end">
-                      <button onClick={() => openEdit(r, displayId)} title="Bearbeiten"
-                        className="text-panel-muted hover:text-panel-accent p-1 rounded hover:bg-panel-accent/10 transition-colors">
-                        <Pencil size={11} />
-                      </button>
-                      <button onClick={() => deleteRule(displayId)} title="Löschen"
-                        className="text-panel-muted hover:text-panel-red p-1 rounded hover:bg-panel-red/10 transition-colors">
-                        <Trash2 size={11} />
-                      </button>
+                      <Button size="sm" variant="ghost" onClick={() => openEdit(r, displayId)}>
+                        <Pencil size={11} />Bearbeiten
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => deleteRule(displayId)}
+                        className="text-panel-red hover:border-panel-red/40">
+                        <Trash2 size={11} />Löschen
+                      </Button>
                     </div>
                   )}
                 </div>

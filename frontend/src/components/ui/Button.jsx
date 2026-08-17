@@ -12,16 +12,24 @@ const sizes = {
   lg: 'px-4 py-2 text-sm gap-2',
 };
 
-export const Button = ({ children, variant = 'primary', size = 'md', className = '', disabled, onClick, type = 'button' }) => (
+// Als Funktion herausgezogen, damit Bausteine mit eigenem <button> — etwa der
+// Auslöser des ActionMenu — exakt gleich aussehen, ohne die Klassen zu kopieren.
+export const buttonClasses = (variant = 'primary', size = 'md', className = '') =>
+  `inline-flex items-center justify-center ${variants[variant] ?? variants.primary} ${sizes[size] ?? sizes.md} rounded-md font-medium
+    transition-all duration-150 whitespace-nowrap
+    focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-panel-accent/50 focus-visible:ring-offset-1 focus-visible:ring-offset-panel-bg
+    disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none
+    ${className}`;
+
+// `rest` wird bewusst durchgereicht: `title` landete bisher nicht am DOM-Element,
+// wodurch sämtliche Tooltips an <Button>-Elementen wirkungslos waren.
+export const Button = ({ children, variant = 'primary', size = 'md', className = '', disabled, onClick, type = 'button', ...rest }) => (
   <button
     type={type}
     disabled={disabled}
     onClick={onClick}
-    className={`inline-flex items-center justify-center ${variants[variant]} ${sizes[size]} rounded-md font-medium
-      transition-all duration-150
-      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-panel-accent/50 focus-visible:ring-offset-1 focus-visible:ring-offset-panel-bg
-      disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none
-      ${className}`}
+    className={buttonClasses(variant, size, className)}
+    {...rest}
   >
     {children}
   </button>

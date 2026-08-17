@@ -623,9 +623,9 @@ function BackupManagerCard() {
                         href={`/api/backups/download/${encodeURIComponent(b.filename)}`}
                         download
                         className="inline-flex items-center gap-1 px-2 py-1 bg-panel-surface border border-panel-border hover:border-panel-accent rounded text-panel-text transition-colors"
-                        title="Herunterladen"
+                        title="Diese Sicherung als Datei herunterladen"
                       >
-                        <Download size={12} />
+                        <Download size={12} />Herunterladen
                       </a>
                       <button
                         onClick={() => handleRestoreBackup(b.filename)}
@@ -638,9 +638,9 @@ function BackupManagerCard() {
                       <button
                         onClick={() => handleDeleteBackup(b.filename)}
                         className="inline-flex items-center gap-1 px-2 py-1 bg-panel-red/10 border border-panel-red/30 text-panel-red hover:bg-panel-red hover:text-white rounded transition-colors cursor-pointer"
-                        title="Löschen"
+                        title="Diese Sicherung endgültig entfernen"
                       >
-                        <Trash2 size={12} />
+                        <Trash2 size={12} />Löschen
                       </button>
                     </td>
                   </tr>
@@ -786,9 +786,9 @@ function SessionsSection({ isAdmin }) {
                 <button
                   onClick={() => revoke(s.id)}
                   disabled={!!busy[s.id]}
-                  title="Sitzung beenden"
-                  className="p-1.5 rounded text-panel-muted hover:text-panel-red hover:bg-panel-red/10 transition-colors disabled:opacity-40 flex-shrink-0">
-                  <LogOut size={14} />
+                  title="Diese Sitzung sofort abmelden"
+                  className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded text-panel-muted hover:text-panel-red hover:bg-panel-red/10 transition-colors disabled:opacity-40 flex-shrink-0">
+                  <LogOut size={13} />{busy[s.id] ? 'Beendet…' : 'Beenden'}
                 </button>
               )}
             </div>
@@ -1424,10 +1424,10 @@ export default function Settings() {
                         </div>
                         <button
                           onClick={() => deletePasskey(pk.id)}
-                          className="p-1 text-panel-muted hover:text-panel-red transition-colors"
-                          title="Löschen"
+                          className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded text-panel-muted hover:text-panel-red hover:bg-panel-red/10 transition-colors"
+                          title="Diesen Passkey entfernen"
                         >
-                          <Trash2 size={13} />
+                          <Trash2 size={13} />Löschen
                         </button>
                       </div>
                     ))}

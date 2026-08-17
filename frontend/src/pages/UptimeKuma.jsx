@@ -264,15 +264,16 @@ export default function UptimeKuma() {
         </div>
         <div className="flex items-center gap-1">
           <button onClick={load} disabled={loading || !config.url}
-            className="p-1.5 text-panel-muted hover:text-panel-text rounded transition-colors disabled:opacity-40"
-            title="Aktualisieren">
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+            className="inline-flex items-center gap-1 px-2 py-1 text-xs text-panel-muted hover:text-panel-text hover:bg-panel-card rounded transition-colors disabled:opacity-40"
+            title="Daten neu von Uptime Kuma abrufen">
+            <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+            {loading ? 'Lädt…' : 'Aktualisieren'}
           </button>
           <button
             onClick={() => { setDraft({ ...config, password: '' }); setEditMode(e => !e); }}
-            className={`p-1.5 rounded transition-colors ${editMode ? 'text-panel-accent' : 'text-panel-muted hover:text-panel-text'}`}
-            title="Verbindung konfigurieren">
-            <Settings2 size={14} />
+            className={`inline-flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors ${editMode ? 'text-panel-accent bg-panel-accent/10' : 'text-panel-muted hover:text-panel-text hover:bg-panel-card'}`}
+            title="URL und Zugangsdaten der Uptime-Kuma-Verbindung ändern">
+            <Settings2 size={13} />Verbindung
           </button>
         </div>
       </div>

@@ -8,6 +8,7 @@ import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { ServerSelector } from '../components/ui/ServerSelector';
+import { ActionMenu } from '../components/ui/ActionMenu';
 import { RefreshCw, Play, Square, RotateCcw, Tag, Check, X, ScrollText, ChevronDown, ChevronUp, Zap, Shield, Terminal, Info } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useWSMessage } from '../context/WSContext';
@@ -281,10 +282,12 @@ export default function Docker() {
                           className="bg-panel-surface border border-panel-border rounded px-2 py-0.5 text-xs text-panel-text focus:outline-none w-20"
                           onKeyDown={e => { if (e.key === 'Enter') saveLabel(c.id); if (e.key === 'Escape') setEditingLabel(null); }}
                         />
-                        <button onClick={() => saveLabel(c.id)}
-                          className="p-0.5 text-panel-green hover:text-panel-green/80"><Check size={13} /></button>
-                        <button onClick={() => setEditingLabel(null)}
-                          className="p-0.5 text-panel-muted hover:text-panel-red"><X size={13} /></button>
+                        <Button size="sm" variant="success" onClick={() => saveLabel(c.id)}>
+                          <Check size={12} />Speichern
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setEditingLabel(null)}>
+                          <X size={12} />Abbrechen
+                        </Button>
                       </div>
                     ) : (
                       <div className="flex items-center gap-2 flex-wrap">
@@ -371,51 +374,56 @@ export default function Docker() {
                     )}
                   </div>
 
-                  {/* Aktionen */}
-                  <div className="flex items-center gap-1">
+                  {/* Aktionen — die häufigen beschriftet, der Rest benannt im Menü */}
+                  <div className="flex items-center gap-1 flex-wrap">
                     {canWrite && (
-                      <>
-                        {!isRun
-                          ? <Button size="sm" variant="success" onClick={() => act(c.id, 'start')}   disabled={!!busy[c.id]} title="Starten"><Play size={12} /></Button>
-                          : <Button size="sm" variant="danger"  onClick={() => act(c.id, 'stop')}    disabled={!!busy[c.id]} title="Stoppen"><Square size={12} /></Button>
-                        }
-                        <Button size="sm" variant="ghost"   onClick={() => act(c.id, 'restart')} disabled={!!busy[c.id]} title="Neustarten"><RotateCcw size={12} /></Button>
-                        {isRun && (
-                          <button
-                            onClick={() => { if (confirm(`Container "${c.name}" sofort beenden (SIGKILL)?`)) act(c.id, 'kill'); }}
-                            disabled={!!busy[c.id]}
-                            title="Kill (SIGKILL) — sofortiges Beenden ohne Cleanup"
-                            className="p-1 rounded text-panel-orange hover:bg-panel-orange/15 disabled:opacity-40 transition-colors"
-                          >
-                            <Zap size={12} />
-                          </button>
-                        )}
-                      </>
+                      !isRun
+                        ? <Button size="sm" variant="success" onClick={() => act(c.id, 'start')} disabled={!!busy[c.id]}>
+                            <Play size={12} />{busy[c.id] === 'start' ? 'Startet…' : 'Start'}
+                          </Button>
+                        : <Button size="sm" variant="danger" onClick={() => act(c.id, 'stop')} disabled={!!busy[c.id]}>
+                            <Square size={12} />{busy[c.id] === 'stop' ? 'Stoppt…' : 'Stopp'}
+                          </Button>
                     )}
-                    {/* Terminal-Button — nur mit docker.control (canWrite) und nur für
-                        Remote-Server: Die Konsole läuft ausschließlich über den Panel-Agent. */}
-                    {canWrite && isRun && (
-                      <button
-                        onClick={() => openTerminal(c)}
-                        disabled={!selectedServer}
-                        title={selectedServer
-                          ? 'Konsole öffnen (nativ über den Panel-Agent)'
-                          : 'Konsole nur für Server mit Panel-Agent verfügbar'}
-                        className="p-1.5 rounded transition-colors text-panel-muted hover:text-panel-text hover:bg-panel-card disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-panel-muted disabled:cursor-not-allowed"
-                      >
-                        <Terminal size={13} />
-                      </button>
+                    {canWrite && (
+                      <Button size="sm" variant="ghost" onClick={() => act(c.id, 'restart')} disabled={!!busy[c.id]}>
+                        <RotateCcw size={12} />{busy[c.id] === 'restart' ? 'Startet neu…' : 'Neustart'}
+                      </Button>
                     )}
-                    {/* Logs-Button — nur mit docker.logs Recht */}
                     {canLogs && (
-                      <button
-                        onClick={() => toggleLogs(c.id)}
-                        title="Container-Logs"
-                        className={`p-1.5 rounded transition-colors ${isLogsOpen ? 'text-panel-accent bg-panel-accent/10' : 'text-panel-muted hover:text-panel-text hover:bg-panel-card'}`}
-                      >
-                        <ScrollText size={13} />
-                      </button>
+                      <Button size="sm" variant="ghost" onClick={() => toggleLogs(c.id)}
+                        className={isLogsOpen ? 'text-panel-accent border-panel-accent/40' : ''}>
+                        <ScrollText size={12} />{isLogsOpen ? 'Logs ausblenden' : 'Logs'}
+                      </Button>
                     )}
+                    <ActionMenu
+                      disabled={!!busy[c.id]}
+                      items={[
+                        // Die Konsole läuft ausschließlich über den Panel-Agent —
+                        // beim lokalen Panel-Server gibt es deshalb keine.
+                        canWrite && isRun && {
+                          icon: Terminal,
+                          label: 'Konsole öffnen',
+                          onClick: () => openTerminal(c),
+                          disabled: !selectedServer,
+                          title: selectedServer
+                            ? 'Terminal im Panel, nativ über den Panel-Agent'
+                            : 'Nur für Server mit Panel-Agent verfügbar',
+                        },
+                        canLabel && {
+                          icon: Tag,
+                          label: 'Spitzname / Tag bearbeiten',
+                          onClick: () => openLabelEdit(c.id, labels[c.id]?.nickname, labels[c.id]?.tag),
+                        },
+                        canWrite && isRun && {
+                          icon: Zap,
+                          label: 'Kill (SIGKILL)',
+                          danger: true,
+                          title: 'Sofortiges Beenden ohne Cleanup',
+                          onClick: () => { if (confirm(`Container "${c.name}" sofort beenden (SIGKILL)?`)) act(c.id, 'kill'); },
+                        },
+                      ]}
+                    />
                   </div>
                 </div>
 
@@ -434,11 +442,13 @@ export default function Docker() {
                       <div className="flex items-center gap-1">
                         {[50, 200, 500].map(n => (
                           <button key={n} onClick={() => fetchLogs(c.id, n)}
+                            title={`Die letzten ${n} Zeilen laden`}
                             className="text-[10px] px-1.5 py-0.5 rounded text-panel-muted hover:text-panel-text hover:bg-panel-card transition-colors">
-                            {n}Z
+                            {n} Zeilen
                           </button>
                         ))}
-                        <button onClick={() => toggleLogs(c.id)} className="text-panel-muted hover:text-panel-text ml-1">
+                        <button onClick={() => toggleLogs(c.id)} title="Logs zuklappen"
+                          className="text-panel-muted hover:text-panel-text ml-1">
                           <ChevronUp size={12} />
                         </button>
                       </div>

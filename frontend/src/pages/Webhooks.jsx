@@ -133,8 +133,8 @@ export default function Webhooks() {
                     </Button>
                     {canWrite && (
                       <Button size="sm" variant="ghost" onClick={() => remove(w.id)}
-                        className="text-panel-red hover:bg-panel-red/10 border-0">
-                        <Trash2 size={12} />
+                        className="text-panel-red hover:border-panel-red/40">
+                        <Trash2 size={12} />Löschen
                       </Button>
                     )}
                   </div>

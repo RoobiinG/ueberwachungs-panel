@@ -4,7 +4,8 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
-import { Plus, Trash2, Lock, ShieldOff } from 'lucide-react';
+import { ActionMenu } from '../components/ui/ActionMenu';
+import { Plus, Trash2, Lock, ShieldOff, Pencil } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const inputCls = 'w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:border-panel-accent';
@@ -120,24 +121,30 @@ export default function Users() {
                 <Badge color={u.role === 'admin' ? 'orange' : 'blue'}>
                   {u.roleLabel || u.role}
                 </Badge>
-                {me?.role === 'admin' && u.twofa_type && u.twofa_type !== 'none' && u.id !== me?.id && (
-                  <Button size="sm" variant="ghost" onClick={() => disable2FA(u.id)} title="2FA deaktivieren">
-                    <ShieldOff size={14} className="text-panel-orange" />
-                  </Button>
-                )}
                 {u.id !== me?.id && u.role !== 'admin' && (
-                  <Button size="sm" variant="ghost" onClick={() => { 
-                    setEditUser(u); 
-                    setEditForm({ username: u.username, email: u.email || '', password: '', role: u.role }); 
+                  <Button size="sm" variant="ghost" onClick={() => {
+                    setEditUser(u);
+                    setEditForm({ username: u.username, email: u.email || '', password: '', role: u.role });
                   }}>
-                    Bearbeiten
+                    <Pencil size={12} />Bearbeiten
                   </Button>
                 )}
-                {u.id !== me?.id && u.role !== 'admin' && (
-                  <Button size="sm" variant="danger" onClick={() => remove(u.id)}>
-                    <Trash2 size={12} />
-                  </Button>
-                )}
+                <ActionMenu
+                  items={[
+                    me?.role === 'admin' && u.twofa_type && u.twofa_type !== 'none' && u.id !== me?.id && {
+                      icon: ShieldOff,
+                      label: '2FA deaktivieren',
+                      onClick: () => disable2FA(u.id),
+                      title: 'Zwei-Faktor-Anmeldung dieses Benutzers zurücksetzen',
+                    },
+                    u.id !== me?.id && u.role !== 'admin' && {
+                      icon: Trash2,
+                      label: 'Benutzer löschen',
+                      danger: true,
+                      onClick: () => remove(u.id),
+                    },
+                  ]}
+                />
               </div>
             </div>
           ))}

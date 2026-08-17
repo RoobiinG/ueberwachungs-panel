@@ -334,6 +334,7 @@ export default function PanelLogs() {
           </select>
           <Button variant="ghost" size="sm" onClick={load} disabled={loading}>
             <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+            {loading ? 'Lädt…' : 'Aktualisieren'}
           </Button>
           {total > 0 && (
             <Button variant="danger" size="sm" onClick={clearAll}>
@@ -486,10 +487,10 @@ export default function PanelLogs() {
                     </button>
                     <button
                       onClick={() => revokeShare(s.id)}
-                      title="Link widerrufen"
-                      className="p-1 text-panel-muted/50 hover:text-panel-red transition-colors"
+                      title="Diesen Freigabe-Link sofort ungültig machen"
+                      className="inline-flex items-center gap-1 text-[11px] px-1.5 py-1 rounded text-panel-muted hover:text-panel-red hover:bg-panel-red/10 transition-colors"
                     >
-                      <XCircle size={12} />
+                      <XCircle size={12} />Widerrufen
                     </button>
                   </div>
                 );

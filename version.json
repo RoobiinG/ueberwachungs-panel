@@ -1,6 +1,6 @@
 {
-  "version": "5.4.1.0",
-  "build": 304,
+  "version": "5.4.2.0",
+  "build": 305,
   "date": "2026-08-17",
-  "codename": "Container-Konsole ausschließlich nativ"
+  "codename": "Beschriftete Aktionen statt Symbolraten"
 }

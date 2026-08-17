@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import {
-  Bell, Plus, Trash2, Play, ToggleLeft, ToggleRight,
+  Bell, Plus, Trash2, Play, ToggleLeft, ToggleRight, Pencil,
   AlertTriangle, Clock, CheckCircle, XCircle, Server, Monitor, Info, Webhook
 } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
+import { ActionMenu } from '../components/ui/ActionMenu';
 import { useAuth } from '../context/AuthContext';
 import Webhooks from './Webhooks';
 
@@ -76,7 +77,8 @@ function ConditionRow({ cond, onChange, onRemove, canRemove, activeType }) {
       />
       <span className="text-xs text-panel-muted w-8">{unit}</span>
       {canRemove && (
-        <button onClick={onRemove} className="text-panel-muted hover:text-panel-red transition-colors ml-auto">
+        <button onClick={onRemove} title="Diese Bedingung entfernen"
+          className="text-panel-muted hover:text-panel-red transition-colors ml-auto">
           <Trash2 size={12} />
         </button>
       )}
@@ -612,32 +614,27 @@ export default function Alerts() {
                     )}
                   </div>
                 {isAdmin && (
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    {/* Test */}
-                    <button onClick={() => testRule(rule.id)} title="Test senden"
-                      className="p-1.5 rounded hover:bg-panel-card text-panel-muted hover:text-panel-text transition-colors">
-                      {testStatus[rule.id] === 'ok'  ? <CheckCircle size={15} className="text-panel-green" /> :
-                       testStatus[rule.id] === 'err' ? <XCircle size={15} className="text-panel-red" /> :
-                       <Play size={15} />}
-                    </button>
-                    {/* Toggle */}
-                    <button onClick={() => toggleEnabled(rule)} title={rule.enabled ? 'Deaktivieren' : 'Aktivieren'}
-                      className="p-1.5 rounded hover:bg-panel-card text-panel-muted hover:text-panel-text transition-colors">
-                      {rule.enabled
-                        ? <ToggleRight size={15} className="text-panel-accent" />
-                        : <ToggleLeft size={15} />
-                      }
-                    </button>
-                    {/* Bearbeiten */}
-                    <button onClick={() => { setEditRule(rule); setModalOpen(true); }} title="Bearbeiten"
-                      className="p-1.5 rounded hover:bg-panel-card text-panel-muted hover:text-panel-text transition-colors text-xs font-medium">
-                      ✎
-                    </button>
-                    {/* Löschen */}
-                    <button onClick={() => deleteRule(rule.id)} title="Löschen"
-                      className="p-1.5 rounded hover:bg-panel-card text-panel-muted hover:text-panel-red transition-colors">
-                      <Trash2 size={15} />
-                    </button>
+                  <div className="flex items-center gap-1 flex-wrap justify-end flex-shrink-0">
+                    {/* Ergebnis des letzten Tests — der Auslöser dafür sitzt im Menü */}
+                    {testStatus[rule.id] === 'ok'  && <CheckCircle size={14} className="text-panel-green" title="Test wurde gesendet" />}
+                    {testStatus[rule.id] === 'err' && <XCircle size={14} className="text-panel-red" title="Test fehlgeschlagen" />}
+                    {/* Schalter zeigt den aktuellen Zustand und schaltet ihn um */}
+                    <Button size="sm" variant="ghost" onClick={() => toggleEnabled(rule)}
+                      title={rule.enabled ? 'Regel deaktivieren' : 'Regel aktivieren'}
+                      className={rule.enabled ? 'text-panel-accent border-panel-accent/40' : 'text-panel-muted'}>
+                      {rule.enabled ? <ToggleRight size={14} /> : <ToggleLeft size={14} />}
+                      {rule.enabled ? 'Aktiv' : 'Inaktiv'}
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => { setEditRule(rule); setModalOpen(true); }}>
+                      <Pencil size={12} />Bearbeiten
+                    </Button>
+                    <ActionMenu
+                      items={[
+                        { icon: Play, label: 'Test senden', onClick: () => testRule(rule.id),
+                          title: 'Löst die Benachrichtigung einmalig zur Probe aus' },
+                        { icon: Trash2, label: 'Regel löschen', danger: true, onClick: () => deleteRule(rule.id) },
+                      ]}
+                    />
                   </div>
                 )}
                 </div>

@@ -150,14 +150,27 @@ export default function Hetzner() {
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 flex-wrap justify-end">
                     {s.status === 'off'
-                      ? canStart   && <Button size="sm" variant="success" onClick={() => act(s.id, 'poweron')} disabled={busy[`${s.id}_poweron`]}><Power size={12} /></Button>
-                      : canStop    && <Button size="sm" variant="danger" onClick={() => act(s.id, 'poweroff')} disabled={busy[`${s.id}_poweroff`]}><PowerOff size={12} /></Button>
+                      ? canStart && (
+                          <Button size="sm" variant="success" onClick={() => act(s.id, 'poweron')} disabled={busy[`${s.id}_poweron`]}>
+                            <Power size={12} />{busy[`${s.id}_poweron`] ? 'Startet…' : 'Einschalten'}
+                          </Button>
+                        )
+                      : canStop && (
+                          <Button size="sm" variant="danger" onClick={() => act(s.id, 'poweroff')} disabled={busy[`${s.id}_poweroff`]}>
+                            <PowerOff size={12} />{busy[`${s.id}_poweroff`] ? 'Schaltet ab…' : 'Ausschalten'}
+                          </Button>
+                        )
                     }
-                    {canRestart && <Button size="sm" variant="ghost" onClick={() => act(s.id, 'reboot')} disabled={busy[`${s.id}_reboot`]}><RotateCcw size={12} /></Button>}
-                    <Button size="sm" variant="ghost" onClick={() => loadBackups(s.id)}>
-                      <HardDrive size={12} />
+                    {canRestart && (
+                      <Button size="sm" variant="ghost" onClick={() => act(s.id, 'reboot')} disabled={busy[`${s.id}_reboot`]}>
+                        <RotateCcw size={12} />{busy[`${s.id}_reboot`] ? 'Startet neu…' : 'Neustart'}
+                      </Button>
+                    )}
+                    <Button size="sm" variant="ghost" onClick={() => loadBackups(s.id)}
+                      title="Automatische Backups und Snapshots dieses Servers">
+                      <HardDrive size={12} />Backups
                       {expanded[s.id] ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                     </Button>
                   </div>

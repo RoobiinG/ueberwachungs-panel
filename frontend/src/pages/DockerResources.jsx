@@ -4,6 +4,7 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { ServerSelector } from '../components/ui/ServerSelector';
+import { ActionMenu } from '../components/ui/ActionMenu';
 import { Layers, HardDrive, Network, Trash2, RefreshCw, DownloadCloud, Wand2, Package, Play, Square } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -199,16 +200,26 @@ export default function DockerResources({ tab: controlledTab, onTabChange, hideT
                     {sub && <div className="text-[11px] text-panel-muted truncate">{sub}</div>}
                   </div>
                   {canControl && tab === 'stacks' && (
-                    <div className="flex items-center gap-1">
-                      <Button size="sm" variant="ghost" onClick={() => openRedeploy(id)} disabled={busy} title="Redeploy / Pull"><DownloadCloud size={14} /></Button>
-                      <Button size="sm" variant="ghost" onClick={() => stackAction(id, 'start')} disabled={busy} title="Start"><Play size={14} /></Button>
-                      <Button size="sm" variant="ghost" onClick={() => stackAction(id, 'stop')} disabled={busy} title="Stop"><Square size={14} /></Button>
-                      <Button size="sm" variant="danger" onClick={() => remove(id)} disabled={busy} title="Löschen"><Trash2 size={14} /></Button>
+                    <div className="flex items-center gap-1 flex-wrap justify-end">
+                      <Button size="sm" variant="success" onClick={() => stackAction(id, 'start')} disabled={busy}>
+                        <Play size={12} />Start
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => stackAction(id, 'stop')} disabled={busy}>
+                        <Square size={12} />Stopp
+                      </Button>
+                      <ActionMenu
+                        disabled={busy}
+                        items={[
+                          { icon: DownloadCloud, label: 'Redeploy / Pull', onClick: () => openRedeploy(id),
+                            title: 'Stack neu deployen, optional mit neuem Image-Pull' },
+                          { icon: Trash2, label: 'Stack löschen', danger: true, onClick: () => remove(id) },
+                        ]}
+                      />
                     </div>
                   )}
                   {canControl && tab !== 'stacks' && (
                     <Button size="sm" variant="danger" onClick={() => remove(id)} disabled={busy}>
-                      <Trash2 size={12} />
+                      <Trash2 size={12} />Löschen
                     </Button>
                   )}
                 </div>

@@ -125,9 +125,9 @@ export const Sidebar = () => {
               {errors.length}
             </span>
           </div>
-          <button onClick={clearErrors} title="Alle löschen"
-            className="text-panel-muted hover:text-panel-red transition-colors p-0.5 rounded">
-            <Trash2 size={10} />
+          <button onClick={clearErrors} title="Alle Panel-Fehler aus der Liste entfernen"
+            className="flex items-center gap-1 text-[10px] text-panel-muted hover:text-panel-red transition-colors px-1 py-0.5 rounded">
+            <Trash2 size={10} />Leeren
           </button>
         </div>
       )}

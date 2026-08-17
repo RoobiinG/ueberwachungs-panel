@@ -13,6 +13,7 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
+import { ActionMenu } from '../components/ui/ActionMenu';
 import { useAuth } from '../context/AuthContext';
 
 import { useLiveInterval } from '../hooks/useLiveInterval';
@@ -602,47 +603,47 @@ export default function AgentDetail() {
                           )}
                         </div>
                       )}
-                      {/* Actions */}
+                      {/* Aktionen — beschriftet; Pausieren/Fortsetzen im Menü */}
                       {canWrite && (
-                        <div className="flex gap-0.5 flex-shrink-0" onClick={e => e.stopPropagation()}>
-                          {!isRunning && (
-                            <button title="Starten"
+                        <div className="flex flex-wrap items-center justify-end gap-1 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                          {!isRunning && c.state !== 'paused' && (
+                            <Button size="sm" variant="success"
                               disabled={actionLoading[`${c.id}_start`]}
-                              onClick={() => containerAction(c.id, 'start')}
-                              className="p-1.5 text-panel-green hover:bg-panel-green/10 rounded transition-colors disabled:opacity-40">
-                              <Play size={12} />
-                            </button>
+                              onClick={() => containerAction(c.id, 'start')}>
+                              <Play size={12} />Start
+                            </Button>
                           )}
                           {isRunning && (
-                            <button title="Stoppen"
+                            <Button size="sm" variant="danger"
                               disabled={actionLoading[`${c.id}_stop`]}
-                              onClick={() => containerAction(c.id, 'stop')}
-                              className="p-1.5 text-panel-red hover:bg-panel-red/10 rounded transition-colors disabled:opacity-40">
-                              <Square size={12} />
-                            </button>
-                          )}
-                          {isRunning && (
-                            <button title="Pausieren"
-                              disabled={actionLoading[`${c.id}_pause`]}
-                              onClick={() => containerAction(c.id, 'pause')}
-                              className="p-1.5 text-panel-muted hover:text-panel-orange hover:bg-panel-orange/10 rounded transition-colors disabled:opacity-40">
-                              <Pause size={12} />
-                            </button>
+                              onClick={() => containerAction(c.id, 'stop')}>
+                              <Square size={12} />Stopp
+                            </Button>
                           )}
                           {c.state === 'paused' && (
-                            <button title="Fortsetzen"
+                            <Button size="sm" variant="warning"
                               disabled={actionLoading[`${c.id}_unpause`]}
-                              onClick={() => containerAction(c.id, 'unpause')}
-                              className="p-1.5 text-panel-orange hover:bg-panel-orange/10 rounded transition-colors disabled:opacity-40">
-                              <Play size={12} />
-                            </button>
+                              onClick={() => containerAction(c.id, 'unpause')}>
+                              <Play size={12} />Fortsetzen
+                            </Button>
                           )}
-                          <button title="Neustarten"
+                          <Button size="sm" variant="ghost"
                             disabled={actionLoading[`${c.id}_restart`]}
-                            onClick={() => containerAction(c.id, 'restart')}
-                            className="p-1.5 text-panel-muted hover:text-panel-text hover:bg-panel-surface rounded transition-colors disabled:opacity-40">
+                            onClick={() => containerAction(c.id, 'restart')}>
                             <RotateCcw size={12} className={actionLoading[`${c.id}_restart`] ? 'animate-spin' : ''} />
-                          </button>
+                            Neustart
+                          </Button>
+                          <ActionMenu
+                            items={[
+                              isRunning && {
+                                icon: Pause,
+                                label: 'Pausieren',
+                                onClick: () => containerAction(c.id, 'pause'),
+                                disabled: actionLoading[`${c.id}_pause`],
+                                title: 'Prozesse einfrieren (SIGSTOP), Container bleibt bestehen',
+                              },
+                            ]}
+                          />
                         </div>
                       )}
                       <div className="text-panel-muted flex-shrink-0">
@@ -866,26 +867,24 @@ export default function AgentDetail() {
                     <span className="text-xs text-panel-text truncate font-mono">{svc.name}</span>
                   </div>
                   {canWrite && (
-                    <div className="flex gap-0.5 flex-shrink-0">
+                    <div className="flex flex-wrap items-center justify-end gap-1 flex-shrink-0">
                       {svc.active !== 'active' && (
-                        <button title="Starten" disabled={!!actionLoading[svc.name]}
-                          onClick={() => serviceAction(svc.name, 'start')}
-                          className="p-1 text-panel-green hover:bg-panel-green/10 rounded transition-colors disabled:opacity-40">
-                          <Play size={12} />
-                        </button>
+                        <Button size="sm" variant="success" disabled={!!actionLoading[svc.name]}
+                          onClick={() => serviceAction(svc.name, 'start')}>
+                          <Play size={12} />Start
+                        </Button>
                       )}
                       {svc.active === 'active' && (
-                        <button title="Stoppen" disabled={!!actionLoading[svc.name]}
-                          onClick={() => serviceAction(svc.name, 'stop')}
-                          className="p-1 text-panel-red hover:bg-panel-red/10 rounded transition-colors disabled:opacity-40">
-                          <Square size={12} />
-                        </button>
+                        <Button size="sm" variant="danger" disabled={!!actionLoading[svc.name]}
+                          onClick={() => serviceAction(svc.name, 'stop')}>
+                          <Square size={12} />Stopp
+                        </Button>
                       )}
-                      <button title="Neustarten" disabled={!!actionLoading[svc.name]}
-                        onClick={() => serviceAction(svc.name, 'restart')}
-                        className="p-1 text-panel-muted hover:text-panel-text hover:bg-panel-surface rounded transition-colors disabled:opacity-40">
+                      <Button size="sm" variant="ghost" disabled={!!actionLoading[svc.name]}
+                        onClick={() => serviceAction(svc.name, 'restart')}>
                         <RotateCcw size={12} className={actionLoading[svc.name] === 'restart' ? 'animate-spin' : ''} />
-                      </button>
+                        Neustart
+                      </Button>
                     </div>
                   )}
                 </div>

@@ -4,6 +4,7 @@ import axios from 'axios';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
+import { ActionMenu } from '../components/ui/ActionMenu';
 import {
   ServerCog, Plus, Trash2, Wifi, WifiOff, Eye, EyeOff,
   ChevronRight, Terminal, Lock, LockOpen, ShieldAlert, RefreshCw, Pencil, Container,
@@ -460,49 +461,54 @@ export default function Agents() {
                   </div>
                 </div>
 
-                <div className="flex flex-col gap-1 flex-shrink-0">
+                {/* Aktionen — Update (falls verfügbar) und Bearbeiten sichtbar,
+                    alles Seltenere benannt im Menü. */}
+                <div className="flex flex-wrap items-start justify-end gap-1 flex-shrink-0">
+                  {isAdmin && online && !mitm && hasUpdate && (
+                    <Button size="sm" variant="warning" onClick={() => updateAgent(agent.id)}
+                      disabled={updating[agent.id]} title={`Agent auf v${latestVersion} aktualisieren`}>
+                      <ArrowUpCircle size={12} className={updating[agent.id] ? 'animate-spin' : ''} />
+                      {updating[agent.id] ? 'Aktualisiert…' : `Update auf v${latestVersion}`}
+                    </Button>
+                  )}
                   {hasPermission('agents.edit') && (
-                    <button title="Bearbeiten (Token/URL ändern)" onClick={() => openEdit(agent)}
-                      className="p-1 text-panel-muted hover:text-panel-text transition-colors">
-                      <Pencil size={13} />
-                    </button>
+                    <Button size="sm" variant="ghost" onClick={() => openEdit(agent)} title="Token, URL und Namen ändern">
+                      <Pencil size={12} />Bearbeiten
+                    </Button>
                   )}
-                  {isHttps(agent.url) && hasPermission('agents.edit') && (
-                    <button title="Fingerprint erneuern" onClick={() => repin(agent.id)}
-                      disabled={repinning[agent.id]}
-                      className="p-1 text-panel-muted hover:text-panel-text transition-colors disabled:opacity-40">
-                      <RefreshCw size={13} className={repinning[agent.id] ? 'animate-spin' : ''} />
-                    </button>
-                  )}
-                  {isAdmin && online && !mitm && (
-                    <button title={hasUpdate ? `Update auf v${latestVersion}` : 'Agent aktualisieren'}
-                      onClick={() => updateAgent(agent.id)}
-                      disabled={updating[agent.id]}
-                      className={`p-1 transition-colors disabled:opacity-40 ${
-                        hasUpdate
-                          ? 'text-panel-orange hover:text-panel-orange/80'
-                          : 'text-panel-muted hover:text-panel-text'
-                      }`}>
-                      <ArrowUpCircle size={13} className={updating[agent.id] ? 'animate-spin' : ''} />
-                    </button>
-                  )}
-                  {isAdmin && online && !mitm && (
-                    <button
-                      title="Agent auf dem Server deinstallieren"
-                      onClick={() => uninstallAgent(agent.id, agent.name)}
-                      disabled={uninstalling[agent.id]}
-                      className="p-1 text-panel-muted hover:text-panel-red transition-colors disabled:opacity-40">
-                      <PackageX size={13} className={uninstalling[agent.id] ? 'animate-pulse' : ''} />
-                    </button>
-                  )}
-                  {hasPermission('agents.delete') && (
-                    <button
-                      title="Nur aus Panel entfernen (Agent bleibt auf Server)"
-                      onClick={() => remove(agent.id, agent.name)}
-                      className="p-1 text-panel-muted hover:text-panel-red transition-colors">
-                      <Trash2 size={13} />
-                    </button>
-                  )}
+                  <ActionMenu
+                    items={[
+                      isAdmin && online && !mitm && !hasUpdate && {
+                        icon: ArrowUpCircle,
+                        label: updating[agent.id] ? 'Aktualisiert…' : 'Agent aktualisieren',
+                        onClick: () => updateAgent(agent.id),
+                        disabled: updating[agent.id],
+                        title: 'Agent-Skript neu ausrollen, auch ohne neue Version',
+                      },
+                      isHttps(agent.url) && hasPermission('agents.edit') && {
+                        icon: RefreshCw,
+                        label: repinning[agent.id] ? 'Erneuert…' : 'Fingerprint erneuern',
+                        onClick: () => repin(agent.id),
+                        disabled: repinning[agent.id],
+                        title: 'Gespeicherten TLS-Fingerprint durch den aktuellen ersetzen',
+                      },
+                      isAdmin && online && !mitm && {
+                        icon: PackageX,
+                        label: uninstalling[agent.id] ? 'Deinstalliert…' : 'Agent deinstallieren',
+                        onClick: () => uninstallAgent(agent.id, agent.name),
+                        disabled: uninstalling[agent.id],
+                        danger: true,
+                        title: 'Entfernt den Agent-Dienst auf dem Server selbst',
+                      },
+                      hasPermission('agents.delete') && {
+                        icon: Trash2,
+                        label: 'Aus Panel entfernen',
+                        onClick: () => remove(agent.id, agent.name),
+                        danger: true,
+                        title: 'Der Agent bleibt auf dem Server installiert',
+                      },
+                    ]}
+                  />
                 </div>
               </div>
 
