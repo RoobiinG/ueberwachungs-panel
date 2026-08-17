@@ -17,7 +17,7 @@ const execAsync = promisify(exec);
 // sondern ein Argument-Array. Sonderzeichen in Volume-/Netzwerk-/Image-Namen können
 // so nicht als Shell-Syntax gedeutet werden.
 const execFileAsync = promisify(execFile);
-const VERSION = '2.5.1';
+const VERSION = '2.6.0';
 const REPO_RAW = 'https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master/agent/panel-agent.js';
 const PORT  = parseInt(process.env.PANEL_AGENT_PORT || '7331');
 const TOKEN = process.env.PANEL_AGENT_TOKEN || '';
@@ -229,12 +229,39 @@ async function killProcess(pid, signal = 'SIGTERM') {
 
 
 // ─── Firewall (Multi-Tool: UFW, iptables, nftables, firewalld) ───────────────
+//
+// ACHTUNG — diese Sektion ist die Spiegelung von backend/src/utils/firewallAdapters.js.
+// Der Agent ist bewusst eine einzelne Datei (install.sh lädt sie per curl, das Panel
+// pusht sie HMAC-signiert), deshalb liegt die Logik hier ein zweites Mal statt in einem
+// gemeinsamen Modul. Wer dort etwas ändert, ändert es auch hier — genau aus dem
+// Auseinanderlaufen der beiden Fassungen stammten die Fehler bis v5.4.2.0.
 
 const _IPV4_RE   = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
 const _IPV6_RE   = /^[0-9a-fA-F:]+(%[a-z0-9]+)?(\/\d{1,3})?$/;
-const _validPort  = (p) => { if (!p || !/^\d{1,5}(:\d{1,5})?$/.test(String(p))) throw new Error('Ungültiger Port'); return String(p); };
+
+// Einzelport oder Bereich „von:bis"; „99999" galt früher als gültig und lief erst im
+// Firewall-Tool auf einen Fehler.
+const _validPort = (p) => {
+  const s = String(p ?? '').trim();
+  const m = s.match(/^(\d{1,5})(?::(\d{1,5}))?$/);
+  const lo = m ? +m[1] : 0;
+  const hi = m && m[2] != null ? +m[2] : lo;
+  if (!m || lo < 1 || hi > 65535 || lo > hi) throw new Error('Ungültiger Port');
+  return s;
+};
+
 const _validProto = (p) => ['tcp','udp'].includes(p) ? p : null;
-const _validFrom  = (f) => (!f || _IPV4_RE.test(f) || _IPV6_RE.test(f)) ? (f||null) : null;
+
+// Eine angegebene Quelle muss gültig sein. Vorher wurde eine unbrauchbare Eingabe still
+// zu `null` — die Regel galt dann für *alle* Quellen statt für die eine gewünschte.
+const _validFrom = (f) => {
+  const s = String(f ?? '').trim();
+  if (!s) return null;
+  if (!_IPV4_RE.test(s) && !_IPV6_RE.test(s)) throw new Error(`Ungültige Quell-Adresse: ${s}`);
+  return s;
+};
+
+const _isIPv6 = (addr) => addr.includes(':');
 
 // Erkennt aktive Firewall-Software — inaktive Tools werden übersprungen
 async function detectAgentFirewall() {
@@ -282,6 +309,16 @@ async function getFirewallRules() {
       const { stdout: s } = await execAsync('firewall-cmd --list-services 2>/dev/null', { timeout: 5000 });
       p.trim().split(/\s+/).filter(Boolean).forEach(pp => { const [port,proto] = pp.split('/'); rules.push({ id: pp, port, proto: proto||'tcp', action: 'allow', from: 'any', raw: pp }); });
       s.trim().split(/\s+/).filter(Boolean).forEach(svc => rules.push({ id: `svc:${svc}`, port: svc, proto: 'service', action: 'allow', from: 'any', raw: svc }));
+      // Rich Rules — hier liegt alles mit Quell-Einschränkung und jede echte Sperre.
+      // Fehlten in der Liste bislang komplett.
+      (await _richRules()).forEach((line, i) => rules.push({
+        id:     `rich:${i}`,
+        port:   line.match(/port port="([^"]+)"/)?.[1]?.replace('-', ':') || 'any',
+        proto:  line.match(/protocol="([^"]+)"/)?.[1] || 'any',
+        action: /\baccept\b/.test(line) ? 'allow' : 'deny',
+        from:   line.match(/source address="([^"]+)"/)?.[1] || 'any',
+        raw:    line,
+      }));
       return rules;
     } else if (tool === 'nftables') {
       try {
@@ -420,50 +457,111 @@ async function getDockerNetworks() {
   } catch { return []; }
 }
 
-// Firewall-Regel hinzufügen/löschen
+// Rich Rule für firewalld — nur damit lassen sich Quell-Einschränkungen und echte
+// Sperren abbilden. Ohne Shell braucht die Regel keine Anführungszeichen.
+function _richRule(from, port, proto, verdict) {
+  const portSpec = port.replace(':', '-');   // firewalld schreibt Bereiche mit Bindestrich
+  const family   = from ? ` family="${_isIPv6(from) ? 'ipv6' : 'ipv4'}"` : '';
+  const source   = from ? ` source address="${from}"` : '';
+  return `rule${family}${source} port port="${portSpec}" protocol="${proto}" ${verdict}`;
+}
+
+async function _richRules() {
+  try {
+    const { stdout } = await execAsync('firewall-cmd --permanent --list-rich-rules 2>/dev/null', { timeout: 5000 });
+    return stdout.split('\n').map(l => l.trim()).filter(Boolean);
+  } catch { return []; }
+}
+
+async function _ensureNftChain() {
+  try { await execAsync('nft add table inet filter 2>/dev/null'); } catch {}
+  try { await execAsync("nft add chain inet filter input '{ type filter hook input priority 0; }' 2>/dev/null"); } catch {}
+}
+
+// Firewall-Regel hinzufügen (action: 'allow' | 'deny')
+// Die Quelle wurde früher nur bei UFW-allow und iptables-allow beachtet und sonst
+// stillschweigend verworfen — die Regel galt dann für alle Absender. Sämtliche Befehle
+// laufen jetzt über execFile mit Argument-Array statt über die Shell.
 async function firewallAllow(port, proto, from, action) {
   const { tool } = await detectAgentFirewall();
-  const p  = _validPort(port);
-  const pr = _validProto(proto);
-  const fr = _validFrom(from);
+  const p   = _validPort(port);
+  const pr  = _validProto(proto);
+  const fr  = _validFrom(from);
+  const opt = { timeout: 10000 };
+
   if (tool === 'ufw') {
-    const cmd = (action === 'allow' && fr) ? `ufw allow from ${fr} to any port ${p}${pr?' proto '+pr:''}` : `ufw ${action} ${p}${pr?'/'+pr:''}`;
-    await execAsync(cmd, { timeout: 10000 });
+    const args = fr
+      ? [action, 'from', fr, 'to', 'any', 'port', p, ...(pr ? ['proto', pr] : [])]
+      : [action, pr ? `${p}/${pr}` : p];
+    await execFileAsync('ufw', args, opt);
+
   } else if (tool === 'firewalld') {
-    if (action === 'allow') { await execAsync(`firewall-cmd --permanent --add-port=${p}/${pr||'tcp'}`, { timeout: 10000 }); }
-    else { await execAsync(`firewall-cmd --permanent --remove-port=${p}/${pr||'tcp'}`, { timeout: 10000 }); }
-    await execAsync('firewall-cmd --reload', { timeout: 10000 });
+    if (action === 'allow' && !fr) {
+      await execFileAsync('firewall-cmd', ['--permanent', `--add-port=${p}/${pr || 'tcp'}`], opt);
+    } else {
+      const verdict = action === 'allow' ? 'accept' : 'reject';
+      await execFileAsync('firewall-cmd', ['--permanent', `--add-rich-rule=${_richRule(fr, p, pr || 'tcp', verdict)}`], opt);
+    }
+    await execFileAsync('firewall-cmd', ['--reload'], opt);
+
   } else if (tool === 'nftables') {
-    try { await execAsync('nft add table inet filter 2>/dev/null'); } catch {}
-    try { await execAsync("nft add chain inet filter input '{ type filter hook input priority 0; }' 2>/dev/null"); } catch {}
+    await _ensureNftChain();
+    const saddr   = fr ? [_isIPv6(fr) ? 'ip6' : 'ip', 'saddr', fr] : [];
+    const dport   = p.includes(':') ? `{ ${p.replace(':', '-')} }` : p;
     const verdict = action === 'allow' ? 'accept' : 'drop';
-    await execAsync(`nft add rule inet filter input ${pr||'tcp'} dport ${p} ${verdict}`, { timeout: 10000 });
+    await execFileAsync('nft', ['add', 'rule', 'inet', 'filter', 'input', ...saddr, pr || 'tcp', 'dport', dport, verdict], opt);
+
   } else if (tool === 'iptables') {
-    const target = action === 'allow' ? 'ACCEPT' : 'DROP';
-    const src = fr ? `-s ${fr}` : '';
-    await execAsync(`iptables -I INPUT -p ${pr||'tcp'} ${src} --dport ${p} -j ${target}`, { timeout: 10000 });
+    // Nur die IPv4-Tabelle wird verwaltet; eine IPv6-Quelle bräuchte ip6tables und
+    // landete in einer Tabelle, die das Panel nicht anzeigt.
+    if (fr && _isIPv6(fr)) throw new Error('IPv6-Quellen werden mit iptables nicht unterstützt — dafür wäre ip6tables nötig.');
+    const src = fr ? ['-s', fr] : [];
+    await execFileAsync('iptables', ['-I', 'INPUT', '-p', pr || 'tcp', ...src, '--dport', p, '-j', action === 'allow' ? 'ACCEPT' : 'DROP'], opt);
     try { await execAsync('sh -c "iptables-save > /etc/iptables/rules.v4 2>/dev/null || true"'); } catch {}
+
   } else {
     throw new Error('Kein unterstütztes Firewall-Tool gefunden');
   }
 }
 
+// ID ist je nach Tool eine Nummer, ein nft-Handle, "PORT/PROTO", "svc:NAME" oder
+// "rich:INDEX". Die firewalld-Varianten wanderten früher ungeprüft in einen
+// Shell-Befehl.
 async function firewallDeleteRule(id) {
   const { tool } = await detectAgentFirewall();
+  const s   = String(id);
+  const opt = { timeout: 10000 };
+
   if (tool === 'ufw') {
-    if (!/^\d+$/.test(String(id))) throw new Error('Ungültige Regel-Nummer');
-    await execAsync(`sh -c 'echo y | ufw delete ${id}'`, { timeout: 10000 });
+    if (!/^\d+$/.test(s)) throw new Error('Ungültige Regel-Nummer');
+    await execFileAsync('ufw', ['--force', 'delete', s], opt);
+
   } else if (tool === 'firewalld') {
-    if (String(id).startsWith('svc:')) { await execAsync(`firewall-cmd --permanent --remove-service=${id.slice(4)}`, { timeout: 10000 }); }
-    else { const [p,pr] = id.split('/'); await execAsync(`firewall-cmd --permanent --remove-port=${p}/${pr||'tcp'}`, { timeout: 10000 }); }
-    await execAsync('firewall-cmd --reload', { timeout: 10000 });
+    if (/^rich:\d{1,4}$/.test(s)) {
+      const target = (await _richRules())[+s.slice(5)];
+      if (!target) throw new Error('Regel nicht gefunden — die Liste hat sich zwischenzeitlich geändert. Bitte neu laden.');
+      await execFileAsync('firewall-cmd', ['--permanent', `--remove-rich-rule=${target}`], opt);
+    } else if (s.startsWith('svc:')) {
+      const svc = s.slice(4);
+      if (!/^[\w.-]{1,64}$/.test(svc)) throw new Error('Ungültiger Dienst-Name');
+      await execFileAsync('firewall-cmd', ['--permanent', `--remove-service=${svc}`], opt);
+    } else {
+      const [pRaw, prRaw] = s.split('/');
+      const p  = _validPort(pRaw);
+      const pr = _validProto(prRaw) || 'tcp';
+      await execFileAsync('firewall-cmd', ['--permanent', `--remove-port=${p}/${pr}`], opt);
+    }
+    await execFileAsync('firewall-cmd', ['--reload'], opt);
+
   } else if (tool === 'nftables') {
-    if (!/^\d+$/.test(String(id))) throw new Error('Ungültiger Handle');
-    await execAsync(`nft delete rule inet filter input handle ${id}`, { timeout: 10000 });
+    if (!/^\d+$/.test(s)) throw new Error('Ungültiger Handle');
+    await execFileAsync('nft', ['delete', 'rule', 'inet', 'filter', 'input', 'handle', s], opt);
+
   } else if (tool === 'iptables') {
-    if (!/^\d+$/.test(String(id))) throw new Error('Ungültige Regel-Nummer');
-    await execAsync(`iptables -D INPUT ${id}`, { timeout: 10000 });
+    if (!/^\d+$/.test(s)) throw new Error('Ungültige Regel-Nummer');
+    await execFileAsync('iptables', ['-D', 'INPUT', s], opt);
     try { await execAsync('sh -c "iptables-save > /etc/iptables/rules.v4 2>/dev/null || true"'); } catch {}
+
   } else {
     throw new Error('Kein unterstütztes Firewall-Tool gefunden');
   }
@@ -656,6 +754,18 @@ async function handler(req, res) {
       const raw = await new Promise((resolve) => { const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8'))); });
       const { port, proto, from } = JSON.parse(raw || '{}');
       const action = url.endsWith('/allow') ? 'allow' : 'deny';
+      await firewallAllow(port, proto, from, action);
+      respond(res, 200, { success: true });
+
+    // Bearbeiten = löschen + neu anlegen, wie es die lokale Panel-Route vormacht.
+    // Fehlte hier bislang ganz, weshalb „Bearbeiten" bei Remote-Servern ins Leere lief.
+    } else if (url.startsWith('/firewall/rules/') && req.method === 'PUT') {
+      const raw = await new Promise((resolve) => { const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8'))); });
+      const { port, proto, from, action } = JSON.parse(raw || '{}');
+      if (!port || !action) return respond(res, 400, { error: 'Port und Aktion erforderlich' });
+      if (action !== 'allow' && action !== 'deny') return respond(res, 400, { error: 'Ungültige Aktion' });
+      const id = decodeURIComponent(url.split('/').slice(3).join('/'));
+      await firewallDeleteRule(id);
       await firewallAllow(port, proto, from, action);
       respond(res, 200, { success: true });
 

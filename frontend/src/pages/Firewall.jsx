@@ -6,8 +6,8 @@ import { Modal } from '../components/ui/Modal';
 import { ServerSelector } from '../components/ui/ServerSelector';
 import { useAuth } from '../context/AuthContext';
 import {
-  Plus, Trash2, RefreshCw, Shield, Power,
-  Pencil, ChevronLeft, ChevronRight, Search, X, Filter,
+  Plus, Trash2, RefreshCw, Shield, Power, ScanSearch,
+  Pencil, ChevronLeft, ChevronRight, Search, X, Filter, AlertTriangle,
 } from 'lucide-react';
 
 const inputCls = 'w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:border-panel-accent';
@@ -22,10 +22,83 @@ const TOOL_LABELS = {
 
 const PAGE_SIZE = 25;
 
+// ─── Hilfsfunktionen ──────────────────────────────────────────────────────────
+
+// UFW listet jede Regel zweimal — einmal für IPv4, einmal als „(v6)". Für den
+// Vergleich müssen die v6-Zusätze weg.
+const normFrom = (f) =>
+  String(f ?? '').replace(/\s*\(v6\)\s*$/i, '').replace(/^anywhere$/i, 'any').trim() || 'any';
+
+// Gleiche Regel für beide Adressfamilien zu einem Eintrag zusammenfassen. Die IDs
+// beider Originale bleiben erhalten, damit Löschen weiterhin beide trifft.
+const mergeFamilies = (rules) => {
+  const out = [];
+  const byKey = new Map();
+  for (const r of rules) {
+    const isV6 = /\(v6\)/i.test(r.raw || '') || /\(v6\)/i.test(String(r.from || ''));
+    const key  = `${r.port}|${r.proto}|${r.action}|${normFrom(r.from)}`;
+    const seen = byKey.get(key);
+    if (seen) {
+      seen.ids.push(r.id);
+      seen.families.add(isV6 ? 'IPv6' : 'IPv4');
+      continue;
+    }
+    const entry = { ...r, from: normFrom(r.from), ids: [r.id], families: new Set([isV6 ? 'IPv6' : 'IPv4']) };
+    byKey.set(key, entry);
+    out.push(entry);
+  }
+  return out;
+};
+
+// Standard-Richtlinie aus der Rohausgabe des jeweiligen Tools lesen — der wichtigste
+// Wert einer Firewall, der bisher nur in der aufklappbaren Ausgabe versteckt war.
+const parsePolicy = (raw, tool) => {
+  if (!raw) return null;
+  if (tool === 'ufw') {
+    const line = raw.match(/Default:\s*(.+)/i)?.[1];
+    if (!line) return null;
+    return {
+      incoming: /(\w+)\s*\(incoming\)/i.exec(line)?.[1],
+      outgoing: /(\w+)\s*\(outgoing\)/i.exec(line)?.[1],
+    };
+  }
+  if (tool === 'iptables')  return { incoming: raw.match(/Chain INPUT \(policy (\w+)\)/i)?.[1] };
+  if (tool === 'nftables')  return { incoming: raw.match(/hook input[^}]*policy (\w+)/i)?.[1] };
+  if (tool === 'firewalld') return { incoming: raw.match(/target:\s*(\S+)/i)?.[1] };
+  return null;
+};
+
+const policyWord = (v) => {
+  if (!v) return null;
+  const s = String(v).toLowerCase();
+  if (['deny', 'drop', 'reject', '%%reject%%'].includes(s)) return 'abgelehnt';
+  if (['allow', 'accept'].includes(s)) return 'erlaubt';
+  return s;
+};
+
+// Rohe Tool- und Systemmeldungen in verständliche Sätze übersetzen.
+const humanError = (msg, isLocal) => {
+  const m = String(msg || '');
+  if (/nsenter|operation not permitted|permission denied/i.test(m) && isLocal) {
+    return 'Der Panel-Container darf die Firewall des Hosts nicht steuern. In der docker-compose.yml fehlen dafür `privileged: true` und `pid: "host"`.';
+  }
+  if (/kein unterstütztes firewall-tool/i.test(m)) {
+    return 'Auf diesem Server ist keine der unterstützten Firewalls aktiv (UFW, firewalld, nftables, iptables).';
+  }
+  if (/agent nicht erreichbar|ECONNREFUSED|ETIMEDOUT|socket hang up/i.test(m)) {
+    return 'Der Panel-Agent auf diesem Server antwortet nicht. Läuft der Dienst noch (`systemctl status panel-agent`)?';
+  }
+  if (/regel nicht gefunden|liste hat sich/i.test(m)) {
+    return 'Diese Regel gibt es nicht mehr — die Liste hat sich zwischenzeitlich geändert. Bitte aktualisieren.';
+  }
+  return m;
+};
+
 export default function Firewall() {
   const { canWrite } = useAuth();
 
   const [selectedServer, setSelectedServer] = useState(null);
+  const [agents,         setAgents]         = useState([]);
   const [detectedTool,   setDetectedTool]   = useState(null);
   const [detecting,  setDetecting]  = useState(false);
   const [toggling,   setToggling]   = useState(false);
@@ -80,7 +153,7 @@ export default function Firewall() {
       setRules(Array.isArray(r.data) ? r.data : (r.data.rules || []));
       setPage(1);
     } catch (err) {
-      setError(err.response?.data?.error || 'Firewall nicht erreichbar');
+      setError(humanError(err.response?.data?.error || 'Firewall nicht erreichbar', !selectedServer));
     }
     setLoading(false);
   };
@@ -91,6 +164,52 @@ export default function Firewall() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedServer]);
 
+  // Agentenliste nur für den Aussperr-Schutz: Der Agent-Port steckt in seiner URL und
+  // ist über PANEL_AGENT_PORT frei wählbar — eine feste 7331 wäre geraten.
+  useEffect(() => {
+    axios.get('/api/agents').then(r => setAgents(r.data || [])).catch(() => {});
+  }, []);
+
+  // ── Zugangs-Ports, deren Sperrung den Server unerreichbar macht ────────────
+  // Der Agent-Port ist über PANEL_AGENT_PORT frei wählbar und steckt in seiner URL —
+  // eine fest verdrahtete 7331 wäre geraten.
+  const accessPort = selectedServer
+    ? (agents.find(a => a.id === selectedServer)?.url?.match(/:(\d{2,5})(?:\/|$)/)?.[1] || null)
+    : String(window.location.port || '3001');
+
+  const guardedPorts = [
+    { port: '22', label: 'dein SSH-Zugang' },
+    ...(accessPort ? [{
+      port:  accessPort,
+      label: selectedServer
+        ? 'der Port des Panel-Agenten auf diesem Server'
+        : 'der Port, über den du dieses Panel gerade bedienst',
+    }] : []),
+  ];
+
+  // Vorlagen für den Regel-Dialog — spart das Nachschlagen von Portnummern.
+  const quickPorts = [
+    { label: 'SSH',   port: '22'  },
+    { label: 'HTTP',  port: '80'  },
+    { label: 'HTTPS', port: '443' },
+    ...(accessPort ? [{ label: selectedServer ? 'Agent' : 'Panel', port: accessPort }] : []),
+  ];
+
+  const guardFor = (port) => guardedPorts.find(g => g.port === String(port ?? '').trim());
+
+  // Warnt, bevor ein Zugang zugemacht wird — abbrechen ist die Voreinstellung des
+  // Dialogs, bestätigen bleibt möglich.
+  const confirmLockout = (port, what) => {
+    const g = guardFor(port);
+    if (!g) return true;
+    return confirm(
+      `Achtung — Zugang betroffen\n\n` +
+      `Port ${g.port} ist ${g.label}.\n` +
+      `${what}\n\n` +
+      `Danach kommst du über diesen Weg möglicherweise nicht mehr auf den Server. Trotzdem fortfahren?`
+    );
+  };
+
   // ── Modal öffnen ───────────────────────────────────────────────────────────
   const openNew = () => {
     setEditingRule(null);
@@ -98,8 +217,8 @@ export default function Firewall() {
     setShowRuleModal(true);
   };
 
-  const openEdit = (r, displayId) => {
-    setEditingRule({ id: displayId });
+  const openEdit = (r) => {
+    setEditingRule({ id: r.ids?.[0] ?? r.id, ids: r.ids ?? [r.id] });
     setForm({
       port:   r.port !== 'any' ? (r.port ?? r.to ?? '') : '',
       proto:  r.proto && r.proto !== 'any' ? r.proto : 'tcp',
@@ -109,32 +228,47 @@ export default function Firewall() {
     setShowRuleModal(true);
   };
 
+  // Regel-Nummern absteigend abarbeiten: UFW & iptables nummerieren fortlaufend, beim
+  // Löschen rutscht alles darunter eine Position hoch.
+  const byNumberDesc = (a, b) => Number(b) - Number(a);
+
   // ── Regel speichern ────────────────────────────────────────────────────────
   const saveRule = async () => {
+    if (form.action === 'deny' && !confirmLockout(form.port, 'Diese Regel würde ihn sperren.')) return;
+    const body = { port: form.port, proto: form.proto, from: form.from || undefined, action: form.action };
     try {
       if (editingRule) {
-        await axios.put(`${apiBase}/firewall/rules/${encodeURIComponent(editingRule.id)}`, {
-          port: form.port, proto: form.proto, from: form.from || undefined, action: form.action,
-        });
+        const ids = [...editingRule.ids].sort(byNumberDesc);
+        // Zusammengefasste IPv4+IPv6-Regel: die Zusatzeinträge zuerst entfernen,
+        // der letzte wird über PUT ersetzt.
+        for (const extra of ids.slice(0, -1)) {
+          await axios.delete(`${apiBase}/firewall/rules/${encodeURIComponent(extra)}`);
+        }
+        await axios.put(`${apiBase}/firewall/rules/${encodeURIComponent(ids[ids.length - 1])}`, body);
       } else {
-        await axios.post(`${apiBase}/firewall/${form.action}`, {
-          port: form.port, proto: form.proto, from: form.from || undefined,
-        });
+        await axios.post(`${apiBase}/firewall/${form.action}`, body);
       }
       setShowRuleModal(false);
       await load();
     } catch (err) {
-      setError(err.response?.data?.error || 'Fehler beim Speichern');
+      setError(humanError(err.response?.data?.error || 'Fehler beim Speichern', !selectedServer));
     }
   };
 
-  const deleteRule = async (id) => {
-    if (!confirm(`Regel ${id} wirklich löschen?`)) return;
+  const deleteRule = async (rule) => {
+    const ids = (rule.ids ?? [rule.id]).filter(v => v != null);
+    const isAllow = rule.action === 'allow' || rule.action?.toUpperCase?.().includes('ALLOW');
+    // Eine Erlaubnis auf einem Zugangs-Port zu löschen sperrt genauso aus wie eine
+    // Sperr-Regel anzulegen.
+    if (isAllow && !confirmLockout(rule.port, 'Diese Regel erlaubt ihn gerade — beim Löschen fällt die Erlaubnis weg.')) return;
+    if (!confirm(`Regel ${ids.join(' + ')} wirklich löschen?`)) return;
     try {
-      await axios.delete(`${apiBase}/firewall/rules/${encodeURIComponent(id)}`);
+      for (const id of [...ids].sort(byNumberDesc)) {
+        await axios.delete(`${apiBase}/firewall/rules/${encodeURIComponent(id)}`);
+      }
       await load();
     } catch (err) {
-      setError(err.response?.data?.error || 'Fehler beim Löschen');
+      setError(humanError(err.response?.data?.error || 'Fehler beim Löschen', !selectedServer));
     }
   };
 
@@ -147,16 +281,20 @@ export default function Firewall() {
       await axios.post(`${apiBase}/firewall/toggle`, { enable, tool: detectedTool.tool });
       await load();
     } catch (err) {
-      setError(err.response?.data?.error || 'Fehler beim Umschalten');
+      setError(humanError(err.response?.data?.error || 'Fehler beim Umschalten', !selectedServer));
     }
     setToggling(false);
   };
 
   const setF = (key, val) => setForm(f => ({ ...f, [key]: val }));
   const toolInfo = TOOL_LABELS[detectedTool?.tool] || null;
+  const policy   = parsePolicy(status, detectedTool?.tool);
 
   // ── Gefilterte + paginierte Regeln ─────────────────────────────────────────
-  const filtered = rules.filter(r => {
+  // Zuerst IPv4/IPv6-Doppel zusammenfassen, damit die Liste nicht alles doppelt zeigt.
+  const merged = mergeFamilies(rules);
+
+  const filtered = merged.filter(r => {
     const q = search.toLowerCase();
     const matchSearch = !q || [r.port, r.proto, r.from, String(r.id)].some(v => String(v ?? '').toLowerCase().includes(q));
     const matchAction = filterAct === 'all' || r.action === filterAct
@@ -168,8 +306,8 @@ export default function Firewall() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  const allowCount = rules.filter(r => r.action === 'allow' || r.action?.toUpperCase?.().includes('ALLOW')).length;
-  const denyCount  = rules.length - allowCount;
+  const allowCount = merged.filter(r => r.action === 'allow' || r.action?.toUpperCase?.().includes('ALLOW')).length;
+  const denyCount  = merged.length - allowCount;
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -221,23 +359,33 @@ export default function Firewall() {
         </div>
       )}
 
-      {/* Fehler */}
+      {/* Fehler — die Übersetzung in Klartext passiert bereits in humanError() */}
       {error && (
-        <div className="bg-panel-orange/10 border border-panel-orange/30 text-panel-orange text-sm rounded-md px-3 py-2">
-          {!selectedServer && (error.includes('nsenter') || error.includes('Operation not permitted'))
-            ? <>nsenter fehlgeschlagen — <code className="bg-panel-surface px-1 rounded font-mono text-xs">privileged: true</code> und <code className="bg-panel-surface px-1 rounded font-mono text-xs">pid: "host"</code> ergänzen.</>
-            : error}
+        <div className="bg-panel-orange/10 border border-panel-orange/30 text-panel-orange text-sm rounded-md px-3 py-2 flex items-start gap-2">
+          <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+          <span>{error}</span>
         </div>
       )}
 
       {/* Status */}
       {status && (
         <div className="bg-panel-card border border-panel-border rounded-lg p-3">
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
             <span className={`w-2 h-2 rounded-full ${detectedTool?.active ? 'bg-panel-green' : 'bg-panel-red'}`} />
             <span className="text-xs font-semibold text-panel-text">
               {toolInfo?.label || 'Firewall'} {detectedTool?.active ? 'aktiv' : 'inaktiv'}
             </span>
+            {/* Die Standard-Richtlinie entscheidet, was mit allem passiert, wofür es keine
+                Regel gibt — bisher stand sie nur klein in der Rohausgabe. */}
+            {policyWord(policy?.incoming) && (
+              <span className="text-[11px] text-panel-muted">
+                · Standard: eingehend{' '}
+                <span className={policyWord(policy.incoming) === 'abgelehnt' ? 'text-panel-green font-medium' : 'text-panel-orange font-medium'}>
+                  {policyWord(policy.incoming)}
+                </span>
+                {policyWord(policy?.outgoing) && <>, ausgehend <span className="text-panel-text">{policyWord(policy.outgoing)}</span></>}
+              </span>
+            )}
           </div>
           <details>
             <summary className="text-xs text-panel-muted cursor-pointer hover:text-panel-text transition-colors select-none">Vollständige Ausgabe anzeigen</summary>
@@ -344,10 +492,10 @@ export default function Firewall() {
                     {/* Aktionen auf Mobil oben rechts, auf Desktop am Ende */}
                     {canWrite && (
                       <div className="flex sm:hidden items-center gap-1">
-                        <Button size="sm" variant="ghost" onClick={() => openEdit(r, displayId)}>
+                        <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>
                           <Pencil size={11} />Bearbeiten
                         </Button>
-                        <Button size="sm" variant="ghost" onClick={() => deleteRule(displayId)}
+                        <Button size="sm" variant="ghost" onClick={() => deleteRule(r)}
                           className="text-panel-red hover:border-panel-red/40">
                           <Trash2 size={11} />Löschen
                         </Button>
@@ -355,12 +503,21 @@ export default function Firewall() {
                     )}
                   </div>
 
-                  {/* Port */}
+                  {/* Port — bei zusammengefassten Regeln steht dahinter, für welche
+                      Adressfamilien sie gilt (UFW führt beide getrennt). */}
                   <span className="text-xs font-mono truncate flex items-center justify-between sm:contents">
                     <span className="sm:hidden text-[10px] text-panel-muted uppercase font-sans">Port:</span>
-                    {displayPort
-                      ? <span className="text-panel-text">{displayPort}</span>
-                      : <span className="text-panel-muted italic text-[11px]">alle Ports</span>}
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      {displayPort
+                        ? <span className="text-panel-text truncate">{displayPort}</span>
+                        : <span className="text-panel-muted italic text-[11px]">alle Ports</span>}
+                      {r.families?.size > 1 && (
+                        <span className="text-[9px] px-1 py-0.5 rounded bg-panel-surface border border-panel-border text-panel-muted font-sans flex-shrink-0"
+                          title={`Gilt für IPv4 und IPv6 (Regeln ${r.ids.join(' und ')})`}>
+                          IPv4+IPv6
+                        </span>
+                      )}
+                    </span>
                   </span>
 
                   {/* Protokoll */}
@@ -390,10 +547,10 @@ export default function Firewall() {
                   {/* Aktionen Desktop */}
                   {canWrite && (
                     <div className="hidden sm:flex items-center gap-1 justify-end">
-                      <Button size="sm" variant="ghost" onClick={() => openEdit(r, displayId)}>
+                      <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>
                         <Pencil size={11} />Bearbeiten
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => deleteRule(displayId)}
+                      <Button size="sm" variant="ghost" onClick={() => deleteRule(r)}
                         className="text-panel-red hover:border-panel-red/40">
                         <Trash2 size={11} />Löschen
                       </Button>
@@ -457,8 +614,32 @@ export default function Firewall() {
           </div>
           <div>
             <label className="block text-xs text-panel-muted mb-1">Port</label>
+            <div className="flex flex-wrap gap-1 mb-2">
+              {quickPorts.map(q => (
+                <button
+                  key={`${q.label}-${q.port}`}
+                  type="button"
+                  onClick={() => setForm(f => ({ ...f, port: q.port, proto: 'tcp' }))}
+                  title={`Port ${q.port}/tcp übernehmen`}
+                  className={`px-2 py-1 text-[11px] rounded border transition-colors ${
+                    form.port === q.port
+                      ? 'bg-panel-accent/15 border-panel-accent/50 text-panel-accent'
+                      : 'bg-panel-surface border-panel-border text-panel-muted hover:text-panel-text hover:border-panel-accent/40'
+                  }`}
+                >
+                  {q.label} {q.port}
+                </button>
+              ))}
+            </div>
             <input value={form.port} onChange={e => setF('port', e.target.value)}
               placeholder="z.B. 80, 443 oder 8080:8090" className={inputCls} />
+            {/* Der Hinweis erscheint schon beim Tippen, nicht erst beim Speichern. */}
+            {form.action === 'deny' && guardFor(form.port) && (
+              <p className="mt-1.5 text-[11px] text-panel-orange flex items-start gap-1.5">
+                <AlertTriangle size={11} className="flex-shrink-0 mt-0.5" />
+                Port {form.port} ist {guardFor(form.port).label}. Diese Regel würde ihn sperren.
+              </p>
+            )}
           </div>
           <div>
             <label className="block text-xs text-panel-muted mb-1">Protokoll</label>

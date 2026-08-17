@@ -13,6 +13,11 @@ const getSetting = (k) => db.prepare('SELECT value FROM settings WHERE key = ?')
 // nsenter: Führt Befehle im Host-Namespace aus (nötig wenn Panel in Docker läuft)
 const host = (cmd) => execAsync(`nsenter --target 1 --mount --uts --ipc --net --pid -- ${cmd}`, { timeout: 10000 });
 
+// Eingabefehler sind 400, nicht 500 — sonst sieht ein Tippfehler im Port aus wie ein
+// Serverfehler, und das Frontend kann beides nicht auseinanderhalten.
+const isInputError = (msg = '') => /ungültig|quell-adresse|nicht unterstützt|erforderlich/i.test(msg);
+const fail = (res, err) => res.status(isInputError(err.message) ? 400 : 500).json({ error: err.message });
+
 // ─── Firewall erkennen ─────────────────────────────────────────────────────────
 router.get('/detect', requirePermission('firewall.view'), async (req, res) => {
   try {
@@ -72,19 +77,21 @@ router.post('/allow', requirePermission('firewall.manage'), async (req, res) => 
     const output = await adapter.allow(String(port), proto, from);
     auditLog(req, 'firewall.allow', 'rule', `${port}${proto ? '/' + proto : ''}`, { from: from || 'any', tool });
     res.json({ success: true, output });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { fail(res, err); }
 });
 
 // ─── Regel verweigern ─────────────────────────────────────────────────────────
+// `from` wurde hier früher nicht weitergereicht: Eine Sperre für eine einzelne
+// Adresse wurde damit zur Sperre für alle.
 router.post('/deny', requirePermission('firewall.manage'), async (req, res) => {
-  const { port, proto } = req.body;
+  const { port, proto, from } = req.body;
   if (!port) return res.status(400).json({ error: 'Port erforderlich' });
   try {
     const { adapter, tool } = await getLocalAdapter();
-    const output = await adapter.deny(String(port), proto);
-    auditLog(req, 'firewall.deny', 'rule', `${port}${proto ? '/' + proto : ''}`, { tool });
+    const output = await adapter.deny(String(port), proto, from);
+    auditLog(req, 'firewall.deny', 'rule', `${port}${proto ? '/' + proto : ''}`, { from: from || 'any', tool });
     res.json({ success: true, output });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { fail(res, err); }
 });
 
 // ─── Regel löschen ────────────────────────────────────────────────────────────
@@ -95,7 +102,7 @@ router.delete('/rules/:id', requirePermission('firewall.manage'), async (req, re
     const output = await adapter.deleteRule(id);
     auditLog(req, 'firewall.delete', 'rule', `Regel ${id}`, { tool });
     res.json({ success: true, output });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { fail(res, err); }
 });
 
 // ─── Regel bearbeiten (löschen + neu anlegen) ─────────────────────────────────
@@ -108,10 +115,10 @@ router.put('/rules/:id', requirePermission('firewall.manage'), async (req, res) 
     await adapter.deleteRule(id);
     const output = action === 'allow'
       ? await adapter.allow(String(port), proto, from)
-      : await adapter.deny(String(port), proto);
-    auditLog(req, 'firewall.edit', 'rule', `Regel ${id} → ${port}/${proto}`, { tool, action });
+      : await adapter.deny(String(port), proto, from);
+    auditLog(req, 'firewall.edit', 'rule', `Regel ${id} → ${port}/${proto}`, { tool, action, from: from || 'any' });
     res.json({ success: true, output });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { fail(res, err); }
 });
 
 module.exports = router;

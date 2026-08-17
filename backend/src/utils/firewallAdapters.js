@@ -5,11 +5,38 @@
  */
 
 // ─── Validation Helpers ───────────────────────────────────────────────────────
-const validPort  = (p) => { if (!/^\d{1,5}(:\d{1,5})?$/.test(String(p)) || (+p < 1 && !String(p).includes(':')) ) return null; return String(p); };
+
+// Einzelport oder Bereich „von:bis". Die alte Fassung prüfte nur auf bis zu fünf
+// Ziffern — „99999" galt damit als gültig und lief erst im Firewall-Tool auf einen
+// Fehler, der beim Benutzer als unverständliche Rohausgabe ankam.
+const validPort = (p) => {
+  const s = String(p ?? '').trim();
+  const m = s.match(/^(\d{1,5})(?::(\d{1,5}))?$/);
+  if (!m) return null;
+  const lo = +m[1];
+  const hi = m[2] != null ? +m[2] : lo;
+  if (lo < 1 || hi > 65535 || lo > hi) return null;
+  return s;
+};
+
 const validProto = (p) => ['tcp', 'udp'].includes(p) ? p : null;
-const IPV4_RE    = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
-const IPV6_RE    = /^[0-9a-fA-F:]+(%[a-z0-9]+)?(\/\d{1,3})?$/;
-const validFrom  = (f) => (!f || IPV4_RE.test(f) || IPV6_RE.test(f)) ? f || null : null;
+
+const IPV4_RE = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
+const IPV6_RE = /^[0-9a-fA-F:]+(%[a-z0-9]+)?(\/\d{1,3})?$/;
+
+// Eine angegebene Quelle muss gültig sein. Vorher wurde eine unbrauchbare Eingabe
+// still zu `null` — die Regel galt dann für *alle* Quellen statt für die eine
+// gewünschte, ohne dass es jemand gemerkt hätte. Deshalb wird jetzt geworfen.
+const validFrom = (f) => {
+  const s = String(f ?? '').trim();
+  if (!s) return null;
+  if (!IPV4_RE.test(s) && !IPV6_RE.test(s)) {
+    throw new Error(`Ungültige Quell-Adresse: „${s}" — erwartet wird eine IPv4/IPv6-Adresse, optional mit Präfix (z. B. 10.0.0.0/8)`);
+  }
+  return s;
+};
+
+const isIPv6 = (addr) => addr.includes(':');
 
 // ─── Erkennung ────────────────────────────────────────────────────────────────
 /**
@@ -107,10 +134,16 @@ class UfwAdapter {
     return stdout;
   }
 
-  async deny(port, proto) {
+  // `from` wurde hier früher gar nicht entgegengenommen: Wer „Port 80 für 1.2.3.4
+  // sperren" wollte, sperrte ihn in Wahrheit für alle.
+  async deny(port, proto, from) {
     const p = validPort(port); if (!p) throw new Error('Ungültiger Port');
     const pr = validProto(proto);
-    const { stdout } = await this.exec(`ufw deny ${p}${pr ? '/' + pr : ''}`);
+    const fr = validFrom(from);
+    const cmd = fr
+      ? `ufw deny from ${fr} to any port ${p}${pr ? ' proto ' + pr : ''}`
+      : `ufw deny ${p}${pr ? '/' + pr : ''}`;
+    const { stdout } = await this.exec(cmd);
     return stdout;
   }
 
@@ -155,22 +188,21 @@ class IptablesAdapter {
     return rules;
   }
 
-  async allow(port, proto, from) {
+  async allow(port, proto, from) { return this._rule(port, proto, from, 'ACCEPT'); }
+  async deny (port, proto, from) { return this._rule(port, proto, from, 'DROP');   }
+
+  async _rule(port, proto, from, target) {
     const p = validPort(port); if (!p) throw new Error('Ungültiger Port');
     const pr = validProto(proto) || 'tcp';
     const fr = validFrom(from);
-    const src = fr ? `-s ${fr}` : '';
-    const portRange = p.includes(':') ? `--dport ${p.replace(':', ':')}` : `--dport ${p}`;
-    const { stdout } = await this.exec(`iptables -I INPUT -p ${pr} ${src} ${portRange} -j ACCEPT`);
-    await this._persist();
-    return stdout;
-  }
-
-  async deny(port, proto) {
-    const p = validPort(port); if (!p) throw new Error('Ungültiger Port');
-    const pr = validProto(proto) || 'tcp';
-    const portRange = p.includes(':') ? `--dport ${p}` : `--dport ${p}`;
-    const { stdout } = await this.exec(`iptables -I INPUT -p ${pr} ${portRange} -j DROP`);
+    // Das Panel verwaltet hier bewusst nur die IPv4-Tabelle. Eine IPv6-Quelle würde
+    // ip6tables erfordern; die Regel landete dann in einer Tabelle, die diese Seite gar
+    // nicht anzeigt. Lieber klar ablehnen als eine unsichtbare Regel anlegen.
+    if (fr && isIPv6(fr)) {
+      throw new Error('IPv6-Quellen werden mit iptables nicht unterstützt — dafür wäre ip6tables nötig, das dieses Panel nicht verwaltet.');
+    }
+    const src = fr ? `-s ${fr} ` : '';
+    const { stdout } = await this.exec(`iptables -I INPUT -p ${pr} ${src}--dport ${p} -j ${target}`);
     await this._persist();
     return stdout;
   }
@@ -288,21 +320,20 @@ class NftablesAdapter {
     return rules;
   }
 
-  async allow(port, proto, _from) {
-    const p = validPort(port); if (!p) throw new Error('Ungültiger Port');
-    const pr = validProto(proto) || 'tcp';
-    const dport = p.includes(':') ? `{ ${p.replace(':', '-')} }` : p;
-    await this._ensureChain();
-    const { stdout } = await this.exec(`nft add rule inet filter input ${pr} dport ${dport} accept`);
-    return stdout;
-  }
+  async allow(port, proto, from) { return this._rule(port, proto, from, 'accept'); }
+  async deny (port, proto, from) { return this._rule(port, proto, from, 'drop');   }
 
-  async deny(port, proto) {
+  // Die Quelle wurde hier früher als `_from` entgegengenommen und weggeworfen — die
+  // Regel galt dadurch immer für alle Absender. Die inet-Tabelle kann beide
+  // Adressfamilien, das Schlüsselwort unterscheidet sich aber: ip bzw. ip6.
+  async _rule(port, proto, from, verdict) {
     const p = validPort(port); if (!p) throw new Error('Ungültiger Port');
     const pr = validProto(proto) || 'tcp';
+    const fr = validFrom(from);
     const dport = p.includes(':') ? `{ ${p.replace(':', '-')} }` : p;
+    const saddr = fr ? `${isIPv6(fr) ? 'ip6' : 'ip'} saddr ${fr} ` : '';
     await this._ensureChain();
-    const { stdout } = await this.exec(`nft add rule inet filter input ${pr} dport ${dport} drop`);
+    const { stdout } = await this.exec(`nft add rule inet filter input ${saddr}${pr} dport ${dport} ${verdict}`);
     return stdout;
   }
 
@@ -364,20 +395,64 @@ class FirewalldAdapter {
       for (const svc of services) {
         rules.push({ id: `svc:${svc}`, port: svc, proto: 'service', action: 'allow', from: 'any', raw: svc });
       }
+
+      // Rich Rules — alles, was eine Quelle einschränkt oder etwas sperrt, liegt hier.
+      // Bewusst die permanente Liste: allow/deny schreiben ebenfalls permanent und laden
+      // neu, damit Index und späteres Entfernen zusammenpassen.
+      for (const [i, line] of (await this._richRules()).entries()) {
+        const src = line.match(/source address="([^"]+)"/)?.[1];
+        const prt = line.match(/port port="([^"]+)"/)?.[1];
+        const pro = line.match(/protocol="([^"]+)"/)?.[1];
+        rules.push({
+          id:     `rich:${i}`,
+          port:   prt ? prt.replace('-', ':') : 'any',
+          proto:  pro || 'any',
+          action: /\baccept\b/.test(line) ? 'allow' : 'deny',
+          from:   src || 'any',
+          raw:    line,
+        });
+      }
     } catch {}
     return rules;
   }
 
-  async allow(port, proto, _from) {
-    const p = validPort(port); if (!p) throw new Error('Ungültiger Port');
+  async allow(port, proto, from) { return this._rule(port, proto, from, 'accept'); }
+  async deny (port, proto, from) { return this._rule(port, proto, from, 'reject'); }
+
+  // Ohne Quelle genügt --add-port. Sobald eine Quelle im Spiel ist — oder etwas gesperrt
+  // statt erlaubt werden soll —, kann firewalld das nur über Rich Rules abbilden.
+  // Früher wurde die Quelle stillschweigend verworfen und „sperren" hat die Erlaubnis
+  // bloß entfernt, statt eine Sperre anzulegen.
+  async _rule(port, proto, from, verdict) {
+    const p  = validPort(port); if (!p) throw new Error('Ungültiger Port');
     const pr = validProto(proto) || 'tcp';
-    await this.exec(`firewall-cmd --permanent --add-port=${p}/${pr}`);
+    const fr = validFrom(from);
+
+    if (!fr && verdict === 'accept') {
+      await this.exec(`firewall-cmd --permanent --add-port=${p}/${pr}`);
+      await this.exec('firewall-cmd --reload');
+      return `Port ${p}/${pr} freigegeben`;
+    }
+
+    const rule = this._buildRichRule(fr, p, pr, verdict);
+    await this.exec(`firewall-cmd --permanent --add-rich-rule='${rule}'`);
     await this.exec('firewall-cmd --reload');
-    return `Port ${p}/${pr} freigegeben`;
+    return `Port ${p}/${pr}${fr ? ` für ${fr}` : ''} ${verdict === 'accept' ? 'freigegeben' : 'gesperrt'}`;
   }
 
-  async deny(port, proto) {
-    return this.deleteRule(`${port}/${proto || 'tcp'}`);
+  _buildRichRule(from, port, proto, verdict) {
+    // firewalld schreibt Bereiche mit Bindestrich, das Panel mit Doppelpunkt.
+    const portSpec = port.replace(':', '-');
+    const family   = from ? ` family="${isIPv6(from) ? 'ipv6' : 'ipv4'}"` : '';
+    const source   = from ? ` source address="${from}"` : '';
+    return `rule${family}${source} port port="${portSpec}" protocol="${proto}" ${verdict}`;
+  }
+
+  async _richRules() {
+    try {
+      const { stdout } = await this.exec('firewall-cmd --permanent --list-rich-rules 2>/dev/null');
+      return stdout.split('\n').map(l => l.trim()).filter(Boolean);
+    } catch { return []; }
   }
 
   async enable()  {
@@ -390,17 +465,34 @@ class FirewalldAdapter {
     return 'firewalld gestoppt';
   }
 
+  // ID ist "PORT/PROTO", "svc:SERVICE" oder "rich:INDEX"
   async deleteRule(id) {
-    // ID ist entweder "PORT/PROTO" oder "svc:SERVICE"
-    if (id.startsWith('svc:')) {
-      const svc = id.slice(4);
+    const s = String(id);
+
+    if (/^rich:\d+$/.test(s)) {
+      const lines  = await this._richRules();
+      const target = lines[+s.slice(5)];
+      if (!target) throw new Error('Regel nicht gefunden — die Liste hat sich zwischenzeitlich geändert. Bitte neu laden.');
+      // Die Zeile geht in einfachen Anführungszeichen an die Shell; ein einfaches
+      // Anführungszeichen darin würde daraus ausbrechen. firewalld erzeugt so etwas
+      // nicht, geprüft wird es trotzdem.
+      if (target.includes("'")) throw new Error('Regel enthält unerwartete Zeichen und wird nicht entfernt.');
+      await this.exec(`firewall-cmd --permanent --remove-rich-rule='${target}'`);
+
+    } else if (s.startsWith('svc:')) {
+      const svc = s.slice(4);
+      if (!/^[\w.-]{1,64}$/.test(svc)) throw new Error('Ungültiger Dienst-Name');
       await this.exec(`firewall-cmd --permanent --remove-service=${svc}`);
+
     } else {
-      const [p, pr] = id.split('/');
+      const [p, pr] = s.split('/');
+      if (!validPort(p)) throw new Error('Ungültiger Port');
+      if (pr && !validProto(pr)) throw new Error('Ungültiges Protokoll');
       await this.exec(`firewall-cmd --permanent --remove-port=${p}/${pr || 'tcp'}`);
     }
+
     await this.exec('firewall-cmd --reload');
-    return `Regel ${id} entfernt`;
+    return `Regel ${s} entfernt`;
   }
 }
 

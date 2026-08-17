@@ -16,6 +16,72 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.4.3.0] - 2026-08-17 (Build 306) — *Firewall wieder funktionsfähig*
+
+### 🐛 Bugfixes
+- **Die Firewall-Seite stürzte beim Öffnen ab — seit dem 28.07.2026.** Beim Aufräumen der
+  Einstellungen in v1.48.15 (Build 263) verschwand ein Symbol aus der Import-Zeile, das die Seite
+  weiterhin benutzte. Statt der Firewall erschien seitdem „Diese Seite konnte nicht geladen werden".
+  Der Build bemerkt so etwas nicht, deshalb blieb es über zwölf Releases unentdeckt.
+- **Remote-Server meldeten immer „Keine aktive Firewall gefunden"**: Die Route zur Firewall-Erkennung
+  fehlte im Panel, obwohl der Agent sie längst beantworten konnte. Dadurch brach das Laden ab,
+  bevor überhaupt Regeln abgefragt wurden — die Firewall-Seite war für Remote-Server faktisch leer.
+- **Ein-/Ausschalten und Bearbeiten gingen bei Remote-Servern ins Leere** (404): Auch für diese
+  beiden fehlten die Routen. Bearbeiten funktioniert jetzt zusätzlich mit älteren Agenten, weil das
+  Panel dort selbstständig auf „löschen + neu anlegen" ausweicht.
+- **firewalld-Regeln ließen sich remote nicht löschen**: Die Prüfung ließ nur reine Zahlen zu,
+  firewalld-Regeln heißen aber `80/tcp` oder `svc:ssh`.
+- **Firewall-Änderungen an Remote-Servern standen in keinem Audit-Log** — anders als lokale.
+
+### 🔒 Sicherheit
+- **Eine Regel galt weiter, als sie sollte**: Das Feld „Von (Quell-IP)" wurde bei UFW-Sperrregeln,
+  nftables und firewalld stillschweigend verworfen. Wer einen Port für *eine* Adresse öffnen oder
+  sperren wollte, öffnete bzw. sperrte ihn damit für **alle**. Die Quelle wird jetzt in allen vier
+  Werkzeugen umgesetzt — bei firewalld über Rich Rules, die auch in der Liste erscheinen und sich
+  dort löschen lassen. Einzige Ausnahme: IPv6-Quellen mit iptables, das nun eine klare Meldung gibt,
+  statt eine unsichtbare Regel anzulegen.
+- **Ein Tippfehler in der IP-Adresse hatte dieselbe Wirkung**: Eine ungültige Eingabe wurde zu
+  „keine Einschränkung". Jetzt wird die Regel abgelehnt und die Adresse benannt.
+- **Der Agent baute firewalld-Befehle ohne Prüfung zusammen** — Regel-Namen wanderten ungeprüft in
+  eine Shell-Zeile. Alle Firewall-Befehle des Agenten laufen jetzt über `execFile` mit
+  Argument-Array, denselben Weg wie die Docker-Befehle seit v5.4.0.0.
+- **„Sperren" sperrte bei firewalld nichts**, sondern entfernte nur eine vorhandene Erlaubnis. Jetzt
+  wird eine echte Reject-Regel angelegt.
+- **Ports über 65535 wurden angenommen** und liefen erst im Werkzeug auf eine unverständliche
+  Fehlermeldung.
+
+### ✨ Verbesserungen
+- **Schutz vor dem Aussperren**: Wer den SSH-Port, den Port des Panel-Agenten oder den Port des
+  Panels selbst sperren oder dessen Erlaubnis löschen will, bekommt vorher eine benannte Warnung —
+  inklusive Hinweis schon beim Tippen im Dialog. Bestätigen bleibt möglich. Der Agent-Port wird
+  dabei aus der Adresse des jeweiligen Servers gelesen, statt eine Standardnummer anzunehmen.
+- **Schnellauswahl im Regel-Dialog**: SSH, HTTP, HTTPS und der Zugangs-Port des gewählten Servers
+  per Klick, statt Portnummern nachzuschlagen.
+- **Keine doppelten Regeln mehr in der Liste**: UFW führt jede Regel zweimal (IPv4 und IPv6). Beide
+  erscheinen jetzt als ein Eintrag mit dem Vermerk „IPv4+IPv6"; Löschen und Bearbeiten fassen
+  weiterhin beide an — und zwar in der richtigen Reihenfolge, damit die Nummerierung nicht
+  verrutscht.
+- **Die Standard-Richtlinie steht jetzt sichtbar oben** („eingehend abgelehnt, ausgehend erlaubt")
+  statt nur klein in der aufklappbaren Rohausgabe.
+- **Verständliche Fehlermeldungen** statt roher Werkzeug-Ausgaben — etwa wenn dem Panel-Container
+  die Rechte für die Host-Firewall fehlen oder der Agent nicht antwortet.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank**: Keine Migration, keine Schema-Änderung.
+- **Sofort wirksam nach dem Panel-Update**, ohne Agent-Update: der Absturz der Seite, die Erkennung
+  und Regel-Liste bei Remote-Servern, Ein-/Ausschalten, das Löschen von firewalld-Regeln, der
+  Aussperr-Schutz sowie alle Anzeige-Verbesserungen. Bearbeiten läuft bei alten Agenten über den
+  Ersatzweg „löschen + neu anlegen".
+- **Agent-Update auf 2.6.0 nötig** für: Quell-IP in allen Werkzeugen, die Absicherung der
+  firewalld-Befehle, echte Sperr-Regeln bei firewalld und das Bearbeiten in einem Schritt. Das
+  Panel bringt den neuen Agent-Stand mit — pro Server genügt „Update auf v2.6.0" auf der
+  Agenten-Seite. Der Agent startet dabei kurz neu (~2 Sekunden).
+- **Bestehende Regeln bleiben unangetastet.** Regeln, die früher wegen der verworfenen Quell-IP zu
+  weit gefasst angelegt wurden, bleiben so bestehen — sie sind in der Liste jetzt aber als „alle"
+  in der Spalte Quelle erkennbar und können bearbeitet werden.
+- **Lokale Firewall**: unverändert darauf angewiesen, dass der Panel-Container `privileged: true`
+  und `pid: "host"` hat. Fehlt das, sagt die Seite es jetzt in klaren Worten.
+
 ## [5.4.2.0] - 2026-08-17 (Build 305) — *Beschriftete Aktionen statt Symbolraten*
 
 ### 🔧 Änderungen

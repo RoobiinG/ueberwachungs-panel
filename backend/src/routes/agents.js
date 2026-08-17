@@ -986,6 +986,78 @@ router.post('/:id/docker/stacks/:stackId/:action', requirePermission('docker.sta
 });
 
 // ── Firewall Proxy ──────────────────────────────────────────────────────────
+// Der Agent kann seit jeher /firewall/detect und /firewall/toggle — es fehlten nur
+// die Proxys davor. Ohne /detect meldete das Frontend für jeden Remote-Server
+// „Keine aktive Firewall gefunden" und lud die Regeln erst gar nicht.
+
+// Regel-IDs sehen je nach Tool unterschiedlich aus: laufende Nummer (UFW, iptables),
+// nftables-Handle, "PORT/PROTO" und "svc:NAME" (firewalld) sowie "rich:INDEX" für
+// firewalld-Rich-Rules. Alles andere wird abgewiesen, damit nichts in die URL zum
+// Agenten und von dort in einen Befehl gerät.
+const isValidRuleId = (id) =>
+  /^\d+$/.test(id) ||
+  /^\d{1,5}(:\d{1,5})?\/(tcp|udp)$/.test(id) ||
+  /^svc:[\w.-]{1,64}$/.test(id) ||
+  /^rich:\d{1,4}$/.test(id);
+
+const firewallAgent = (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) { res.status(404).json({ error: 'Agent nicht gefunden' }); return null; }
+  if (!canAccessAgent(agent.id, req.user?.role)) { res.status(403).json({ error: 'Kein Zugriff' }); return null; }
+  return agent;
+};
+
+const firewallFail = (res, err) =>
+  res.status(err.response?.status || 502).json({ error: err.response?.data?.error || err.message });
+
+router.get('/:id/firewall/detect', requirePermission('firewall.view'), async (req, res) => {
+  const agent = firewallAgent(req, res); if (!agent) return;
+  try {
+    const { data } = await agentApi(agent).get('/firewall/detect');
+    res.json(data);
+  } catch (err) { firewallFail(res, err); }
+});
+
+router.post('/:id/firewall/toggle', requirePermission('firewall.manage'), async (req, res) => {
+  const agent = firewallAgent(req, res); if (!agent) return;
+  try {
+    const { data } = await agentApi(agent).post('/firewall/toggle', req.body);
+    auditLog(req, req.body?.enable ? 'firewall.enable' : 'firewall.disable', 'firewall',
+      req.body?.tool || 'agent', { agentId: agent.id, agentName: agent.name });
+    res.json(data);
+  } catch (err) { firewallFail(res, err); }
+});
+
+// Bearbeiten = löschen + neu anlegen. Agenten ab 2.6.0 erledigen das in einem Aufruf;
+// bei älteren gibt es den Endpunkt nicht, dann übernimmt das Panel die beiden Schritte
+// selbst. So funktioniert Bearbeiten sofort auf allen Servern, auch ohne Agent-Update.
+router.put('/:id/firewall/rules/:num', requirePermission('firewall.manage'), async (req, res) => {
+  const agent = firewallAgent(req, res); if (!agent) return;
+  const id = String(req.params.num);
+  if (!isValidRuleId(id)) return res.status(400).json({ error: 'Ungültige Regel-ID' });
+
+  const { port, proto, from, action } = req.body || {};
+  if (!port || !action) return res.status(400).json({ error: 'Port und Aktion erforderlich' });
+  if (action !== 'allow' && action !== 'deny') return res.status(400).json({ error: 'Ungültige Aktion' });
+
+  const api = agentApi(agent);
+  try {
+    const { data } = await api.put(`/firewall/rules/${encodeURIComponent(id)}`, req.body);
+    auditLog(req, 'firewall.edit', 'rule', `Regel ${id} → ${port}/${proto || 'tcp'}`,
+      { agentId: agent.id, action, from: from || 'any' });
+    return res.json(data);
+  } catch (err) {
+    if (err.response?.status !== 404) return firewallFail(res, err);
+  }
+
+  try {
+    await api.delete(`/firewall/rules/${encodeURIComponent(id)}`);
+    const { data } = await api.post(`/firewall/${action}`, { port, proto, from });
+    auditLog(req, 'firewall.edit', 'rule', `Regel ${id} → ${port}/${proto || 'tcp'}`,
+      { agentId: agent.id, action, from: from || 'any', fallback: true });
+    res.json(data);
+  } catch (err) { firewallFail(res, err); }
+});
 
 router.get('/:id/firewall/status', requirePermission('firewall.view'), async (req, res) => {
   const agent = getOne(req.params.id);
@@ -1011,41 +1083,39 @@ router.get('/:id/firewall/rules', requirePermission('firewall.view'), async (req
   }
 });
 
+// Die beiden schrieben bisher nichts ins Audit-Log — Firewall-Änderungen an
+// Remote-Servern waren damit nirgends nachvollziehbar, anders als lokale.
 router.post('/:id/firewall/allow', requirePermission('firewall.manage'), async (req, res) => {
-  const agent = getOne(req.params.id);
-  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
-  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const agent = firewallAgent(req, res); if (!agent) return;
   try {
     const { data } = await agentApi(agent).post('/firewall/allow', req.body);
+    auditLog(req, 'firewall.allow', 'rule', `${req.body?.port}${req.body?.proto ? '/' + req.body.proto : ''}`,
+      { agentId: agent.id, agentName: agent.name, from: req.body?.from || 'any' });
     res.json(data);
-  } catch (err) {
-    res.status(502).json({ error: err.response?.data?.error || err.message });
-  }
+  } catch (err) { firewallFail(res, err); }
 });
 
 router.post('/:id/firewall/deny', requirePermission('firewall.manage'), async (req, res) => {
-  const agent = getOne(req.params.id);
-  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
-  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const agent = firewallAgent(req, res); if (!agent) return;
   try {
     const { data } = await agentApi(agent).post('/firewall/deny', req.body);
+    auditLog(req, 'firewall.deny', 'rule', `${req.body?.port}${req.body?.proto ? '/' + req.body.proto : ''}`,
+      { agentId: agent.id, agentName: agent.name, from: req.body?.from || 'any' });
     res.json(data);
-  } catch (err) {
-    res.status(502).json({ error: err.response?.data?.error || err.message });
-  }
+  } catch (err) { firewallFail(res, err); }
 });
 
+// Die Prüfung ließ früher nur reine Zahlen zu — firewalld-Regeln heißen aber
+// "80/tcp" oder "svc:ssh" und waren damit remote nicht löschbar.
 router.delete('/:id/firewall/rules/:num', requirePermission('firewall.manage'), async (req, res) => {
-  const agent = getOne(req.params.id);
-  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
-  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
-  if (!/^\d+$/.test(req.params.num)) return res.status(400).json({ error: 'Ungültige Regel-Nummer' });
+  const agent = firewallAgent(req, res); if (!agent) return;
+  const id = String(req.params.num);
+  if (!isValidRuleId(id)) return res.status(400).json({ error: 'Ungültige Regel-ID' });
   try {
-    const { data } = await agentApi(agent).delete(`/firewall/rules/${req.params.num}`);
+    const { data } = await agentApi(agent).delete(`/firewall/rules/${encodeURIComponent(id)}`);
+    auditLog(req, 'firewall.delete', 'rule', `Regel ${id}`, { agentId: agent.id, agentName: agent.name });
     res.json(data);
-  } catch (err) {
-    res.status(502).json({ error: err.response?.data?.error || err.message });
-  }
+  } catch (err) { firewallFail(res, err); }
 });
 
 // ── System-Stats Proxy (CPU, RAM, Disk, Kerne) ──────────────────────────────
