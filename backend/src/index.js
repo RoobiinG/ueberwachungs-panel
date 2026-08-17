@@ -163,12 +163,9 @@ server.on('upgrade', (request, socket, head) => {
     if (!getPermissions(user.role).includes('docker.control')) return deny(403, 'Forbidden');
     if (!canAccessAgent(agent.id, user.role))                  return deny(403, 'Forbidden');
 
-    // Betriebsart kommt global aus den Einstellungen. Die alte Spalte
-    // remote_agents.docker_engine wird seit v5.3.1.0 nicht mehr gepflegt und stand
-    // durch die Migration bei Bestands-Agenten dauerhaft auf 'dockhand'.
-    const engine = db.prepare("SELECT value FROM settings WHERE key = 'dockerEngine'").get()?.value || 'agents';
-    if (engine === 'dockhand') return deny(400, 'Bad Request');
-
+    // Die Betriebsart wird hier bewusst nicht mehr geprüft. Die Container-Konsole ist
+    // seit v5.4.1.0 ausschließlich nativ: Sie läuft immer über den Panel-Agent, egal ob
+    // die Container-Daten selbst von ihm oder von Dockhand Pro kommen.
     const targetUrl = agent.url.replace(/^http/, 'ws') + `/docker/containers/${containerId}/terminal`;
     const wsOptions = {
       headers: { 'x-agent-token': agent.token },

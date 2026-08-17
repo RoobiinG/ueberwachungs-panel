@@ -9,7 +9,6 @@ const router            = require('express').Router();
 const db                = require('../db');
 const { requirePermission } = require('../middleware/requirePermission');
 const dockhand          = require('../utils/dockhandClient');
-const { agentClient }   = require('../utils/agentTls');
 
 const getSetting = k =>
   db.prepare('SELECT value FROM settings WHERE key = ?').get(k)?.value ?? null;
@@ -26,63 +25,10 @@ router.get('/config', requirePermission('settings.view'), (req, res) => {
   });
 });
 
-// ── GET /api/dockhand/terminal-url/:containerId ───────────────────────────────
-router.get('/terminal-url/:containerId', requirePermission('docker.control'), async (req, res) => {
-  const { server } = req.query; // 'local' or agentId
-  const isLocal    = !server || server === 'local' || server === 'null';
-  const engine     = getSetting('dockerEngine') || 'agents';
-
-  // Nativ zuerst: Im Agent-Betrieb läuft das Terminal komplett über den Panel-Agent,
-  // Dockhand ist dort gar nicht beteiligt. Die Dockhand-Prüfungen darunter würden
-  // sonst greifen, obwohl Dockhand bewusst nicht eingerichtet ist.
-  if (!isLocal && engine !== 'dockhand') {
-    const agent = db.prepare('SELECT * FROM remote_agents WHERE id = ?').get(server);
-
-    // Im Mixed-Modus vorab prüfen, ob der Agent überhaupt antwortet. Anders als bei den
-    // übrigen Aufrufen lässt sich der Rückfall später nicht mehr nachholen — sobald das
-    // Terminal-Fenster offen ist, gibt es keinen Weg zurück auf Dockhand.
-    if (engine === 'mixed' && agent) {
-      try {
-        await agentClient(agent, 4000).get('/ping');
-      } catch (err) {
-        if (agent.dockhand_env_id) {
-          console.warn(`[Docker] Agent "${agent.name}" antwortet nicht (${err.message}) — Terminal über Dockhand Pro`);
-          const dhUrlFb = getSetting('dockhandUrl');
-          if (dhUrlFb) {
-            return res.json({
-              url: `${dhUrlFb.replace(/\/$/, '')}/terminal?env=${encodeURIComponent(agent.dockhand_env_id)}&id=${encodeURIComponent(req.params.containerId)}`,
-              fallback: true,
-            });
-          }
-        }
-        return res.status(502).json({ error: `Agent nicht erreichbar: ${err.message}` });
-      }
-    }
-
-    return res.json({ native: true, agentId: server });
-  }
-
-  const dhUrl = getSetting('dockhandUrl');
-  if (!dhUrl) {
-    return res.status(400).json({
-      error: isLocal
-        ? 'Für Container des lokalen Servers wird derzeit Dockhand benötigt — Dockhand-URL ist nicht konfiguriert.'
-        : 'Dockhand URL nicht konfiguriert',
-    });
-  }
-
-  let envId = null;
-  if (isLocal) {
-    envId = getSetting('dockhandLocalEnvId');
-  } else {
-    const agent = db.prepare('SELECT dockhand_env_id FROM remote_agents WHERE id = ?').get(server);
-    envId = agent?.dockhand_env_id;
-  }
-
-  if (!envId) return res.status(400).json({ error: 'Kein Dockhand-Environment für diesen Server zugewiesen' });
-
-  res.json({ url: `${dhUrl.replace(/\/$/, '')}/terminal?env=${encodeURIComponent(envId)}&id=${encodeURIComponent(req.params.containerId)}` });
-});
+// Die frühere Route GET /terminal-url/:containerId ist seit v5.4.1.0 entfernt.
+// Die Container-Konsole läuft ausschließlich nativ über den Panel-Agent
+// (POST /api/agents/:id/docker/containers/:containerId/terminal-ticket + WebSocket-Proxy).
+// Es gibt bewusst keinen Weg mehr, ein Dockhand-Terminal aus dem Panel heraus zu öffnen.
 
 // ── POST /api/dockhand/config ─────────────────────────────────────────────────
 router.post('/config', requirePermission('settings.manage'), (req, res) => {

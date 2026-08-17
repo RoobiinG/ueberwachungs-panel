@@ -586,14 +586,15 @@ router.get('/:id/docker/containers/:containerId/logs', requirePermission('docker
 
 // Einmal-Ticket für den Terminal-WebSocket. Muss vor der generischen :action-Route
 // stehen, sonst würde die 'terminal-ticket' als Container-Aktion auffassen.
+//
+// Die Betriebsart (nativ / mixed / dockhand) wird hier bewusst *nicht* geprüft: Die
+// Konsole läuft seit v5.4.1.0 grundsätzlich über den Panel-Agent, auch wenn die
+// Container-Daten selbst von Dockhand kommen. Ein Rückfall auf ein Dockhand-Terminal
+// existiert nicht mehr.
 router.post('/:id/docker/containers/:containerId/terminal-ticket', requirePermission('docker.control'), (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
-
-  if (!useNative()) {
-    return res.status(400).json({ error: 'Natives Terminal ist im Dockhand-Modus nicht verfügbar' });
-  }
 
   const ticket = terminalTickets.issue({
     userId:      req.user?.id,

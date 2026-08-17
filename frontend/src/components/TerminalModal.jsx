@@ -56,7 +56,12 @@ export function TerminalModal({ agentId, containerId, containerName, onClose }) 
 
       wsRef.current = new WebSocket(wsUrl);
 
+      // Es gibt keinen Ersatzweg mehr über Dockhand — scheitert der Agent, muss die
+      // Meldung deshalb selbst erklären, woran es liegt.
+      let opened = false;
+
       wsRef.current.onopen = () => {
+        opened = true;
         termInstance.current?.focus();
         // Initiale Größe senden
         if (termInstance.current?.cols && termInstance.current?.rows) {
@@ -69,10 +74,15 @@ export function TerminalModal({ agentId, containerId, containerName, onClose }) 
       };
 
       wsRef.current.onerror = () => {
-        setError('Verbindung zum Terminal fehlgeschlagen.');
+        setError(opened
+          ? 'Verbindung zum Terminal abgebrochen.'
+          : 'Konsole nicht erreichbar — läuft der Panel-Agent auf diesem Server und ist node-pty installiert?');
       };
 
       wsRef.current.onclose = () => {
+        if (!opened) {
+          setError('Konsole nicht erreichbar — läuft der Panel-Agent auf diesem Server und ist node-pty installiert?');
+        }
         termInstance.current?.write('\r\n\x1b[31m[Terminal geschlossen]\x1b[0m\r\n');
       };
     })();

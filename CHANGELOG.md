@@ -16,6 +16,45 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.4.1.0] - 2026-08-17 (Build 304) — *Container-Konsole ausschließlich nativ*
+
+### 🔧 Änderungen
+- **Die Docker-Container-Konsole läuft ab sofort ausschließlich nativ über den Panel-Agent.**
+  Sie öffnet sich wie gewohnt als Terminal-Fenster im Panel selbst — es gibt keinen zweiten Weg mehr,
+  über den stattdessen ein Dockhand-Terminal in einem neuen Browser-Tab aufgehen könnte.
+  - **Kein Dockhand-Rückfall mehr im Mixed-Modus**: Antwortet der Agent nicht, erscheint eine
+    Fehlermeldung statt eines ersatzweise geöffneten Dockhand-Terminals. Damit entfällt auch der
+    Vorab-Ping, der bisher nur dazu diente, rechtzeitig auf Dockhand umzuschwenken.
+  - **Die Konsole ignoriert die Einstellung „Docker Verwaltung"**: Sie geht immer über den Agenten,
+    auch wenn Container-Daten und -Aktionen bewusst über Dockhand Pro laufen. In der Betriebsart
+    „Dockhand Pro (Legacy)" war die Konsole bislang komplett gesperrt — dort funktioniert sie jetzt,
+    sofern für den Server ein Panel-Agent hinterlegt ist. In den Einstellungen steht dieser Hinweis
+    nun direkt unter der Auswahl.
+  - **Lokaler Panel-Server**: Dort gibt es keinen Agenten, also auch keine Konsole. Der Knopf ist
+    sichtbar, aber deaktiviert und erklärt sich über den Tooltip; der Hinweistext über der
+    Container-Liste nennt den Grund.
+  - **Deutlichere Fehlermeldung**: Kommt die Verbindung gar nicht erst zustande, weist das
+    Terminal-Fenster jetzt auf die tatsächliche Ursache hin (Agent nicht erreichbar oder `node-pty`
+    auf dem Zielserver nicht installiert), statt nur „Verbindung fehlgeschlagen" zu zeigen.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank**: Keine Migration, keine Schema-Änderung. Die Einstellung `dockerEngine` bleibt
+  unverändert und wirkt weiterhin auf alle übrigen Docker-Aufrufe.
+- **API**: Die Route `GET /api/dockhand/terminal-url/:containerId` **entfällt ersatzlos** (liefert
+  künftig 404). Sie wurde ausschließlich von der Docker-Seite des Panels genutzt; Frontend und Backend
+  kommen aus demselben Image und werden gemeinsam aktualisiert. Die Konsole nutzt weiterhin
+  `POST /api/agents/:id/docker/containers/:containerId/terminal-ticket` und den WebSocket-Proxy.
+- **Agent-Kompatibilität**: Kein Agent-Update nötig. Voraussetzung ist wie bisher ein Agent mit `ws`
+  und `node-pty` — beides installiert `agent/install.sh` mit. Fehlt `node-pty` auf einem Server
+  (z. B. weil der Build seinerzeit fehlschlug), gibt es dort ab jetzt keine Konsole mehr, weil der
+  Dockhand-Ersatzweg weggefallen ist. In dem Fall genügt ein erneutes Ausführen des Installers.
+- **Rechte & Sicherheit**: Unverändert — `docker.control`, Agent-Freigabe der Rolle, Einmal-Ticket
+  (30 s, einmalig, an Container und Agent gebunden) und Fingerprint-Pinning gelten weiter. Das
+  Öffnen wird wie bisher als `docker.terminal.open` im Audit-Log vermerkt.
+- **Neustart & Sessions**: Nur der übliche Panel-Neustart durch das Update. Angemeldete Sitzungen
+  bleiben bestehen; ein zum Update-Zeitpunkt offenes Terminal-Fenster wird geschlossen und muss
+  neu geöffnet werden.
+
 ## [5.4.0.0] - 2026-08-16 (Build 303) — *Mixed-Rückfall, sichere Terminals & verlässliche Benachrichtigungen*
 
 ### ✨ Features & Verbesserungen

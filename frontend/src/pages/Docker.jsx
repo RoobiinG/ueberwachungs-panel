@@ -192,23 +192,12 @@ export default function Docker() {
   };
 
   // ── Konsole (Terminal) ────────────────────────────────────────
-  const openTerminal = async (c) => {
-    try {
-      const server = selectedServer || 'local';
-      const { data } = await axios.get(`/api/dockhand/terminal-url/${c.id}?server=${server}`);
-      if (data.native) {
-        setTerminalState({ agentId: data.agentId, containerId: c.id, containerName: c.name });
-      } else {
-        // Im Mixed-Modus kann das Backend auf Dockhand ausweichen, wenn der Agent
-        // nicht antwortet — das soll nicht unbemerkt passieren.
-        if (data.fallback) {
-          alert('Der Agent antwortet nicht — die Konsole wird über Dockhand Pro geöffnet.');
-        }
-        window.open(data.url, '_blank');
-      }
-    } catch (err) {
-      alert(err.response?.data?.error || 'Fehler beim Öffnen der Konsole');
-    }
+  // Die Konsole läuft ausschließlich nativ über den Panel-Agent — im Panel selbst,
+  // ohne Umweg über Dockhand und ohne neuen Browser-Tab. Für den lokalen Panel-Server
+  // gibt es deshalb keine Konsole; dort steht kein Agent zur Verfügung.
+  const openTerminal = (c) => {
+    if (!selectedServer) return;
+    setTerminalState({ agentId: selectedServer, containerId: c.id, containerName: c.name });
   };
 
   // ── Aktionen (Start/Stop/Restart) ─────────────────────────────────────────
@@ -236,12 +225,14 @@ export default function Docker() {
         </Button>
       </div>
 
-      {/* Der lokale Panel-Server wird immer über Dockhand bedient — auch im Nativ-Modus. */}
+      {/* Der lokale Panel-Server wird immer über Dockhand bedient — auch im Nativ-Modus.
+          Eine Konsole gibt es dort nicht, weil sie zwingend einen Panel-Agent braucht. */}
       {!selectedServer && (
         <p className="text-[11px] text-panel-muted flex items-center gap-1.5">
           <Info size={11} className="flex-shrink-0" />
           Container des lokalen Panel-Servers laufen über Dockhand Pro — die Einstellung
-          „Docker Verwaltung" gilt nur für Remote-Server.
+          „Docker Verwaltung" gilt nur für Remote-Server. Die Konsole ist hier nicht
+          verfügbar: Sie läuft ausschließlich nativ über einen Panel-Agent.
         </p>
       )}
 
@@ -401,12 +392,16 @@ export default function Docker() {
                         )}
                       </>
                     )}
-                    {/* Terminal-Button — nur mit docker.control (canWrite) */}
+                    {/* Terminal-Button — nur mit docker.control (canWrite) und nur für
+                        Remote-Server: Die Konsole läuft ausschließlich über den Panel-Agent. */}
                     {canWrite && isRun && (
                       <button
                         onClick={() => openTerminal(c)}
-                        title="Terminal öffnen (Dockhand)"
-                        className="p-1.5 rounded transition-colors text-panel-muted hover:text-panel-text hover:bg-panel-card"
+                        disabled={!selectedServer}
+                        title={selectedServer
+                          ? 'Konsole öffnen (nativ über den Panel-Agent)'
+                          : 'Konsole nur für Server mit Panel-Agent verfügbar'}
+                        className="p-1.5 rounded transition-colors text-panel-muted hover:text-panel-text hover:bg-panel-card disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-panel-muted disabled:cursor-not-allowed"
                       >
                         <Terminal size={13} />
                       </button>

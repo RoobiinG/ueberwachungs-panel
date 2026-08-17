@@ -1747,6 +1747,11 @@ export default function Settings() {
                   <option value="mixed">Nativ & Dockhand Pro (Mixed)</option>
                   <option value="dockhand">Dockhand Pro (Legacy)</option>
                 </select>
+                <p className="text-[11px] text-panel-muted mt-1">
+                  Gilt für Container-Daten und -Aktionen. Die Container-Konsole läuft
+                  davon unabhängig <strong>immer nativ über den Panel-Agent</strong> —
+                  auch im Dockhand-Modus.
+                </p>
               </div>
 
               <div>
