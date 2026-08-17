@@ -158,4 +158,5 @@ module.exports = {
   checkUpdates,
   startPeriodicCheck,
   getCache: () => cache,
+  compareSemver,   // auch vom automatischen Agent-Update genutzt
 };

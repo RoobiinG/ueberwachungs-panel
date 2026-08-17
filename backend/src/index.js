@@ -229,6 +229,8 @@ require('./alertEvaluator').start();
 // dockerMetricsRecorder entfernt — Docker-Stats kommen jetzt von Dockhand API
 try { require('./remoteMetricsRecorder').start(); } catch (e) { console.warn('Remote-Metriken deaktiviert:', e.message); }
 try { require('./utils/updateCheck').startPeriodicCheck(); } catch (e) { console.warn('UpdateCheck deaktiviert:', e.message); }
+// Nach jedem Start prüfen, ob die Agenten älter sind als das Script in diesem Image.
+try { require('./utils/agentAutoUpdate').start(); } catch (e) { console.warn('Automatisches Agent-Update deaktiviert:', e.message); }
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => console.log(`Überwachungs-Panel running on port ${PORT}`));

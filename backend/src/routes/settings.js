@@ -157,15 +157,23 @@ router.post('/smtp/test', requirePermission('settings.manage'), async (req, res)
 router.get('/general', (req, res) => {
   const raw = parseInt(get('liveRefreshInterval') || '15', 10);
   const secs = Math.max(5, Math.min(300, isNaN(raw) ? 15 : raw));
-  res.json({ liveRefreshInterval: secs * 1000 });
+  res.json({
+    liveRefreshInterval: secs * 1000,
+    // Standard ist eingeschaltet — abgeschaltet ist es nur bei ausdrücklichem 'off'.
+    agentAutoUpdate: get('agentAutoUpdate') !== 'off',
+  });
 });
 
 router.put('/general', requirePermission('settings.manage'), (req, res) => {
-  const { liveRefreshInterval } = req.body;
+  const { liveRefreshInterval, agentAutoUpdate } = req.body;
   if (liveRefreshInterval !== undefined) {
     const secs = Math.max(5, Math.min(300, parseInt(liveRefreshInterval, 10) || 15));
     set('liveRefreshInterval', String(secs));
     auditLog(req, 'settings.general_save', 'settings', 'liveRefreshInterval', { value: secs });
+  }
+  if (agentAutoUpdate !== undefined) {
+    set('agentAutoUpdate', agentAutoUpdate ? 'on' : 'off');
+    auditLog(req, 'settings.general_save', 'settings', 'agentAutoUpdate', { value: !!agentAutoUpdate });
   }
   res.json({ success: true });
 });

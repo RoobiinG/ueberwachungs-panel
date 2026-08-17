@@ -9,7 +9,7 @@ import {
   User, Settings2, Layers, Timer, Bell, Monitor, Smartphone,
   Globe, LogOut, Laptop, PackageCheck,
   Download, Upload, Database, QrCode, Copy, Check, ShieldAlert,
-  FileText, ExternalLink
+  FileText, ExternalLink, ArrowUpCircle
 } from 'lucide-react';
 import { invalidateLiveIntervalCache } from '../hooks/useLiveInterval';
 
@@ -844,6 +844,9 @@ export default function Settings() {
   // Live-Refresh-Interval
   const [liveInterval,    setLiveInterval]    = useState(15);
 
+  // Automatisches Agent-Update beim Panel-Start
+  const [agentAutoUpdate, setAgentAutoUpdate] = useState(true);
+
   // Dockhand
   const [dockhandUrl,      setDockhandUrl]      = useState('');
   const [dockhandToken,    setDockhandToken]    = useState('');
@@ -874,6 +877,7 @@ export default function Settings() {
       try {
         const { data: g } = await axios.get('/api/settings/general');
         setLiveInterval(Math.round((g.liveRefreshInterval || 15000) / 1000));
+        setAgentAutoUpdate(g.agentAutoUpdate !== false);
       } catch {}
       if (data.mchost_username) setMcUsername(data.mchost_username);
       if (data.smtp_host)  setSmtp(s => ({ ...s, host:   data.smtp_host  || '' }));
@@ -1187,6 +1191,21 @@ export default function Settings() {
       feedback('dockhand', 'err', err.response?.data?.error || 'Fehler');
     }
     busy('dockhand_save', false);
+  };
+
+  const toggleAgentAutoUpdate = async (next) => {
+    setAgentAutoUpdate(next);   // sofort umschalten, das Speichern läuft nebenher
+    busy('agentAutoUpdate', true);
+    try {
+      await axios.put('/api/settings/general', { agentAutoUpdate: next });
+      feedback('agentAutoUpdate', 'ok', next
+        ? 'Agenten werden beim Panel-Start automatisch aktualisiert'
+        : 'Automatisches Agent-Update abgeschaltet');
+    } catch (err) {
+      setAgentAutoUpdate(!next);   // zurückdrehen, wenn das Speichern scheiterte
+      feedback('agentAutoUpdate', 'err', err.response?.data?.error || 'Fehler beim Speichern');
+    }
+    busy('agentAutoUpdate', false);
   };
 
   const saveLiveInterval = async () => {
@@ -1617,6 +1636,36 @@ export default function Settings() {
                     Speichern
                   </Button>
                   <Msg msg={msgs.liveInterval} />
+                </div>
+              </Card>
+
+              {/* ── Automatisches Agent-Update ── */}
+              <Card title={<span className="flex items-center gap-2"><ArrowUpCircle size={14} />Agent-Updates</span>}>
+                <div className="space-y-3">
+                  <p className="text-xs text-panel-muted leading-relaxed">
+                    Jedes Panel-Update bringt das passende Agent-Script mit. Ist der Schalter an,
+                    verteilt das Panel es nach jedem Start automatisch an alle Server, auf denen eine
+                    ältere Fassung läuft — signiert und über dieselbe gesicherte Verbindung wie der
+                    Knopf „Agent aktualisieren".
+                  </p>
+                  <label className="flex items-start gap-3 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={agentAutoUpdate}
+                      onChange={e => toggleAgentAutoUpdate(e.target.checked)}
+                      disabled={loading.agentAutoUpdate}
+                      className="accent-panel-accent w-4 h-4 mt-0.5"
+                    />
+                    <span className="text-sm text-panel-text group-hover:text-white transition-colors">
+                      Agenten beim Panel-Start automatisch aktualisieren
+                      <span className="block text-[11px] text-panel-muted mt-0.5">
+                        Nicht erreichbare Server werden übersprungen und beim nächsten Start erneut versucht.
+                        Antwortet ein Server nach seinem Update nicht mehr, stoppt der Vorgang — die
+                        übrigen bleiben dann auf ihrem bisherigen Stand.
+                      </span>
+                    </span>
+                  </label>
+                  <Msg msg={msgs.agentAutoUpdate} />
                 </div>
               </Card>
             </>

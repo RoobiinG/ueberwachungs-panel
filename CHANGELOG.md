@@ -16,6 +16,42 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.5.0.0] - 2026-08-17 (Build 307) — *Agenten aktualisieren sich selbst*
+
+### ✨ Features
+- **Agenten werden beim Panel-Start automatisch aktualisiert.** Jedes Panel-Image bringt das
+  passende Agent-Script mit — bisher musste es auf jedem Server einzeln von Hand ausgerollt werden,
+  und in der Praxis blieben Agenten dadurch monatelang zurück. Nach jedem Start des Containers
+  prüft das Panel nun einmal alle Server und verteilt die neue Fassung an alle, auf denen eine
+  ältere läuft.
+  - Es wird **derselbe Weg** genutzt wie beim Knopf „Agent aktualisieren": das Script wird mit dem
+    Token des jeweiligen Agenten signiert und über die per Fingerprint gepinnte Verbindung
+    übertragen. Es entsteht kein neuer Weg nach außen und kein Zugriff auf GitHub.
+  - **Nicht erreichbare Server werden übersprungen** — abgeschaltet, im Neustart oder ohne Netz ist
+    der Normalfall und erzeugt keinen Fehlereintrag. Beim nächsten Panel-Start wird es erneut
+    versucht.
+  - **Sicherung gegen den schlechten Tag:** Antwortet ein Server nach seinem eigenen Update nicht
+    mehr, bricht der Vorgang sofort ab. Die übrigen Server bleiben dann auf ihrem bisherigen Stand,
+    statt dass sich ein fehlerhaftes Script der Reihe nach über die ganze Infrastruktur zieht.
+  - Jeder Durchlauf steht im **Panel-Log**, jedes einzelne Update zusätzlich als
+    `agent.update.auto` im **Audit-Log**.
+  - Abschaltbar unter **Einstellungen → Allgemein & Design → Agent-Updates**. Standard ist
+    eingeschaltet.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank**: Keine Migration. Neue Einstellung `agentAutoUpdate` in der bestehenden
+  `settings`-Tabelle; fehlt sie, gilt „eingeschaltet".
+- **Beim ersten Start nach diesem Update** werden alle erreichbaren Agenten auf **v2.6.0** gehoben.
+  Damit erledigt sich der Schritt, der im vorigen Release (v5.4.3.0) noch für jeden Server von Hand
+  nötig war — die dortigen Firewall-Korrekturen am Agenten greifen dann von allein.
+- **Zeitpunkt**: 45 Sekunden nach dem Start, damit Panel und Server erst hochkommen. Die Agenten
+  starten beim Update jeweils kurz neu (~2 Sekunden); laufende Terminal-Sitzungen zu diesem Server
+  brechen dabei ab und müssen neu geöffnet werden.
+- **Rechte**: Der Vorgang läuft ohne angemeldeten Benutzer und erscheint im Audit-Log als „System".
+  An den Rechten für das manuelle Update (`agents.update`) ändert sich nichts.
+- **Rückfall**: Wer das nicht möchte, schaltet es in den Einstellungen ab; der manuelle Knopf pro
+  Server bleibt unverändert bestehen.
+
 ## [5.4.3.0] - 2026-08-17 (Build 306) — *Firewall wieder funktionsfähig*
 
 ### 🐛 Bugfixes
