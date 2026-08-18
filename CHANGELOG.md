@@ -16,6 +16,13 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.5.0.2] - 2026-08-18 (Build 309) — *Hetzner ohne Token meldet sauber*
+
+### 🐛 Bugfixes
+- **Ein fehlender Hetzner-API-Token wurde als Serverstörung gemeldet** (HTTP 500) statt als offene
+  Einstellung (400). Im Frontend sah eine schlicht nicht eingerichtete Anbindung damit genauso aus
+  wie ein echter Ausfall. Aufgefallen beim Durchtesten aller Routen auf dem Testserver.
+
 ## [5.5.0.1] - 2026-08-18 (Build 308) — *Am echten Server nachgemessen*
 
 Alle Punkte hier stammen aus einem Testlauf auf einem echten Server mit nftables und

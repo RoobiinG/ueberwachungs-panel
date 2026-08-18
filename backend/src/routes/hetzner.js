@@ -28,7 +28,10 @@ const handle = async (res, fn) => {
   try { res.json((await fn()).data); }
   catch (err) {
     const msg = err.response?.data?.error?.message || err.message;
-    res.status(err.response?.status || 500).json({ error: msg });
+    // Ein fehlender Token ist keine Serverstörung, sondern eine offene Einstellung.
+    // Als 500 sah im Frontend beides gleich aus.
+    const status = err.response?.status || (/nicht konfiguriert/i.test(msg) ? 400 : 500);
+    res.status(status).json({ error: msg });
   }
 };
 

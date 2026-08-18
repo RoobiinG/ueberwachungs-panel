@@ -1,6 +1,6 @@
 {
-  "version": "5.5.0.1",
-  "build": 308,
+  "version": "5.5.0.2",
+  "build": 309,
   "date": "2026-08-18",
-  "codename": "Am echten Server nachgemessen"
+  "codename": "Hetzner ohne Token meldet sauber"
 }
