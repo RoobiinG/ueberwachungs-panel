@@ -16,6 +16,31 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.5.0.3] - 2026-08-18 (Build 310) — *Konsole endlich erreichbar*
+
+### 🐛 Bugfixes
+- **Die native Container-Konsole hat seit ihrer Einführung nie funktioniert.** Jeder Verbindungs-
+  versuch endete mit `400 Bad Request`, auch mit gültigem Einmal-Ticket.
+  Ursache: Der WebSocket für die Live-Daten wurde mit `{ server, path: '/ws' }` erzeugt. Mit
+  gesetztem `path` hängt sich die ws-Bibliothek selbst an das `upgrade`-Ereignis und beantwortet
+  **jeden** abweichenden Pfad sofort mit 400 — also auch den Terminal-WebSocket, dessen eigener
+  Handler erst danach registriert wird und dann auf einen bereits geschlossenen Socket trifft.
+  Der Live-Daten-Server läuft jetzt mit `noServer` und verteilt die Upgrades selbst: `/ws` an
+  sich, den Terminal-Pfad an dessen Proxy, alles andere wie bisher mit 400 abgewiesen.
+  - **Warum das so lange unbemerkt blieb:** Die Konsole kam in v5.3.1.0 (Build 300) dazu, der
+    Pfad-Konflikt besteht seit dem allerersten Commit. Bis v5.4.1.0 öffnete das Panel bei einem
+    Fehlschlag ersatzweise das Dockhand-Terminal in einem neuen Tab — der kaputte native Weg fiel
+    dadurch nicht auf. Erst seit die Konsole ausschließlich nativ läuft, tritt der Fehler offen
+    zutage.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank & Agent**: Keine Änderung, der Agent bleibt bei 2.6.1. Die Ursache lag allein im
+  Panel.
+- **Live-Daten**: Der `/ws`-Kanal für Dashboard und Live-Statistiken verhält sich unverändert;
+  nur die Zuständigkeit für das `upgrade`-Ereignis ist jetzt ausdrücklich geregelt.
+- **Nach dem Update** ist die Konsole auf Servern mit Panel-Agent sofort nutzbar — ohne
+  Agent-Update, da der Agent seinen Teil immer korrekt bereitgestellt hat.
+
 ## [5.5.0.2] - 2026-08-18 (Build 309) — *Hetzner ohne Token meldet sauber*
 
 ### 🐛 Bugfixes

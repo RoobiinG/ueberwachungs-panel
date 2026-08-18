@@ -35,8 +35,35 @@ const startMonitoring = () => {
   });
 };
 
+// Pfad des Terminal-Proxys aus index.js. Er hängt am selben `upgrade`-Ereignis und muss
+// hier durchgelassen werden.
+const TERMINAL_PFAD = /^\/api\/agents\/\d+\/docker\/containers\/.+\/terminal$/;
+
 const setup = (server) => {
-  wss = new WebSocket.Server({ server, path: '/ws' });
+  // Bewusst `noServer` statt `{ server, path: '/ws' }`: Mit gesetztem `path` hängt sich die
+  // ws-Bibliothek selbst an das `upgrade`-Ereignis und beantwortet **jeden** abweichenden
+  // Pfad sofort mit 400 — auch den Terminal-WebSocket, dessen Handler erst danach
+  // registriert wird und dann auf einen bereits zerstörten Socket trifft. Die native
+  // Container-Konsole war dadurch seit ihrer Einführung in v5.3.1.0 nicht benutzbar;
+  // aufgefallen ist es nicht, weil bis v5.4.1.0 ersatzweise das Dockhand-Terminal aufging.
+  wss = new WebSocket.Server({ noServer: true });
+
+  server.on('upgrade', (req, socket, head) => {
+    const pfad = String(req.url || '').split('?')[0];
+
+    if (pfad === '/ws') {
+      wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+      return;
+    }
+    // Den Terminal-Pfad übernimmt der Proxy in index.js — hier nicht anfassen.
+    if (TERMINAL_PFAD.test(pfad)) return;
+
+    // Alles Übrige wie bisher abweisen.
+    if (!socket.destroyed) {
+      socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
+      socket.destroy();
+    }
+  });
   wss.on('connection', (ws) => {
     ws.authenticated = false;
     ws.userId        = null;
