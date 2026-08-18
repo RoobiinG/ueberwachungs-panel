@@ -1,6 +1,6 @@
 {
-  "version": "5.6.0.0",
-  "build": 313,
+  "version": "5.6.0.1",
+  "build": 314,
   "date": "2026-08-18",
-  "codename": "Konsole rüstet sich selbst nach"
+  "codename": "Verschwundene Container fluten das Log nicht mehr"
 }

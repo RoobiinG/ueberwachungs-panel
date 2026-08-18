@@ -536,8 +536,15 @@ router.get('/:id/docker/containers/:containerId/stats', requirePermission('docke
       const { data } = await agentApi(agent).get(`/docker/containers/${req.params.containerId}/stats`);
       return res.json(data);
     } catch (err) {
-      // 404 heißt "Container läuft nicht" — eine gültige Antwort, kein Agent-Ausfall.
-      if (err.response?.status === 404) return res.json({ cpu_percent: 0, memory_usage: 0, not_running: true });
+      // "Container läuft nicht / gibt es nicht mehr" ist eine gültige Antwort, kein
+      // Agent-Ausfall. Der Agent liefert das aber nicht immer als HTTP 404, sondern auch
+      // als Meldung — dann entstand hier ein 502, das die pollende Docker-Seite im
+      // Sekundentakt als Fehler ins Panel-Log schrieb, sobald ein Container neu erstellt
+      // wurde und seine alte ID noch abgefragt wurde.
+      const meldung = err.response?.data?.error || err.message || '';
+      if (err.response?.status === 404 || /nicht gefunden|no such container|404/i.test(meldung)) {
+        return res.json({ cpu_percent: 0, memory_usage: 0, not_running: true });
+      }
       if (!allowFallback(req, agent, req.originalUrl, err)) {
         return res.status(502).json({ error: err.response?.data?.error || err.message });
       }

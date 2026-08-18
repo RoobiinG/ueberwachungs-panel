@@ -16,6 +16,21 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.6.0.1] - 2026-08-18 (Build 314) — *Verschwundene Container fluten das Log nicht mehr*
+
+### 🐛 Bugfixes
+- **Ein neu erstellter Container füllte das Panel-Log mit Fehlern.** Die Docker-Seite fragt für
+  jeden laufenden Container im Sekundentakt Statistiken ab. Wird ein Container ersetzt — etwa
+  durch `docker compose up -d` —, ändert sich seine ID, und die noch offene Ansicht fragt die
+  alte weiter ab. Das war als „läuft nicht" vorgesehen und wurde auch abgefangen, aber nur bei
+  einer Antwort mit HTTP 404. Der Agent meldet den Fall jedoch teilweise als Text
+  („Ressource nicht gefunden"), woraus ein **502** wurde — samt Eintrag im Panel-Log, im Takt
+  des Pollings. Jetzt zählt auch die Meldung, nicht nur der Statuscode.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- Rein Panel-seitig, keine Datenbank- oder Agent-Änderung. Betrifft nur, wie eine bereits
+  vorgesehene Antwort erkannt wird.
+
 ## [5.6.0.0] - 2026-08-18 (Build 313) — *Konsole rüstet sich selbst nach*
 
 ### ✨ Features
