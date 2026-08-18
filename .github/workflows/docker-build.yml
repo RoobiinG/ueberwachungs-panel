@@ -1,8 +1,13 @@
 name: Docker Image bauen & pushen
 
+# Zwei Ziele, zwei Tags:
+#   Branch `test`   → ghcr.io/…:test    — läuft auf dem Testserver
+#   Branch `master` → ghcr.io/…:latest  — läuft produktiv
+# Neue Funktionen und Fehlerbehebungen gehen immer zuerst nach `test`; erst wenn sie dort
+# geprüft sind, werden sie nach `master` übernommen.
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, test]
   workflow_dispatch:
 
 # Immer nur ein Image-Build gleichzeitig pro Branch. Zwei parallele Läufe schieben sonst
@@ -35,8 +40,11 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/roobiing/ueberwachungs-panel
+          # `latest` bekommt ausschließlich master — sonst würde ein Test-Build den
+          # produktiven Tag überschreiben und ungeprüfter Code liefe auf dem echten Server.
           tags: |
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main' }}
+            type=raw,value=test,enable=${{ github.ref == 'refs/heads/test' }}
             type=sha,prefix=,format=short
 
       - name: Docker Image bauen und pushen
