@@ -104,13 +104,21 @@ function logs(id, tail = 200) {
 // Zuerst wird eine Exec-Sitzung angelegt, dann der Strom übernommen. Mit `Tty:true`
 // ist der Strom *nicht* gemultiplext und lässt sich unverändert an den WebSocket
 // weiterreichen.
-const SHELLS = ['/bin/bash', '/bin/sh'];
+// Nacheinander mehrere Shells zu versuchen funktioniert hier *nicht*: Die Engine nimmt
+// den exec-Aufruf an, ohne zu prüfen, ob die Datei existiert — der Fehler ("OCI runtime
+// exec failed") erscheint erst im Datenstrom und damit lange nach jedem try/catch.
+// Deshalb entscheidet der erste Versuch selbst, welche Shell er startet.
+const SHELL_VERSUCHE = [
+  ['/bin/sh', '-c', 'exec /bin/bash 2>/dev/null || exec /bin/sh'],
+  ['/bin/ash'],
+  ['/bin/busybox', 'sh'],
+];
 
-async function execAnlegen(containerId, shell) {
+async function execAnlegen(containerId, cmd) {
   const { Id } = await api('POST', `/containers/${encodeURIComponent(containerId)}/exec`, {
     AttachStdin: true, AttachStdout: true, AttachStderr: true,
     Tty: true,
-    Cmd: [shell],
+    Cmd: cmd,
     Env: ['TERM=xterm-256color'],
   });
   return Id;
@@ -146,11 +154,11 @@ function stromUebernehmen(execId) {
 // letztere wird für die Größenänderung gebraucht.
 async function konsoleOeffnen(containerId) {
   let letzterFehler;
-  for (const shell of SHELLS) {
+  for (const cmd of SHELL_VERSUCHE) {
     try {
-      const execId = await execAnlegen(containerId, shell);
+      const execId = await execAnlegen(containerId, cmd);
       const strom  = await stromUebernehmen(execId);
-      return { strom, execId, shell };
+      return { strom, execId, shell: cmd[0] };
     } catch (err) { letzterFehler = err; }
   }
   throw letzterFehler || new Error('Keine Shell im Container gefunden');

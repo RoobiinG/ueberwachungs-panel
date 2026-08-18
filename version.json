@@ -1,6 +1,6 @@
 {
-  "version": "5.7.0.0",
-  "build": 315,
+  "version": "5.7.0.1",
+  "build": 316,
   "date": "2026-08-19",
-  "codename": "Konsole überall, Namen im Klartext"
+  "codename": "Konsole findet die richtige Shell"
 }
