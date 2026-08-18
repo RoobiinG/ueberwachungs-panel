@@ -17,7 +17,12 @@ const execAsync = promisify(exec);
 // sondern ein Argument-Array. Sonderzeichen in Volume-/Netzwerk-/Image-Namen können
 // so nicht als Shell-Syntax gedeutet werden.
 const execFileAsync = promisify(execFile);
-const VERSION = '2.6.1';
+const VERSION = '2.6.2';
+
+// Ob die Container-Konsole angeboten werden kann. Steht erst nach dem Laden von
+// ws/node-pty am Ende dieser Datei fest und wird über /ping und /version gemeldet,
+// damit das Panel den Grund nennen kann, statt nur einen Verbindungsfehler zu zeigen.
+let TERMINAL_BEREIT = false;
 const REPO_RAW = 'https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master/agent/panel-agent.js';
 const PORT  = parseInt(process.env.PANEL_AGENT_PORT || '7331');
 const TOKEN = process.env.PANEL_AGENT_TOKEN || '';
@@ -663,10 +668,10 @@ async function handler(req, res) {
   try {
     // ── System ────────────────────────────────────────────────────────────────
     if (url === '/ping' && req.method === 'GET') {
-      respond(res, 200, { ok: true, hostname: os.hostname(), tls: req.socket.encrypted || false, version: VERSION });
+      respond(res, 200, { ok: true, hostname: os.hostname(), tls: req.socket.encrypted || false, version: VERSION, terminal: TERMINAL_BEREIT });
 
     } else if (url === '/version' && req.method === 'GET') {
-      respond(res, 200, { version: VERSION, nodeVersion: process.version });
+      respond(res, 200, { version: VERSION, nodeVersion: process.version, terminal: TERMINAL_BEREIT });
 
     } else if (url === '/config' && req.method === 'POST') {
       const body = await new Promise((resolve) => {
@@ -934,7 +939,8 @@ server.listen(PORT, '0.0.0.0', () => {
 try {
   const WebSocketServer = require('ws').Server;
   const pty = require('node-pty');
-  
+  TERMINAL_BEREIT = true;
+
   const wss = new WebSocketServer({ server });
   
   wss.on('connection', (ws, req) => {
@@ -999,5 +1005,9 @@ try {
     });
   });
 } catch (e) {
-  console.log('Terminal WebSocket-Support deaktiviert (ws oder node-pty fehlt).');
+  // Ohne diese beiden Module gibt es keine Container-Konsole. Die Meldung nennt jetzt
+  // ausdrücklich den Weg zurück — sie stand hier jahrelang und wurde übersehen, während
+  // im Panel nur ein nichtssagender Verbindungsfehler ankam.
+  console.error('WARNUNG: Container-Konsole nicht verfügbar — ' + e.message);
+  console.error('         Nachrüsten mit:  cd /opt/panel-agent && npm install --save ws node-pty && systemctl restart panel-agent');
 }

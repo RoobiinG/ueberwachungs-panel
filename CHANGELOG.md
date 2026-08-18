@@ -16,6 +16,35 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.5.1.0] - 2026-08-18 (Build 311) — *Konsole meldet sich, wenn sie fehlt*
+
+Nachtrag zum vorigen Release: Nachdem der Pfad-Konflikt behoben war, zeigte der Testlauf eine
+zweite, davon unabhängige Ursache — auf dem Server selbst.
+
+### 🔧 Änderungen
+- **Der Agent sagt jetzt, ob er eine Konsole anbieten kann.** `/ping` und `/version` melden
+  zusätzlich `terminal: true/false`. Fehlen dem Agenten die Module `ws` und `node-pty`, steht im
+  Menü „Konsole nicht verfügbar" — samt Befehl zum Nachrüsten im Tooltip, statt eines
+  Verbindungsfehlers erst nach dem Öffnen des Terminal-Fensters.
+- **Der Installer verschluckt einen Fehlschlag nicht mehr.** `npm install ws node-pty` endete
+  bisher notfalls in einem `|| echo WARNUNG`, das in der Ausgabeflut der Installation unterging.
+  Jetzt wird das Ergebnis ausdrücklich geprüft und bei Bedarf in einem umrahmten Kasten gemeldet,
+  mit den drei Befehlen zum Nachrüsten.
+- **Die Meldung des Agenten beim Start** ist von `console.log` auf `console.error` gehoben und
+  nennt den Weg zurück — sie stand bisher unauffällig im Journal, während im Panel nur ein
+  nichtssagender Fehler ankam.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Agent auf 2.6.2.** Die Anzeige „Konsole nicht verfügbar" erscheint erst, wenn der jeweilige
+  Agent diese Fassung hat; ältere melden nichts, dort verhält sich das Panel wie bisher und
+  versucht es einfach. Das automatische Agent-Update bringt die neue Fassung beim nächsten
+  Panel-Start von selbst auf alle Server.
+- **Bestehende Installationen**: Wo `ws`/`node-pty` fehlen, funktioniert weiterhin alles außer der
+  Konsole. Nachrüsten ohne Neuinstallation:
+  `cd /opt/panel-agent && npm install --save ws node-pty && systemctl restart panel-agent`.
+- **Zusätzlicher Aufruf**: Die Docker-Seite fragt beim Serverwechsel einmal `/ping` ab, um den
+  Zustand zu kennen.
+
 ## [5.5.0.3] - 2026-08-18 (Build 310) — *Konsole endlich erreichbar*
 
 ### 🐛 Bugfixes

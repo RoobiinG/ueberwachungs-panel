@@ -47,7 +47,28 @@ elif command -v dnf &>/dev/null; then
 elif command -v yum &>/dev/null; then
   yum groupinstall -y "Development Tools" || yum install -y gcc-c++ make python3 || true
 fi
-npm install --save ws node-pty || echo "WARNUNG: node-pty Installation fehlgeschlagen (Terminal evtl. eingeschränkt)"
+npm install --save ws node-pty || true
+
+# Ergebnis ausdrücklich prüfen. Vorher verschluckte ein "|| echo WARNUNG" den Fehlschlag in
+# der Ausgabeflut der Installation — der Agent lief dann ohne Konsole, und im Panel kam nur
+# ein nichtssagender Verbindungsfehler an.
+if [ -d node_modules/node-pty ] && [ -d node_modules/ws ]; then
+  echo "Terminal-Unterstützung installiert (ws + node-pty)"
+else
+  echo ""
+  echo "########################################################################"
+  echo "# ACHTUNG: Die Container-Konsole steht auf diesem Server NICHT bereit. #"
+  echo "########################################################################"
+  echo "# ws oder node-pty konnten nicht installiert werden. Alles andere      #"
+  echo "# funktioniert; nur das Terminal-Fenster im Panel bleibt leer.         #"
+  echo "#                                                                      #"
+  echo "# Nachrüsten:                                                          #"
+  echo "#   apt install -y build-essential python3 make g++                    #"
+  echo "#   cd ${INSTALL_DIR} && npm install --save ws node-pty                #"
+  echo "#   systemctl restart panel-agent                                      #"
+  echo "########################################################################"
+  echo ""
+fi
 
 
 # Agent-Script vom Panel laden (oder GitHub als Fallback)

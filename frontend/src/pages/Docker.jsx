@@ -102,6 +102,18 @@ export default function Docker() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedServer, hideLocal]);
 
+  // Kann dieser Agent überhaupt eine Konsole anbieten? Fehlen ihm `ws`/`node-pty`, soll der
+  // Menüeintrag den Grund nennen, statt in einen Verbindungsfehler zu laufen.
+  // `undefined` = Agent älter als 2.6.2 und meldet es nicht → wie bisher einfach versuchen.
+  const [terminalBereit, setTerminalBereit] = useState(undefined);
+  useEffect(() => {
+    setTerminalBereit(undefined);
+    if (!selectedServer) return;
+    axios.get(`/api/agents/${selectedServer}/ping`)
+      .then(r => setTerminalBereit(r.data?.terminal))
+      .catch(() => {});
+  }, [selectedServer]);
+
   // ── Live-Stats Polling (alle 8 s für laufende Container) ──────────────────
 
   const pollStats = useCallback(async (clist) => {
@@ -403,12 +415,14 @@ export default function Docker() {
                         // beim lokalen Panel-Server gibt es deshalb keine.
                         canWrite && isRun && {
                           icon: Terminal,
-                          label: 'Konsole öffnen',
+                          label: terminalBereit === false ? 'Konsole nicht verfügbar' : 'Konsole öffnen',
                           onClick: () => openTerminal(c),
-                          disabled: !selectedServer,
-                          title: selectedServer
-                            ? 'Terminal im Panel, nativ über den Panel-Agent'
-                            : 'Nur für Server mit Panel-Agent verfügbar',
+                          disabled: !selectedServer || terminalBereit === false,
+                          title: !selectedServer
+                            ? 'Nur für Server mit Panel-Agent verfügbar'
+                            : terminalBereit === false
+                              ? 'Auf diesem Server fehlen dem Agenten die Module ws und node-pty. Nachrüsten: cd /opt/panel-agent && npm install --save ws node-pty && systemctl restart panel-agent'
+                              : 'Terminal im Panel, nativ über den Panel-Agent',
                         },
                         canLabel && {
                           icon: Tag,

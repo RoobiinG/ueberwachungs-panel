@@ -197,7 +197,10 @@ router.get('/:id/ping', requirePermission('agents.view'), async (req, res) => {
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   try {
     const { data } = await agentApi(agent).get('/ping');
-    res.json({ online: true, hostname: data.hostname, tls: data.tls });
+    // `terminal` sagt, ob die Container-Konsole bereitsteht (ws + node-pty vorhanden).
+    // Ältere Agenten melden es nicht — dann bleibt es undefined und das Panel versucht
+    // es wie bisher einfach.
+    res.json({ online: true, hostname: data.hostname, tls: data.tls, terminal: data.terminal });
   } catch (err) {
     const isMitm = err.message?.includes('Fingerprint');
     res.json({ online: false, mitm: isMitm, error: err.message });
