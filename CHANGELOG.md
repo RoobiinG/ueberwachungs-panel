@@ -16,6 +16,39 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.6.0.0] - 2026-08-18 (Build 313) — *Konsole rüstet sich selbst nach*
+
+### ✨ Features
+- **Fehlende Terminal-Module werden automatisch nachinstalliert.** Bisher brachte das
+  automatische Agent-Update nur die Datei `panel-agent.js` auf die Server — fehlten dort `ws`
+  und `node-pty`, blieb die Container-Konsole trotz aktuellem Agenten stumm und musste von Hand
+  nachgerüstet werden. Das Panel erledigt das jetzt beim selben Durchlauf mit.
+  - Beim Start prüft das Panel für **jeden** Server, ob die Konsole bereitsteht — auch bei
+    Agenten, die schon aktuell sind, denn die Module hängen am Server, nicht an der Version.
+  - Fehlen sie, stößt es die Installation an: erst die Build-Werkzeuge (`build-essential`,
+    `python3`, `make`, `g++` bzw. die Entsprechungen unter dnf/yum), dann `ws` und `node-pty`.
+    `node-pty` ist eine native Erweiterung und muss auf dem Server übersetzt werden.
+  - Danach startet der Agent von selbst neu, damit die Konsole bereitsteht. Das Panel begleitet
+    den Vorgang bis zu acht Minuten und schreibt das Ergebnis ins **Panel-Log** sowie als
+    `agent.terminal.setup` ins **Audit-Log** — auch im Fehlerfall, dann mit Grund und den
+    Befehlen für den Weg von Hand.
+  - Solange es läuft, steht im Menü **„Konsole wird eingerichtet…"**.
+  - **Sämtliche Paket- und Programmnamen stehen fest im Agent-Code.** Aus einer Anfrage gelangt
+    nichts in diese Befehle; der auslösende Endpunkt nimmt keine Parameter entgegen.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Agent auf 2.7.0** mit dem neuen Endpunkt `POST /terminal/setup`. Er tut nichts, wenn die
+  Module bereits vorhanden sind, und startet die Installation sonst im Hintergrund — der Aufruf
+  kehrt sofort zurück, weil das Übersetzen Minuten dauern kann.
+- **Eingriff ins System**: Auf Servern ohne Compiler installiert der Agent Build-Werkzeuge über
+  den Paketmanager nach (bei Debian/Ubuntu mehrere hundert MB). Wer das nicht möchte, schaltet
+  das automatische Agent-Update unter **Einstellungen → Allgemein & Design → Agent-Updates** ab;
+  dann unterbleibt auch das Nachrüsten.
+- **Dauer**: Sind die Werkzeuge schon da, ist es in etwa zehn Sekunden erledigt. Andernfalls
+  dauert der erste Durchlauf je nach Server einige Minuten. Er läuft im Hintergrund; das Panel
+  ist währenddessen normal bedienbar.
+- **Wiederholung**: Schlägt es fehl, wird es beim nächsten Panel-Start erneut versucht.
+
 ## [5.5.1.1] - 2026-08-18 (Build 312) — *Konsole zeigt endlich etwas an*
 
 ### 🐛 Bugfixes

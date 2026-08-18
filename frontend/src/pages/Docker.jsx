@@ -104,15 +104,18 @@ export default function Docker() {
 
   // Kann dieser Agent überhaupt eine Konsole anbieten? Fehlen ihm `ws`/`node-pty`, soll der
   // Menüeintrag den Grund nennen, statt in einen Verbindungsfehler zu laufen.
-  // `undefined` = Agent älter als 2.6.2 und meldet es nicht → wie bisher einfach versuchen.
-  const [terminalBereit, setTerminalBereit] = useState(undefined);
+  // `bereit === undefined` = Agent älter als 2.6.2 und meldet es nicht → wie bisher versuchen.
+  const [terminalInfo, setTerminalInfo] = useState({});
   useEffect(() => {
-    setTerminalBereit(undefined);
+    setTerminalInfo({});
     if (!selectedServer) return;
     axios.get(`/api/agents/${selectedServer}/ping`)
-      .then(r => setTerminalBereit(r.data?.terminal))
+      .then(r => setTerminalInfo({ bereit: r.data?.terminal, setup: r.data?.terminalSetup }))
       .catch(() => {});
   }, [selectedServer]);
+
+  const terminalFehlt   = terminalInfo.bereit === false;
+  const terminalRichtet = terminalFehlt && terminalInfo.setup === 'laeuft';
 
   // ── Live-Stats Polling (alle 8 s für laufende Container) ──────────────────
 
@@ -415,14 +418,18 @@ export default function Docker() {
                         // beim lokalen Panel-Server gibt es deshalb keine.
                         canWrite && isRun && {
                           icon: Terminal,
-                          label: terminalBereit === false ? 'Konsole nicht verfügbar' : 'Konsole öffnen',
+                          label: terminalRichtet ? 'Konsole wird eingerichtet…'
+                               : terminalFehlt    ? 'Konsole nicht verfügbar'
+                               : 'Konsole öffnen',
                           onClick: () => openTerminal(c),
-                          disabled: !selectedServer || terminalBereit === false,
+                          disabled: !selectedServer || terminalFehlt,
                           title: !selectedServer
                             ? 'Nur für Server mit Panel-Agent verfügbar'
-                            : terminalBereit === false
-                              ? 'Auf diesem Server fehlen dem Agenten die Module ws und node-pty. Nachrüsten: cd /opt/panel-agent && npm install --save ws node-pty && systemctl restart panel-agent'
-                              : 'Terminal im Panel, nativ über den Panel-Agent',
+                            : terminalRichtet
+                              ? 'Die Module ws und node-pty werden gerade auf diesem Server installiert. Das dauert einige Minuten; danach steht die Konsole bereit.'
+                              : terminalFehlt
+                                ? 'Auf diesem Server fehlen dem Agenten die Module ws und node-pty. Das Panel rüstet sie beim nächsten Start selbst nach — oder von Hand: cd /opt/panel-agent && npm install --save ws node-pty && systemctl restart panel-agent'
+                                : 'Terminal im Panel, nativ über den Panel-Agent',
                         },
                         canLabel && {
                           icon: Tag,

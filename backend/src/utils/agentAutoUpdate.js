@@ -78,6 +78,39 @@ async function updateAgent(agent, script, targetVersion) {
   return { updated: true, from: current, to: targetVersion, alive };
 }
 
+// Fehlen dem Agenten `ws`/`node-pty`, gibt es dort keine Container-Konsole. Das Ausrollen
+// des Scripts allein ändert daran nichts — die Module müssen auf dem Server selbst
+// installiert werden. Der Agent erledigt das auf Zuruf; hier wird es angestoßen und das
+// Ergebnis abgewartet, damit es nachvollziehbar im Panel-Log steht.
+async function terminalNachruestenFalls(agent) {
+  let ping;
+  try { ping = (await agentClient(agent, 8000).get('/ping')).data; }
+  catch { return null; }
+
+  if (ping?.terminal !== false) return null;          // bereits vorhanden oder Agent zu alt
+  if (ping.terminalSetup === 'laeuft') return null;   // läuft schon
+
+  try {
+    await agentClient(agent, 15000).post('/terminal/setup', {});
+  } catch (err) {
+    return { agent: agent.name, ok: false, grund: err.response?.data?.error || err.message };
+  }
+  panelLog('info', `Terminal-Module werden auf "${agent.name}" nachgerüstet (ws, node-pty) — das kann einige Minuten dauern.`);
+
+  // Höchstens 8 Minuten begleiten. Der Agent startet nach Erfolg selbst neu, deshalb sind
+  // zwischenzeitliche Verbindungsfehler normal und kein Abbruchgrund.
+  const ende = Date.now() + 8 * 60_000;
+  while (Date.now() < ende) {
+    await new Promise(r => setTimeout(r, 20_000));
+    try {
+      const p = (await agentClient(agent, 8000).get('/ping')).data;
+      if (p?.terminal === true) return { agent: agent.name, ok: true };
+      if (p?.terminalSetup === 'fehlgeschlagen') return { agent: agent.name, ok: false, grund: p.terminalMeldung };
+    } catch { /* Neustart des Agenten — weiter warten */ }
+  }
+  return { agent: agent.name, ok: false, grund: 'Zeitüberschreitung nach 8 Minuten' };
+}
+
 async function runOnce() {
   if (getSetting('agentAutoUpdate') === 'off') return;
 
@@ -92,10 +125,17 @@ async function runOnce() {
 
   const updated = [];
   const failed  = [];
+  const terminal = [];
 
   for (const agent of agents) {
     try {
       const r = await updateAgent(agent, content, version);
+
+      // Auch bei bereits aktuellen Agenten prüfen: Die Konsole kann unabhängig von der
+      // Version fehlen, weil sie an Modulen auf dem Server hängt.
+      const t = await terminalNachruestenFalls(agent);
+      if (t) terminal.push(t);
+
       if (r.skipped) continue;
 
       updated.push(`${agent.name} (${r.from || 'unbekannt'} → ${version})`);
@@ -122,6 +162,20 @@ async function runOnce() {
   }
   if (failed.length) {
     panelLog('warn', `Nicht erreichbar beim automatischen Agent-Update: ${failed.join(' · ')}`);
+  }
+
+  const fertig     = terminal.filter(t => t.ok).map(t => t.agent);
+  const gescheitert = terminal.filter(t => !t.ok);
+  if (fertig.length) {
+    panelLog('info', `Container-Konsole nachgerüstet auf: ${fertig.join(', ')}`);
+    console.log(`[Agent-AutoUpdate] Terminal-Module auf ${fertig.length} Server(n) nachgerüstet.`);
+    for (const name of fertig) auditLog(sysReq, 'agent.terminal.setup', 'agent', name, { ok: true });
+  }
+  for (const g of gescheitert) {
+    panelLog('warn',
+      `Container-Konsole konnte auf "${g.agent}" nicht eingerichtet werden: ${g.grund}. ` +
+      `Von Hand: cd /opt/panel-agent && npm install --save ws node-pty && systemctl restart panel-agent`);
+    auditLog(sysReq, 'agent.terminal.setup', 'agent', g.agent, { ok: false, grund: g.grund });
   }
 }
 

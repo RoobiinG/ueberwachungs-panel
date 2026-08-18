@@ -17,18 +17,85 @@ const execAsync = promisify(exec);
 // sondern ein Argument-Array. Sonderzeichen in Volume-/Netzwerk-/Image-Namen können
 // so nicht als Shell-Syntax gedeutet werden.
 const execFileAsync = promisify(execFile);
-const VERSION = '2.6.2';
+const VERSION = '2.7.0';
 
 // Ob die Container-Konsole angeboten werden kann. Steht erst nach dem Laden von
 // ws/node-pty am Ende dieser Datei fest und wird über /ping und /version gemeldet,
 // damit das Panel den Grund nennen kann, statt nur einen Verbindungsfehler zu zeigen.
 let TERMINAL_BEREIT = false;
+
+// Zustand des Nachrüstens: null (nichts läuft) | 'laeuft' | 'fertig' | 'fehlgeschlagen'
+let TERMINAL_SETUP = { zustand: null, meldung: null, seit: null };
 const REPO_RAW = 'https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master/agent/panel-agent.js';
 const PORT  = parseInt(process.env.PANEL_AGENT_PORT || '7331');
 const TOKEN = process.env.PANEL_AGENT_TOKEN || '';
 const DIR   = __dirname;
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// ─── Terminal-Module nachrüsten ───────────────────────────────────────────────
+// Ohne `ws` und `node-pty` gibt es keine Container-Konsole. `node-pty` ist eine native
+// Erweiterung und braucht zum Übersetzen einen Compiler. Beides wird hier bei Bedarf
+// nachgeholt. Sämtliche Paket- und Programmnamen stehen fest im Code — es gelangt
+// nichts aus einer Anfrage in einen dieser Befehle.
+const TERMINAL_MODULE = ['ws', 'node-pty'];
+
+const programmVorhanden = async (name) => {
+  try { await execFileAsync('sh', ['-c', 'command -v ' + name + ' >/dev/null 2>&1']); return true; }
+  catch { return false; }
+};
+
+async function terminalNachruesten() {
+  if (TERMINAL_SETUP.zustand === 'laeuft') return TERMINAL_SETUP;
+  TERMINAL_SETUP = { zustand: 'laeuft', meldung: 'Installation gestartet', seit: Date.now() };
+  console.log('Rüste Terminal-Module nach (ws, node-pty) …');
+
+  const schritte = [];
+  try {
+    // 1. Compiler-Werkzeuge — node-pty wird beim Installieren übersetzt.
+    const compilerDa = await programmVorhanden('cc')
+                    && await programmVorhanden('make')
+                    && await programmVorhanden('python3');
+    if (!compilerDa) {
+      schritte.push('Build-Werkzeuge fehlten');
+      if (await programmVorhanden('apt-get')) {
+        await execFileAsync('apt-get', ['update'], { timeout: 300_000 });
+        await execFileAsync('apt-get', ['install', '-y', 'build-essential', 'python3', 'make', 'g++'], { timeout: 900_000 });
+      } else if (await programmVorhanden('dnf')) {
+        await execFileAsync('dnf', ['install', '-y', 'gcc-c++', 'make', 'python3'], { timeout: 900_000 });
+      } else if (await programmVorhanden('yum')) {
+        await execFileAsync('yum', ['install', '-y', 'gcc-c++', 'make', 'python3'], { timeout: 900_000 });
+      } else {
+        throw new Error('Kein bekannter Paketmanager gefunden (apt-get, dnf oder yum)');
+      }
+      schritte.push('Build-Werkzeuge installiert');
+    }
+
+    // 2. npm braucht eine package.json im Agent-Verzeichnis.
+    if (!fs.existsSync(path.join(DIR, 'package.json'))) {
+      await execFileAsync('npm', ['init', '-y'], { cwd: DIR, timeout: 60_000 });
+    }
+
+    // 3. Die Module selbst.
+    await execFileAsync('npm', ['install', '--no-fund', '--no-audit', '--save', ...TERMINAL_MODULE],
+      { cwd: DIR, timeout: 900_000 });
+
+    const alleDa = TERMINAL_MODULE.every(m => fs.existsSync(path.join(DIR, 'node_modules', m)));
+    if (!alleDa) throw new Error('Module waren nach der Installation nicht auffindbar');
+    schritte.push('ws und node-pty installiert');
+
+    TERMINAL_SETUP = { zustand: 'fertig', meldung: schritte.join(', '), seit: Date.now() };
+    console.log('Terminal-Module nachgerüstet — Neustart, damit die Konsole bereitsteht.');
+    // Erst nach dem Neustart lädt der Agent die Module und bietet den WebSocket an.
+    setTimeout(() => exec('systemctl restart panel-agent', () => {}), 1500);
+
+  } catch (err) {
+    const grund = (err.message || String(err)).slice(0, 300);
+    TERMINAL_SETUP = { zustand: 'fehlgeschlagen', meldung: grund, seit: Date.now() };
+    console.error('Nachrüsten der Terminal-Module fehlgeschlagen: ' + grund);
+  }
+  return TERMINAL_SETUP;
+}
 
 // ─── Datei-Download (HTTPS, folgt Weiterleitungen) ───────────────────────────
 
@@ -668,10 +735,21 @@ async function handler(req, res) {
   try {
     // ── System ────────────────────────────────────────────────────────────────
     if (url === '/ping' && req.method === 'GET') {
-      respond(res, 200, { ok: true, hostname: os.hostname(), tls: req.socket.encrypted || false, version: VERSION, terminal: TERMINAL_BEREIT });
+      respond(res, 200, { ok: true, hostname: os.hostname(), tls: req.socket.encrypted || false, version: VERSION,
+                          terminal: TERMINAL_BEREIT, terminalSetup: TERMINAL_SETUP.zustand, terminalMeldung: TERMINAL_SETUP.meldung });
 
     } else if (url === '/version' && req.method === 'GET') {
       respond(res, 200, { version: VERSION, nodeVersion: process.version, terminal: TERMINAL_BEREIT });
+
+    // Stößt die Installation von ws/node-pty an. Läuft im Hintergrund weiter, weil das
+    // Übersetzen von node-pty (und ggf. das Nachladen der Build-Werkzeuge) Minuten dauert.
+    } else if (url === '/terminal/setup' && req.method === 'POST') {
+      if (TERMINAL_BEREIT) {
+        respond(res, 200, { bereit: true, zustand: 'fertig', meldung: 'Terminal-Module sind bereits vorhanden' });
+      } else {
+        terminalNachruesten();   // bewusst nicht abgewartet
+        respond(res, 202, { gestartet: true, zustand: TERMINAL_SETUP.zustand });
+      }
 
     } else if (url === '/config' && req.method === 'POST') {
       const body = await new Promise((resolve) => {

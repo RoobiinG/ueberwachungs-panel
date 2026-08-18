@@ -23,6 +23,14 @@ AGENTS.md
 CLAUDE.md
 ROADMAP.md
 
+# Zugangsschlüssel für den Testserver. Liegen bewusst im Projektordner (Nextcloud
+# synchronisiert sie auf alle Rechner), dürfen aber unter keinen Umständen ins Repo.
+.ssh/
+*.ppk
+*.pem
+id_rsa*
+id_ed25519*
+
 # Eingestellte Android-App (entfernt in v4.4.7.0) — nicht wieder einchecken
 android/
 .gradle_home/
