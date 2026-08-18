@@ -16,6 +16,26 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.5.1.1] - 2026-08-18 (Build 312) — *Konsole zeigt endlich etwas an*
+
+### 🐛 Bugfixes
+- **Das Terminal-Fenster blieb leer, obwohl die Verbindung stand.** Nach den beiden vorigen
+  Korrekturen kam die Konsole zwar zustande — Sitzung offen, Daten flossen —, im Fenster war
+  aber nichts zu sehen.
+  Ursache: Der WebSocket-Proxy reichte die Ausgabe des Agenten weiter, ohne den Rahmentyp zu
+  übernehmen. Aus dem empfangenen Buffer wurde dabei ein **Binär**-Frame; im Browser kam die
+  Ausgabe als `Blob` an, und `xterm` verwirft alles, was weder Text noch `Uint8Array` ist —
+  ohne Fehlermeldung. Der Proxy gibt den Rahmentyp jetzt unverändert weiter, und das
+  Terminal-Fenster nimmt zusätzlich Blob und ArrayBuffer entgegen.
+  - Gefunden erst beim Klick durch die echte Oberfläche: Ein Test über einen Node-Client
+    bemerkt das nicht, weil dort ohnehin `.toString()` auf dem Puffer landet.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Nur Panel-seitig**, der Agent bleibt bei 2.6.2 und war an dieser Stelle nie beteiligt.
+- **Beide Seiten sind unabhängig voneinander robust**: Ein neues Panel zeigt die Ausgabe auch
+  dann, wenn der Rahmentyp unterwegs verändert wird; ein neues Frontend kommt auch mit einem
+  älteren Panel zurecht.
+
 ## [5.5.1.0] - 2026-08-18 (Build 311) — *Konsole meldet sich, wenn sie fehlt*
 
 Nachtrag zum vorigen Release: Nachdem der Pfad-Konflikt behoben war, zeigte der Testlauf eine

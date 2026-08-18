@@ -190,11 +190,15 @@ server.on('upgrade', (request, socket, head) => {
 
       const wssTerm = new WebSocket.Server({ noServer: true });
       wssTerm.handleUpgrade(request, socket, head, (clientWs) => {
-        clientWs.on('message', (data) => {
-          if (agentWs.readyState === WebSocket.OPEN) agentWs.send(data);
+        // `isBinary` muss mitgereicht werden. Ohne das macht `ws` aus dem empfangenen
+        // Buffer beim Weitersenden einen Binärframe — im Browser kommt dann ein Blob an,
+        // und xterm schreibt davon nichts. Das Terminal-Fenster blieb dadurch leer,
+        // obwohl die Verbindung stand und Daten flossen.
+        clientWs.on('message', (data, isBinary) => {
+          if (agentWs.readyState === WebSocket.OPEN) agentWs.send(data, { binary: isBinary });
         });
-        agentWs.on('message', (data) => {
-          if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data);
+        agentWs.on('message', (data, isBinary) => {
+          if (clientWs.readyState === WebSocket.OPEN) clientWs.send(data, { binary: isBinary });
         });
 
         // Ohne Datenverkehr trennt der Reverse Proxy die Verbindung (NGINX Proxy

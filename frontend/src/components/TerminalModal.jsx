@@ -69,8 +69,17 @@ export function TerminalModal({ agentId, containerId, containerName, onClose }) 
         }
       };
 
+      // Der Server schickt in aller Regel Text. Ältere Panel-Versionen (und alles, was
+      // unterwegs auf Binärframes umstellt) liefern die Ausgabe aber als Blob — den hat
+      // xterm stillschweigend verworfen, das Fenster blieb leer. Beide Formen werden
+      // deshalb angenommen.
+      wsRef.current.binaryType = 'arraybuffer';
       wsRef.current.onmessage = (ev) => {
-        termInstance.current?.write(ev.data);
+        const d = ev.data;
+        if (typeof d === 'string')            termInstance.current?.write(d);
+        else if (d instanceof ArrayBuffer)    termInstance.current?.write(new Uint8Array(d));
+        else if (typeof d?.arrayBuffer === 'function')
+          d.arrayBuffer().then(b => termInstance.current?.write(new Uint8Array(b))).catch(() => {});
       };
 
       wsRef.current.onerror = () => {

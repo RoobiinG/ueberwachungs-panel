@@ -1,6 +1,6 @@
 {
-  "version": "5.5.1.0",
-  "build": 311,
+  "version": "5.5.1.1",
+  "build": 312,
   "date": "2026-08-18",
-  "codename": "Konsole meldet sich, wenn sie fehlt"
+  "codename": "Konsole zeigt endlich etwas an"
 }
