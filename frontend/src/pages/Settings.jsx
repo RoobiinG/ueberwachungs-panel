@@ -8,7 +8,7 @@ import {
   RefreshCw, Trash2, Lock, Mail, Key, ShieldCheck, Send,
   User, Settings2, Layers, Timer, Bell, Monitor, Smartphone,
   Globe, LogOut, Laptop, PackageCheck,
-  Download, Upload, Database, QrCode, Copy, Check, ShieldAlert,
+  Download, Upload, Database, QrCode, Copy, Check, ShieldAlert, Gamepad2,
   FileText, ExternalLink, ArrowUpCircle
 } from 'lucide-react';
 import { invalidateLiveIntervalCache } from '../hooks/useLiveInterval';
@@ -847,6 +847,12 @@ export default function Settings() {
   // Automatisches Agent-Update beim Panel-Start
   const [agentAutoUpdate, setAgentAutoUpdate] = useState(true);
 
+  // Pelican Panel — Klarnamen für Gameserver-Container
+  const [pelicanUrl,      setPelicanUrl]      = useState('');
+  const [pelicanToken,    setPelicanToken]    = useState('');
+  const [pelicanHasToken, setPelicanHasToken] = useState(false);
+  const [showPelicanToken, setShowPelicanToken] = useState(false);
+
   // Dockhand
   const [dockhandUrl,      setDockhandUrl]      = useState('');
   const [dockhandToken,    setDockhandToken]    = useState('');
@@ -878,6 +884,11 @@ export default function Settings() {
         const { data: g } = await axios.get('/api/settings/general');
         setLiveInterval(Math.round((g.liveRefreshInterval || 15000) / 1000));
         setAgentAutoUpdate(g.agentAutoUpdate !== false);
+      } catch {}
+      try {
+        const { data: p } = await axios.get('/api/pelican/config');
+        setPelicanUrl(p.url || '');
+        setPelicanHasToken(!!p.hasToken);
       } catch {}
       if (data.mchost_username) setMcUsername(data.mchost_username);
       if (data.smtp_host)  setSmtp(s => ({ ...s, host:   data.smtp_host  || '' }));
@@ -1191,6 +1202,49 @@ export default function Settings() {
       feedback('dockhand', 'err', err.response?.data?.error || 'Fehler');
     }
     busy('dockhand_save', false);
+  };
+
+  // ── Pelican Panel ─────────────────────────────────────────────────────────
+  const testPelican = async () => {
+    busy('pelican', true);
+    try {
+      // Erst speichern, dann prüfen — sonst testet man gegen den alten Stand.
+      await axios.post('/api/pelican/config', { url: pelicanUrl, ...(pelicanToken ? { token: pelicanToken } : {}) });
+      const { data } = await axios.post('/api/pelican/test');
+      setPelicanToken('');
+      setPelicanHasToken(true);
+      feedback('pelican', 'ok',
+        `Verbunden — ${data.server} Server gefunden${data.beispiel?.length ? ': ' + data.beispiel.join(', ') + ' …' : ''}`);
+    } catch (err) {
+      feedback('pelican', 'err', err.response?.data?.error || 'Verbindung fehlgeschlagen');
+    }
+    busy('pelican', false);
+  };
+
+  const savePelican = async () => {
+    busy('pelican_save', true);
+    try {
+      await axios.post('/api/pelican/config', { url: pelicanUrl, ...(pelicanToken ? { token: pelicanToken } : {}) });
+      if (pelicanToken) setPelicanHasToken(true);
+      setPelicanToken('');
+      feedback('pelican', 'ok', 'Pelican-Einstellungen gespeichert');
+    } catch (err) {
+      feedback('pelican', 'err', err.response?.data?.error || 'Fehler beim Speichern');
+    }
+    busy('pelican_save', false);
+  };
+
+  const deletePelican = async () => {
+    if (!confirm('Verbindung zum Pelican Panel entfernen? Die Container zeigen danach wieder ihre UUID.')) return;
+    busy('pelican_del', true);
+    try {
+      await axios.delete('/api/pelican/config');
+      setPelicanUrl(''); setPelicanToken(''); setPelicanHasToken(false);
+      feedback('pelican', 'ok', 'Verbindung entfernt');
+    } catch (err) {
+      feedback('pelican', 'err', err.response?.data?.error || 'Fehler');
+    }
+    busy('pelican_del', false);
   };
 
   const toggleAgentAutoUpdate = async (next) => {
@@ -1882,6 +1936,68 @@ export default function Settings() {
               )}
 
               <Msg msg={msgs.dockhand} />
+            </div>
+          </Card>
+
+          {/* ── Pelican Panel (Gameserver-Namen) ── */}
+          <Card title={<span className="flex items-center gap-2"><Gamepad2 size={14} />Pelican Panel</span>}>
+            <div className="space-y-3">
+              <p className="text-xs text-panel-muted leading-relaxed">
+                Server aus dem Pelican Panel laufen als Container, deren Name die Server-UUID ist
+                (<code className="font-mono text-panel-text">6d3bdebc-ded6-…</code>). Ist die Verbindung
+                eingerichtet, zeigt die Docker-Seite stattdessen den Klarnamen — die UUID bleibt klein
+                daneben stehen und im Hintergrund unverändert. Es wird ausschließlich gelesen.
+              </p>
+
+              <div>
+                <label className="block text-xs text-panel-muted mb-1">Adresse des Pelican Panels</label>
+                <input
+                  value={pelicanUrl}
+                  onChange={e => setPelicanUrl(e.target.value)}
+                  placeholder="https://panel.beispiel.de"
+                  className={inputCls}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs text-panel-muted mb-1">
+                  API-Schlüssel {pelicanHasToken && <span className="text-panel-green">(gesetzt)</span>}
+                </label>
+                <div className="relative">
+                  <input
+                    type={showPelicanToken ? 'text' : 'password'}
+                    value={pelicanToken}
+                    onChange={e => setPelicanToken(e.target.value)}
+                    placeholder={pelicanHasToken ? '(gesetzt — leer lassen = behalten)' : 'peli_…'}
+                    className={inputCls + ' pr-9'}
+                  />
+                  <button type="button" onClick={() => setShowPelicanToken(v => !v)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text transition-colors">
+                    {showPelicanToken ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+                <p className="text-[11px] text-panel-muted mt-1">
+                  Im Pelican Panel unter <span className="text-panel-text">Admin → API Credentials</span>
+                  {' '}erzeugen (Typ „Application", Leserecht auf Server genügt).
+                </p>
+              </div>
+
+              <div className="flex gap-2">
+                <Button onClick={testPelican} disabled={!pelicanUrl || loading.pelican} size="sm" variant="ghost">
+                  {loading.pelican ? 'Prüfe…' : 'Testen'}
+                </Button>
+                <Button onClick={savePelican} disabled={!pelicanUrl || loading.pelican_save} size="sm">
+                  Speichern
+                </Button>
+                {pelicanHasToken && (
+                  <Button onClick={deletePelican} disabled={loading.pelican_del} size="sm" variant="ghost"
+                    className="text-panel-red hover:border-panel-red/40">
+                    <Trash2 size={12} />Verbindung entfernen
+                  </Button>
+                )}
+              </div>
+
+              <Msg msg={msgs.pelican} />
             </div>
           </Card>
 

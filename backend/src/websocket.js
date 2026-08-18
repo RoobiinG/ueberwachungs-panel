@@ -35,9 +35,12 @@ const startMonitoring = () => {
   });
 };
 
-// Pfad des Terminal-Proxys aus index.js. Er hängt am selben `upgrade`-Ereignis und muss
-// hier durchgelassen werden.
-const TERMINAL_PFAD = /^\/api\/agents\/\d+\/docker\/containers\/.+\/terminal$/;
+// Pfade des Terminal-Proxys aus index.js. Sie hängen am selben `upgrade`-Ereignis und
+// müssen hier durchgelassen werden.
+const TERMINAL_PFADE = [
+  /^\/api\/agents\/\d+\/docker\/containers\/.+\/terminal$/,   // Remote-Server, über den Agent
+  /^\/api\/docker\/containers\/.+\/terminal$/,                // Panel-Server selbst
+];
 
 const setup = (server) => {
   // Bewusst `noServer` statt `{ server, path: '/ws' }`: Mit gesetztem `path` hängt sich die
@@ -56,7 +59,7 @@ const setup = (server) => {
       return;
     }
     // Den Terminal-Pfad übernimmt der Proxy in index.js — hier nicht anfassen.
-    if (TERMINAL_PFAD.test(pfad)) return;
+    if (TERMINAL_PFADE.some(r => r.test(pfad))) return;
 
     // Alles Übrige wie bisher abweisen.
     if (!socket.destroyed) {

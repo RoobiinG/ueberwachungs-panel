@@ -20,6 +20,9 @@ const statusColor = (s) =>
   s === 'running'                          ? 'green' :
   s === 'exited' || s === 'stopped'        ? 'red'   : 'gray';
 
+// Container aus dem Pelican Panel tragen die Server-UUID als Namen.
+const UUID_MUSTER = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const fmtBytes = (b) => {
   if (b == null || b === 0) return '0 B';
   const k = 1024, sizes = ['B', 'KB', 'MB', 'GB'];
@@ -49,6 +52,9 @@ export default function Docker() {
   const [editingLabel, setEditingLabel] = useState(null);
   const [labelDraft,   setLabelDraft]   = useState({ nickname: '', tag: '' });
 
+  // Klarnamen aus dem Pelican Panel, Zuordnung über die Server-UUID
+  const [pelicanNamen, setPelicanNamen] = useState({});
+
   // Logs
   const [logsOpen,    setLogsOpen]    = useState({});   // { containerId: bool }
   const [logsContent, setLogsContent] = useState({});   // { containerId: string }
@@ -59,7 +65,7 @@ export default function Docker() {
   const [portSuggestion, setPortSuggestion] = useState(null); // { containerId, containerName, ports }
   const [portAdding, setPortAdding]         = useState(false);
   const [portAdded,  setPortAdded]          = useState([]);   // Liste bereits hinzugefügter Ports
-  const [terminalState, setTerminalState]   = useState(null); // { agentId, containerId, containerName }
+  const [terminalState, setTerminalState]   = useState(null); // { server, containerId, containerName }
 
   // WS: Docker-Port-Vorschlag empfangen
   useWSMessage('docker_ports', (msg) => {
@@ -92,6 +98,16 @@ export default function Docker() {
     } catch {}
   }, [selectedServer]);
 
+  // Container aus dem Pelican Panel heißen wie ihre Server-UUID. Die Zuordnung zum
+  // Klarnamen kommt vom Panel (dort zwischengespeichert) und wird nur zur Anzeige
+  // verwendet — umbenannt wird nichts.
+  const loadPelican = useCallback(async () => {
+    try {
+      const { data } = await axios.get('/api/pelican/servers');
+      setPelicanNamen(data || {});
+    } catch { setPelicanNamen({}); }
+  }, []);
+
   useEffect(() => {
     if (hideLocal && selectedServer === null) return;
     setContainers([]);
@@ -99,6 +115,7 @@ export default function Docker() {
     setEditingLabel(null);
     load();
     loadLabels();
+    loadPelican();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedServer, hideLocal]);
 
@@ -116,6 +133,20 @@ export default function Docker() {
 
   const terminalFehlt   = terminalInfo.bereit === false;
   const terminalRichtet = terminalFehlt && terminalInfo.setup === 'laeuft';
+
+  // Welcher Name steht groß in der Zeile? Reihenfolge: selbst vergebener Spitzname,
+  // dann der Klarname aus dem Pelican Panel, sonst der Container-Name selbst. Der
+  // technische Name bleibt in jedem Fall klein daneben sichtbar.
+  const anzeigeName = (c) => {
+    const eigen = labels[c.id]?.nickname;
+    if (eigen) return { gross: eigen, klein: c.name, ausPelican: false };
+
+    if (UUID_MUSTER.test(c.name || '')) {
+      const treffer = pelicanNamen[c.name.toLowerCase()] || pelicanNamen[c.name.slice(0, 8).toLowerCase()];
+      if (treffer) return { gross: treffer, klein: c.name.slice(0, 8) + '…', ausPelican: true };
+    }
+    return { gross: c.name, klein: null, ausPelican: false };
+  };
 
   // ── Live-Stats Polling (alle 8 s für laufende Container) ──────────────────
 
@@ -208,12 +239,11 @@ export default function Docker() {
   };
 
   // ── Konsole (Terminal) ────────────────────────────────────────
-  // Die Konsole läuft ausschließlich nativ über den Panel-Agent — im Panel selbst,
-  // ohne Umweg über Dockhand und ohne neuen Browser-Tab. Für den lokalen Panel-Server
-  // gibt es deshalb keine Konsole; dort steht kein Agent zur Verfügung.
+  // Immer im Panel selbst, ohne Umweg über Dockhand und ohne neuen Browser-Tab.
+  // Remote-Server laufen über ihren Panel-Agent, Container auf dem Panel-Server
+  // selbst direkt über dessen Docker-Installation.
   const openTerminal = (c) => {
-    if (!selectedServer) return;
-    setTerminalState({ agentId: selectedServer, containerId: c.id, containerName: c.name });
+    setTerminalState({ server: selectedServer || 'local', containerId: c.id, containerName: c.name });
   };
 
   // ── Aktionen (Start/Stop/Restart) ─────────────────────────────────────────
@@ -241,14 +271,14 @@ export default function Docker() {
         </Button>
       </div>
 
-      {/* Der lokale Panel-Server wird immer über Dockhand bedient — auch im Nativ-Modus.
-          Eine Konsole gibt es dort nicht, weil sie zwingend einen Panel-Agent braucht. */}
+      {/* Der lokale Panel-Server wird für Listen und Aktionen über Dockhand bedient.
+          Die Konsole läuft dort seit v5.7.0.0 direkt über die Docker-Installation. */}
       {!selectedServer && (
         <p className="text-[11px] text-panel-muted flex items-center gap-1.5">
           <Info size={11} className="flex-shrink-0" />
           Container des lokalen Panel-Servers laufen über Dockhand Pro — die Einstellung
-          „Docker Verwaltung" gilt nur für Remote-Server. Die Konsole ist hier nicht
-          verfügbar: Sie läuft ausschließlich nativ über einen Panel-Agent.
+          „Docker Verwaltung" gilt nur für Remote-Server. Die Konsole spricht hier direkt
+          die Docker-Installation dieses Servers an.
         </p>
       )}
 
@@ -274,6 +304,7 @@ export default function Docker() {
               const netTx   = live?.netTx    ?? c.netTx    ?? null;
 
               const isLogsOpen = !!logsOpen[c.id];
+              const anz = anzeigeName(c);
               return (
                 <div key={c.id} className="flex flex-col">
                   {/* ── Container-Zeile (Name + Aktionen) ─────────────── */}
@@ -307,12 +338,15 @@ export default function Docker() {
                     ) : (
                       <div className="flex items-center gap-2 flex-wrap">
                         <Badge color={statusColor(c.state)}>{c.state}</Badge>
-                        {labels[c.id]?.nickname
-                          ? <span className="text-sm text-panel-text font-medium truncate">{labels[c.id].nickname}</span>
-                          : <span className="text-sm text-panel-text font-medium truncate">{c.name}</span>
-                        }
-                        {labels[c.id]?.nickname && (
-                          <span className="text-xs text-panel-muted truncate">({c.name})</span>
+                        <span className="text-sm text-panel-text font-medium truncate">{anz.gross}</span>
+                        {anz.ausPelican && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-panel-purple/15 text-panel-purple border border-panel-purple/30"
+                            title={`Name aus dem Pelican Panel · Container: ${c.name}`}>
+                            pelican
+                          </span>
+                        )}
+                        {anz.klein && (
+                          <span className="text-xs text-panel-muted truncate font-mono" title={c.name}>{anz.klein}</span>
                         )}
                         {labels[c.id]?.tag && (
                           <span className="px-1.5 py-0.5 bg-panel-accent/20 text-panel-accent text-[10px] rounded font-mono">
@@ -414,22 +448,23 @@ export default function Docker() {
                     <ActionMenu
                       disabled={!!busy[c.id]}
                       items={[
-                        // Die Konsole läuft ausschließlich über den Panel-Agent —
-                        // beim lokalen Panel-Server gibt es deshalb keine.
+                        // Remote-Server über ihren Agent, der Panel-Server selbst direkt
+                        // über seine Docker-Installation. Fehlen einem Agenten die nötigen
+                        // Module, nennt der Eintrag den Grund statt in einen Fehler zu laufen.
                         canWrite && isRun && {
                           icon: Terminal,
                           label: terminalRichtet ? 'Konsole wird eingerichtet…'
                                : terminalFehlt    ? 'Konsole nicht verfügbar'
                                : 'Konsole öffnen',
                           onClick: () => openTerminal(c),
-                          disabled: !selectedServer || terminalFehlt,
-                          title: !selectedServer
-                            ? 'Nur für Server mit Panel-Agent verfügbar'
-                            : terminalRichtet
-                              ? 'Die Module ws und node-pty werden gerade auf diesem Server installiert. Das dauert einige Minuten; danach steht die Konsole bereit.'
-                              : terminalFehlt
-                                ? 'Auf diesem Server fehlen dem Agenten die Module ws und node-pty. Das Panel rüstet sie beim nächsten Start selbst nach — oder von Hand: cd /opt/panel-agent && npm install --save ws node-pty && systemctl restart panel-agent'
-                                : 'Terminal im Panel, nativ über den Panel-Agent',
+                          disabled: terminalFehlt,
+                          title: terminalRichtet
+                            ? 'Die Module ws und node-pty werden gerade auf diesem Server installiert. Das dauert einige Minuten; danach steht die Konsole bereit.'
+                            : terminalFehlt
+                              ? 'Auf diesem Server fehlen dem Agenten die Module ws und node-pty. Das Panel rüstet sie beim nächsten Start selbst nach — oder von Hand: cd /opt/panel-agent && npm install --save ws node-pty && systemctl restart panel-agent'
+                              : selectedServer
+                                ? 'Terminal im Panel, über den Panel-Agent'
+                                : 'Terminal im Panel, direkt über die Docker-Installation dieses Servers',
                         },
                         canLabel && {
                           icon: Tag,
@@ -549,7 +584,7 @@ export default function Docker() {
 
       {terminalState && (
         <TerminalModal
-          agentId={terminalState.agentId}
+          server={terminalState.server}
           containerId={terminalState.containerId}
           containerName={terminalState.containerName}
           onClose={() => setTerminalState(null)}

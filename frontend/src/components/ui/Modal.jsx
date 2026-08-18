@@ -1,7 +1,15 @@
 import { X } from 'lucide-react';
 import { useEffect } from 'react';
 
-export const Modal = ({ open, onClose, title, children, footer, zIndex = 'z-50' }) => {
+// Breiten-Stufen. `lg` bleibt die Voreinstellung, damit sich für alle bestehenden
+// Dialoge nichts ändert; `wide` und `full` sind für die Container-Konsole dazugekommen.
+const BREITEN = {
+  lg:   'max-w-lg',
+  wide: 'max-w-6xl',
+  full: 'max-w-none w-[98vw]',
+};
+
+export const Modal = ({ open, onClose, title, children, footer, zIndex = 'z-50', size = 'lg', headerExtra = null }) => {
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') onClose(); };
     if (open) document.addEventListener('keydown', handler);
@@ -13,12 +21,15 @@ export const Modal = ({ open, onClose, title, children, footer, zIndex = 'z-50' 
   return (
     <div className={`fixed inset-0 ${zIndex} flex items-center justify-center`}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-panel-card border border-panel-border rounded-lg shadow-2xl w-full max-w-lg mx-4">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-panel-border">
-          <h2 className="text-sm font-semibold text-panel-text">{title}</h2>
-          <button onClick={onClose} className="text-panel-muted hover:text-panel-text transition-colors">
-            <X size={16} />
-          </button>
+      <div className={`relative bg-panel-card border border-panel-border rounded-lg shadow-2xl w-full ${BREITEN[size] ?? BREITEN.lg} mx-4`}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-panel-border gap-3">
+          <h2 className="text-sm font-semibold text-panel-text truncate">{title}</h2>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            {headerExtra}
+            <button onClick={onClose} title="Schließen" className="text-panel-muted hover:text-panel-text transition-colors">
+              <X size={16} />
+            </button>
+          </div>
         </div>
         <div className="p-4">{children}</div>
         {footer && (

@@ -93,6 +93,7 @@ app.use('/api/alerts',      auth, require('./routes/alerts'));
 app.use('/api/sessions',    auth, require('./routes/sessions'));
 app.use('/api/dockhand',    auth, require('./routes/dockhand'));
 app.use('/api/patchmon',    auth, require('./routes/patchmon'));
+app.use('/api/pelican',     auth, require('./routes/pelican'));
 app.use('/api/audit',       auth, require('./routes/audit'));
 // Öffentlicher Share-Endpunkt (kein Login nötig) — muss VOR auth stehen
 app.get('/api/logs/share/:token', require('./routes/panelLogsPublic'));
@@ -119,30 +120,40 @@ app.get(/^(?!\/api).*/, (req, res) => {
 require('./metricsCache').start();     // Muss VOR websocket + metricsRecorder starten
 setupWS(server);
 
-// ─── Terminal WebSocket Proxy (Frontend -> Backend -> Agent) ───────────
+// ─── Terminal-WebSocket ───────────────────────────────────────────────────────
+// Zwei Wege, gleiche Bedienung:
+//   /api/agents/:id/docker/containers/:cid/terminal → weitergereicht an den Panel-Agent
+//   /api/docker/containers/:cid/terminal            → Container auf dem Panel-Server
+//                                                     selbst, direkt über die Docker-Engine
+// Einmal-Ticket, Rechteprüfung und Audit-Eintrag sind für beide Wege identisch.
 const WebSocket = require('ws');
 const { getPermissions }         = require('./middleware/requirePermission');
 const { canAccessAgent }         = require('./utils/agentAccess');
 const { checkServerIdentityFor } = require('./utils/agentTls');
 const { auditLog }               = require('./utils/audit');
 const terminalTickets            = require('./utils/terminalTickets');
+const dockerSocket               = require('./utils/dockerSocket');
+
+const PFAD_AGENT = /^\/api\/agents\/(\d+)\/docker\/containers\/(.+)\/terminal$/;
+const PFAD_LOKAL = /^\/api\/docker\/containers\/(.+)\/terminal$/;
 
 server.on('upgrade', (request, socket, head) => {
-  if (!request.url.startsWith('/api/agents/') || !request.url.includes('/terminal')) return;
+  if (!request.url.includes('/terminal')) return;
 
   const deny = (code, text) => {
     if (!socket.destroyed) {
-      socket.write(`HTTP/1.1 ${code} ${text}\r\n\r\n`);
+      socket.write('HTTP/1.1 ' + code + ' ' + text + '\r\n\r\n');
       socket.destroy();
     }
   };
 
-  const url = new URL(request.url, `http://${request.headers.host}`);
+  const url    = new URL(request.url, 'http://' + request.headers.host);
+  const agentM = url.pathname.match(PFAD_AGENT);
+  const lokalM = agentM ? null : url.pathname.match(PFAD_LOKAL);
+  if (!agentM && !lokalM) return;   // kein Terminal-Pfad → nicht unsere Zuständigkeit
 
-  const match = url.pathname.match(/^\/api\/agents\/(\d+)\/docker\/containers\/(.+)\/terminal$/);
-  if (!match) return deny(404, 'Not Found');
-  const agentId     = match[1];
-  const containerId = match[2];
+  const agentId     = agentM ? agentM[1] : 'local';
+  const containerId = agentM ? agentM[2] : lokalM[1];
 
   // Authentifizierung über ein Einmal-Ticket, das zuvor per regulärer API geholt wurde.
   // So landet kein Session-JWT in den Access-Logs des Reverse Proxy.
@@ -150,9 +161,7 @@ server.on('upgrade', (request, socket, head) => {
   if (!ticket) return deny(401, 'Unauthorized');
 
   try {
-    const db    = require('./db');
-    const agent = db.prepare('SELECT * FROM remote_agents WHERE id = ?').get(agentId);
-    if (!agent) return deny(404, 'Not Found');
+    const db = require('./db');
 
     // Rechte erneut prüfen: Das Ticket ist zwar kurzlebig, die Rolle kann sich in der
     // Zwischenzeit aber geändert haben. Rolle dafür frisch aus der DB lesen — dieselben
@@ -161,12 +170,60 @@ server.on('upgrade', (request, socket, head) => {
     const user = db.prepare('SELECT id, username, role FROM users WHERE id = ?').get(ticket.userId);
     if (!user) return deny(401, 'Unauthorized');
     if (!getPermissions(user.role).includes('docker.control')) return deny(403, 'Forbidden');
-    if (!canAccessAgent(agent.id, user.role))                  return deny(403, 'Forbidden');
 
-    // Die Betriebsart wird hier bewusst nicht mehr geprüft. Die Container-Konsole ist
+    request.user = user;   // für auditLog
+
+    // ── Container auf dem Panel-Server selbst ────────────────────────────────
+    if (!agentM) {
+      dockerSocket.konsoleOeffnen(containerId).then(({ strom, execId }) => {
+        auditLog(request, 'docker.terminal.open', 'container', containerId, { server: 'local' });
+
+        const wssTerm = new WebSocket.Server({ noServer: true });
+        wssTerm.handleUpgrade(request, socket, head, (clientWs) => {
+          clientWs.on('message', (daten, isBinary) => {
+            // Größenangaben kommen als JSON-Text, alles andere ist Tastatureingabe.
+            if (!isBinary) {
+              const text = daten.toString();
+              if (text.startsWith('{')) {
+                try {
+                  const { cols, rows } = JSON.parse(text);
+                  if (cols && rows) return dockerSocket.groesseAendern(execId, cols, rows);
+                } catch { /* kein JSON → als Eingabe behandeln */ }
+              }
+            }
+            if (!strom.destroyed) strom.write(daten);
+          });
+
+          strom.on('data', (d) => {
+            if (clientWs.readyState === WebSocket.OPEN) clientWs.send(d, { binary: false });
+          });
+
+          const keepAlive = setInterval(() => {
+            try { if (clientWs.readyState === WebSocket.OPEN) clientWs.ping(); } catch {}
+          }, 30000);
+          const stop = () => { clearInterval(keepAlive); try { strom.destroy(); } catch {} };
+
+          strom.on('close', () => { stop(); try { clientWs.close(); } catch {} });
+          strom.on('error', () => { stop(); try { clientWs.close(); } catch {} });
+          clientWs.on('close', stop);
+          clientWs.on('error', stop);
+        });
+      }).catch((err) => {
+        console.warn('[Terminal] Lokale Konsole nicht möglich:', err.message);
+        deny(502, 'Bad Gateway');
+      });
+      return;
+    }
+
+    // ── Container auf einem Remote-Server, über dessen Agent ─────────────────
+    const agent = db.prepare('SELECT * FROM remote_agents WHERE id = ?').get(agentId);
+    if (!agent) return deny(404, 'Not Found');
+    if (!canAccessAgent(agent.id, user.role)) return deny(403, 'Forbidden');
+
+    // Die Betriebsart wird hier bewusst nicht geprüft. Die Container-Konsole ist
     // seit v5.4.1.0 ausschließlich nativ: Sie läuft immer über den Panel-Agent, egal ob
     // die Container-Daten selbst von ihm oder von Dockhand Pro kommen.
-    const targetUrl = agent.url.replace(/^http/, 'ws') + `/docker/containers/${containerId}/terminal`;
+    const targetUrl = agent.url.replace(/^http/, 'ws') + '/docker/containers/' + containerId + '/terminal';
     const wsOptions = {
       headers: { 'x-agent-token': agent.token },
       handshakeTimeout: 10000,   // sonst hängt ein nicht antwortender Agent stumm
@@ -185,7 +242,6 @@ server.on('upgrade', (request, socket, head) => {
 
     agentWs.on('open', () => {
       upgraded = true;
-      request.user = user;   // für auditLog
       auditLog(request, 'docker.terminal.open', 'container', containerId, { agentId: agent.id, agentName: agent.name });
 
       const wssTerm = new WebSocket.Server({ noServer: true });
@@ -207,7 +263,7 @@ server.on('upgrade', (request, socket, head) => {
         const keepAlive = setInterval(() => {
           try { if (clientWs.readyState === WebSocket.OPEN) clientWs.ping(); } catch {}
           try { if (agentWs.readyState  === WebSocket.OPEN) agentWs.ping();  } catch {}
-        }, 30_000);
+        }, 30000);
         const stop = () => clearInterval(keepAlive);
 
         clientWs.on('close', () => { stop(); agentWs.close(); });
@@ -219,7 +275,7 @@ server.on('upgrade', (request, socket, head) => {
 
     agentWs.on('error', (err) => {
       if (upgraded) { try { agentWs.close(); } catch {} return; }
-      console.warn(`[Terminal] Agent "${agent.name}" nicht erreichbar:`, err.message);
+      console.warn('[Terminal] Agent "' + agent.name + '" nicht erreichbar:', err.message);
       deny(502, 'Bad Gateway');
     });
   } catch (err) {

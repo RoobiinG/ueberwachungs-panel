@@ -8,6 +8,8 @@ const { auditLog }          = require('../utils/audit');
 const db                    = require('../db');
 const dockhand              = require('../utils/dockhandClient');
 const { notifyAction } = require('../utils/actionNotify');
+const dockerSocket          = require('../utils/dockerSocket');
+const terminalTickets       = require('../utils/terminalTickets');
 
 // broadcast lazy laden (zirkuläre Abhängigkeit vermeiden)
 let _broadcast = null;
@@ -61,14 +63,53 @@ router.get('/containers/:id/stats', requirePermission('docker.view'), async (req
 });
 
 // ── GET /api/docker/containers/:id/logs ──────────────────────────────────────
+// Bevorzugt Dockhand; ist dort nichts eingerichtet oder scheitert der Abruf, wird die
+// Docker-Installation des Panel-Servers direkt gefragt. Damit funktionieren die Logs
+// auch ohne Dockhand — genau wie die Konsole darunter.
 router.get('/containers/:id/logs', requirePermission('docker.logs'), async (req, res) => {
-  const envId = requireEnv(res);
-  if (!envId) return;
+  const tail = Math.max(1, Math.min(10000, parseInt(req.query.tail) || 100));
+  const envId = localEnvId();
+
+  if (envId) {
+    try {
+      const { data } = await dockhand.getContainerLogs(envId, req.params.id, tail);
+      return res.json(data ?? []);
+    } catch (err) {
+      if (!(await dockerSocket.verfuegbar())) return res.status(502).json({ error: err.message });
+    }
+  }
+
   try {
-    const tail = Math.max(1, Math.min(10000, parseInt(req.query.tail) || 100));
-    const { data } = await dockhand.getContainerLogs(envId, req.params.id, tail);
-    res.json(data ?? []);
-  } catch (err) { res.status(502).json({ error: err.message }); }
+    const text = await dockerSocket.logs(req.params.id, tail);
+    res.json(text.split('\n'));
+  } catch (err) {
+    res.status(502).json({
+      error: envId ? err.message
+                   : 'Weder Dockhand eingerichtet noch die Docker-Installation des Panel-Servers erreichbar.',
+    });
+  }
+});
+
+// ── POST /api/docker/containers/:id/terminal-ticket ──────────────────────────
+// Einmal-Ticket für die Konsole eines Containers auf dem Panel-Server selbst.
+// Muss vor der allgemeinen :action-Route stehen, sonst gilt "terminal-ticket" als Aktion.
+router.post('/containers/:id/terminal-ticket', requirePermission('docker.control'), async (req, res) => {
+  if (!(await dockerSocket.verfuegbar())) {
+    return res.status(400).json({
+      error: 'Die Docker-Installation dieses Servers ist nicht erreichbar — ist /var/run/docker.sock in den Panel-Container eingebunden?',
+    });
+  }
+  if (!(await dockerSocket.containerExistiert(req.params.id))) {
+    return res.status(404).json({ error: 'Container nicht gefunden' });
+  }
+  const ticket = terminalTickets.issue({
+    userId:      req.user?.id,
+    username:    req.user?.username,
+    role:        req.user?.role,
+    agentId:     'local',
+    containerId: req.params.id,
+  });
+  res.json({ ticket });
 });
 
 // ── POST /api/docker/containers/:id/:action ───────────────────────────────────

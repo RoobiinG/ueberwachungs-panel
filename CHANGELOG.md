@@ -16,6 +16,56 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.7.0.0] - 2026-08-19 (Build 315) — *Konsole überall, Namen im Klartext*
+
+### ✨ Features
+- **Die Konsole gibt es jetzt auch für Container auf dem Panel-Server selbst.** Bisher war der
+  Eintrag dort ausgegraut: Die Konsole lief ausschließlich über den Panel-Agent, und auf dem
+  Panel-Server läuft keiner. Das Panel spricht dafür nun die Docker-Installation seines eigenen
+  Servers direkt an — der Zugang dorthin ist ohnehin schon eingebunden, es muss nichts
+  installiert werden. Bedienung, Rechte, Einmal-Ticket und Audit-Eintrag sind dieselben wie bei
+  Remote-Servern.
+- **Das Konsolen-Fenster ist deutlich größer** — statt rund 500 Pixel (64 Zeichen pro Zeile) jetzt
+  gut die doppelte Breite, dazu ein Schalter für die volle Fensterbreite. Die Wahl wird gemerkt
+  und gilt beim nächsten Öffnen wieder.
+- **Kopieren und Einfügen in der Konsole**: Markieren mit der Maus kopiert sofort, Einfügen geht
+  mit Strg+V oder per Rechtsklick. Strg+C kopiert die Markierung — ist nichts markiert, bleibt es
+  wie gewohnt das Abbruchsignal für den laufenden Befehl. Die Tastenkürzel stehen in der Fußzeile
+  des Fensters.
+- **Der bisherige Verlauf steht beim Öffnen schon da**: Die letzten 200 Zeilen des Containers
+  werden vorab eingeblendet, sichtbar abgetrennt vom Live-Teil. Der separate Logs-Knopf bleibt
+  unverändert bestehen.
+- **Lesbare Namen für Gameserver aus dem Pelican Panel.** Solche Container heißen nach ihrer
+  Server-UUID (`6d3bdebc-ded6-48aa-84a7-c268d4d07e83`) und waren im Panel nicht auseinander-
+  zuhalten. Ist die Verbindung unter **Einstellungen → Cloud & APIs → Pelican Panel** eingerichtet,
+  steht dort jetzt der Klarname, die gekürzte UUID klein daneben und ein Kennzeichen „pelican".
+  - **Umbenannt wird nichts** — der Name wird ausschließlich zur Anzeige geholt, die UUID bleibt
+    überall der technische Name. Es wird nur gelesen.
+  - Ein selbst vergebener Spitzname hat weiterhin Vorrang. Reihenfolge:
+    **eigener Spitzname → Pelican-Name → Container-Name**.
+  - Die Zuordnung wird fünf Minuten zwischengespeichert, damit die pollende Docker-Seite die
+    Pelican-Instanz nicht bei jedem Aufruf befragt. Ist Pelican nicht erreichbar, bleibt die
+    Docker-Seite vollständig benutzbar und zeigt weiter die UUIDs.
+
+### 🔧 Änderungen
+- **Container-Logs funktionieren auch ohne Dockhand.** Für den lokalen Server wurden sie bisher
+  ausschließlich von dort geholt; ist Dockhand nicht eingerichtet oder antwortet nicht, fragt das
+  Panel jetzt die Docker-Installation direkt. Das gilt für die Logs-Ansicht wie für den neuen
+  Verlauf in der Konsole.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank**: Keine Migration. Zwei neue Einträge in der bestehenden `settings`-Tabelle
+  (`pelicanUrl`, `pelicanToken`).
+- **Agent**: Unverändert bei 2.7.0 — die neuen Wege betreffen ausschließlich das Panel.
+- **Voraussetzung für die lokale Konsole** ist der bereits eingebundene Docker-Zugang
+  (`/var/run/docker.sock` in der docker-compose.yml). Fehlt er, bleibt alles andere unberührt und
+  das Fenster nennt den Grund.
+- **Rechte**: Für die Konsole gilt weiterhin `docker.control`, für die Pelican-Namen `docker.view`
+  (wer Container sieht, sieht auch ihre Namen), für das Einrichten `settings.manage`. Kein neues
+  Recht, keine Anpassung an bestehenden Rollen nötig.
+- **Der Weg über die Agenten bleibt unverändert** und wurde beim Umbau des WebSocket-Handlers
+  gegengeprüft.
+
 ## [5.6.0.1] - 2026-08-18 (Build 314) — *Verschwundene Container fluten das Log nicht mehr*
 
 ### 🐛 Bugfixes
