@@ -22,7 +22,10 @@ const validPort = (p) => {
 const validProto = (p) => ['tcp', 'udp'].includes(p) ? p : null;
 
 const IPV4_RE = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
-const IPV6_RE = /^[0-9a-fA-F:]+(%[a-z0-9]+)?(\/\d{1,3})?$/;
+// Der Doppelpunkt ist Pflicht: Ohne ihn galt jede reine Hex-Folge als IPv6-Adresse —
+// „abc" kam so bis zum Firewall-Tool durch, das dann versuchte, einen Hostnamen
+// aufzulösen. Im Test auf einem echten Server nachgestellt.
+const IPV6_RE = /^(?=.*:)[0-9a-fA-F:]+(%[a-z0-9]+)?(\/\d{1,3})?$/;
 
 // Eine angegebene Quelle muss gültig sein. Vorher wurde eine unbrauchbare Eingabe
 // still zu `null` — die Regel galt dann für *alle* Quellen statt für die eine
@@ -247,9 +250,21 @@ class NftablesAdapter {
       // JSON-Output (nft >= 0.9.1)
       const { stdout } = await this.exec('nft -j list ruleset 2>/dev/null');
       const parsed = JSON.parse(stdout);
+
+      // Nur Ketten, die eingehenden Verkehr filtern. Ohne diese Einschränkung landete
+      // auf einem Docker-Host das komplette Regelwerk in der Liste — NAT-Weiterleitungen,
+      // FORWARD, raw und sämtliche DOCKER-*-Ketten, rund 50 Einträge, die mit einer
+      // Firewall-Übersicht für eingehende Verbindungen nichts zu tun haben.
+      const inputChains = new Set();
+      for (const item of (parsed?.nftables || [])) {
+        const c = item.chain;
+        if (c?.hook === 'input') inputChains.add(`${c.family}/${c.table}/${c.name}`);
+      }
+
       for (const item of (parsed?.nftables || [])) {
         if (!item.rule) continue;
         const rule = item.rule;
+        if (!inputChains.has(`${rule.family}/${rule.table}/${rule.chain}`)) continue;
         const handle = String(rule.handle ?? '');
         const expr   = rule.expr || [];
 
@@ -270,20 +285,19 @@ class NftablesAdapter {
         for (const e of expr) {
           const left  = e.match?.left;
           const right = e.match?.right;
-          // dport
+          // dport — das Protokoll steht bei „tcp dport 80" im selben payload-Objekt.
+          // Es wurde bisher nur gelesen, wenn *kein* Feld gesetzt war — also nie, wenn
+          // es tatsächlich um einen Port ging. In der Liste stand deshalb immer „any".
           if (left?.payload?.field === 'dport') {
             if (right?.set)   port = right.set.map(String).join(', ');
             else if (right?.range) port = `${right.range[0]}:${right.range[1]}`;
             else if (right != null) port = String(right);
+            if (left.payload.protocol) proto = String(left.payload.protocol);
           }
           // Protokoll aus meta l4proto (Zahl → Name)
           if (left?.meta?.key === 'l4proto') {
             const v = right;
-            proto = v === 6 ? 'tcp' : v === 17 ? 'udp' : typeof v === 'string' ? v : 'any';
-          }
-          // Protokoll direkt im payload-Protocol-Feld
-          if (left?.payload?.protocol && !e.match?.left?.payload?.field) {
-            proto = String(left.payload.protocol);
+            proto = v === 6 ? 'tcp' : v === 17 ? 'udp' : typeof v === 'string' ? v : proto;
           }
         }
 

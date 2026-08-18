@@ -16,6 +16,45 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.5.0.1] - 2026-08-18 (Build 308) — *Am echten Server nachgemessen*
+
+Alle Punkte hier stammen aus einem Testlauf auf einem echten Server mit nftables und
+Docker — Fehler, die sich am Schreibtisch nicht zeigen.
+
+### 🐛 Bugfixes
+- **Das Panel stürzte bei einer Erstinstallation beim ersten Start ab.** `metricsRecorder`
+  bereitete seine Datenbank-Abfrage schon beim Laden des Moduls vor — zu einem Zeitpunkt, an dem
+  die Migration die Spalten `net_rx_sec`/`net_tx_sec` noch nicht ergänzt hatte
+  (`table metrics has no column named net_rx_sec`). Aufgefallen ist es nur deshalb kaum, weil der
+  Container sich selbst neu startet und der zweite Anlauf gelingt. Mit `restart: no` wäre das Panel
+  gar nicht hochgekommen. **Nebenwirkung:** Der Absturz passierte vor dem Start des automatischen
+  Agent-Updates — bei einem solchen Start lief dieses also nie an.
+- **Eine unbrauchbare Eingabe im Feld „Von" wurde als IPv6-Adresse akzeptiert.** Die Prüfung
+  verlangte keinen Doppelpunkt, weshalb jede reine Hex-Folge durchging: `abc` erreichte
+  unbeanstandet das Firewall-Werkzeug, das dann versuchte, einen Hostnamen aufzulösen. Jetzt wird
+  die Eingabe abgelehnt, bevor sie den Server erreicht.
+- **Das Protokoll stand bei nftables immer auf „any"**, auch wenn die Regel eindeutig `tcp` oder
+  `udp` festlegte: Bei `tcp dport 80` steht das Protokoll im selben Datenfeld wie der Port, gelesen
+  wurde es aber nur, wenn *kein* Port gesetzt war — also nie.
+- **Die Quell-Adresse fehlte in der Regel-Liste des Agenten**, obwohl sie in der Regel stand.
+
+### 🔧 Änderungen
+- **Die Firewall-Seite zeigt bei nftables nur noch echte Eingangsregeln.** Auf einem Docker-Host
+  kamen zuvor rund 50 Einträge zurück — NAT-Weiterleitungen, `FORWARD`, `raw` und sämtliche
+  `DOCKER-*`-Ketten, die meisten ohne erkennbare Aktion. Gelistet werden jetzt ausschließlich
+  Regeln aus Ketten, die eingehenden Verkehr filtern; alles von Docker Verwaltete bleibt außen vor.
+  Sind keine solchen Regeln vorhanden, sagt die Seite das ausdrücklich, statt eine leere Liste zu
+  zeigen.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank**: Keine Migration. Der Absturz-Fix ändert nur den Zeitpunkt, zu dem eine Abfrage
+  vorbereitet wird.
+- **Agent auf 2.6.1**: Die Korrekturen an der nftables-Auswertung und der IPv6-Prüfung betreffen
+  auch den Agenten. Die Versionsnummer steigt deshalb ausdrücklich mit, damit das automatische
+  Agent-Update sie beim nächsten Panel-Start von selbst auf alle Server bringt — ohne
+  Versionssprung würde es den Unterschied nicht bemerken.
+- **Bestehende Regeln** bleiben unangetastet; es ändert sich nur, was davon angezeigt wird.
+
 ## [5.5.0.0] - 2026-08-17 (Build 307) — *Agenten aktualisieren sich selbst*
 
 ### ✨ Features

@@ -17,7 +17,7 @@ const execAsync = promisify(exec);
 // sondern ein Argument-Array. Sonderzeichen in Volume-/Netzwerk-/Image-Namen können
 // so nicht als Shell-Syntax gedeutet werden.
 const execFileAsync = promisify(execFile);
-const VERSION = '2.6.0';
+const VERSION = '2.6.1';
 const REPO_RAW = 'https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master/agent/panel-agent.js';
 const PORT  = parseInt(process.env.PANEL_AGENT_PORT || '7331');
 const TOKEN = process.env.PANEL_AGENT_TOKEN || '';
@@ -237,7 +237,8 @@ async function killProcess(pid, signal = 'SIGTERM') {
 // Auseinanderlaufen der beiden Fassungen stammten die Fehler bis v5.4.2.0.
 
 const _IPV4_RE   = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
-const _IPV6_RE   = /^[0-9a-fA-F:]+(%[a-z0-9]+)?(\/\d{1,3})?$/;
+// Doppelpunkt ist Pflicht — sonst gilt jede reine Hex-Folge („abc") als IPv6-Adresse.
+const _IPV6_RE   = /^(?=.*:)[0-9a-fA-F:]+(%[a-z0-9]+)?(\/\d{1,3})?$/;
 
 // Einzelport oder Bereich „von:bis"; „99999" galt früher als gültig und lief erst im
 // Firewall-Tool auf einen Fehler.
@@ -324,17 +325,44 @@ async function getFirewallRules() {
       try {
         const { stdout } = await execAsync('nft -j list ruleset 2>/dev/null', { timeout: 5000 });
         const items = JSON.parse(stdout)?.nftables || [];
+
+        // Nur Ketten, die eingehenden Verkehr filtern. Auf einem Docker-Host kamen sonst
+        // rund 50 Einträge zurück: NAT-Weiterleitungen, FORWARD, raw und alle
+        // DOCKER-*-Ketten — auf einem echten Server nachgemessen.
+        const inputChains = new Set();
+        for (const item of items) {
+          const c = item.chain;
+          if (c?.hook === 'input') inputChains.add(`${c.family}/${c.table}/${c.name}`);
+        }
+
         for (const item of items) {
           if (!item.rule) continue;
           const r = item.rule; const expr = r.expr || [];
-          const verdict = expr.find(e => e.accept !== undefined || e.drop !== undefined);
+          if (!inputChains.has(`${r.family}/${r.table}/${r.chain}`)) continue;
+
+          const verdict = expr.find(e => e.accept !== undefined || e.drop !== undefined || e.reject !== undefined);
           const action = verdict ? (verdict.accept !== undefined ? 'allow' : 'deny') : 'unknown';
-          let port = 'any', proto = 'any';
+          if (action === 'unknown') continue;   // Jump-/Counter-Regeln überspringen
+
+          let port = 'any', proto = 'any', from = 'any';
           for (const e of expr) {
-            if (e.match?.left?.payload?.field === 'dport') { const rr = e.match?.right; port = typeof rr === 'object' ? `${rr.range?.[0]}:${rr.range?.[1]}` : String(rr ?? 'any'); }
-            if (e.match?.left?.meta?.key === 'l4proto') { proto = String(e.match?.right ?? 'any'); }
+            const left = e.match?.left, right = e.match?.right;
+            if (left?.payload?.field === 'dport') {
+              port = right?.set ? right.set.map(String).join(', ')
+                   : right?.range ? `${right.range[0]}:${right.range[1]}`
+                   : String(right ?? 'any');
+              // Bei „tcp dport 80" steht das Protokoll im selben payload-Objekt.
+              if (left.payload.protocol) proto = String(left.payload.protocol);
+            }
+            if (left?.meta?.key === 'l4proto') {
+              const v = right;
+              proto = v === 6 ? 'tcp' : v === 17 ? 'udp' : typeof v === 'string' ? v : proto;
+            }
+            if (left?.payload?.field === 'saddr') {
+              from = right?.prefix ? `${right.prefix.addr}/${right.prefix.len}` : String(right ?? 'any');
+            }
           }
-          rules.push({ id: String(r.handle ?? ''), port, proto, action, from: 'any', raw: JSON.stringify(r) });
+          rules.push({ id: String(r.handle ?? ''), port, proto, action, from, raw: JSON.stringify(r) });
         }
       } catch {
         const { stdout } = await execAsync('nft list ruleset 2>/dev/null', { timeout: 5000 });

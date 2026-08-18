@@ -2,11 +2,18 @@ const db    = require('./db');
 const cache = require('./metricsCache');
 const { getHostDisks } = require('./hostUtils');
 
-const insert  = db.prepare(`
+// Die Abfragen werden erst beim ersten Gebrauch vorbereitet, nicht schon beim Laden
+// des Moduls. Bei einer frischen Installation lief das `prepare` sonst, bevor die
+// Migration in db.js die Spalten `net_rx_sec`/`net_tx_sec` ergänzt hatte — das Panel
+// stürzte beim allerersten Start ab („table metrics has no column named net_rx_sec")
+// und fing sich nur über den Container-Neustart. Alles, was in index.js *nach* dieser
+// Zeile gestartet wird, kam dabei gar nicht erst zum Zug.
+let _insert = null, _cleanup = null;
+const insert = () => (_insert ??= db.prepare(`
   INSERT OR REPLACE INTO metrics (ts, server_id, cpu, mem_used, mem_total, disk_used, disk_total, net_rx_sec, net_tx_sec)
   VALUES (?, 'local', ?, ?, ?, ?, ?, ?, ?)
-`);
-const cleanup = db.prepare("DELETE FROM metrics WHERE ts < ? AND server_id = 'local'");
+`));
+const cleanup = () => (_cleanup ??= db.prepare("DELETE FROM metrics WHERE ts < ? AND server_id = 'local'"));
 
 // Disk-Wert wird separat gepolt (seltener, da sich kaum ändert)
 let lastDisk = null;
@@ -36,7 +43,7 @@ function start() {
     }
 
     try {
-      insert.run(
+      insert().run(
         ts,
         cpu,
         mem.total - mem.available,
@@ -52,7 +59,7 @@ function start() {
   });
 
   // Raw-Daten nur 6 Stunden aufbewahren
-  const runCleanup = () => cleanup.run(Math.floor(Date.now() / 1000) - 6 * 3600);
+  const runCleanup = () => cleanup().run(Math.floor(Date.now() / 1000) - 6 * 3600);
   runCleanup();
   setInterval(runCleanup, 3_600_000);
   console.log('Metrics-Recorder gestartet (via metricsCache)');

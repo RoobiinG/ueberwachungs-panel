@@ -454,8 +454,19 @@ export default function Firewall() {
             <RefreshCw size={14} className="animate-spin mr-2" />Lade…
           </div>
         ) : paginated.length === 0 ? (
-          <div className="text-panel-muted text-sm py-10 text-center">
-            {rules.length === 0 ? 'Keine Regeln gefunden' : 'Keine Treffer für die aktuelle Suche'}
+          <div className="text-panel-muted text-sm py-10 text-center px-6">
+            {rules.length > 0
+              ? 'Keine Treffer für die aktuelle Suche'
+              : detectedTool?.tool === 'nftables'
+                // Auf einem Docker-Host ist das der Normalfall: Docker bringt eigene Ketten
+                // für Weiterleitung mit, filtert eingehenden Verkehr aber nicht.
+                ? <>Keine Regeln für eingehende Verbindungen — dieser Server filtert eingehenden
+                    Verkehr derzeit nicht.<br />
+                    <span className="text-[11px] text-panel-muted/70">
+                      Regeln, die Docker selbst für Weiterleitung und NAT anlegt, werden hier bewusst
+                      nicht aufgeführt.
+                    </span></>
+                : 'Keine Regeln gefunden'}
           </div>
         ) : (
           <>
