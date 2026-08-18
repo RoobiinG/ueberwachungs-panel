@@ -16,6 +16,18 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.7.0.1] - 2026-08-19 (Build 316) — *Konsole findet die richtige Shell*
+
+### 🐛 Bugfixes
+- **Die Konsole blieb bei Containern ohne `bash` leer.** Beim Öffnen wurde zuerst `/bin/bash`
+  gestartet — in schlanken Abbildern (Alpine und ähnliche) gibt es das nicht, und die Engine meldet
+  das erst im Datenstrom, lange nachdem der Aufruf als erfolgreich gilt. Ein Rückfall über mehrere
+  Versuche greift deshalb nicht.
+  Die Shell wird jetzt in einem Aufruf selbst bestimmt (`bash`, sonst `sh`) — und zwar mit einer
+  Prüfung *vor* dem Ersetzen: Ein fehlgeschlagenes `exec` beendet die Shell sofort, ein
+  nachgestelltes `|| exec /bin/sh` kommt nie zum Zug. Genau daran schloss sich der Datenstrom
+  zuvor wortlos.
+
 ## [5.7.0.0] - 2026-08-19 (Build 315) — *Konsole überall, Namen im Klartext*
 
 ### ✨ Features

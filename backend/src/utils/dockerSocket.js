@@ -108,8 +108,11 @@ function logs(id, tail = 200) {
 // den exec-Aufruf an, ohne zu prüfen, ob die Datei existiert — der Fehler ("OCI runtime
 // exec failed") erscheint erst im Datenstrom und damit lange nach jedem try/catch.
 // Deshalb entscheidet der erste Versuch selbst, welche Shell er startet.
+// Wichtig: erst prüfen, dann ersetzen. `exec bash || exec sh` funktioniert *nicht* —
+// schlägt ein `exec` fehl, beendet sich die Shell sofort, und der zweite Teil kommt nie
+// zum Zug. Der Datenstrom schließt sich dann wortlos.
 const SHELL_VERSUCHE = [
-  ['/bin/sh', '-c', 'exec /bin/bash 2>/dev/null || exec /bin/sh'],
+  ['/bin/sh', '-c', 'if [ -x /bin/bash ]; then exec /bin/bash; else exec /bin/sh; fi'],
   ['/bin/ash'],
   ['/bin/busybox', 'sh'],
 ];
