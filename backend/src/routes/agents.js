@@ -11,6 +11,7 @@ const { auditLog } = require('../utils/audit');
 const { canAccessAgent } = require('../utils/agentAccess');
 const { agentClient } = require('../utils/agentTls');
 const terminalTickets = require('../utils/terminalTickets');
+const statsCache      = require('../utils/statsCache');
 
 const AGENT_RAW_URL = 'https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master/agent/panel-agent.js';
 
@@ -523,6 +524,40 @@ router.get('/:id/docker/containers', requirePermission('docker.view'), async (re
     res.json((Array.isArray(data) ? data : []).map(dockhand.normalizeContainer));
   } catch (err) {
     res.status(502).json({ error: err.message });
+  }
+});
+
+// ── GET /:id/docker/stats ─────────────────────────────────────────────────────
+// Auslastung *aller* laufenden Container eines Servers in einer einzigen Antwort.
+// Muss vor der Einzelroute darunter stehen, sonst gilt „stats" als Container-Kennung.
+//
+// Warum es das gibt: Einzeln abgefragt braucht jeder Container rund zwei Sekunden, weil
+// die Docker-Engine für die CPU-Prozente zwei Messpunkte abwarten muss. Bei zehn
+// Containern und dem Verbindungslimit des Browsers zog sich das über zehn Sekunden und
+// wiederholte sich alle acht. Hier laufen die Abrufe gebündelt und gleichzeitig, das
+// Ergebnis wird ein paar Sekunden vorgehalten.
+router.get('/:id/docker/stats', requirePermission('docker.view'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+
+  try {
+    const daten = await statsCache.holen(`agent:${agent.id}`, async () => {
+      const api = agentApi(agent);
+      const { data: liste } = await api.get('/docker/containers');
+      const laufende = (Array.isArray(liste) ? liste : []).filter(c => (c.state || '').toLowerCase() === 'running');
+
+      // Ein einzelner Container, der klemmt, darf nicht die ganze Antwort verhindern.
+      const ergebnisse = await Promise.allSettled(
+        laufende.map(c => api.get(`/docker/containers/${c.id}/stats`).then(r => [c.id, r.data]))
+      );
+      const karte = {};
+      for (const e of ergebnisse) if (e.status === 'fulfilled') karte[e.value[0]] = e.value[1];
+      return karte;
+    });
+    res.json(daten);
+  } catch (err) {
+    res.status(502).json({ error: err.response?.data?.error || err.message });
   }
 });
 

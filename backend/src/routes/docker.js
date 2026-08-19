@@ -9,6 +9,7 @@ const db                    = require('../db');
 const dockhand              = require('../utils/dockhandClient');
 const { notifyAction } = require('../utils/actionNotify');
 const dockerSocket          = require('../utils/dockerSocket');
+const statsCache            = require('../utils/statsCache');
 const terminalTickets       = require('../utils/terminalTickets');
 
 // broadcast lazy laden (zirkuläre Abhängigkeit vermeiden)
@@ -50,6 +51,35 @@ router.get('/containers/:id', requirePermission('docker.view'), async (req, res)
     const { data } = await dockhand.getContainer(envId, req.params.id);
     res.json(dockhand.normalizeContainer(data));
   } catch (err) { res.status(502).json({ error: err.message }); }
+});
+
+// ── GET /api/docker/stats ─────────────────────────────────────────────────────
+// Auslastung aller laufenden Container des Panel-Servers in einer Antwort. Gleicher
+// Grund wie beim Remote-Gegenstück in agents.js: einzeln abgefragt braucht jeder
+// Container ein bis zwei Sekunden, was sich bei vielen Containern aufsummierte.
+// Muss vor `/containers/:id/stats` stehen — sonst nicht, weil der Pfad anders lautet,
+// aber der Reihenfolge halber steht sie hier zusammen mit ihrer Verwandtschaft.
+router.get('/stats', requirePermission('docker.view'), async (req, res) => {
+  const envId = requireEnv(res);
+  if (!envId) return;
+  try {
+    const daten = await statsCache.holen(`local:${envId}`, async () => {
+      const { data: liste } = await dockhand.getContainers(envId);
+      const laufende = (Array.isArray(liste) ? liste : [])
+        .map(dockhand.normalizeContainer)
+        .filter(c => c.state === 'running');
+
+      const ergebnisse = await Promise.allSettled(
+        laufende.map(c => dockhand.getContainerStats(envId, c.id).then(r => [c.id, r.data]))
+      );
+      const karte = {};
+      for (const e of ergebnisse) if (e.status === 'fulfilled') karte[e.value[0]] = e.value[1];
+      return karte;
+    });
+    res.json(daten);
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
 });
 
 // ── GET /api/docker/containers/:id/stats  (Live-Monitoring) ──────────────────

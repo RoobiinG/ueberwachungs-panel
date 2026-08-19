@@ -16,6 +16,34 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.9.2.0] - 2026-08-19 (Build 327) — *Docker-Seite lädt in einem Zug*
+
+### 🔧 Änderungen
+- **Die Auslastungswerte der Container kommen jetzt in einer einzigen Anfrage statt in einer
+  pro Container.** Das war die Ursache für die langen Ladezeiten im Docker-Bereich: Für die
+  CPU-Prozente muss die Docker-Engine zwei Messpunkte abwarten, jede einzelne Abfrage dauert
+  deshalb ein bis zwei Sekunden. Bei zehn Containern liefen zehn solcher Abfragen — und weil
+  ein Browser nur wenige gleichzeitig zulässt, zog sich das in Wellen über zehn Sekunden hin
+  und begann alle acht Sekunden von vorn.
+  Gemessen auf dem Testserver: **20 Anfragen in 14 Sekunden, im Schnitt 2,4 Sekunden pro
+  Anfrage, die langsamste 4,1 Sekunden.** Künftig ist es eine Anfrage je Runde; das Bündeln
+  übernimmt der Server, der die Abrufe gleichzeitig erledigt.
+- **Die Werte werden serverseitig einige Sekunden vorgehalten.** Mehrere geöffnete Tabs oder
+  ein Seitenwechsel lösen damit keinen zweiten Durchlauf aus, und eine noch laufende Abfrage
+  wird geteilt statt verdoppelt.
+- Bleibt die Abfrage einmal aus, behält die Seite die zuletzt bekannten Werte, statt die
+  Anzeige zu leeren.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank:** keine Migration. **Agent:** unverändert bei 2.7.0 — der Sammelabruf passiert
+  im Panel, es ist kein Update auf den Zielservern nötig.
+- **Neue Adressen:** `GET /api/docker/stats` und `GET /api/agents/:id/docker/stats`. Die
+  bisherigen Einzelabfragen bleiben bestehen und werden weiterhin bedient.
+- **Rechte:** unverändert `docker.view`, bei Remote-Servern zusätzlich die Freigabe für den
+  jeweiligen Server. Der Zwischenspeicher wird erst nach dieser Prüfung angefasst.
+- **Spürbar** wird der Unterschied vor allem auf Servern mit vielen laufenden Containern und
+  bei Remote-Servern, deren Agent über das Netz erreicht wird.
+
 ## [5.9.1.0] - 2026-08-19 (Build 326) — *Passkeys abschaltbar*
 
 ### 🔧 Änderungen

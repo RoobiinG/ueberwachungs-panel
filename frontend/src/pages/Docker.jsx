@@ -159,31 +159,37 @@ export default function Docker() {
 
   // ── Live-Stats Polling (alle 8 s für laufende Container) ──────────────────
 
+  // Auslastung aller Container in *einer* Anfrage. Früher lief hier eine Anfrage je
+  // Container: Weil die Docker-Engine für die CPU-Prozente zwei Messpunkte abwarten muss,
+  // dauert jede davon ein bis zwei Sekunden, und der Browser lässt nur eine Handvoll
+  // gleichzeitig zu — bei zehn Containern zog sich das über zehn Sekunden und begann alle
+  // acht Sekunden von vorn. Das Bündeln übernimmt jetzt der Server.
   const pollStats = useCallback(async (clist) => {
     const running = clist.filter(c => c.state === 'running');
     if (!running.length) return;
 
-    const results = await Promise.allSettled(
-      running.map(c => {
-        const url = selectedServer
-          ? `/api/agents/${selectedServer}/docker/containers/${c.id}/stats`
-          : `/api/docker/containers/${c.id}/stats`;
-        return axios.get(url).then(r => ({ id: c.id, stats: r.data }));
-      })
-    );
+    const url = selectedServer
+      ? `/api/agents/${selectedServer}/docker/stats`
+      : '/api/docker/stats';
+
+    let daten;
+    try {
+      const { data } = await axios.get(url);
+      daten = data || {};
+    } catch {
+      return;   // Zwischenstand behalten statt die Anzeige zu leeren
+    }
 
     const newMap = {};
-    for (const r of results) {
-      if (r.status === 'fulfilled') {
-        const { id, stats } = r.value;
-        newMap[id] = {
-          cpu:        stats.cpuPercent  ?? stats.cpu        ?? null,
-          memUsed:    stats.memUsage    ?? stats.memUsed    ?? null,
-          memLimit:   stats.memLimit                        ?? null,
-          netRx:      stats.netRx                          ?? null,
-          netTx:      stats.netTx                          ?? null,
-        };
-      }
+    for (const [id, stats] of Object.entries(daten)) {
+      if (!stats) continue;
+      newMap[id] = {
+        cpu:        stats.cpuPercent  ?? stats.cpu        ?? null,
+        memUsed:    stats.memUsage    ?? stats.memUsed    ?? null,
+        memLimit:   stats.memLimit                        ?? null,
+        netRx:      stats.netRx                          ?? null,
+        netTx:      stats.netTx                          ?? null,
+      };
     }
     setStatsMap(newMap);
   }, [selectedServer]);
