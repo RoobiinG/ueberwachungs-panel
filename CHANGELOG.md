@@ -16,6 +16,30 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.9.1.0] - 2026-08-19 (Build 326) — *Passkeys abschaltbar*
+
+### 🔧 Änderungen
+- **Die Passkey-Funktion lässt sich jetzt abschalten.** Unter *Einstellungen → System & Backup →
+  Module* steht sie als eigener Schalter neben Docker, PatchMon und den übrigen. Ist sie aus,
+  verschwindet der Knopf „Mit Passkey anmelden" von der Anmeldeseite — samt der Trennlinie
+  darüber, die sonst ein „oder" ohne Alternative wäre — und die Verwaltung in den Einstellungen
+  wird ausgeblendet.
+  **Abgeschaltet wird auch serverseitig durchgesetzt:** Registrierung und Anmeldung per Passkey
+  werden abgewiesen, auch wenn jemand die Adressen direkt aufruft. Ein reines Ausblenden in der
+  Oberfläche wäre keine Abschaltung.
+  Bereits angelegte Passkeys bleiben dabei gespeichert und funktionieren wieder, sobald die
+  Funktion erneut eingeschaltet wird — es geht nichts verloren.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank:** keine Migration. Der Schalter liegt bei den übrigen Modulen in `enabled_modules`;
+  ohne Eintrag gilt wie bisher „eingeschaltet", bestehende Installationen ändern sich also nicht.
+- **Agent:** unverändert bei 2.7.0.
+- **Achtung beim Abschalten:** Wer sich ausschließlich per Passkey anmeldet, braucht danach
+  Benutzername und Passwort. Die Zwei-Faktor-Anmeldung ist davon unberührt.
+- Die Anmeldeseite fragt den Zustand über einen neuen öffentlichen Endpunkt ab
+  (`GET /api/auth/optionen`), weil sie vor der Anmeldung nicht an die Moduleinstellungen kommt.
+  Er gibt ausschließlich zurück, ob Passkeys angeboten werden.
+
 ## [5.9.0.2] - 2026-08-19 (Build 325) — *Passkey: der Weg, der wirklich funktioniert*
 
 ### 🐛 Bugfixes

@@ -45,6 +45,12 @@ const getOrigin = (req) => {
 
 const getRpName = () => 'Überwachungs-Panel';
 
+// Abgeschaltete Passkeys müssen auch serverseitig dichthalten — sonst käme, wer die
+// Adresse kennt, weiterhin an die Registrierung und an die Anmeldung.
+const { modulAktiv, erfordertModul } = require('../utils/module');
+const PASSKEYS_AUS = 'Die Anmeldung per Passkey ist in den Einstellungen abgeschaltet.';
+router.use(erfordertModul('passkeys', PASSKEYS_AUS));
+
 // In-Memory Challenge-Store mit 5-Min-TTL
 const challenges = new Map(); // key → { challenge, userId?, expiresAt }
 setInterval(() => {
@@ -166,6 +172,9 @@ router.delete('/:id', (req, res) => {
 // Diese Endpoints werden in auth.js eingebunden
 
 const loginStart = async (req, res) => {
+  // Diese beiden Endpunkte hängen in auth.js und laufen deshalb nicht durch die
+  // Modulprüfung des Routers oben — hier also noch einmal.
+  if (!modulAktiv('passkeys')) return res.status(403).json({ error: PASSKEYS_AUS });
   const options = await generateAuthenticationOptions({
     rpID:             getRpId(req),
     userVerification: 'preferred',
@@ -176,6 +185,7 @@ const loginStart = async (req, res) => {
 };
 
 const loginFinish = async (req, res) => {
+  if (!modulAktiv('passkeys')) return res.status(403).json({ error: PASSKEYS_AUS });
   const credId = req.body?.id;
   if (!credId) return res.status(400).json({ error: 'Ungültige Anfrage' });
 

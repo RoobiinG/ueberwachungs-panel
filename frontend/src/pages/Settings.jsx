@@ -412,6 +412,7 @@ function ModulesToggleCard() {
     uptimekuma: true,
     hetzner: true,
     mchost: true,
+    passkeys: true,
   });
   const [saving, setSaving] = useState(false);
   const [msg, setMsg]       = useState('');
@@ -441,6 +442,7 @@ function ModulesToggleCard() {
     { key: 'uptimekuma', label: 'Uptime Kuma',                desc: 'Web-Monitoring & Ping-Status' },
     { key: 'hetzner',    label: 'Hetzner',                    desc: 'Cloud-Server und Storage Boxes' },
     { key: 'mchost',     label: 'MC-Host24',                  desc: 'vServer / Rootserver Management' },
+    { key: 'passkeys',   label: 'Passkeys (WebAuthn)',        desc: 'Anmeldung ohne Passwort. Abgeschaltet verschwinden Knopf und Verwaltung — bereits angelegte Passkeys bleiben gespeichert' },
   ];
 
   return (
@@ -963,6 +965,9 @@ export default function Settings() {
     } catch {}
   };
 
+  // Ist die Passkey-Funktion abgeschaltet, entfällt hier die ganze Verwaltung.
+  const [passkeysAn, setPasskeysAn] = useState(true);
+
   useEffect(() => {
     loadAdmin();
     loadPasskeys();
@@ -970,6 +975,9 @@ export default function Settings() {
     loadTwoFA();
     loadDockhand();
     loadPatchmonLinks();
+    axios.get('/api/settings/modules')
+      .then(r => setPasskeysAn(r.data?.passkeys !== false))
+      .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdmin]);
 
@@ -1500,6 +1508,7 @@ export default function Settings() {
           </Card>
 
           {/* ── Passkeys ── */}
+          {passkeysAn && (
           <Card title={<span className="flex items-center gap-2"><ShieldCheck size={14} />Passkeys (WebAuthn)</span>}>
             <div className="space-y-3">
               <p className="text-xs text-panel-muted">
@@ -1592,6 +1601,7 @@ export default function Settings() {
               <Msg msg={msgs.passkey} />
             </div>
           </Card>
+          )}
 
           {/* ── 2FA ── */}
           <Card title={<span className="flex items-center gap-2"><ShieldAlert size={14} />Zwei-Faktor-Authentifizierung (2FA)</span>}>

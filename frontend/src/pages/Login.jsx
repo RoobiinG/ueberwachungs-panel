@@ -39,6 +39,16 @@ export default function Login() {
   const { login, verify2FA, saveSession } = useAuth();
   const navigate = useNavigate();
 
+  // Ist die Anmeldung per Passkey überhaupt eingeschaltet? Sonst stünde hier ein Knopf,
+  // der nur in eine Fehlermeldung führt. Im Zweifel anzeigen — die Auskunft ist nur
+  // Kosmetik, abgewiesen wird ohnehin serverseitig.
+  const [passkeysAn, setPasskeysAn] = useState(true);
+  useEffect(() => {
+    axios.get('/api/auth/optionen')
+      .then(r => setPasskeysAn(r.data?.passkeys !== false))
+      .catch(() => {});
+  }, []);
+
   // Zwischenschritt sichern bzw. aufräumen, sobald er nicht mehr gebraucht wird
   useEffect(() => {
     if (step2FA) sessionStorage.setItem(SPEICHER_2FA, JSON.stringify(step2FA));
@@ -297,23 +307,27 @@ export default function Login() {
               {loading ? 'Anmelden...' : 'Anmelden'}
             </button>
 
-            {/* Trennlinie */}
-            <div className="flex items-center gap-3">
-              <div className="flex-1 h-px bg-panel-border" />
-              <span className="text-xs text-panel-muted">oder</span>
-              <div className="flex-1 h-px bg-panel-border" />
-            </div>
+            {/* Passkey-Anmeldung — nur wenn die Funktion eingeschaltet ist. Mit ihr
+                verschwindet auch die Trennlinie, sonst bliebe ein „oder" ohne Alternative. */}
+            {passkeysAn && (
+              <>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 h-px bg-panel-border" />
+                  <span className="text-xs text-panel-muted">oder</span>
+                  <div className="flex-1 h-px bg-panel-border" />
+                </div>
 
-            {/* Passkey-Login */}
-            <button
-              type="button"
-              onClick={handlePasskeyLogin}
-              disabled={pkLoading}
-              className="w-full flex items-center justify-center gap-2 border border-panel-border hover:border-panel-accent bg-panel-surface hover:bg-panel-card text-panel-text text-sm font-medium py-2 rounded-md transition-colors disabled:opacity-50"
-            >
-              <KeyRound size={15} className="text-panel-accent" />
-              {pkLoading ? 'Warte auf Passkey...' : 'Mit Passkey anmelden'}
-            </button>
+                <button
+                  type="button"
+                  onClick={handlePasskeyLogin}
+                  disabled={pkLoading}
+                  className="w-full flex items-center justify-center gap-2 border border-panel-border hover:border-panel-accent bg-panel-surface hover:bg-panel-card text-panel-text text-sm font-medium py-2 rounded-md transition-colors disabled:opacity-50"
+                >
+                  <KeyRound size={15} className="text-panel-accent" />
+                  {pkLoading ? 'Warte auf Passkey...' : 'Mit Passkey anmelden'}
+                </button>
+              </>
+            )}
 
             <div className="text-center">
               <Link to="/forgot-password" className="text-xs text-panel-muted hover:text-panel-accent transition-colors">

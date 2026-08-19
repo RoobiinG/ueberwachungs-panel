@@ -253,6 +253,17 @@ router.post('/2fa/verify', loginLimiter, (req, res) => {
   res.json({ token, user: { id: user.id, username: user.username, role: user.role }, permissions, hideLocal });
 });
 
+// ─── Was die Anmeldeseite anbieten darf (öffentlich) ─────────────────────────
+// Die Anmeldemaske ist noch nicht angemeldet und kommt deshalb nicht an die
+// Moduleinstellungen. Ohne diese Auskunft stünde dort ein Passkey-Knopf, der nur in
+// eine Fehlermeldung führt. Verraten wird nichts Schützenswertes — der Knopf selbst
+// wäre die gleiche Auskunft.
+router.get('/optionen', (req, res) => {
+  let passkeys = true;
+  try { passkeys = require('../utils/module').modulAktiv('passkeys'); } catch {}
+  res.json({ passkeys });
+});
+
 // ─── Passkey-Login (öffentlich) ───────────────────────────────────────────────
 
 let passkeyHandlers;

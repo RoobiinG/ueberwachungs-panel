@@ -245,13 +245,9 @@ router.post('/github/test', requirePermission('settings.manage'), async (req, re
 });
 
 // ── Aktive Module & Funktionen ────────────────────────────────────────────────
-const defaultModules = {
-  docker: true,
-  patchmon: true,
-  uptimekuma: true,
-  hetzner: true,
-  mchost: true,
-};
+// Die Vorgabewerte stehen in utils/module.js, damit auch andere Routen (und die
+// Anmeldeseite) prüfen können, ob eine Funktion überhaupt aktiv ist.
+const { defaultModules, modulAktiv } = require('../utils/module');
 
 router.get('/modules', (req, res) => {
   try {
