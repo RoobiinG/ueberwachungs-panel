@@ -16,6 +16,29 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.8.2.0] - 2026-08-19 (Build 321) — *Der Code bestätigt sich selbst*
+
+### 🔧 Änderungen
+- **Der Zwei-Faktor-Code wird abgeschickt, sobald er vollständig ist.** Ein Einmalcode ist mit
+  der sechsten Ziffer fertig — es gibt nichts mehr zu ergänzen und nichts zu prüfen. Trägt ihn
+  ein Passwortmanager automatisch ein, war der Klick auf „Code bestätigen" nur noch ein
+  überflüssiger Schritt am Ende einer sonst vollautomatischen Anmeldung. Jetzt genügen die
+  sechs Ziffern, egal ob getippt, eingefügt oder automatisch ausgefüllt.
+  Der Knopf bleibt erhalten, und am Feld steht, dass automatisch bestätigt wird.
+  Jeder Code wird dabei nur ein einziges Mal abgeschickt — ein abgelehnter Code läuft also
+  nicht in eine Wiederholschleife, sondern wartet auf den nächsten.
+- **Automatisch ausgefüllte Codes werden auch dann erkannt, wenn der Passwortmanager sie
+  stillschweigend einträgt.** Manche Erweiterungen schreiben ihren Wert direkt ins Feld, ohne
+  die Seite zu benachrichtigen. Für die ersten fünfzehn Sekunden der Code-Abfrage sieht das
+  Panel deshalb selbst nach, statt sich allein auf eine Benachrichtigung zu verlassen.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank:** keine Migration. **Agent:** unverändert bei 2.7.0.
+- **Sicherheit:** unverändert — geprüft wird weiterhin serverseitig, das automatische Abschicken
+  erspart nur den Klick. Falsche Codes werden wie bisher abgewiesen, die Begrenzung der
+  Anmeldeversuche greift unverändert.
+- **Ohne Zwei-Faktor** und bei der **Anmeldung per Passkey** ändert sich nichts.
+
 ## [5.8.1.0] - 2026-08-19 (Build 320) — *Passkey: du bestimmst den Speicherort*
 
 ### 🔧 Änderungen

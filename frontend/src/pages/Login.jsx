@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Server, Eye, EyeOff, KeyRound, Shield, ArrowLeft } from 'lucide-react';
 import axios from 'axios';
@@ -50,7 +50,44 @@ export default function Login() {
     setStep2FA(null);
     setCode2FA('');
     setError('');
+    autoGesendet.current = '';
   };
+
+  // ── Sechs Ziffern reichen — dann wird selbst abgeschickt ───────────────────
+  // Ein Einmalcode ist mit der sechsten Ziffer vollständig; es gibt nichts mehr zu
+  // ergänzen oder zu prüfen. Trägt ihn ein Passwortmanager ein, ist der Klick auf
+  // „Code bestätigen" reine Reibung.
+  const form2FA      = useRef(null);
+  const autoGesendet = useRef('');   // zuletzt selbst abgeschickter Code
+
+  // Der Wächter liest das Feld direkt aus dem DOM: Passwortmanager schreiben ihren Wert
+  // teils ohne Ereignis hinein, dann erfährt React nichts davon und der Zustand bliebe leer.
+  useEffect(() => {
+    if (!step2FA) return;
+    const feld = form2FA.current?.elements?.otp;
+    if (!feld) return;
+
+    const pruefen = () => {
+      const roh = String(feld.value || '').replace(/\D/g, '').slice(0, 6);
+      if (roh && roh !== code2FA) setCode2FA(roh);
+    };
+    const timer = setInterval(pruefen, 250);
+    // Nach einer Viertelminute hat kein Passwortmanager mehr etwas vor — dann ist
+    // dauerndes Nachsehen nur noch Leerlauf.
+    const schluss = setTimeout(() => clearInterval(timer), 15_000);
+    return () => { clearInterval(timer); clearTimeout(schluss); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step2FA]);
+
+  // Vollständiger Code → abschicken. Jeder Code nur einmal, sonst liefe ein abgelehnter
+  // Code in eine Endlosschleife.
+  useEffect(() => {
+    if (!step2FA || loading) return;
+    if (code2FA.length !== 6 || autoGesendet.current === code2FA) return;
+    autoGesendet.current = code2FA;
+    form2FA.current?.requestSubmit();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code2FA, step2FA]);
 
   // Passwortmanager wie Enpass schreiben ihre Werte teilweise direkt ins DOM-Feld, ohne
   // dass React davon erfährt. Der Komponenten-Zustand bleibt dann leer, obwohl im Feld
@@ -152,7 +189,7 @@ export default function Login() {
         </div>
 
         {step2FA ? (
-          <form onSubmit={handleVerify2FA} className="bg-panel-card border border-panel-border rounded-lg p-6 space-y-4">
+          <form ref={form2FA} onSubmit={handleVerify2FA} className="bg-panel-card border border-panel-border rounded-lg p-6 space-y-4">
             <div className="flex items-center gap-2 text-sm font-semibold text-panel-text mb-1">
               <Shield size={18} className="text-panel-accent" />
               Zwei-Faktor-Authentifizierung
@@ -170,7 +207,10 @@ export default function Login() {
             )}
 
             <div>
-              <label className="block text-xs font-medium text-panel-muted mb-1.5">6-stelliger Code</label>
+              <label className="block text-xs font-medium text-panel-muted mb-1.5">
+                6-stelliger Code
+                <span className="font-normal text-panel-muted/70"> · wird automatisch bestätigt</span>
+              </label>
               {/* `one-time-code` sagt Browsern und Passwortmanagern, dass hier ein
                   Einmalcode erwartet wird. Ohne diese Auszeichnung halten Erweiterungen
                   wie Enpass das Feld für ein gewöhnliches Anmeldefeld und füllen im
