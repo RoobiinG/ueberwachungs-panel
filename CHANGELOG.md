@@ -16,6 +16,34 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.9.0.0] - 2026-08-19 (Build 323) — *Passkey ohne Systemdialog*
+
+### ✨ Features
+- **Neuer Speicherort „Still im Passwortmanager" — der Weg am Betriebssystem vorbei.** Unter
+  Windows reichen alle Browser die Passkey-Anlage an das System weiter, und dessen Dialog bietet
+  nur Anbieter an, die sich dort als System-Passkey-Verwalter registriert haben. Enpass tut das
+  bislang nicht, weshalb immer Windows Hello erschien — unabhängig vom Browser und von jeder
+  Einstellung im Panel.
+  Die neue Option nimmt den Weg, den der Standard **„conditional create"** (WebAuthn Level 3)
+  dafür vorsieht: Der Passwortmanager, in dem das gerade benutzte Panel-Passwort liegt, legt den
+  Passkey **selbst** an. Es erscheint kein Auswahlfenster, kein Systemdialog und damit auch kein
+  Windows Hello — das Betriebssystem ist an dem Vorgang gar nicht beteiligt.
+  Voraussetzung: Das Panel-Passwort ist im Passwortmanager gespeichert und wurde zur Anmeldung
+  benutzt. Am zuverlässigsten klappt es kurz nach dem Anmelden. Schlägt es fehl, sagt die Meldung
+  jetzt, woran es liegt, statt von einem „abgebrochenen Dialog" zu sprechen — bei diesem Weg gibt
+  es ja keinen Dialog zum Abbrechen.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank:** keine Migration. **Agent:** unverändert bei 2.7.0.
+- **Sicherheit:** unverändert. Es ist der vorgesehene Weg der WebAuthn-Spezifikation und keine
+  Umgehung: Der Passkey entsteht im Passwortmanager des Benutzers, das Panel bekommt wie bisher
+  nur den öffentlichen Schlüssel und prüft ihn unverändert. Die Registrierung akzeptiert dabei
+  wie zuvor auch Anmeldedaten ohne Nutzerprüfung — was bei diesem Weg vorgesehen ist, weil der
+  Passwortmanager die Freigabe bereits übernommen hat.
+- **Bestehende Passkeys** sind nicht betroffen, die übrigen drei Speicherorte bleiben unverändert.
+- Der Hinweis auf die Brave-Einschränkung entfällt bei diesem Weg — mangels Systemdialog greift
+  der Browserfehler dort nicht.
+
 ## [5.8.3.0] - 2026-08-19 (Build 322) — *Passkey-Hinweise kennen deinen Browser*
 
 ### 🐛 Bugfixes

@@ -60,10 +60,16 @@ setInterval(() => {
 // Plattform-Authenticator ausschließen; umgekehrt meldet sich Enpass in Brave *als*
 // Plattform-Authenticator, weshalb 'extern' dort das Falsche wäre. Deshalb entscheidet
 // das nicht der Server, sondern der Benutzer beim Anlegen.
+// `still` nutzt den Weg, den die Spezifikation „conditional create" nennt: Der
+// Passwortmanager, in dem das gerade benutzte Passwort liegt, legt den Passkey selbst an —
+// ohne Auswahl, ohne Systemdialog. Deshalb darf hier *keine* Bauart vorgegeben werden,
+// sonst schließt die Vorgabe genau den Manager aus, der es tun soll. Den Unterschied macht
+// allein das Frontend beim Aufruf; serverseitig ist es eine gewöhnliche Registrierung.
 const ATTACHMENT = {
   geraet: 'platform',        // Windows Hello, Touch ID, Android-Bildschirmsperre
   extern: 'cross-platform',  // Passwortmanager, Sicherheitsschlüssel, anderes Gerät
-  auto:   undefined,         // wie bisher: der Browser entscheidet
+  auto:   undefined,         // der Browser entscheidet
+  still:  undefined,         // der Passwortmanager legt ihn ohne Dialog an
 };
 
 router.get('/register/start', async (req, res) => {

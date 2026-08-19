@@ -1018,7 +1018,13 @@ export default function Settings() {
     try {
       const { startRegistration } = await import('@simplewebauthn/browser');
       const optRes   = await axios.get(`/api/passkeys/register/start?ziel=${encodeURIComponent(passkeyZiel)}`);
-      const attResp  = await startRegistration({ optionsJSON: optRes.data });
+      // `useAutoRegister` entspricht `mediation: 'conditional'`: Der Passwortmanager, der
+      // das gerade benutzte Passwort hält, legt den Passkey selbst an — es erscheint kein
+      // Auswahl- und kein Systemdialog, und damit auch kein Windows Hello.
+      const attResp  = await startRegistration({
+        optionsJSON: optRes.data,
+        ...(passkeyZiel === 'still' ? { useAutoRegister: true } : {}),
+      });
       const name     = passkeyName.trim() || 'Passkey';
       await axios.post('/api/passkeys/register/finish', { registration: attResp, name });
       setPasskeyName('');
@@ -1030,7 +1036,11 @@ export default function Settings() {
       // erst der gewünschte Anbieter.
       const isNotAllowed = /not allowed|timed out|NotAllowedError/i.test(raw);
       const msg = isNotAllowed
-        ? (istBrave
+        ? (passkeyZiel === 'still'
+            // Beim stillen Weg heißt NotAllowedError nicht „abgebrochen", sondern
+            // „Bedingungen nicht erfüllt" — es gab ja gar keinen Dialog zum Abbrechen.
+            ? 'Dein Passwortmanager hat den Passkey nicht angelegt. Das passiert, wenn das Panel-Passwort dort nicht gespeichert ist, du dich nicht damit angemeldet hast, oder er diesen Weg noch nicht unterstützt. Melde dich einmal per Passwort-Autofill neu an und versuche es gleich danach — oder wähle einen der anderen Speicherorte.'
+            : istBrave
             ? 'Dialog abgebrochen. In Brave meldet sich Enpass als Geräte-Anmeldung — unter „Speicherort" auf „Auf diesem Gerät" stellen. Kommt weiterhin nur der Windows-Dialog, ist das ein bekannter Brave-Fehler: dann in Chrome oder Edge anlegen, oder im Dialog „Anderes Gerät" wählen und den QR-Code mit dem Handy scannen.'
             : passkeyZiel === 'extern'
               ? 'Dialog abgebrochen. Erscheint dein Passwortmanager nicht, muss er im Browser als Passkey-Anbieter freigeschaltet sein — alternativ im Dialog „Anderes Gerät" wählen und den QR-Code mit dem Handy scannen.'
@@ -1532,12 +1542,15 @@ export default function Settings() {
                   onChange={e => { setPasskeyZiel(e.target.value); localStorage.setItem('panel_passkey_ziel', e.target.value); }}
                   className="w-full bg-panel-surface border border-panel-border rounded-md px-3 py-1.5 text-sm text-panel-text focus:outline-none focus:border-panel-accent"
                 >
+                  <option value="still">Still im Passwortmanager — ohne jeden Systemdialog (empfohlen bei Enpass)</option>
                   <option value="auto">Automatisch — der Browser entscheidet</option>
                   <option value="geraet">Auf diesem Gerät — Windows Hello, Touch ID, Fingerabdruck</option>
                   <option value="extern">Passwortmanager oder anderes Gerät — Enpass, 1Password, YubiKey, Handy</option>
                 </select>
                 <p className="text-[11px] text-panel-muted mt-1">
-                  {passkeyZiel === 'extern'
+                  {passkeyZiel === 'still'
+                    ? 'Dein Passwortmanager legt den Passkey selbst an — es erscheint gar kein Auswahlfenster und damit auch kein Windows Hello. Voraussetzung: Das Panel-Passwort ist in ihm gespeichert und du hast dich damit angemeldet. Klappt am zuverlässigsten kurz nach dem Anmelden.'
+                    : passkeyZiel === 'extern'
                     ? (istBrave
                         ? 'In Brave meldet sich Enpass als Geräte-Anmeldung — diese Einstellung schließt es hier also gerade aus. Für Enpass in Brave „Auf diesem Gerät" wählen.'
                         : 'Die Geräte-Anmeldung wird übersprungen. Wähle im folgenden Fenster deinen Passwortmanager oder „Anderes Gerät" und scanne den QR-Code mit dem Handy.')
@@ -1552,7 +1565,7 @@ export default function Settings() {
                     Panel-Fehler aussehen: Brave übergibt WebAuthn unter Windows an das
                     System, das dann seinen eigenen Dialog zeigt und den Passwortmanager
                     übergeht (offener Brave-Fehler #37762). */}
-                {istBrave && (
+                {istBrave && passkeyZiel !== 'still' && (
                   <p className="text-[11px] text-panel-orange mt-1.5 flex items-start gap-1.5">
                     <AlertTriangle size={11} className="flex-shrink-0 mt-0.5" />
                     <span>

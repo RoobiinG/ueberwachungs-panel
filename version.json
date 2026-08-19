@@ -1,6 +1,6 @@
 {
-  "version": "5.8.3.0",
-  "build": 322,
+  "version": "5.9.0.0",
+  "build": 323,
   "date": "2026-08-19",
-  "codename": "Passkey-Hinweise kennen deinen Browser"
+  "codename": "Passkey ohne Systemdialog"
 }
