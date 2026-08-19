@@ -1,6 +1,6 @@
 {
-  "version": "5.9.0.0",
-  "build": 323,
+  "version": "5.9.0.1",
+  "build": 324,
   "date": "2026-08-19",
-  "codename": "Passkey ohne Systemdialog"
+  "codename": "Passkey-Fehlschlag wird wieder erklärt"
 }

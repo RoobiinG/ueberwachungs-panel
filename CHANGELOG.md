@@ -16,6 +16,21 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.9.0.1] - 2026-08-19 (Build 324) — *Passkey-Fehlschlag wird wieder erklärt*
+
+### 🐛 Bugfixes
+- **Ein abgebrochener oder erfolgloser Passkey-Versuch endete in „Registrierung
+  fehlgeschlagen", statt den Grund zu nennen.** Erkannt wurde der Fall bisher nur am
+  Meldungstext — die verwendete WebAuthn-Bibliothek verpackt die ursprüngliche Ausnahme aber
+  und formuliert die Nachricht um, sodass die Erkennung ins Leere lief. Jetzt wird zusätzlich
+  der Name der Ausnahme geprüft. Damit erscheinen die erklärenden Hinweise wieder — besonders
+  beim stillen Weg über den Passwortmanager, wo es mangels Dialog sonst gar keinen Anhaltspunkt
+  gäbe, woran es lag.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank:** keine Migration. **Agent:** unverändert bei 2.7.0.
+- Betrifft ausschließlich die Fehlermeldung; am Anlegen und Anmelden ändert sich nichts.
+
 ## [5.9.0.0] - 2026-08-19 (Build 323) — *Passkey ohne Systemdialog*
 
 ### ✨ Features

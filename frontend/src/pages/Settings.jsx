@@ -1033,8 +1033,12 @@ export default function Settings() {
     } catch (err) {
       const raw = err?.response?.data?.error || err?.message || '';
       // NotAllowedError = Dialog geschlossen, abgelaufen — oder es erschien gar nicht
-      // erst der gewünschte Anbieter.
-      const isNotAllowed = /not allowed|timed out|NotAllowedError/i.test(raw);
+      // erst der gewünschte Anbieter. Der Meldungstext allein reicht zum Erkennen nicht:
+      // SimpleWebAuthn verpackt die ursprüngliche Ausnahme in `cause` und formuliert die
+      // Nachricht um. Ohne den Namen mitzuprüfen bliebe nur ein nichtssagendes
+      // „Registrierung fehlgeschlagen" — gerade beim stillen Weg, wo es am meisten stört.
+      const namen = [err?.name, err?.cause?.name, err?.code].filter(Boolean).join(' ');
+      const isNotAllowed = /not allowed|timed out|NotAllowedError/i.test(`${raw} ${namen}`);
       const msg = isNotAllowed
         ? (passkeyZiel === 'still'
             // Beim stillen Weg heißt NotAllowedError nicht „abgebrochen", sondern
