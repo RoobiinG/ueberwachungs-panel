@@ -836,13 +836,9 @@ export default function Settings() {
   // Speicherort des neuen Passkeys. Die Wahl merkt sich das Panel, weil sie vom Gerät
   // abhängt und nicht bei jedem Anlegen neu getroffen werden soll.
   const [passkeyZiel,  setPasskeyZiel]  = useState(() => localStorage.getItem('panel_passkey_ziel') || 'auto');
-  // Brave verhält sich hier gegenteilig zu Chrome und Edge: Enpass meldet sich dort als
-  // Geräte-Anmeldung, nicht als externer Anbieter. Derselbe Hinweis wäre also je nach
-  // Browser falsch — deshalb wird er nachgeschlagen.
-  const [istBrave, setIstBrave] = useState(false);
-  useEffect(() => {
-    navigator.brave?.isBrave?.().then(v => setIstBrave(!!v)).catch(() => {});
-  }, []);
+  // Eine Browser-Unterscheidung gab es hier zwischenzeitlich — sie ist wieder entfallen:
+  // Am Windows-Rechner reichen alle Browser die Passkey-Anlage ans Betriebssystem weiter,
+  // die Einschränkung gilt also überall gleich.
 
   // 2FA
   const [twoFaStatus, setTwoFaStatus] = useState({ twofa_type: 'none', hasEmail: false });
@@ -1043,12 +1039,10 @@ export default function Settings() {
         ? (passkeyZiel === 'still'
             // Beim stillen Weg heißt NotAllowedError nicht „abgebrochen", sondern
             // „Bedingungen nicht erfüllt" — es gab ja gar keinen Dialog zum Abbrechen.
-            ? 'Dein Passwortmanager hat den Passkey nicht angelegt. Das passiert, wenn das Panel-Passwort dort nicht gespeichert ist, du dich nicht damit angemeldet hast, oder er diesen Weg noch nicht unterstützt. Melde dich einmal per Passwort-Autofill neu an und versuche es gleich danach — oder wähle einen der anderen Speicherorte.'
-            : istBrave
-            ? 'Dialog abgebrochen. In Brave meldet sich Enpass als Geräte-Anmeldung — unter „Speicherort" auf „Auf diesem Gerät" stellen. Kommt weiterhin nur der Windows-Dialog, ist das ein bekannter Brave-Fehler: dann in Chrome oder Edge anlegen, oder im Dialog „Anderes Gerät" wählen und den QR-Code mit dem Handy scannen.'
+            ? 'Der Passwortmanager hat den Passkey nicht angelegt. Am Rechner nutzen die Browser dafür nur ihren eigenen Manager — Erweiterungen wie Enpass kommen hier nicht zum Zug. Für Enpass stattdessen „Handy, Sicherheitsschlüssel oder anderes Gerät" wählen und den QR-Code mit dem Telefon scannen.'
             : passkeyZiel === 'extern'
-              ? 'Dialog abgebrochen. Erscheint dein Passwortmanager nicht, muss er im Browser als Passkey-Anbieter freigeschaltet sein — alternativ im Dialog „Anderes Gerät" wählen und den QR-Code mit dem Handy scannen.'
-              : 'Dialog abgebrochen. Für einen Passkey im Passwortmanager (z. B. Enpass) unter „Speicherort" auf „Passwortmanager oder anderes Gerät" umstellen.')
+              ? 'Dialog abgebrochen. Wähle im Fenster „Anderes Gerät" und scanne den QR-Code mit dem Handy — dort legt deine Passwortmanager-App den Passkey an.'
+              : 'Dialog abgebrochen. Für einen Passkey im Passwortmanager unter „Speicherort" auf „Handy, Sicherheitsschlüssel oder anderes Gerät" umstellen und den QR-Code mit dem Telefon scannen.')
         : (raw || 'Registrierung fehlgeschlagen');
       feedback('passkey', 'err', msg);
     }
@@ -1546,38 +1540,38 @@ export default function Settings() {
                   onChange={e => { setPasskeyZiel(e.target.value); localStorage.setItem('panel_passkey_ziel', e.target.value); }}
                   className="w-full bg-panel-surface border border-panel-border rounded-md px-3 py-1.5 text-sm text-panel-text focus:outline-none focus:border-panel-accent"
                 >
-                  <option value="still">Still im Passwortmanager — ohne jeden Systemdialog (empfohlen bei Enpass)</option>
                   <option value="auto">Automatisch — der Browser entscheidet</option>
                   <option value="geraet">Auf diesem Gerät — Windows Hello, Touch ID, Fingerabdruck</option>
-                  <option value="extern">Passwortmanager oder anderes Gerät — Enpass, 1Password, YubiKey, Handy</option>
+                  <option value="extern">Handy, Sicherheitsschlüssel oder anderes Gerät — per QR-Code</option>
+                  <option value="still">Still im Passwortmanager — ohne Systemdialog (nur mit dem Manager des Browsers)</option>
                 </select>
                 <p className="text-[11px] text-panel-muted mt-1">
                   {passkeyZiel === 'still'
-                    ? 'Dein Passwortmanager legt den Passkey selbst an — es erscheint gar kein Auswahlfenster und damit auch kein Windows Hello. Voraussetzung: Das Panel-Passwort ist in ihm gespeichert und du hast dich damit angemeldet. Klappt am zuverlässigsten kurz nach dem Anmelden.'
+                    ? 'Der Passwortmanager legt den Passkey selbst an, ohne jedes Fenster. Am Rechner nutzen die Browser dafür allerdings nur ihren eigenen Manager (Chrome den von Google, Safari den iCloud-Schlüsselbund) — eine Erweiterung wie Enpass kommt hier nicht zum Zug. Auf dem Handy dagegen schon.'
                     : passkeyZiel === 'extern'
-                    ? (istBrave
-                        ? 'In Brave meldet sich Enpass als Geräte-Anmeldung — diese Einstellung schließt es hier also gerade aus. Für Enpass in Brave „Auf diesem Gerät" wählen.'
-                        : 'Die Geräte-Anmeldung wird übersprungen. Wähle im folgenden Fenster deinen Passwortmanager oder „Anderes Gerät" und scanne den QR-Code mit dem Handy.')
-                    : passkeyZiel === 'geraet'
-                      ? (istBrave
-                          ? 'In Brave ist das die richtige Wahl für Enpass: Der Passwortmanager meldet sich hier als Geräte-Anmeldung. Windows Hello steht im selben Dialog zur Auswahl.'
-                          : 'Der Passkey bleibt auf diesem Gerät und lässt sich nicht auf andere übertragen.')
-                      : 'Welche Einstellung deinen Passwortmanager anbietet, hängt vom Browser ab — in Chrome und Edge „Passwortmanager oder anderes Gerät", in Brave dagegen „Auf diesem Gerät".'}
+                      ? 'Wähle im folgenden Fenster „Anderes Gerät" und scanne den QR-Code mit dem Handy. Der Passkey landet dann im Passwortmanager deines Telefons und steht über dessen Synchronisierung auch hier zur Verfügung.'
+                      : passkeyZiel === 'geraet'
+                        ? 'Der Passkey bleibt auf diesem Gerät und lässt sich nicht auf andere übertragen.'
+                        : 'Ohne Vorgabe entscheidet der Browser — unter Windows heißt das in aller Regel Windows Hello.'}
                 </p>
 
-                {/* Bekannte Einschränkung, damit vergebliche Versuche nicht wie ein
-                    Panel-Fehler aussehen: Brave übergibt WebAuthn unter Windows an das
-                    System, das dann seinen eigenen Dialog zeigt und den Passwortmanager
-                    übergeht (offener Brave-Fehler #37762). */}
-                {istBrave && passkeyZiel !== 'still' && (
+                {/* Der häufigste Stolperstein, offen benannt: Eine Passwortmanager-Erweiterung
+                    kann am Windows-Rechner gar nicht zum Zug kommen. Der Browser reicht die
+                    Anlage ans Betriebssystem weiter, und dessen Dialog kennt nur Anbieter, die
+                    sich über die Windows-Schnittstelle registriert haben (seit KB5068861:
+                    1Password, Bitwarden, Microsoft). Der stille Weg hilft ebenfalls nicht — den
+                    bedienen die Browser am Rechner nur mit ihrem eigenen Manager. */}
+                {passkeyZiel !== 'extern' && (
                   <p className="text-[11px] text-panel-orange mt-1.5 flex items-start gap-1.5">
                     <AlertTriangle size={11} className="flex-shrink-0 mt-0.5" />
                     <span>
-                      Brave erkannt. Erscheint trotz passender Einstellung immer der Windows-Dialog,
-                      liegt das an einem bekannten Brave-Fehler und nicht am Panel. Zwei Auswege:
-                      den Passkey in Chrome oder Edge anlegen, oder im Windows-Dialog
-                      „Anderes Gerät" wählen und den QR-Code mit dem Handy scannen — dort speichert
-                      Enpass ihn, und über die Synchronisierung steht er auch am Rechner zur Verfügung.
+                      Nutzt du einen Passwortmanager als Browser-Erweiterung (Enpass, KeePass …)?
+                      Der kann am Windows-Rechner keine Passkeys anlegen — Windows bietet dafür nur
+                      Programme an, die sich dort als Passkey-Verwalter registriert haben, derzeit
+                      1Password, Bitwarden und der Microsoft-Manager. Nimm stattdessen
+                      <strong className="font-medium"> „Handy, Sicherheitsschlüssel oder anderes Gerät"</strong> und
+                      scanne den QR-Code mit dem Telefon: Dort speichert deine Passwortmanager-App den
+                      Passkey, und über ihre Synchronisierung steht er auch am Rechner zur Verfügung.
                     </span>
                   </p>
                 )}

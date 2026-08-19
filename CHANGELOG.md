@@ -16,6 +16,32 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.9.0.2] - 2026-08-19 (Build 325) — *Passkey: der Weg, der wirklich funktioniert*
+
+### 🐛 Bugfixes
+- **Die Hinweise zum Passkey-Speicherort versprachen etwas, das am Windows-Rechner nicht
+  funktioniert.** Sie empfahlen für Passwortmanager wie Enpass erst „Passwortmanager oder
+  anderes Gerät", dann den stillen Weg — beides führt dort nicht zum Ziel, und die vorherige
+  Fassung nannte den stillen Weg sogar ausdrücklich „empfohlen bei Enpass".
+  Der tatsächliche Grund, jetzt offen benannt: Am Rechner reichen **alle** Browser die Anlage
+  eines Passkeys an Windows weiter, und dessen Dialog kennt nur Programme, die sich dort als
+  Passkey-Verwalter registriert haben — seit dem Windows-Update vom November 2025 sind das
+  1Password, Bitwarden und der Microsoft-Manager. Ein Passwortmanager, der nur als
+  Browser-Erweiterung läuft, kommt gar nicht erst zur Auswahl. Der stille Weg hilft ebenfalls
+  nicht: Den bedienen die Browser am Rechner ausschließlich mit ihrem eigenen Manager.
+  An der Einstellung steht jetzt, was stattdessen zum Ziel führt — **„Handy,
+  Sicherheitsschlüssel oder anderes Gerät"** und den QR-Code mit dem Telefon scannen. Dort legt
+  die Passwortmanager-App den Passkey an, und über deren Synchronisierung steht er auch am
+  Rechner zur Verfügung. Die Fehlermeldungen verweisen ebenfalls auf diesen Weg.
+- Die zwischenzeitliche Sonderbehandlung für Brave ist wieder entfallen: Die Einschränkung gilt
+  in jedem Browser gleichermaßen, eine Unterscheidung hätte nur erneut in die Irre geführt.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank:** keine Migration. **Agent:** unverändert bei 2.7.0.
+- Rein anzeigend — alle vier Speicherorte bleiben erhalten und verhalten sich technisch
+  unverändert; nur die Beschriftungen und Erklärungen stimmen jetzt. Bereits registrierte
+  Passkeys sind nicht betroffen.
+
 ## [5.9.0.1] - 2026-08-19 (Build 324) — *Passkey-Fehlschlag wird wieder erklärt*
 
 ### 🐛 Bugfixes
