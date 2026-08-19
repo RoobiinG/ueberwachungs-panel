@@ -9,8 +9,6 @@ const db                    = require('../db');
 const dockhand              = require('../utils/dockhandClient');
 const { notifyAction } = require('../utils/actionNotify');
 const dockerSocket          = require('../utils/dockerSocket');
-const dockerQuellen         = require('../utils/dockerQuellen');
-const pelicanClient         = require('../utils/pelicanClient');
 const terminalTickets       = require('../utils/terminalTickets');
 
 // broadcast lazy laden (zirkuläre Abhängigkeit vermeiden)
@@ -33,60 +31,6 @@ const requireEnv = (res) => {
   }
   return envId;
 };
-
-// ── GET /api/docker/search?q=… ────────────────────────────────────────────────
-// Sucht Container über alle Server hinweg, die diese Rolle sehen darf.
-//
-// Zum Rechtesystem: Welche Server abgefragt werden, entscheidet `containerAllerQuellen`
-// anhand der Rolle — `restrict_agents` (nur freigegebene Agenten) und `hide_local` (kein
-// Panel-Server) wirken also schon beim Abruf, nicht erst beim Anzeigen. Wer einen Server
-// nicht sehen darf, erfährt über diese Route weder dessen Namen noch seine Container.
-// Zusätzlich braucht es wie überall sonst `docker.view`.
-router.get('/search', requirePermission('docker.view'), async (req, res) => {
-  const suchbegriff = String(req.query.q || '').trim().toLowerCase();
-  if (suchbegriff.length < 2) {
-    return res.status(400).json({ error: 'Bitte mindestens zwei Zeichen eingeben.' });
-  }
-
-  try {
-    const { quellen, container } = await dockerQuellen.containerAllerQuellen(req.user?.role);
-
-    // Spitznamen und Pelican-Klarnamen sind Anzeigenamen des Panels. Wer nach ihnen
-    // sucht, erwartet Treffer — auch wenn der Container selbst anders heißt.
-    const labels = db.prepare('SELECT server, container_id, nickname, tag FROM container_labels').all();
-    const labelKarte = new Map(labels.map(l => [`${l.server}:${l.container_id}`, l]));
-    // Nicht eingerichtetes Pelican ist kein Grund, die Suche scheitern zu lassen.
-    let pelican = {};
-    try { pelican = await pelicanClient.namensKarte(false); } catch {}
-
-    const passt = (wert) => String(wert || '').toLowerCase().includes(suchbegriff);
-
-    const treffer = container.map(c => {
-      const label = labelKarte.get(`${c.serverId}:${c.id}`) || {};
-      const pelicanName = pelican[String(c.name || '').toLowerCase()] || null;
-      const felder = {
-        name: c.name, image: c.image, stack: c.stack,
-        spitzname: label.nickname || null, markierung: label.tag || null,
-        pelicanName,
-        kennung: String(c.id || '').slice(0, 12),
-      };
-      const gefundenIn = Object.entries(felder).filter(([, v]) => passt(v)).map(([k]) => k);
-      return gefundenIn.length ? { ...c, ...felder, gefundenIn } : null;
-    }).filter(Boolean);
-
-    // Laufende zuerst, dann nach Server und Name — die Reihenfolge der Serverabfrage
-    // ist durch das parallele Laden sonst zufällig.
-    treffer.sort((a, b) =>
-      (a.state === 'running' ? 0 : 1) - (b.state === 'running' ? 0 : 1) ||
-      String(a.serverName).localeCompare(String(b.serverName)) ||
-      String(a.name).localeCompare(String(b.name))
-    );
-
-    res.json({ suchbegriff, treffer, quellen, durchsucht: container.length });
-  } catch (err) {
-    res.status(500).json({ error: err.message || 'Suche fehlgeschlagen' });
-  }
-});
 
 // ── GET /api/docker/containers ────────────────────────────────────────────────
 router.get('/containers', requirePermission('docker.view'), async (req, res) => {

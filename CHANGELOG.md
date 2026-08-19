@@ -16,6 +16,21 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.8.0.1] - 2026-08-19 (Build 319) — *Suche respektiert den ausgeblendeten Panel-Server*
+
+### 🐛 Bugfixes
+- **Rollen mit ausgeblendetem lokalem Server konnten gar nicht suchen.** Die neue Suche hing
+  unterhalb von `/api/docker`, wo eine Prüfung davorliegt, die jede Anfrage abweist, sobald die
+  Rolle den Panel-Server nicht sehen darf. Für eine Suche über *alle* Server ist das falsch:
+  Der Panel-Server soll dann nur ausgelassen werden, die übrigen Server bleiben durchsuchbar.
+  Statt Ergebnissen kam „Kein Zugriff auf den lokalen Server". Die Suche liegt jetzt auf einem
+  eigenen Weg — genauso wie es die Spitznamen-Verwaltung schon macht — und prüft die Rechte
+  selbst. Aufgefallen beim Testlauf, bevor die Fassung produktiv war.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank:** keine Migration. **Agent:** unverändert bei 2.7.0.
+- Die Adresse der Suche bleibt unverändert, die Oberfläche ist nicht betroffen.
+
 ## [5.8.0.0] - 2026-08-19 (Build 318) — *Ein Suchfeld für alle Server*
 
 ### ✨ Features

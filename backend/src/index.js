@@ -72,6 +72,10 @@ try {
 // Docker-Labels: panel-seitig in SQLite, kein lokaler Docker-Zugriff nötig
 // Muss VOR /api/docker gemountet sein, damit requireLocalAccess nicht greift
 app.use('/api/docker/labels', auth, require('./routes/dockerLabels'));
+// Die serverübergreifende Suche ebenso: Sie betrifft alle Server, nicht den lokalen.
+// Rollen mit `hide_local` sollen dabei den Panel-Server auslassen — nicht die ganze
+// Suche verweigert bekommen. Die Rechteprüfung macht der Router selbst.
+app.use('/api/docker/search', auth, require('./routes/dockerSuche'));
 // Lokaler Server — hide_local wird jetzt auch backend-seitig durchgesetzt
 app.use('/api/system',  auth, requireLocalAccess, require('./routes/system'));
 app.use('/api/docker',  auth, requireLocalAccess, require('./routes/docker'));
