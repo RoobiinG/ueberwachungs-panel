@@ -5,8 +5,8 @@
 // Node kann das über `socketPath`, ein zusätzliches Paket wie `dockerode` braucht
 // es dafür nicht.
 //
-// Genutzt wird das ausschließlich für die Container-Konsole und deren Vorlauf-Log.
-// Die Container-Listen kommen weiterhin von Dockhand bzw. den Agenten.
+// Genutzt für die Container-Konsole, deren Vorlauf-Log und — falls kein Dockhand
+// eingerichtet ist — als Ersatzquelle für die Container-Liste des Panel-Servers.
 
 const http = require('http');
 
@@ -55,6 +55,32 @@ async function verfuegbar() {
 async function containerExistiert(id) {
   try { await api('GET', `/containers/${encodeURIComponent(id)}/json`); return true; }
   catch { return false; }
+}
+
+// ── Container-Liste ──────────────────────────────────────────────────────────
+// Liefert dieselbe Form wie dockhand.normalizeContainer, damit Aufrufer nicht
+// unterscheiden müssen, woher die Liste kommt. Nötig für Panel-Server ohne
+// eingerichtetes Dockhand — dort ist der Socket die einzige Quelle.
+async function containerListe(alle = true) {
+  const daten = await api('GET', `/containers/json?all=${alle ? 1 : 0}`);
+  const liste = Array.isArray(daten) ? daten : [];
+  return liste.map(c => ({
+    id:         c.Id,
+    name:       String((c.Names && c.Names[0]) || '').replace(/^\//, ''),
+    image:      c.Image,
+    state:      String(c.State || '').toLowerCase(),
+    status:     c.Status || String(c.State || '').toLowerCase(),
+    cpu:        null,          // Auslastung kostet je Container einen eigenen Aufruf
+    memUsed:    null,
+    memLimit:   null,
+    memPercent: null,
+    netRx:      null,
+    netTx:      null,
+    stack:      c.Labels?.['com.docker.compose.project'] ?? null,
+    ports: (c.Ports || [])
+      .map(p => `${p.PublicPort ?? p.PrivatePort}:${p.PrivatePort ?? ''}/${p.Type || 'tcp'}`)
+      .filter((v, i, a) => a.indexOf(v) === i),
+  }));
 }
 
 // ── Logs ─────────────────────────────────────────────────────────────────────
@@ -173,4 +199,4 @@ async function groesseAendern(execId, spalten, zeilen) {
   try { await api('POST', `/exec/${execId}/resize?h=${h}&w=${w}`); } catch { /* nicht kritisch */ }
 }
 
-module.exports = { verfuegbar, containerExistiert, logs, konsoleOeffnen, groesseAendern };
+module.exports = { verfuegbar, containerExistiert, containerListe, logs, konsoleOeffnen, groesseAendern };

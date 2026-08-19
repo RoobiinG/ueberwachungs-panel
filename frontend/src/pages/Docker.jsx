@@ -9,7 +9,7 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { ServerSelector } from '../components/ui/ServerSelector';
 import { ActionMenu } from '../components/ui/ActionMenu';
-import { RefreshCw, Play, Square, RotateCcw, Tag, Check, X, ScrollText, ChevronDown, ChevronUp, Zap, Shield, Terminal, Info } from 'lucide-react';
+import { RefreshCw, Play, Square, RotateCcw, Tag, Check, X, ScrollText, ChevronDown, ChevronUp, Zap, Shield, Terminal, Info, Search, CornerDownRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useWSMessage } from '../context/WSContext';
 import { TerminalModal } from '../components/TerminalModal';
@@ -66,6 +66,15 @@ export default function Docker() {
   const [portAdding, setPortAdding]         = useState(false);
   const [portAdded,  setPortAdded]          = useState([]);   // Liste bereits hinzugefügter Ports
   const [terminalState, setTerminalState]   = useState(null); // { server, containerId, containerName }
+
+  // ── Serverübergreifende Suche ──────────────────────────────────────────────
+  // Welche Server durchsucht werden, entscheidet das Backend anhand der Rolle.
+  // Hier wird nichts nachgefiltert — was ankommt, darf der Benutzer auch sehen.
+  const [suche, setSuche]             = useState('');
+  const [suchErgebnis, setSuchErgebnis] = useState(null);
+  const [sucheLaeuft, setSucheLaeuft] = useState(false);
+  const [suchFehler, setSuchFehler]   = useState('');
+  const [hervorheben, setHervorheben] = useState(null); // Container-ID nach dem Sprung
 
   // WS: Docker-Port-Vorschlag empfangen
   useWSMessage('docker_ports', (msg) => {
@@ -260,16 +269,137 @@ export default function Docker() {
     setBusy(b => ({ ...b, [cid]: null }));
   };
 
+  // ── Serverübergreifende Suche ──────────────────────────────────────────────
+
+  const suchbegriff = suche.trim();
+
+  useEffect(() => {
+    if (suchbegriff.length < 2) {
+      setSuchErgebnis(null);
+      setSuchFehler('');
+      setSucheLaeuft(false);
+      return;
+    }
+    // Entprellen, damit nicht jeder Tastendruck alle Server abfragt.
+    setSucheLaeuft(true);
+    const abbruch = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const { data } = await axios.get(`/api/docker/search?q=${encodeURIComponent(suchbegriff)}`, { signal: abbruch.signal });
+        setSuchErgebnis(data);
+        setSuchFehler('');
+      } catch (err) {
+        if (axios.isCancel(err) || err.name === 'CanceledError') return;
+        setSuchErgebnis(null);
+        setSuchFehler(err.response?.data?.error || 'Suche fehlgeschlagen');
+      }
+      setSucheLaeuft(false);
+    }, 350);
+    return () => { clearTimeout(timer); abbruch.abort(); };
+  }, [suchbegriff]);
+
+  // Sprung vom Treffer zum Container: Server wechseln, Suche schließen und die Zeile
+  // kurz hervorheben — sonst sucht man sie in einer langen Liste erneut.
+  const zumTreffer = (t) => {
+    setSelectedServer(t.serverId === 'local' ? null : t.serverId);
+    setSuche('');
+    setHervorheben(t.id);
+    setTimeout(() => setHervorheben(null), 4000);
+  };
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <ServerSelector selected={selectedServer} onChange={setSelectedServer} />
-        <Button variant="ghost" size="sm" onClick={load}>
-          <RefreshCw size={14} className="mr-1" />Aktualisieren
-        </Button>
+        <div className="flex items-center gap-2 flex-1 justify-end min-w-[220px]">
+          <div className="relative flex-1 max-w-xs">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-panel-muted pointer-events-none" />
+            <input
+              type="text"
+              value={suche}
+              onChange={e => setSuche(e.target.value)}
+              placeholder="Auf allen Servern suchen…"
+              title="Sucht Name, Spitzname, Image, Stack und Kennung über alle Server, die du sehen darfst"
+              className="w-full bg-panel-surface border border-panel-border rounded-md pl-7 pr-7 py-1.5 text-xs text-panel-text placeholder:text-panel-muted focus:outline-none focus:border-panel-accent transition-colors"
+            />
+            {suche && (
+              <button
+                onClick={() => setSuche('')}
+                title="Suche zurücksetzen"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text"
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
+          <Button variant="ghost" size="sm" onClick={load}>
+            <RefreshCw size={14} className="mr-1" />Aktualisieren
+          </Button>
+        </div>
       </div>
+
+      {/* ── Suchergebnisse über alle Server ───────────────────────────────── */}
+      {suchbegriff.length >= 2 && (
+        <Card title={
+          sucheLaeuft
+            ? 'Suche läuft…'
+            : `Suchergebnisse (${suchErgebnis?.treffer.length ?? 0})`
+        }>
+          {suchFehler ? (
+            <div className="text-panel-red text-sm py-2">{suchFehler}</div>
+          ) : sucheLaeuft && !suchErgebnis ? (
+            <div className="text-panel-muted text-sm py-4 text-center">Durchsuche alle Server…</div>
+          ) : !suchErgebnis?.treffer.length ? (
+            <div className="text-panel-muted text-sm py-4 text-center">
+              Keine Übereinstimmung für „{suchbegriff}" — {suchErgebnis?.durchsucht ?? 0} Container durchsucht.
+            </div>
+          ) : (
+            <>
+              <div className="text-[11px] text-panel-muted mb-2">
+                {suchErgebnis.durchsucht} Container auf {suchErgebnis.quellen.length} Server
+                {suchErgebnis.quellen.length === 1 ? '' : 'n'} durchsucht.
+              </div>
+              <div className="divide-y divide-panel-border -mx-4 -mb-4">
+                {suchErgebnis.treffer.map(t => (
+                  <button
+                    key={`${t.serverId}:${t.id}`}
+                    onClick={() => zumTreffer(t)}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-panel-surface transition-colors"
+                  >
+                    <Badge color={statusColor(t.state)}>{t.state}</Badge>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm text-panel-text truncate">
+                        {t.spitzname || t.pelicanName || t.name}
+                        {(t.spitzname || t.pelicanName) && (
+                          <span className="text-panel-muted font-mono text-[11px] ml-1.5">{t.name}</span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-panel-muted truncate">
+                        {t.image}{t.stack ? ` · Stack ${t.stack}` : ''} · gefunden in: {t.gefundenIn.join(', ')}
+                      </div>
+                    </div>
+                    <Badge color="gray">{t.serverName}</Badge>
+                    <CornerDownRight size={13} className="text-panel-muted flex-shrink-0" />
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* Server, die gerade nicht antworten, offen benennen — sonst wirkt ein
+              unvollständiges Ergebnis wie ein vollständiges. */}
+          {suchErgebnis?.quellen.some(q => !q.ok) && (
+            <div className="mt-3 text-[11px] text-panel-orange flex items-start gap-1.5">
+              <Info size={11} className="flex-shrink-0 mt-0.5" />
+              <span>
+                Nicht durchsucht: {suchErgebnis.quellen.filter(q => !q.ok).map(q => `${q.name} (${q.fehler})`).join(' · ')}
+              </span>
+            </div>
+          )}
+        </Card>
+      )}
 
       {/* Der lokale Panel-Server wird für Listen und Aktionen über Dockhand bedient.
           Die Konsole läuft dort seit v5.7.0.0 direkt über die Docker-Installation. */}
@@ -306,7 +436,12 @@ export default function Docker() {
               const isLogsOpen = !!logsOpen[c.id];
               const anz = anzeigeName(c);
               return (
-                <div key={c.id} className="flex flex-col">
+                <div
+                  key={c.id}
+                  className={`flex flex-col transition-colors ${
+                    hervorheben === c.id ? 'bg-panel-accent/10 ring-1 ring-panel-accent/40 rounded-md' : ''
+                  }`}
+                >
                   {/* ── Container-Zeile (Name + Aktionen) ─────────────── */}
                   <div className="flex flex-col px-4 py-3 gap-2">
                   {/* Name & Status */}

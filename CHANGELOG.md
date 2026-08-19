@@ -16,6 +16,49 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.8.0.0] - 2026-08-19 (Build 318) — *Ein Suchfeld für alle Server*
+
+### ✨ Features
+- **Container lassen sich jetzt über alle Server hinweg suchen.** Bisher zeigte die
+  Docker-Seite immer genau einen Server, und wer nicht wusste, wo ein Container läuft, musste
+  sich durch die Serverliste klicken. Neben der Serverauswahl steht nun ein Suchfeld: Ab zwei
+  Zeichen durchsucht das Panel **alle** Server gleichzeitig und zeigt die Treffer mit dem
+  Server, auf dem sie laufen. Ein Klick springt dorthin und hebt die Zeile kurz hervor.
+  Gesucht wird in Containername, **Spitzname**, **Pelican-Klarname**, Image, Stack und den
+  ersten zwei Kennungs-Blöcken — bei jedem Treffer steht dabei, in welchem Feld er gefunden
+  wurde. Wer nach einem selbst vergebenen Spitznamen sucht, findet den Container also auch
+  dann, wenn er im System ganz anders heißt.
+- **Server, die gerade nicht antworten, werden benannt statt verschwiegen.** Ein nicht
+  erreichbarer Agent lässt die Suche nicht scheitern — die übrigen Server werden trotzdem
+  durchsucht, und unter dem Ergebnis steht, welcher Server ausgelassen wurde und warum.
+  Andernfalls sähe ein unvollständiges Ergebnis wie ein vollständiges aus.
+
+### 🔒 Rechte
+- **Die Auswahl der durchsuchten Server passiert im Backend, nicht in der Anzeige.** Rollen mit
+  eingeschränkter Serverfreigabe (`restrict_agents`) durchsuchen ausschließlich die ihnen
+  zugewiesenen Server; Rollen mit ausgeblendetem lokalem Server (`hide_local`) lassen den
+  Panel-Server aus. Beides greift bereits beim Abruf — über die Suche werden also weder
+  Container noch Namen von Servern übertragen, die der Benutzer nicht sehen darf. Zusätzlich
+  ist wie überall sonst `docker.view` nötig.
+
+### 🔧 Änderungen
+- **Der Panel-Server erscheint in der Suche auch ohne eingerichtetes Dockhand.** Fehlt die
+  Dockhand-Umgebung oder antwortet sie nicht, holt sich das Panel die Container-Liste seines
+  eigenen Servers direkt über die Docker-Installation — denselben Weg nutzt die Konsole seit
+  v5.7.0.0 bereits.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank:** keine Migration, keine Schema-Änderung.
+- **Agent:** unverändert bei 2.7.0 — die Suche nutzt die bestehende Container-Abfrage, ein
+  Update auf den Zielservern ist nicht nötig.
+- **Betriebsart:** die Einstellung „Docker Verwaltung" (nativ / gemischt / Dockhand) gilt auch
+  für die Suche. Im gemischten Betrieb weicht sie bei einem ausgefallenen Agenten genauso auf
+  Dockhand aus wie die normale Container-Liste.
+- **Last:** eine Suche fragt alle erlaubten Server parallel ab, mit sechs Sekunden Zeitlimit je
+  Server. Die Eingabe wird um 350 ms entprellt, es entsteht also nicht pro Tastendruck ein
+  Abruf. Ohne Eingabe im Suchfeld passiert nichts.
+- **Sitzungen:** kein Neuanmelden nötig, die Seite muss nach dem Update einmal neu geladen werden.
+
 ## [5.7.0.2] - 2026-08-19 (Build 317) — *Anmeldung übersteht das Ausfüllen*
 
 ### 🐛 Bugfixes
