@@ -9,7 +9,7 @@ import {
   User, Settings2, Layers, Timer, Bell, Monitor, Smartphone,
   Globe, LogOut, Laptop, PackageCheck,
   Download, Upload, Database, QrCode, Copy, Check, ShieldAlert, Gamepad2,
-  FileText, ExternalLink, ArrowUpCircle
+  FileText, ExternalLink, ArrowUpCircle, AlertTriangle
 } from 'lucide-react';
 import { invalidateLiveIntervalCache } from '../hooks/useLiveInterval';
 
@@ -836,6 +836,13 @@ export default function Settings() {
   // Speicherort des neuen Passkeys. Die Wahl merkt sich das Panel, weil sie vom Gerät
   // abhängt und nicht bei jedem Anlegen neu getroffen werden soll.
   const [passkeyZiel,  setPasskeyZiel]  = useState(() => localStorage.getItem('panel_passkey_ziel') || 'auto');
+  // Brave verhält sich hier gegenteilig zu Chrome und Edge: Enpass meldet sich dort als
+  // Geräte-Anmeldung, nicht als externer Anbieter. Derselbe Hinweis wäre also je nach
+  // Browser falsch — deshalb wird er nachgeschlagen.
+  const [istBrave, setIstBrave] = useState(false);
+  useEffect(() => {
+    navigator.brave?.isBrave?.().then(v => setIstBrave(!!v)).catch(() => {});
+  }, []);
 
   // 2FA
   const [twoFaStatus, setTwoFaStatus] = useState({ twofa_type: 'none', hasEmail: false });
@@ -1023,9 +1030,11 @@ export default function Settings() {
       // erst der gewünschte Anbieter.
       const isNotAllowed = /not allowed|timed out|NotAllowedError/i.test(raw);
       const msg = isNotAllowed
-        ? (passkeyZiel === 'extern'
-            ? 'Dialog abgebrochen. Erscheint dein Passwortmanager nicht, muss er als Passkey-Anbieter freigeschaltet sein: Chrome/Edge → Einstellungen → Passwörter → Weitere Anbieter, Brave → brave://settings/passkeys. Unter Windows zusätzlich: Einstellungen → Konten → Passkeys → Erweiterte Optionen.'
-            : 'Dialog abgebrochen. Für einen Passkey im Passwortmanager (z. B. Enpass) unter „Speicherort" auf „Passwortmanager oder anderes Gerät" umstellen.')
+        ? (istBrave
+            ? 'Dialog abgebrochen. In Brave meldet sich Enpass als Geräte-Anmeldung — unter „Speicherort" auf „Auf diesem Gerät" stellen. Kommt weiterhin nur der Windows-Dialog, ist das ein bekannter Brave-Fehler: dann in Chrome oder Edge anlegen, oder im Dialog „Anderes Gerät" wählen und den QR-Code mit dem Handy scannen.'
+            : passkeyZiel === 'extern'
+              ? 'Dialog abgebrochen. Erscheint dein Passwortmanager nicht, muss er im Browser als Passkey-Anbieter freigeschaltet sein — alternativ im Dialog „Anderes Gerät" wählen und den QR-Code mit dem Handy scannen.'
+              : 'Dialog abgebrochen. Für einen Passkey im Passwortmanager (z. B. Enpass) unter „Speicherort" auf „Passwortmanager oder anderes Gerät" umstellen.')
         : (raw || 'Registrierung fehlgeschlagen');
       feedback('passkey', 'err', msg);
     }
@@ -1529,11 +1538,32 @@ export default function Settings() {
                 </select>
                 <p className="text-[11px] text-panel-muted mt-1">
                   {passkeyZiel === 'extern'
-                    ? 'Der Windows-Anmeldedialog wird übersprungen, damit dein Passwortmanager zur Auswahl steht. Er muss im Browser als Passkey-Anbieter freigeschaltet sein.'
+                    ? (istBrave
+                        ? 'In Brave meldet sich Enpass als Geräte-Anmeldung — diese Einstellung schließt es hier also gerade aus. Für Enpass in Brave „Auf diesem Gerät" wählen.'
+                        : 'Die Geräte-Anmeldung wird übersprungen. Wähle im folgenden Fenster deinen Passwortmanager oder „Anderes Gerät" und scanne den QR-Code mit dem Handy.')
                     : passkeyZiel === 'geraet'
-                      ? 'Der Passkey bleibt auf diesem Gerät und lässt sich nicht auf andere übertragen.'
-                      : 'Wenn dein Passwortmanager nicht angeboten wird, stelle hier auf „Passwortmanager oder anderes Gerät" um.'}
+                      ? (istBrave
+                          ? 'In Brave ist das die richtige Wahl für Enpass: Der Passwortmanager meldet sich hier als Geräte-Anmeldung. Windows Hello steht im selben Dialog zur Auswahl.'
+                          : 'Der Passkey bleibt auf diesem Gerät und lässt sich nicht auf andere übertragen.')
+                      : 'Welche Einstellung deinen Passwortmanager anbietet, hängt vom Browser ab — in Chrome und Edge „Passwortmanager oder anderes Gerät", in Brave dagegen „Auf diesem Gerät".'}
                 </p>
+
+                {/* Bekannte Einschränkung, damit vergebliche Versuche nicht wie ein
+                    Panel-Fehler aussehen: Brave übergibt WebAuthn unter Windows an das
+                    System, das dann seinen eigenen Dialog zeigt und den Passwortmanager
+                    übergeht (offener Brave-Fehler #37762). */}
+                {istBrave && (
+                  <p className="text-[11px] text-panel-orange mt-1.5 flex items-start gap-1.5">
+                    <AlertTriangle size={11} className="flex-shrink-0 mt-0.5" />
+                    <span>
+                      Brave erkannt. Erscheint trotz passender Einstellung immer der Windows-Dialog,
+                      liegt das an einem bekannten Brave-Fehler und nicht am Panel. Zwei Auswege:
+                      den Passkey in Chrome oder Edge anlegen, oder im Windows-Dialog
+                      „Anderes Gerät" wählen und den QR-Code mit dem Handy scannen — dort speichert
+                      Enpass ihn, und über die Synchronisierung steht er auch am Rechner zur Verfügung.
+                    </span>
+                  </p>
+                )}
               </div>
 
               <div className="flex gap-2">

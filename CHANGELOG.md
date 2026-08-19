@@ -16,6 +16,31 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.8.3.0] - 2026-08-19 (Build 322) — *Passkey-Hinweise kennen deinen Browser*
+
+### 🐛 Bugfixes
+- **Der Hinweis zum Speicherort führte in Brave in die falsche Richtung.** Dort meldet sich ein
+  Passwortmanager wie Enpass als *Geräte*-Anmeldung und nicht als externer Anbieter — die
+  Einstellung „Passwortmanager oder anderes Gerät" schließt ihn in Brave also gerade aus,
+  während sie in Chrome und Edge genau richtig ist. Der Text empfahl aber überall dasselbe.
+  Das Panel erkennt jetzt Brave und beschreibt für jeden Browser die passende Einstellung.
+
+### 🔧 Änderungen
+- **Eine bekannte Einschränkung von Brave wird offen benannt.** Brave übergibt die
+  Passkey-Anlage unter Windows an das Betriebssystem, das dann seinen eigenen Dialog zeigt und
+  Passwortmanager übergeht — ein seit April 2024 offener Fehler des Browsers. Wer Brave nutzt,
+  sieht das jetzt direkt an der Einstellung, statt es für einen Fehler des Panels zu halten,
+  zusammen mit zwei Auswegen: den Passkey in Chrome oder Edge anlegen, oder im Dialog
+  „Anderes Gerät" den QR-Code mit dem Handy scannen — dort speichert ihn der Passwortmanager,
+  und über dessen Synchronisierung steht er auch am Rechner zur Verfügung.
+- Die Meldung nach einem abgebrochenen Dialog nennt entsprechend ebenfalls den Weg, der zum
+  jeweiligen Browser passt.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank:** keine Migration. **Agent:** unverändert bei 2.7.0.
+- Rein anzeigend: Es ändert sich kein Ablauf beim Anlegen oder Anmelden, nur die Erklärung dazu.
+  Bereits registrierte Passkeys sind nicht betroffen.
+
 ## [5.8.2.0] - 2026-08-19 (Build 321) — *Der Code bestätigt sich selbst*
 
 ### 🔧 Änderungen
