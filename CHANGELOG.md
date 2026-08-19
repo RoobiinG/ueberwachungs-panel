@@ -16,6 +16,40 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.8.1.0] - 2026-08-19 (Build 320) — *Passkey: du bestimmst den Speicherort*
+
+### 🔧 Änderungen
+- **Beim Anlegen eines Passkeys lässt sich jetzt wählen, wo er gespeichert wird.** Bisher machte
+  das Panel keine Vorgabe und überließ die Wahl dem Browser — der nimmt unter Windows aber
+  praktisch immer Windows Hello, sodass Passwortmanager wie Enpass gar nicht erst zur Auswahl
+  standen. Ein Passkey ließ sich damit faktisch nur im Windows-Schlüsselspeicher ablegen.
+  Unter *Einstellungen → Passkeys* steht nun ein Feld „Speicherort" mit drei Möglichkeiten:
+  - **Automatisch** — wie bisher, der Browser entscheidet.
+  - **Auf diesem Gerät** — Windows Hello, Touch ID, Fingerabdruck.
+  - **Passwortmanager oder anderes Gerät** — schließt den Geräte-Anmeldedialog aus, sodass
+    Enpass, 1Password, ein Sicherheitsschlüssel oder das Handy zur Auswahl stehen.
+
+  Die Wahl bleibt für das nächste Mal gespeichert, weil sie vom Gerät abhängt. Eine feste
+  Vorgabe im Panel wäre falsch: In Brave meldet sich Enpass *als* Geräte-Anmeldung, unter
+  Windows dagegen nur als externer Anbieter — dieselbe Einstellung führt also je nach Browser
+  zum gegenteiligen Ergebnis.
+- **Die Fehlermeldung nach einem abgebrochenen Dialog nennt jetzt den passenden nächsten
+  Schritt** — je nachdem, welcher Speicherort gewählt war, inklusive der Stelle im Browser, an
+  der ein Passwortmanager als Passkey-Anbieter freigeschaltet wird.
+
+### 🐛 Bugfixes
+- **Bereits vorhandene Passkeys wurden dem Browser mit geratenen Transportwegen gemeldet.**
+  Beim Anlegen wurde fest „internal, hybrid" übermittelt statt der Wege, die der Authenticator
+  tatsächlich gemeldet hat — obwohl diese gespeichert sind und beim Anmelden längst korrekt
+  verwendet werden. Der Browser konnte dadurch nicht zuverlässig erkennen, welcher
+  Authenticator schon belegt ist. Jetzt werden die gespeicherten Werte verwendet.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank:** keine Migration. Bereits registrierte Passkeys bleiben unverändert gültig.
+- **Agent:** unverändert bei 2.7.0.
+- **Anmeldung:** der Ablauf beim Anmelden per Passkey ist nicht betroffen, nur das Anlegen.
+- **Browser-Speicher:** neuer Eintrag `panel_passkey_ziel` (die zuletzt gewählte Ablage).
+
 ## [5.8.0.1] - 2026-08-19 (Build 319) — *Suche respektiert den ausgeblendeten Panel-Server*
 
 ### 🐛 Bugfixes

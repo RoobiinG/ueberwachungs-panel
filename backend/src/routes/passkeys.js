@@ -54,11 +54,27 @@ setInterval(() => {
 
 // ─── Passkey-Registrierung (erfordert auth) ───────────────────────────────────
 
+// Wohin der Passkey gespeichert werden soll. Ohne Angabe entscheidet der Browser —
+// und der wählt unter Windows praktisch immer Windows Hello, sodass Passwortmanager
+// wie Enpass gar nicht erst zur Auswahl stehen. Wer sie ausdrücklich will, muss den
+// Plattform-Authenticator ausschließen; umgekehrt meldet sich Enpass in Brave *als*
+// Plattform-Authenticator, weshalb 'extern' dort das Falsche wäre. Deshalb entscheidet
+// das nicht der Server, sondern der Benutzer beim Anlegen.
+const ATTACHMENT = {
+  geraet: 'platform',        // Windows Hello, Touch ID, Android-Bildschirmsperre
+  extern: 'cross-platform',  // Passwortmanager, Sicherheitsschlüssel, anderes Gerät
+  auto:   undefined,         // wie bisher: der Browser entscheidet
+};
+
 router.get('/register/start', async (req, res) => {
   const user = db.prepare('SELECT id, username FROM users WHERE id = ?').get(req.user.id);
   if (!user) return res.status(404).json({ error: 'Benutzer nicht gefunden' });
 
-  const existingPasskeys = db.prepare('SELECT credential_id FROM passkeys WHERE user_id = ?').all(user.id);
+  const ziel = String(req.query.ziel || 'auto');
+  if (!(ziel in ATTACHMENT)) return res.status(400).json({ error: 'Unbekanntes Speicherziel' });
+  const attachment = ATTACHMENT[ziel];
+
+  const existingPasskeys = db.prepare('SELECT credential_id, transports FROM passkeys WHERE user_id = ?').all(user.id);
 
   const options = await generateRegistrationOptions({
     rpName:          getRpName(),
@@ -66,13 +82,15 @@ router.get('/register/start', async (req, res) => {
     userName:        user.username,
     userID:          new TextEncoder().encode(String(user.id)),
     attestationType: 'none',
-    excludeCredentials: existingPasskeys.map(p => ({
-      id: p.credential_id,
-      transports: ['internal', 'hybrid'],
-    })),
+    // Die tatsächlich gemeldeten Transportwege verwenden, nicht geraten: Nur damit
+    // erkennt der Browser zuverlässig, welcher Authenticator schon belegt ist.
+    excludeCredentials: existingPasskeys.map(p => {
+      let transports = [];
+      try { transports = JSON.parse(p.transports || '[]'); } catch {}
+      return { id: p.credential_id, ...(transports.length ? { transports } : {}) };
+    }),
     authenticatorSelection: {
-      // Kein authenticatorAttachment → Browser/Enpass/Hardware-Keys alle erlaubt.
-      // 'cross-platform' würde Enpass in Brave (Platform-Authenticator) blockieren.
+      ...(attachment ? { authenticatorAttachment: attachment } : {}),
       residentKey:      'required',    // discoverable credential → Login ohne Benutzername
       userVerification: 'preferred',
     },

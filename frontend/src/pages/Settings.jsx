@@ -833,6 +833,9 @@ export default function Settings() {
   // Passkeys
   const [passkeys,     setPasskeys]     = useState([]);
   const [passkeyName,  setPasskeyName]  = useState('');
+  // Speicherort des neuen Passkeys. Die Wahl merkt sich das Panel, weil sie vom Gerät
+  // abhängt und nicht bei jedem Anlegen neu getroffen werden soll.
+  const [passkeyZiel,  setPasskeyZiel]  = useState(() => localStorage.getItem('panel_passkey_ziel') || 'auto');
 
   // 2FA
   const [twoFaStatus, setTwoFaStatus] = useState({ twofa_type: 'none', hasEmail: false });
@@ -1007,7 +1010,7 @@ export default function Settings() {
     busy('passkey', true);
     try {
       const { startRegistration } = await import('@simplewebauthn/browser');
-      const optRes   = await axios.get('/api/passkeys/register/start');
+      const optRes   = await axios.get(`/api/passkeys/register/start?ziel=${encodeURIComponent(passkeyZiel)}`);
       const attResp  = await startRegistration({ optionsJSON: optRes.data });
       const name     = passkeyName.trim() || 'Passkey';
       await axios.post('/api/passkeys/register/finish', { registration: attResp, name });
@@ -1016,10 +1019,13 @@ export default function Settings() {
       feedback('passkey', 'ok', `Passkey "${name}" erfolgreich registriert`);
     } catch (err) {
       const raw = err?.response?.data?.error || err?.message || '';
-      // NotAllowedError = User hat den Dialog geschlossen / Windows-Dialog erschien
+      // NotAllowedError = Dialog geschlossen, abgelaufen — oder es erschien gar nicht
+      // erst der gewünschte Anbieter.
       const isNotAllowed = /not allowed|timed out|NotAllowedError/i.test(raw);
       const msg = isNotAllowed
-        ? 'Dialog abgebrochen. Enpass als Passkey-Anbieter: Brave → brave://settings/passkeys oder Einstellungen → Datenschutz → Passkeys → Enpass auswählen'
+        ? (passkeyZiel === 'extern'
+            ? 'Dialog abgebrochen. Erscheint dein Passwortmanager nicht, muss er als Passkey-Anbieter freigeschaltet sein: Chrome/Edge → Einstellungen → Passwörter → Weitere Anbieter, Brave → brave://settings/passkeys. Unter Windows zusätzlich: Einstellungen → Konten → Passkeys → Erweiterte Optionen.'
+            : 'Dialog abgebrochen. Für einen Passkey im Passwortmanager (z. B. Enpass) unter „Speicherort" auf „Passwortmanager oder anderes Gerät" umstellen.')
         : (raw || 'Registrierung fehlgeschlagen');
       feedback('passkey', 'err', msg);
     }
@@ -1507,6 +1513,28 @@ export default function Settings() {
                   </div>
                 </div>
               )}
+
+              {/* Ohne Vorgabe wählt der Browser den Speicherort — unter Windows praktisch
+                  immer Windows Hello, sodass Passwortmanager gar nicht erst erscheinen. */}
+              <div>
+                <label className="block text-xs font-medium text-panel-muted mb-1">Speicherort</label>
+                <select
+                  value={passkeyZiel}
+                  onChange={e => { setPasskeyZiel(e.target.value); localStorage.setItem('panel_passkey_ziel', e.target.value); }}
+                  className="w-full bg-panel-surface border border-panel-border rounded-md px-3 py-1.5 text-sm text-panel-text focus:outline-none focus:border-panel-accent"
+                >
+                  <option value="auto">Automatisch — der Browser entscheidet</option>
+                  <option value="geraet">Auf diesem Gerät — Windows Hello, Touch ID, Fingerabdruck</option>
+                  <option value="extern">Passwortmanager oder anderes Gerät — Enpass, 1Password, YubiKey, Handy</option>
+                </select>
+                <p className="text-[11px] text-panel-muted mt-1">
+                  {passkeyZiel === 'extern'
+                    ? 'Der Windows-Anmeldedialog wird übersprungen, damit dein Passwortmanager zur Auswahl steht. Er muss im Browser als Passkey-Anbieter freigeschaltet sein.'
+                    : passkeyZiel === 'geraet'
+                      ? 'Der Passkey bleibt auf diesem Gerät und lässt sich nicht auf andere übertragen.'
+                      : 'Wenn dein Passwortmanager nicht angeboten wird, stelle hier auf „Passwortmanager oder anderes Gerät" um.'}
+                </p>
+              </div>
 
               <div className="flex gap-2">
                 <input
