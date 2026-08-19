@@ -16,6 +16,28 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.9.2.2] - 2026-08-19 (Build 329) — *Die Verdichtung der Messwerte greift endlich*
+
+### 🐛 Bugfixes
+- **Das Zusammenfassen der Messwerte hat noch nie funktioniert.** Die Abfragen gruppierten
+  über `ts/Intervall` — der Wert des Intervalls wird der Datenbank aber als Zahl übergeben und
+  damit als Fließkommazahl behandelt. Aus der beabsichtigten ganzzahligen Division wurde so
+  eine Fließkomma-Division, bei der jeder einzelne Messpunkt in einer eigenen Gruppe landet:
+  Zusammengefasst wurde also nichts, es kamen stets alle Rohwerte zurück. Erkennbar war das an
+  Zeitabständen wie `1.000000238418579` statt glatter Werte.
+  Beide Abfragen runden das Intervall jetzt ausdrücklich auf eine ganze Zahl ab. Damit greift
+  die Verdichtung erstmals — und mit ihr auch die Obergrenze aus der vorigen Fassung.
+- **Wirkung:** Ein Zeitraum von sechs Stunden lieferte über 21.000 Messpunkte und rund 1,6 MB;
+  jetzt sind es rund 2.000 Punkte und ein Bruchteil der Datenmenge. Betroffen waren auch feste
+  Zeitspannen, die eine Zusammenfassung vorsahen — etwa 24 Stunden, wo trotz vorgesehener
+  Minutenwerte die Zehn-Sekunden-Werte kamen.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank:** keine Migration, keine Änderung an gespeicherten Werten — nur die Abfrage.
+- **Agent:** unverändert bei 2.7.0.
+- **Darstellung:** Die Kurven sehen unverändert aus; sie bestehen nur aus weniger, dafür
+  gemittelten Punkten. Kurze Zeiträume bleiben unverändert sekundengenau.
+
 ## [5.9.2.1] - 2026-08-19 (Build 328) — *Monitoring lädt nicht mehr Zehntausende Messpunkte*
 
 ### 🐛 Bugfixes

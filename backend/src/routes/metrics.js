@@ -61,8 +61,12 @@ const queryRaw = (from, to, bucket, serverId) => {
       ORDER BY t ASC
     `).all(from, to, serverId);
   }
+  // CAST ist hier nicht kosmetisch, sondern der Kern: Ohne ihn ist `ts/?` eine
+  // Fließkomma-Division, weil der Bucket als Zahl gebunden wird — dann bekommt jeder
+  // Messpunkt seine eigene Gruppe und es wird überhaupt nichts zusammengefasst.
+  // Genau daran ist die Verdichtung bisher wirkungslos geblieben.
   return db.prepare(`
-    SELECT (ts/?) * ? AS t,
+    SELECT CAST(ts / ? AS INTEGER) * ? AS t,
       ROUND(AVG(cpu), 1) AS cpu,
       ROUND(AVG(mem_used)  * 100.0 / NULLIF(AVG(mem_total),  0), 1) AS mem,
       ROUND(AVG(disk_used) * 100.0 / NULLIF(AVG(disk_total), 0), 1) AS disk,
@@ -70,7 +74,7 @@ const queryRaw = (from, to, bucket, serverId) => {
       ROUND(AVG(net_tx_sec) / 1024.0, 2) AS net_tx
     FROM metrics
     WHERE ts >= ? AND ts <= ? AND server_id = ? AND mem_total > 0
-    GROUP BY (ts/?) ORDER BY t ASC
+    GROUP BY CAST(ts / ? AS INTEGER) ORDER BY t ASC
   `).all(bucket, bucket, from, to, serverId, bucket);
 };
 
@@ -84,8 +88,9 @@ const queryAgg = (tableName, from, to, bucket, serverId) => {
       ORDER BY t ASC
     `).all(from, to, serverId);
   }
+  // Siehe queryRaw: ohne CAST wird nicht gruppiert.
   return db.prepare(`
-    SELECT (ts/?) * ? AS t,
+    SELECT CAST(ts / ? AS INTEGER) * ? AS t,
       ROUND(AVG(cpu), 1)    AS cpu,
       ROUND(AVG(mem), 1)    AS mem,
       ROUND(AVG(disk), 1)   AS disk,
@@ -93,7 +98,7 @@ const queryAgg = (tableName, from, to, bucket, serverId) => {
       ROUND(AVG(net_tx), 2) AS net_tx
     FROM ${tableName}
     WHERE ts >= ? AND ts <= ? AND server_id = ?
-    GROUP BY (ts/?) ORDER BY t ASC
+    GROUP BY CAST(ts / ? AS INTEGER) ORDER BY t ASC
   `).all(bucket, bucket, from, to, serverId, bucket);
 };
 
