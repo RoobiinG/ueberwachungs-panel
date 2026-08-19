@@ -1,6 +1,6 @@
 {
-  "version": "5.9.2.0",
-  "build": 327,
+  "version": "5.9.2.1",
+  "build": 328,
   "date": "2026-08-19",
-  "codename": "Docker-Seite lädt in einem Zug"
+  "codename": "Monitoring lädt nicht mehr Zehntausende Messpunkte"
 }

@@ -16,11 +16,26 @@ const RANGES = {
 };
 
 // Automatische Tabelle + Bucket für Custom-Zeiträume
+// Ein Diagramm stellt ein paar hundert Punkte dar — mehr zu liefern kostet nur Zeit.
+// Frei gewählte Zeiträume lieferten bis einschließlich sechs Stunden ungefiltert die
+// Sekundenwerte: bei sechs Stunden über 21.000 Punkte und rund 1,6 MB je Abruf, die
+// obendrein im Browser geparst und gezeichnet werden mussten. Das war die Ursache der
+// langen Ladezeiten im Monitoring.
+const ZIEL_PUNKTE = 2_000;
+
+// Wählt ein Vielfaches der Tabellen-Auflösung, sodass höchstens ZIEL_PUNKTE herauskommen.
+// `null` heißt „ungefiltert" und ist nur erlaubt, wenn die Rohauflösung schon fein genug ist.
+const passenderBucket = (spanSeconds, aufloesung) => {
+  const punkteRoh = spanSeconds / aufloesung;
+  if (punkteRoh <= ZIEL_PUNKTE) return null;
+  return Math.ceil(punkteRoh / ZIEL_PUNKTE) * aufloesung;
+};
+
 const autoRange = (spanSeconds) => {
-  if (spanSeconds <= 6 * 3_600)    return { table: 'raw',           bucket: spanSeconds <= 3_600 ? null : 10 };
-  if (spanSeconds <= 7 * 86_400)   return { table: 'metrics_10s',   bucket: 60  };
-  if (spanSeconds <= 30 * 86_400)  return { table: 'metrics_1min',  bucket: 3_600 };
-  return                                  { table: 'metrics_1hour', bucket: 3_600 };
+  if (spanSeconds <= 6 * 3_600)    return { table: 'raw',           bucket: passenderBucket(spanSeconds, 1) };
+  if (spanSeconds <= 7 * 86_400)   return { table: 'metrics_10s',   bucket: passenderBucket(spanSeconds, 10) };
+  if (spanSeconds <= 30 * 86_400)  return { table: 'metrics_1min',  bucket: passenderBucket(spanSeconds, 60) };
+  return                                  { table: 'metrics_1hour', bucket: passenderBucket(spanSeconds, 3_600) };
 };
 
 const resolveServerId = (server) => {

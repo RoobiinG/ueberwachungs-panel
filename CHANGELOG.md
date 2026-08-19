@@ -16,6 +16,30 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.9.2.1] - 2026-08-19 (Build 328) — *Monitoring lädt nicht mehr Zehntausende Messpunkte*
+
+### 🐛 Bugfixes
+- **Frei gewählte Zeiträume im Monitoring lieferten die Messwerte unverdichtet.** Bis
+  einschließlich sechs Stunden kam für jede einzelne Sekunde ein eigener Wert — bei sechs
+  Stunden über **21.000 Messpunkte und rund 1,6 MB je Abruf**, die zusätzlich im Browser
+  ausgewertet und gezeichnet werden mussten. Ein Diagramm kann davon nur ein paar hundert
+  darstellen, der Rest war reine Wartezeit. Kurios dabei: Ein Zeitraum von sechs Stunden **und
+  einer Sekunde** wurde korrekt verdichtet und war zehnmal kleiner — die Verdichtung setzte
+  erst jenseits der Grenze ein, nicht davor.
+  Statt an dieser Grenze zu feilen, gibt es jetzt eine feste Obergrenze: Ein Abruf liefert
+  höchstens rund 2.000 Punkte, und der Abstand zwischen ihnen wird passend zum gewählten
+  Zeitraum gewählt. Bei sechs Stunden sind das etwa elf Sekunden je Punkt — für die Darstellung
+  kein Unterschied, für die Ladezeit rund zehnmal weniger Daten.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank:** keine Migration. Es ändert sich nur, wie fein die vorhandenen Werte
+  zusammengefasst abgefragt werden — gespeichert wird unverändert weiter.
+- **Agent:** unverändert bei 2.7.0.
+- **Genauigkeit:** Die vordefinierten Zeitspannen (15 Minuten bis 6 Monate) waren bereits
+  sinnvoll dimensioniert und ändern sich nicht. Betroffen sind nur selbst gewählte Zeiträume,
+  etwa beim Hineinzoomen. Kurze Zeiträume bleiben sekundengenau — bis rund 2.000 Sekunden
+  wird gar nicht zusammengefasst.
+
 ## [5.9.2.0] - 2026-08-19 (Build 327) — *Docker-Seite lädt in einem Zug*
 
 ### 🔧 Änderungen
