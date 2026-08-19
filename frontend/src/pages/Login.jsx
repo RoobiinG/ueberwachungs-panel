@@ -1,8 +1,31 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Server, Eye, EyeOff, KeyRound, Shield, ArrowLeft } from 'lucide-react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
+
+// Der Zwischenschritt der Zwei-Faktor-Anmeldung überdauert ein Neuladen der Seite.
+// Vorher lag er nur im Komponenten-Zustand: Jeder Neuaufbau der Seite — etwa ausgelöst
+// von einer Passwortmanager-Erweiterung beim Ausfüllen — warf den Benutzer wortlos
+// zurück auf die Anmeldemaske, obwohl Benutzername und Passwort längst stimmten.
+// sessionStorage, nicht localStorage: Das Zwischen-Token soll mit dem Tab enden.
+const SPEICHER_2FA = 'panel_2fa_schritt';
+
+const lade2FA = () => {
+  try {
+    const roh = sessionStorage.getItem(SPEICHER_2FA);
+    if (!roh) return null;
+    const daten = JSON.parse(roh);
+    // Das Zwischen-Token gilt serverseitig zehn Minuten — abgelaufenes gar nicht erst anbieten.
+    if (!daten?.tempToken || Date.now() > (daten.gueltigBis || 0)) {
+      sessionStorage.removeItem(SPEICHER_2FA);
+      return null;
+    }
+    return daten;
+  } catch {
+    return null;
+  }
+};
 
 export default function Login() {
   const [username, setUsername] = useState('');
@@ -11,22 +34,53 @@ export default function Login() {
   const [error, setError]       = useState('');
   const [loading, setLoading]   = useState(false);
   const [pkLoading, setPkLoading] = useState(false);
-  const [step2FA, setStep2FA]   = useState(null);
+  const [step2FA, setStep2FA]   = useState(lade2FA);
   const [code2FA, setCode2FA]   = useState('');
   const { login, verify2FA, saveSession } = useAuth();
   const navigate = useNavigate();
 
+  // Zwischenschritt sichern bzw. aufräumen, sobald er nicht mehr gebraucht wird
+  useEffect(() => {
+    if (step2FA) sessionStorage.setItem(SPEICHER_2FA, JSON.stringify(step2FA));
+    else         sessionStorage.removeItem(SPEICHER_2FA);
+  }, [step2FA]);
+
+  const abbrechen2FA = () => {
+    sessionStorage.removeItem(SPEICHER_2FA);
+    setStep2FA(null);
+    setCode2FA('');
+    setError('');
+  };
+
+  // Passwortmanager wie Enpass schreiben ihre Werte teilweise direkt ins DOM-Feld, ohne
+  // dass React davon erfährt. Der Komponenten-Zustand bleibt dann leer, obwohl im Feld
+  // etwas steht. Deshalb beim Absenden immer das Formular selbst befragen und den
+  // Zustand nur als Rückfallebene benutzen.
+  const feldWert = (form, feld, ersatz) => {
+    const roh = form?.elements?.[feld]?.value;
+    return (roh === undefined || roh === null || roh === '') ? ersatz : roh;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const form     = e.currentTarget;
+    const benutzer = String(feldWert(form, 'username', username)).trim();
+    const passwort = String(feldWert(form, 'password', password));
     setError('');
+    if (!benutzer || !passwort) {
+      setError('Bitte Benutzername und Passwort eingeben.');
+      return;
+    }
     setLoading(true);
     try {
-      const res = await login(username, password);
+      const res = await login(benutzer, passwort);
       if (res.require2FA) {
         setStep2FA({
           twofaType: res.twofaType,
           tempToken: res.tempToken,
-          message: res.message
+          message: res.message,
+          // Das Zwischen-Token gilt serverseitig zehn Minuten (routes/auth.js).
+          gueltigBis: Date.now() + 10 * 60 * 1000,
         });
         setCode2FA('');
       } else {
@@ -41,13 +95,29 @@ export default function Login() {
 
   const handleVerify2FA = async (e) => {
     e.preventDefault();
+    // Gleicher Grund wie oben: Der Einmalcode kommt bei automatischem Ausfüllen unter
+    // Umständen nur im DOM an.
+    const code = String(feldWert(e.currentTarget, 'otp', code2FA)).replace(/\D/g, '').slice(0, 6);
     setError('');
+    if (code.length !== 6) {
+      setError('Bitte den 6-stelligen Code eingeben.');
+      return;
+    }
     setLoading(true);
     try {
-      await verify2FA(step2FA.tempToken, code2FA);
+      await verify2FA(step2FA.tempToken, code);
+      sessionStorage.removeItem(SPEICHER_2FA);
       navigate('/');
     } catch (err) {
-      setError(err.response?.data?.error || 'Ungültiger 2FA-Code');
+      const meldung = err.response?.data?.error || 'Ungültiger 2FA-Code';
+      // Ist das Zwischen-Token abgelaufen, hilft kein weiterer Code mehr — zurück zur
+      // Anmeldung, statt den Benutzer vor einem toten Formular stehen zu lassen.
+      if (/abgelaufen|ungültige Sitzung|Ungültiges 2FA-Token/i.test(meldung)) {
+        abbrechen2FA();
+        setError('Die Anmeldung ist abgelaufen. Bitte melde dich erneut an.');
+      } else {
+        setError(meldung);
+      }
     } finally {
       setLoading(false);
     }
@@ -101,8 +171,16 @@ export default function Login() {
 
             <div>
               <label className="block text-xs font-medium text-panel-muted mb-1.5">6-stelliger Code</label>
+              {/* `one-time-code` sagt Browsern und Passwortmanagern, dass hier ein
+                  Einmalcode erwartet wird. Ohne diese Auszeichnung halten Erweiterungen
+                  wie Enpass das Feld für ein gewöhnliches Anmeldefeld und füllen im
+                  Zweifel Benutzername oder Passwort hinein. */}
               <input
                 type="text"
+                name="otp"
+                autoComplete="one-time-code"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 value={code2FA}
                 onChange={e => setCode2FA(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 className="w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-center text-lg font-mono tracking-widest text-panel-text focus:outline-none focus:border-panel-accent transition-colors"
@@ -114,7 +192,7 @@ export default function Login() {
 
             <button
               type="submit"
-              disabled={loading || code2FA.length !== 6}
+              disabled={loading}
               className="w-full bg-panel-accent hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium py-2 rounded-md transition-colors"
             >
               {loading ? 'Prüfe Code...' : 'Code bestätigen'}
@@ -122,7 +200,7 @@ export default function Login() {
 
             <button
               type="button"
-              onClick={() => { setStep2FA(null); setCode2FA(''); setError(''); }}
+              onClick={abbrechen2FA}
               className="w-full flex items-center justify-center gap-1.5 text-xs text-panel-muted hover:text-panel-text pt-1 transition-colors"
             >
               <ArrowLeft size={13} />Zurück zur Anmeldung
@@ -138,8 +216,12 @@ export default function Login() {
 
             <div>
               <label className="block text-xs font-medium text-panel-muted mb-1">Benutzername</label>
+              {/* name + autoComplete, damit Passwortmanager die Felder eindeutig
+                  zuordnen können und nicht ins falsche Formular schreiben. */}
               <input
                 type="text"
+                name="username"
+                autoComplete="username"
                 value={username}
                 onChange={e => setUsername(e.target.value)}
                 className="w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:border-panel-accent transition-colors"
@@ -153,6 +235,8 @@ export default function Login() {
               <div className="relative">
                 <input
                   type={showPw ? 'text' : 'password'}
+                  name="password"
+                  autoComplete="current-password"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   className="w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 pr-9 text-sm text-panel-text focus:outline-none focus:border-panel-accent transition-colors"
@@ -167,7 +251,7 @@ export default function Login() {
 
             <button
               type="submit"
-              disabled={loading || !username || !password}
+              disabled={loading}
               className="w-full bg-panel-accent hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium py-2 rounded-md transition-colors"
             >
               {loading ? 'Anmelden...' : 'Anmelden'}

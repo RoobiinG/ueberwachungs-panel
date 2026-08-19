@@ -16,6 +16,41 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.7.0.2] - 2026-08-19 (Build 317) — *Anmeldung übersteht das Ausfüllen*
+
+### 🐛 Bugfixes
+- **Bei aktiver Zwei-Faktor-Anmeldung landete man kurz nach der Passwort-Eingabe wieder auf der
+  Anmeldemaske.** Die Abfrage des Codes erschien, verschwand aber nach wenigen Augenblicken —
+  obwohl Benutzername und Passwort längst geprüft waren und das Zwischen-Token noch zehn Minuten
+  gültig gewesen wäre. Ursache: Der Zwischenschritt lebte ausschließlich im Arbeitsspeicher der
+  geöffneten Seite. Jeder Neuaufbau verwarf ihn wortlos, und die Anmeldemaske erschien wieder,
+  weil ohne Token niemand angemeldet ist. Ausgelöst wird so ein Neuaufbau unter anderem von
+  Passwortmanager-Erweiterungen beim automatischen Ausfüllen.
+  Der Schritt wird jetzt im Sitzungsspeicher des Browser-Tabs gehalten und übersteht ein Neuladen.
+  Er endet mit dem Tab, mit der erfolgreichen Anmeldung oder mit dem Ablauf des Tokens.
+- **Die Anmeldefelder waren für Passwortmanager nicht eindeutig erkennbar.** Keines der drei Felder
+  trug eine Kennzeichnung, wofür es da ist. Benutzername, Passwort und Einmalcode sind jetzt als
+  solche ausgezeichnet — damit tragen Browser und Passwortmanager den Code ins richtige Feld ein,
+  statt zu raten.
+- **Automatisch ausgefüllte Felder ließen den Absende-Knopf grau.** Passwortmanager schreiben ihren
+  Wert teilweise direkt ins Eingabefeld, ohne die Seite darüber zu benachrichtigen; die Anmeldung
+  hielt das Feld dann weiterhin für leer. Beim Absenden werden die Werte nun aus dem Formular selbst
+  gelesen, der Zustand der Seite dient nur noch als Rückfallebene.
+- **Ein abgelaufener Zwischenschritt führte in eine Sackgasse.** Nach zehn Minuten wurde jeder
+  eingegebene Code abgewiesen, ohne Weg zurück. Jetzt landet man mit einem Hinweis wieder auf der
+  Anmeldemaske.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank:** keine Migration, keine Schema-Änderung.
+- **Agent:** unverändert bei 2.7.0 — kein Update auf den Zielservern nötig.
+- **Sitzungen:** bereits angemeldete Benutzer bleiben angemeldet. Die Seite muss nach dem Update
+  einmal neu geladen werden, damit die überarbeitete Anmeldemaske greift.
+- **Browser-Speicher:** neuer Eintrag `panel_2fa_schritt` im Sitzungsspeicher. Er ist ausschließlich
+  während der laufenden Code-Abfrage belegt und verschwindet mit dem Tab, spätestens nach zehn
+  Minuten. Das dauerhafte Sitzungs-Token liegt weiterhin unverändert im lokalen Speicher.
+- **Konten ohne Zwei-Faktor** und die **Anmeldung per Passkey** sind nicht betroffen und verhalten
+  sich unverändert.
+
 ## [5.7.0.1] - 2026-08-19 (Build 316) — *Konsole findet die richtige Shell*
 
 ### 🐛 Bugfixes
