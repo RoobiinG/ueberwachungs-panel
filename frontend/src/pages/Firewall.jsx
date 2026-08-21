@@ -275,13 +275,37 @@ export default function Firewall() {
   const toggleFirewall = async () => {
     if (!detectedTool || detectedTool.tool === 'none') return;
     const enable = !detectedTool.active;
-    if (!confirm(`Firewall (${toolInfo?.label}) wirklich ${enable ? 'aktivieren' : 'deaktivieren'}?`)) return;
+    const frage = enable
+      ? `Firewall (${toolInfo?.label}) wirklich aktivieren?\n\nAb dann gilt: Was keine Freigabe hat, kommt nicht mehr durch.`
+      : `Firewall (${toolInfo?.label}) wirklich deaktivieren?\n\nDanach ist dieser Server ungefiltert erreichbar.`;
+    if (!confirm(frage)) return;
     setToggling(true);
     try {
       await axios.post(`${apiBase}/firewall/toggle`, { enable, tool: detectedTool.tool });
       await load();
     } catch (err) {
-      setError(humanError(err.response?.data?.error || 'Fehler beim Umschalten', !selectedServer));
+      const daten = err.response?.data;
+      // 409 = das Panel hat das Einschalten angehalten, weil danach niemand mehr
+      // hereinkäme. Das ist keine Fehlermeldung zum Wegklicken, sondern eine Frage:
+      // Wer den Zugang anders abgesichert hat, darf darüber hinweg — bewusst.
+      if (err.response?.status === 409 && daten?.bestaetigungNoetig) {
+        const trotzdem = confirm(
+          `${daten.error}\n\n` +
+          `Trotzdem einschalten?\n\n` +
+          `Nur bestätigen, wenn du sicher bist, dass du danach noch auf diesen Server kommst — ` +
+          `andernfalls ist er weder über das Panel noch über SSH zurückzuholen.`
+        );
+        if (trotzdem) {
+          try {
+            await axios.post(`${apiBase}/firewall/toggle`, { enable, tool: detectedTool.tool, trotzdem: true });
+            await load();
+          } catch (e2) {
+            setError(humanError(e2.response?.data?.error || 'Fehler beim Umschalten', !selectedServer));
+          }
+        }
+      } else {
+        setError(humanError(daten?.error || 'Fehler beim Umschalten', !selectedServer));
+      }
     }
     setToggling(false);
   };

@@ -6,7 +6,13 @@ const axios = require('axios');
 const { requirePermission } = require('../middleware/requirePermission');
 const { auditLog } = require('../utils/audit');
 const { detectFirewall, getAdapter } = require('../utils/firewallAdapters');
+const { zugangGesichert, warnung } = require('../utils/firewallSchutz');
 const db = require('../db');
+
+// Der Port, über den das Panel selbst erreichbar ist — er muss offen bleiben, sonst
+// sperrt das Einschalten der Firewall die Oberfläche aus, von der aus man es zurücknehmen
+// könnte.
+const PANEL_PORT = parseInt(process.env.PORT, 10) || 3001;
 
 const getSetting = (k) => db.prepare('SELECT value FROM settings WHERE key = ?').get(k)?.value || '';
 
@@ -44,6 +50,19 @@ router.post('/toggle', requirePermission('firewall.manage'), async (req, res) =>
     const targetTool = tool !== 'none' ? tool : req.body.tool;
     const adapter = getAdapter(targetTool, host);
     if (!adapter) throw new Error('Kein unterstütztes Firewall-Tool gefunden');
+
+    // Vor dem Einschalten prüfen, ob danach überhaupt noch jemand hereinkommt.
+    // Ohne diese Bremse macht ein einzelner Klick den Server unerreichbar — siehe
+    // utils/firewallSchutz.js. Ausschalten ist davon nicht betroffen.
+    if (enable && req.body?.trotzdem !== true) {
+      let regeln = [];
+      try { regeln = await adapter.getRules(); } catch { regeln = []; }
+      const { sicher, fehlend } = zugangGesichert(regeln, [PANEL_PORT]);
+      if (!sicher) {
+        return res.status(409).json({ error: warnung(fehlend), fehlendePorts: fehlend, bestaetigungNoetig: true });
+      }
+    }
+
     const output = enable ? await adapter.enable() : await adapter.disable();
     auditLog(req, enable ? 'firewall.enable' : 'firewall.disable', 'firewall', targetTool);
     res.json({ success: true, output });

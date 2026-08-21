@@ -223,7 +223,23 @@ class IptablesAdapter {
 
   async enable() {
     try { await this.exec('systemctl start iptables 2>/dev/null'); return 'iptables gestartet'; }
-    catch { await this.exec('iptables -P INPUT DROP'); return 'Standard-Policy auf DROP gesetzt'; }
+    catch {
+      // Ohne systemd-Dienst bleibt nur die Standard-Policy. `-P INPUT DROP` allein trennt
+      // dabei aber auch die bestehende SSH-Sitzung und alle laufenden Verbindungen — der
+      // Server wäre in derselben Sekunde weg. Deshalb erst die beiden Regeln setzen, ohne
+      // die ein DROP unweigerlich aussperrt: bestehende Verbindungen weiterlaufen lassen
+      // und SSH offen halten. Beides ist unschädlich, falls es die Regeln schon gibt —
+      // `-C` prüft das vorher.
+      const sichern = async (regel) => {
+        try { await this.exec(`iptables -C ${regel}`); }
+        catch { await this.exec(`iptables -I ${regel}`); }
+      };
+      await sichern('INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT');
+      await sichern('INPUT -i lo -j ACCEPT');
+      await sichern('INPUT -p tcp --dport 22 -j ACCEPT');
+      await this.exec('iptables -P INPUT DROP');
+      return 'Standard-Policy auf DROP gesetzt (SSH, Loopback und bestehende Verbindungen bleiben offen)';
+    }
   }
   async disable() {
     try { await this.exec('systemctl stop iptables 2>/dev/null'); return 'iptables gestoppt'; }

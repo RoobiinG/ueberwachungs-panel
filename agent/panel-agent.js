@@ -17,7 +17,7 @@ const execAsync = promisify(exec);
 // sondern ein Argument-Array. Sonderzeichen in Volume-/Netzwerk-/Image-Namen können
 // so nicht als Shell-Syntax gedeutet werden.
 const execFileAsync = promisify(execFile);
-const VERSION = '2.7.0';
+const VERSION = '2.8.0';
 
 // Ob die Container-Konsole angeboten werden kann. Steht erst nach dem Laden von
 // ws/node-pty am Ende dieser Datei fest und wird über /ping und /version gemeldet,
@@ -850,7 +850,23 @@ async function handler(req, res) {
         await execAsync(enable ? 'systemctl start nftables' : 'systemctl stop nftables', { timeout: 10000 });
       } else if (targetTool === 'iptables') {
         try { await execAsync(enable ? 'systemctl start iptables' : 'systemctl stop iptables', { timeout: 10000 }); }
-        catch { await execAsync(enable ? 'iptables -P INPUT DROP' : 'iptables -P INPUT ACCEPT', { timeout: 5000 }); }
+        catch {
+          if (enable) {
+            // `-P INPUT DROP` allein kappt auch die bestehende SSH-Sitzung und macht den
+            // Server in derselben Sekunde unerreichbar. Erst die Regeln setzen, ohne die
+            // ein DROP unweigerlich aussperrt (Spiegelung von firewallAdapters.js).
+            const sichern = async (regel) => {
+              try { await execAsync(`iptables -C ${regel}`, { timeout: 5000 }); }
+              catch { await execAsync(`iptables -I ${regel}`, { timeout: 5000 }); }
+            };
+            await sichern('INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT');
+            await sichern('INPUT -i lo -j ACCEPT');
+            await sichern('INPUT -p tcp --dport 22 -j ACCEPT');
+            await execAsync('iptables -P INPUT DROP', { timeout: 5000 });
+          } else {
+            await execAsync('iptables -P INPUT ACCEPT', { timeout: 5000 });
+          }
+        }
       }
       respond(res, 200, { success: true });
 

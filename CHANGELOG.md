@@ -16,6 +16,42 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.9.3.0] - 2026-08-19 (Build 330) — *Die Firewall sperrt dich nicht mehr aus*
+
+### 🔒 Sicherheit
+- **Das Einschalten der Firewall konnte einen Server in einem Zug unerreichbar machen.** Der
+  Knopf gab es lokal wie für Remote-Server längst — nur führte er in der häufigsten
+  Konstellation ins Verderben: Gibt es keinen systemd-Dienst für iptables (auf Debian mit
+  Docker der Normalfall), fiel das Panel auf `iptables -P INPUT DROP` zurück. Damit reißt in
+  derselben Sekunde die laufende SSH-Sitzung ab, das Panel ist weg, alle Dienste sind weg —
+  und zurückholen lässt sich das nur noch über die Konsole des Anbieters. `ufw --force enable`
+  hat dieselbe Wirkung, weil `--force` genau die Rückfrage überspringt, mit der UFW sonst vor
+  dem Abriss der SSH-Verbindung warnt.
+  **Neu wird vor dem Einschalten geprüft, ob danach überhaupt noch ein Weg hineinführt** —
+  Port 22 und der Port, über den das Panel bzw. der Agent erreichbar ist. Fehlt eine Freigabe,
+  wird nicht geschaltet, sondern erklärt, welcher Port fehlt. Wer den Zugang anders abgesichert
+  hat, kann ausdrücklich darüber hinweg; dann fragt das Panel ein zweites Mal nach.
+  Bei Remote-Servern wiegt das schwerer als lokal: Sperrt sich ein Agent-Server aus, ist auch
+  der Agent als einziger Draht dorthin verloren. Die Prüfung läuft deshalb im Panel und wirkt
+  **auch mit älteren Agenten**, ohne dass dort ein Update nötig wäre.
+- **Der iptables-Rückfall selbst ist entschärft.** Muss doch auf die Standard-Policy
+  zurückgegriffen werden, setzt das Panel vorher die Regeln, ohne die ein `DROP` unweigerlich
+  aussperrt: bestehende Verbindungen weiterlaufen lassen, Loopback und SSH offen halten. Erst
+  danach greift `DROP`. Vorhandene Regeln werden dabei nicht doppelt angelegt.
+
+### 🔧 Änderungen
+- Die Sicherheitsabfrage vor dem Umschalten benennt jetzt die Folge, statt nur „wirklich?" zu
+  fragen — beim Ausschalten also, dass der Server danach ungefiltert erreichbar ist.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank:** keine Migration.
+- **Agent:** neue Version **2.8.0** — sie spiegelt die Absicherung des iptables-Rückfalls, damit
+  sie auch greift, wenn ein Agent direkt angesprochen wird. Die Verteilung übernimmt die
+  automatische Agent-Aktualisierung; bis dahin schützt bereits die Prüfung im Panel.
+- **Ablauf unverändert**, solange die nötigen Freigaben existieren: Dann schaltet der Knopf wie
+  bisher ohne Zwischenfrage.
+- **Nicht betroffen** ist das Ausschalten — es kann niemanden aussperren und läuft unverändert.
+
 ## [5.9.2.2] - 2026-08-19 (Build 329) — *Die Verdichtung der Messwerte greift endlich*
 
 ### 🐛 Bugfixes

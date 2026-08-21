@@ -12,6 +12,7 @@ const { canAccessAgent } = require('../utils/agentAccess');
 const { agentClient } = require('../utils/agentTls');
 const terminalTickets = require('../utils/terminalTickets');
 const statsCache      = require('../utils/statsCache');
+const { zugangGesichert, warnung } = require('../utils/firewallSchutz');
 
 const AGENT_RAW_URL = 'https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master/agent/panel-agent.js';
 
@@ -1066,6 +1067,24 @@ router.get('/:id/firewall/detect', requirePermission('firewall.view'), async (re
 router.post('/:id/firewall/toggle', requirePermission('firewall.manage'), async (req, res) => {
   const agent = firewallAgent(req, res); if (!agent) return;
   try {
+    // Dieselbe Bremse wie beim lokalen Server — hier sogar wichtiger: Sperrt sich ein
+    // Remote-Server aus, ist er weder über das Panel noch über SSH zurückzuholen, und der
+    // Agent als einziger Draht dorthin ist mit weg. Die Prüfung passiert im Panel und
+    // wirkt deshalb auch mit älteren Agenten, ohne dort ein Update zu erzwingen.
+    if (req.body?.enable === true && req.body?.trotzdem !== true) {
+      let regeln = [];
+      try {
+        const { data } = await agentApi(agent).get('/firewall/rules');
+        regeln = Array.isArray(data) ? data : (data?.rules || []);
+      } catch { regeln = []; }
+      // Zusätzlich zum SSH-Port der Port, über den das Panel den Agenten erreicht.
+      const agentPort = parseInt((agent.url || '').match(/:(\d{2,5})(?:\/|$)/)?.[1] || '', 10);
+      const { sicher, fehlend } = zugangGesichert(regeln, isNaN(agentPort) ? [] : [agentPort]);
+      if (!sicher) {
+        return res.status(409).json({ error: warnung(fehlend), fehlendePorts: fehlend, bestaetigungNoetig: true });
+      }
+    }
+
     const { data } = await agentApi(agent).post('/firewall/toggle', req.body);
     auditLog(req, req.body?.enable ? 'firewall.enable' : 'firewall.disable', 'firewall',
       req.body?.tool || 'agent', { agentId: agent.id, agentName: agent.name });
