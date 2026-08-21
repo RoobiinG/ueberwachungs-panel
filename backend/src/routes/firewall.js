@@ -5,7 +5,7 @@ const execAsync = promisify(exec);
 const axios = require('axios');
 const { requirePermission } = require('../middleware/requirePermission');
 const { auditLog } = require('../utils/audit');
-const { detectFirewall, getAdapter } = require('../utils/firewallAdapters');
+const { detectFirewall, getAdapter, filterZustand } = require('../utils/firewallAdapters');
 const { zugangGesichert, warnung } = require('../utils/firewallSchutz');
 const db = require('../db');
 
@@ -28,7 +28,12 @@ const fail = (res, err) => res.status(isInputError(err.message) ? 400 : 500).jso
 router.get('/detect', requirePermission('firewall.view'), async (req, res) => {
   try {
     const result = await detectFirewall(host);
-    res.json(result);
+    // `active` sagt nur, dass ein Werkzeug da ist. Ob eingehender Verkehr wirklich
+    // eingeschränkt wird, ist eine andere Frage — und die interessiert den Benutzer.
+    const zustand = result.tool !== 'none'
+      ? await filterZustand(result.tool, host)
+      : { filtert: false, grund: 'Kein Firewall-Werkzeug gefunden.' };
+    res.json({ ...result, ...zustand });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

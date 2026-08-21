@@ -16,6 +16,40 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.9.4.0] - 2026-08-19 (Build 331) — *„Aktiv" heißt jetzt auch geschützt*
+
+### 🔒 Sicherheit
+- **Das Panel meldete „Firewall aktiv", wo in Wahrheit alles offen stand.** Für nftables und
+  iptables galt die Firewall als aktiv, sobald das Werkzeug **installiert** war — geprüft wurde
+  nie, ob überhaupt etwas gefiltert wird. Auf jedem Server mit Docker ist das irreführend:
+  Docker legt für seine Weiterleitungen immer nft-Tabellen an, und schon stand da „aktiv",
+  obwohl die Standard-Regel jede eingehende Verbindung durchließ und es keine einzige Regel
+  gab. Wer sich darauf verlassen hat, hielt einen offenen Server für geschützt.
+  Das Panel unterscheidet jetzt zwischen **„Werkzeug vorhanden"** und **„filtert wirklich"**:
+  - **UFW / firewalld:** eingeschaltet bzw. laufend?
+  - **iptables:** Standard-Regel der INPUT-Kette auf DROP oder REJECT — oder wenigstens
+    einzelne sperrende Regeln?
+  - **nftables:** Gibt es überhaupt eine Kette am Eingang (Docker-Tabellen zählen nicht),
+    und sperrt deren Standard-Regel oder eine ihrer Regeln?
+
+  Die Anzeige sagt entsprechend **„filtert"** oder **„filtert nicht"** statt „aktiv/inaktiv",
+  und im offenen Fall steht darüber ein deutlicher Hinweis samt Begründung in einem Satz —
+  etwa „Es gibt keine Kette für eingehende Verbindungen — vorhandene Tabellen stammen von
+  Docker."
+- Der Schalter richtet sich nach demselben Zustand: Wo nicht gefiltert wird, bietet er
+  „Aktivieren" an statt „Deaktivieren" wie bisher.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank:** keine Migration. Rein auswertend — es wird nichts an der Firewall verändert.
+- **Agent:** neue Version **2.9.0**, die dieselbe Prüfung für Remote-Server mitliefert. Die
+  Verteilung übernimmt die automatische Agent-Aktualisierung.
+- **Ältere Agenten** melden den neuen Wert noch nicht; für sie bleibt die Anzeige wie bisher,
+  statt fälschlich „ungeschützt" zu behaupten. Sobald das Update durch ist, greift die genauere
+  Auskunft von selbst.
+- **Möglicher Überraschungseffekt:** Server, die bisher grün als „aktiv" angezeigt wurden,
+  erscheinen nun rot als „filtert nicht" — nicht weil sich etwas verändert hätte, sondern weil
+  die Anzeige vorher falsch war.
+
 ## [5.9.3.0] - 2026-08-19 (Build 330) — *Die Firewall sperrt dich nicht mehr aus*
 
 ### 🔒 Sicherheit

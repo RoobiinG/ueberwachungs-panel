@@ -17,7 +17,7 @@ const execAsync = promisify(exec);
 // sondern ein Argument-Array. Sonderzeichen in Volume-/Netzwerk-/Image-Namen können
 // so nicht als Shell-Syntax gedeutet werden.
 const execFileAsync = promisify(execFile);
-const VERSION = '2.8.0';
+const VERSION = '2.9.0';
 
 // Ob die Container-Konsole angeboten werden kann. Steht erst nach dem Laden von
 // ws/node-pty am Ende dieser Datei fest und wird über /ping und /version gemeldet,
@@ -349,6 +349,65 @@ async function detectAgentFirewall() {
   } catch {}
   try { const { stdout } = await execAsync('which iptables 2>/dev/null', { timeout: 3000 }); if (stdout.trim()) return { tool: 'iptables', active: true }; } catch {}
   return { tool: 'none', active: false };
+}
+
+// Filtert die Firewall wirklich? — Spiegelung von filterZustand() in
+// backend/src/utils/firewallAdapters.js.
+// `detectAgentFirewall` sagt nur, welches Werkzeug da ist: nftables und iptables gelten
+// dort als „aktiv", sobald sie installiert sind. Auf einem Server mit Docker existieren
+// aber immer nft-Tabellen, ohne dass eine eingehende Verbindung gefiltert würde.
+async function agentFilterZustand(tool) {
+  const offen  = (grund) => ({ filtert: false, grund });
+  const dicht  = (grund) => ({ filtert: true,  grund });
+  const lauf   = (cmd) => execAsync(cmd, { timeout: 5000 });
+
+  try {
+    if (tool === 'ufw') {
+      const { stdout } = await lauf('ufw status 2>/dev/null');
+      return /Status:\s*active/i.test(stdout)
+        ? dicht('UFW ist eingeschaltet und filtert eingehende Verbindungen.')
+        : offen('UFW ist installiert, aber ausgeschaltet — es wird nichts gefiltert.');
+    }
+    if (tool === 'firewalld') {
+      const { stdout } = await lauf('firewall-cmd --state 2>/dev/null');
+      return stdout.trim() === 'running'
+        ? dicht('firewalld läuft und filtert eingehende Verbindungen.')
+        : offen('firewalld ist installiert, läuft aber nicht — es wird nichts gefiltert.');
+    }
+    if (tool === 'iptables') {
+      const { stdout } = await lauf('iptables -S INPUT 2>/dev/null');
+      if (/^-P INPUT (DROP|REJECT)/m.test(stdout)) {
+        return dicht('Alles ist gesperrt, was keine ausdrückliche Freigabe hat (Standard-Regel DROP).');
+      }
+      const sperrend = stdout.split('\n').filter(z => /^-A INPUT/.test(z)).some(z => /-j\s+(DROP|REJECT)/.test(z));
+      return sperrend
+        ? dicht('Die Standard-Regel lässt zwar alles durch, einzelne Regeln sperren aber gezielt.')
+        : offen('Die INPUT-Kette lässt alles durch: Standard-Regel ACCEPT und keine sperrende Regel.');
+    }
+    if (tool === 'nftables') {
+      const { stdout } = await lauf('nft -j list ruleset 2>/dev/null');
+      let daten = {};
+      try { daten = JSON.parse(stdout || '{}'); } catch { return offen('Der nftables-Regelsatz war nicht lesbar.'); }
+      const eintraege = Array.isArray(daten.nftables) ? daten.nftables : [];
+      const eingang = eintraege.map(e => e.chain).filter(c => c && c.hook === 'input');
+      if (!eingang.length) {
+        return offen('Es gibt keine Kette für eingehende Verbindungen — vorhandene Tabellen stammen von Docker.');
+      }
+      const gesperrt = eingang.filter(c => ['drop', 'reject'].includes(String(c.policy || '').toLowerCase()));
+      if (gesperrt.length) {
+        return dicht('Alles ist gesperrt, was keine ausdrückliche Freigabe hat (Kette "' + gesperrt[0].name + '" mit Standard-Regel ' + gesperrt[0].policy + ').');
+      }
+      const namen = new Set(eingang.map(c => c.name));
+      const sperrend = eintraege.map(e => e.rule).filter(r => r && namen.has(r.chain))
+        .some(r => (r.expr || []).some(a => a.drop !== undefined || a.reject !== undefined));
+      return sperrend
+        ? dicht('Die Standard-Regel lässt zwar alles durch, einzelne Regeln sperren aber gezielt.')
+        : offen('Die Kette für eingehende Verbindungen lässt alles durch: Standard-Regel accept und keine sperrende Regel.');
+    }
+  } catch (err) {
+    return offen('Der Zustand ließ sich nicht ermitteln: ' + String(err.message || err).slice(0, 120));
+  }
+  return offen('Kein unterstütztes Firewall-Werkzeug gefunden.');
 }
 
 // Firewall-Status (einheitlich)
@@ -833,7 +892,11 @@ async function handler(req, res) {
 
     // ── Firewall ──────────────────────────────────────────────────────────────
     } else if (url === '/firewall/detect' && req.method === 'GET') {
-      respond(res, 200, await detectAgentFirewall());
+      const erkannt = await detectAgentFirewall();
+      const zustand = erkannt.tool !== 'none'
+        ? await agentFilterZustand(erkannt.tool)
+        : { filtert: false, grund: 'Kein Firewall-Werkzeug gefunden.' };
+      respond(res, 200, { ...erkannt, ...zustand });
 
     } else if (url === '/firewall/toggle' && req.method === 'POST') {
       const raw = await new Promise((resolve) => { const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8'))); });

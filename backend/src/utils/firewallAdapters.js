@@ -86,6 +86,85 @@ async function detectFirewall(exec) {
   return { tool: 'none', active: false };
 }
 
+// ─── Filtert die Firewall wirklich? ───────────────────────────────────────────
+//
+// `detectFirewall` beantwortet nur, welches Werkzeug vorhanden ist — bei nftables und
+// iptables gilt es dort als „aktiv", sobald es installiert ist. Das ist irreführend: Auf
+// einem Server mit Docker existieren immer nft-Tabellen (Docker legt sie für seine
+// Weiterleitungen an), ohne dass eine einzige eingehende Verbindung gefiltert würde. Das
+// Panel meldete deshalb „aktiv", wo in Wahrheit alles offen stand.
+//
+// Diese Prüfung schaut nach, ob eingehender Verkehr tatsächlich eingeschränkt wird, und
+// begründet ihr Ergebnis in einem Satz, der in der Oberfläche angezeigt werden kann.
+async function filterZustand(tool, exec) {
+  const offen = (grund) => ({ filtert: false, grund });
+  const dicht = (grund) => ({ filtert: true,  grund });
+
+  try {
+    if (tool === 'ufw') {
+      const { stdout } = await exec('ufw status 2>/dev/null');
+      return /Status:\s*active/i.test(stdout)
+        ? dicht('UFW ist eingeschaltet und filtert eingehende Verbindungen.')
+        : offen('UFW ist installiert, aber ausgeschaltet — es wird nichts gefiltert.');
+    }
+
+    if (tool === 'firewalld') {
+      const { stdout } = await exec('firewall-cmd --state 2>/dev/null');
+      return stdout.trim() === 'running'
+        ? dicht('firewalld läuft und filtert eingehende Verbindungen.')
+        : offen('firewalld ist installiert, läuft aber nicht — es wird nichts gefiltert.');
+    }
+
+    if (tool === 'iptables') {
+      const { stdout } = await exec('iptables -S INPUT 2>/dev/null');
+      if (/^-P INPUT (DROP|REJECT)/m.test(stdout)) {
+        return dicht('Alles ist gesperrt, was keine ausdrückliche Freigabe hat (Standard-Regel DROP).');
+      }
+      const sperrend = stdout.split('\n')
+        .filter(z => /^-A INPUT/.test(z))
+        .some(z => /-j\s+(DROP|REJECT)/.test(z));
+      return sperrend
+        ? dicht('Die Standard-Regel lässt zwar alles durch, einzelne Regeln sperren aber gezielt.')
+        : offen('Die INPUT-Kette lässt alles durch: Standard-Regel ACCEPT und keine sperrende Regel.');
+    }
+
+    if (tool === 'nftables') {
+      const { stdout } = await exec('nft -j list ruleset 2>/dev/null');
+      let daten = {};
+      try { daten = JSON.parse(stdout || '{}'); } catch { return offen('Der nftables-Regelsatz war nicht lesbar.'); }
+      const eintraege = Array.isArray(daten.nftables) ? daten.nftables : [];
+
+      // Nur Ketten, die am Eingang hängen. Alles andere (Docker-Weiterleitungen, NAT)
+      // sagt nichts darüber aus, ob eingehende Verbindungen gefiltert werden.
+      const eingang = eintraege.map(e => e.chain).filter(c => c && c.hook === 'input');
+      if (!eingang.length) {
+        return offen('Es gibt keine Kette für eingehende Verbindungen — vorhandene Tabellen stammen von Docker.');
+      }
+
+      const gesperrt = eingang.filter(c => ['drop', 'reject'].includes(String(c.policy || '').toLowerCase()));
+      if (gesperrt.length) {
+        return dicht(`Alles ist gesperrt, was keine ausdrückliche Freigabe hat (Kette „${gesperrt[0].name}“ mit Standard-Regel ${gesperrt[0].policy}).`);
+      }
+
+      // Standard-Regel lässt durch — dann zählt, ob einzelne Regeln sperren.
+      const namen = new Set(eingang.map(c => c.name));
+      const sperrend = eintraege
+        .map(e => e.rule)
+        .filter(r => r && namen.has(r.chain))
+        .some(r => (r.expr || []).some(a => {
+          const v = a.drop !== undefined ? 'drop' : (a.reject !== undefined ? 'reject' : null);
+          return v !== null;
+        }));
+      return sperrend
+        ? dicht('Die Standard-Regel lässt zwar alles durch, einzelne Regeln sperren aber gezielt.')
+        : offen('Die Kette für eingehende Verbindungen lässt alles durch: Standard-Regel accept und keine sperrende Regel.');
+    }
+  } catch (err) {
+    return offen('Der Zustand ließ sich nicht ermitteln: ' + (err.message || String(err)).slice(0, 120));
+  }
+  return offen('Kein unterstütztes Firewall-Werkzeug gefunden.');
+}
+
 // ─── Adapter-Factory ─────────────────────────────────────────────────────────
 function getAdapter(tool, exec) {
   switch (tool) {
@@ -526,4 +605,4 @@ class FirewalldAdapter {
   }
 }
 
-module.exports = { detectFirewall, getAdapter };
+module.exports = { detectFirewall, getAdapter, filterZustand };

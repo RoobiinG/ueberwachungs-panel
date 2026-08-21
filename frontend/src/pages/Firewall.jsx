@@ -274,7 +274,7 @@ export default function Firewall() {
 
   const toggleFirewall = async () => {
     if (!detectedTool || detectedTool.tool === 'none') return;
-    const enable = !detectedTool.active;
+    const enable = !schuetzt;
     const frage = enable
       ? `Firewall (${toolInfo?.label}) wirklich aktivieren?\n\nAb dann gilt: Was keine Freigabe hat, kommt nicht mehr durch.`
       : `Firewall (${toolInfo?.label}) wirklich deaktivieren?\n\nDanach ist dieser Server ungefiltert erreichbar.`;
@@ -312,6 +312,15 @@ export default function Firewall() {
 
   const setF = (key, val) => setForm(f => ({ ...f, [key]: val }));
   const toolInfo = TOOL_LABELS[detectedTool?.tool] || null;
+
+  // Ob wirklich gefiltert wird, ist die Frage, die zählt — „ein Werkzeug ist installiert"
+  // sagt darüber nichts. Auf Servern mit Docker existieren immer nft-Tabellen, weshalb
+  // früher „aktiv" stand, obwohl alles offen war.
+  // Der Rückfall auf `active` gilt für Agenten, die `filtert` noch nicht melden: Dort
+  // bleibt die Anzeige wie bisher, statt fälschlich „ungeschützt" zu behaupten.
+  const schuetzt = detectedTool?.filtert ?? detectedTool?.active ?? false;
+  // Werkzeug vorhanden, filtert aber nichts — der Fall, der bisher als „aktiv" durchging.
+  const offenTrotzWerkzeug = detectedTool?.filtert === false && detectedTool?.tool !== 'none';
   const policy   = parsePolicy(status, detectedTool?.tool);
 
   // ── Gefilterte + paginierte Regeln ─────────────────────────────────────────
@@ -343,11 +352,14 @@ export default function Firewall() {
           <ServerSelector selected={selectedServer} onChange={setSelectedServer} />
 
           {toolInfo && (
-            <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded border text-xs font-semibold ${toolInfo.bg} ${toolInfo.color}`}>
+            <span
+              title={detectedTool?.grund || ''}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded border text-xs font-semibold ${toolInfo.bg} ${toolInfo.color}`}
+            >
               <Shield size={11} />
               {toolInfo.label}
-              <span className={`w-1.5 h-1.5 rounded-full ${detectedTool?.active ? 'bg-green-400' : 'bg-red-400'}`} />
-              {detectedTool?.active ? 'aktiv' : 'inaktiv'}
+              <span className={`w-1.5 h-1.5 rounded-full ${schuetzt ? 'bg-green-400' : 'bg-red-400'}`} />
+              {schuetzt ? 'filtert' : 'filtert nicht'}
             </span>
           )}
 
@@ -360,12 +372,12 @@ export default function Firewall() {
           {canWrite && detectedTool && detectedTool.tool !== 'none' && (
             <button onClick={toggleFirewall} disabled={toggling}
               className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded border transition-colors disabled:opacity-50
-                ${detectedTool.active
+                ${schuetzt
                   ? 'bg-panel-red/10 border-panel-red/40 text-panel-red hover:bg-panel-red/20'
                   : 'bg-panel-green/10 border-panel-green/40 text-panel-green hover:bg-panel-green/20'}`}
             >
               <Power size={12} />
-              {toggling ? '…' : detectedTool.active ? 'Deaktivieren' : 'Aktivieren'}
+              {toggling ? '…' : schuetzt ? 'Deaktivieren' : 'Aktivieren'}
             </button>
           )}
         </div>
@@ -391,13 +403,27 @@ export default function Firewall() {
         </div>
       )}
 
+      {/* Werkzeug da, filtert aber nichts — genau der Fall, der bisher als „aktiv"
+          durchging und Schutz vortäuschte, den es nicht gab. */}
+      {offenTrotzWerkzeug && (
+        <div className="bg-panel-orange/10 border border-panel-orange/30 rounded-lg px-3 py-2.5 flex items-start gap-2">
+          <AlertTriangle size={14} className="text-panel-orange flex-shrink-0 mt-0.5" />
+          <div className="text-xs text-panel-orange leading-relaxed">
+            <span className="font-semibold">Dieser Server ist ungefiltert erreichbar.</span>{' '}
+            {toolInfo?.label || 'Ein Firewall-Werkzeug'} ist zwar installiert, schränkt eingehende
+            Verbindungen aber nicht ein.
+            {detectedTool?.grund && <span className="block mt-0.5 opacity-90">{detectedTool.grund}</span>}
+          </div>
+        </div>
+      )}
+
       {/* Status */}
       {status && (
         <div className="bg-panel-card border border-panel-border rounded-lg p-3">
           <div className="flex items-center gap-2 mb-2 flex-wrap">
-            <span className={`w-2 h-2 rounded-full ${detectedTool?.active ? 'bg-panel-green' : 'bg-panel-red'}`} />
+            <span className={`w-2 h-2 rounded-full ${schuetzt ? 'bg-panel-green' : 'bg-panel-red'}`} />
             <span className="text-xs font-semibold text-panel-text">
-              {toolInfo?.label || 'Firewall'} {detectedTool?.active ? 'aktiv' : 'inaktiv'}
+              {toolInfo?.label || 'Firewall'} {schuetzt ? 'filtert eingehende Verbindungen' : 'filtert nicht'}
             </span>
             {/* Die Standard-Richtlinie entscheidet, was mit allem passiert, wofür es keine
                 Regel gibt — bisher stand sie nur klein in der Rohausgabe. */}
