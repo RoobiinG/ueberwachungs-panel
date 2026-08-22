@@ -31,7 +31,7 @@ router.get('/detect', requirePermission('firewall.view'), async (req, res) => {
     // `active` sagt nur, dass ein Werkzeug da ist. Ob eingehender Verkehr wirklich
     // eingeschränkt wird, ist eine andere Frage — und die interessiert den Benutzer.
     const zustand = result.tool !== 'none'
-      ? await filterZustand(result.tool, host)
+      ? await filterZustand(result.tool, host, result.rawOutput)
       : { filtert: false, grund: 'Kein Firewall-Werkzeug gefunden.' };
     res.json({ ...result, ...zustand });
   } catch (err) { res.status(500).json({ error: err.message }); }

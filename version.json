@@ -1,6 +1,6 @@
 {
-  "version": "5.9.8.1",
-  "build": 337,
+  "version": "5.9.8.2",
+  "build": 338,
   "date": "2026-08-22",
-  "codename": "Firewall-Erkennung Fix"
+  "codename": "Firewall-Erkennung & Performance Fix"
 }

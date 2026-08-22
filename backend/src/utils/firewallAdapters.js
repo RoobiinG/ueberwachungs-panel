@@ -56,7 +56,7 @@ async function detectFirewall(exec) {
     const { stdout } = await exec('which ufw 2>/dev/null');
     if (stdout.trim()) {
       const { stdout: s } = await exec('ufw status 2>/dev/null').catch(() => ({ stdout: '' }));
-      return { tool: 'ufw', active: /Status:\s*active/i.test(s) };
+      return { tool: 'ufw', active: /Status:\s*active/i.test(s), rawOutput: s };
     }
   } catch {}
 
@@ -65,7 +65,7 @@ async function detectFirewall(exec) {
     const { stdout } = await exec('which firewall-cmd 2>/dev/null');
     if (stdout.trim()) {
       const { stdout: s } = await exec('firewall-cmd --state 2>/dev/null').catch(() => ({ stdout: '' }));
-      return { tool: 'firewalld', active: s.trim() === 'running' };
+      return { tool: 'firewalld', active: s.trim() === 'running', rawOutput: s };
     }
   } catch {}
 
@@ -73,15 +73,20 @@ async function detectFirewall(exec) {
   try {
     const { stdout } = await exec('which nft 2>/dev/null');
     if (stdout.trim()) {
-      await exec('nft list tables 2>/dev/null');
-      return { tool: 'nftables', active: true };
+      const { stdout: s } = await exec('nft -j list ruleset 2>/dev/null').catch(() => ({ stdout: '' }));
+      // nftables hat keinen einzelnen "active" Status in dem Sinne,
+      // wenn das Kommando klappt, ist es einsatzbereit.
+      return { tool: 'nftables', active: true, rawOutput: s };
     }
   } catch {}
 
   // 4. iptables (Fallback — wenn installiert, gilt als aktiv)
   try {
     const { stdout } = await exec('which iptables 2>/dev/null');
-    if (stdout.trim()) return { tool: 'iptables', active: true };
+    if (stdout.trim()) {
+      const { stdout: s } = await exec('iptables -S INPUT 2>/dev/null').catch(() => ({ stdout: '' }));
+      return { tool: 'iptables', active: true, rawOutput: s };
+    }
   } catch {}
 
   return { tool: 'none', active: false };
@@ -97,27 +102,27 @@ async function detectFirewall(exec) {
 //
 // Diese Prüfung schaut nach, ob eingehender Verkehr tatsächlich eingeschränkt wird, und
 // begründet ihr Ergebnis in einem Satz, der in der Oberfläche angezeigt werden kann.
-async function filterZustand(tool, exec) {
+async function filterZustand(tool, exec, rawOutput = null) {
   const offen = (grund) => ({ filtert: false, grund });
   const dicht = (grund) => ({ filtert: true,  grund });
 
   try {
     if (tool === 'ufw') {
-      const { stdout } = await exec('ufw status 2>/dev/null');
+      const stdout = rawOutput !== null ? rawOutput : (await exec('ufw status 2>/dev/null')).stdout;
       return /Status:\s*active/i.test(stdout)
         ? dicht('UFW ist eingeschaltet und filtert eingehende Verbindungen.')
         : offen('UFW ist installiert, aber ausgeschaltet — es wird nichts gefiltert.');
     }
 
     if (tool === 'firewalld') {
-      const { stdout } = await exec('firewall-cmd --state 2>/dev/null');
+      const stdout = rawOutput !== null ? rawOutput : (await exec('firewall-cmd --state 2>/dev/null')).stdout;
       return stdout.trim() === 'running'
         ? dicht('firewalld läuft und filtert eingehende Verbindungen.')
         : offen('firewalld ist installiert, läuft aber nicht — es wird nichts gefiltert.');
     }
 
     if (tool === 'iptables') {
-      const { stdout } = await exec('iptables -S INPUT 2>/dev/null');
+      const stdout = rawOutput !== null ? rawOutput : (await exec('iptables -S INPUT 2>/dev/null')).stdout;
       if (/^-P INPUT (DROP|REJECT)/m.test(stdout)) {
         return dicht('Alles ist gesperrt, was keine ausdrückliche Freigabe hat (Standard-Regel DROP).');
       }
@@ -130,7 +135,7 @@ async function filterZustand(tool, exec) {
     }
 
     if (tool === 'nftables') {
-      const { stdout } = await exec('nft -j list ruleset 2>/dev/null');
+      const stdout = rawOutput !== null ? rawOutput : (await exec('nft -j list ruleset 2>/dev/null')).stdout;
       let daten = {};
       try { daten = JSON.parse(stdout || '{}'); } catch { return offen('Der nftables-Regelsatz war nicht lesbar.'); }
       const eintraege = Array.isArray(daten.nftables) ? daten.nftables : [];
