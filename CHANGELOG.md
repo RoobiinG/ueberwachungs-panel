@@ -16,6 +16,35 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.9.7.0] - 2026-08-22 (Build 335) — *Sicherheits-Kopfzeilen*
+
+### 🔒 Sicherheit
+- **Das Panel sendete keine Sicherheits-Kopfzeilen.** Damit ließ es sich in einen fremden
+  Rahmen einbetten — die Grundlage für Klickentführung, bei der ein unsichtbar
+  übereinandergelegtes Fenster echte Klicks abfängt. Außerdem fehlte im Fall einer
+  Skript-Lücke jede zweite Verteidigungslinie.
+  Gesetzt werden jetzt unter anderem: **Einbetten verboten** (`X-Frame-Options: deny`),
+  **kein Raten des Inhaltstyps** (`nosniff`), eine zurückhaltende **Herkunfts-Weitergabe**
+  (`Referrer-Policy: same-origin`) sowie die üblichen weiteren Vorgaben.
+- **HSTS nur bei ausdrücklichem HTTPS-Betrieb.** Diese Kopfzeile wirkt im Browser dauerhaft
+  fort; wer sein Panel über HTTP erreicht, hätte sich damit ausgesperrt. Sie wird deshalb nur
+  gesendet, wenn die eingetragene Panel-Adresse mit `https://` beginnt.
+
+### 🔧 Änderungen
+- **Die Inhaltsrichtlinie (CSP) ist bewusst noch nicht aktiv.** Sie muss zur Oberfläche passen,
+  sonst bleibt die Seite weiß — eine kaputte Oberfläche ist keine Sicherheit. Sie wird
+  getrennt und geprüft nachgezogen. Ebenso bleiben die beiden „Cross-Origin"-Vorgaben aus,
+  weil sie eingebundene Schriften, Bilder und die Auslieferung der statischen Dateien
+  blockieren würden.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank:** keine Migration. **Agent:** unverändert bei 2.9.0.
+- **Neue Abhängigkeit:** `helmet`.
+- **Zu beachten:** Wer das Panel absichtlich irgendwo einbettet — etwa als Kachel in einem
+  anderen Dashboard —, wird das nach dem Update nicht mehr können. Das ist der Zweck der
+  Änderung; für einen solchen Fall müsste die Vorgabe gezielt gelockert werden.
+- Live-Daten und Container-Konsole (WebSocket) sind nicht betroffen und wurden gegengeprüft.
+
 ## [5.9.6.0] - 2026-08-22 (Build 334) — *Freigabe-Links laufen ab*
 
 ### 🔒 Sicherheit

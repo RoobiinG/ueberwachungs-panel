@@ -29,6 +29,29 @@ app.use(cors(
     ? { origin: allowedOrigin, credentials: false }
     : { origin: false }
 ));
+// ─── Sicherheits-Kopfzeilen ───────────────────────────────────────────────────
+// Ohne diese Zeilen ließ sich das Panel in einen fremden Rahmen einbetten (Klickentführung),
+// und im Fall einer Skript-Lücke fehlte jede zweite Verteidigungslinie.
+//
+// Bewusst zurückhaltend eingestellt — eine zu strenge Vorgabe zerlegt die Oberfläche, und
+// eine kaputte Oberfläche ist keine Sicherheit:
+//   • Inhaltsrichtlinie (CSP) bleibt aus. Sie muss zur Vite-Anwendung passen und wird
+//     getrennt und geprüft nachgezogen.
+//   • Die beiden „Cross-Origin"-Vorgaben bleiben aus, sonst blockieren sie eingebundene
+//     Schriften, Bilder und den Zugriff auf die statischen Dateien.
+//   • HSTS nur, wenn das Panel ausdrücklich über HTTPS betrieben wird. Der Kopf wirkt
+//     dauerhaft im Browser; wer sein Panel über HTTP erreicht, sperrte sich damit aus.
+const helmet = require('helmet');
+const httpsBetrieb = String(process.env.ALLOWED_ORIGIN || '').startsWith('https://');
+app.use(helmet({
+  contentSecurityPolicy:     false,
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: false,
+  frameguard:                { action: 'deny' },
+  referrerPolicy:            { policy: 'same-origin' },
+  hsts: httpsBetrieb ? { maxAge: 15552000, includeSubDomains: false } : false,
+}));
+
 app.use(compression());   // gzip für API-Responses + statische Assets
 app.use(express.json());
 
