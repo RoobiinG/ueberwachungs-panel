@@ -16,6 +16,14 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.9.8.2] - 2026-08-22 (Build 338) — *Firewall-Erkennung & Performance Fix*
+
+### Bugfixes
+- **HTTP 502 Timeout bei Firewall-Erkennung behoben:** Bei der Abfrage von Remote-Agenten konnte es zu einem 8-Sekunden-Timeout kommen, wenn Firewall-Werkzeuge (z.B. inaktives `ufw`) für Statusabfragen unverhältnismäßig lange brauchten. Die Erkennung (`detectFirewall` / `detectAgentFirewall`) speichert jetzt die Konsolenausgabe (`rawOutput`) zwischen und reicht sie an die Zustandsprüfung (`filterZustand`) weiter, sodass aufwendige Systembefehle nicht mehrfach ausgeführt werden müssen.
+
+### System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Agenten-Kompatibilität:** Der Agent (v2.10.2) wurde aktualisiert und implementiert denselben Zwischenspeicher. Das Panel kann die neue Agenten-Version über die automatische Update-Funktion ausrollen.
+
 ## [5.9.8.1] - 2026-08-22 (Build 337) — *Firewall-Erkennung Fix*
 
 ### Bugfixes

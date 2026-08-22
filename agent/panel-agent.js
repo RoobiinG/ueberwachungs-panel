@@ -17,7 +17,7 @@ const execAsync = promisify(exec);
 // sondern ein Argument-Array. Sonderzeichen in Volume-/Netzwerk-/Image-Namen können
 // so nicht als Shell-Syntax gedeutet werden.
 const execFileAsync = promisify(execFile);
-const VERSION = '2.10.1';
+const VERSION = '2.10.2';
 
 // Ob die Container-Konsole angeboten werden kann. Steht erst nach dem Laden von
 // ws/node-pty am Ende dieser Datei fest und wird über /ping und /version gemeldet,
@@ -340,43 +340,42 @@ const _isIPv6 = (addr) => addr.includes(':');
 // zurück, das installiert ist, auch wenn es gerade deaktiviert ist.
 async function detectAgentFirewall() {
   try { const { stdout } = await execAsync('which ufw 2>/dev/null', { timeout: 3000 });
-    if (stdout.trim()) { try { const { stdout: s } = await execAsync('ufw status 2>/dev/null', { timeout: 3000 }); return { tool: 'ufw', active: /Status:\s*active/i.test(s) }; } catch { return { tool: 'ufw', active: false }; } }
+    if (stdout.trim()) { try { const { stdout: s } = await execAsync('ufw status 2>/dev/null', { timeout: 3000 }); return { tool: 'ufw', active: /Status:\s*active/i.test(s), rawOutput: s }; } catch { return { tool: 'ufw', active: false, rawOutput: '' }; } }
   } catch {}
   try { const { stdout } = await execAsync('which firewall-cmd 2>/dev/null', { timeout: 3000 });
-    if (stdout.trim()) { try { const { stdout: s } = await execAsync('firewall-cmd --state 2>/dev/null', { timeout: 3000 }); return { tool: 'firewalld', active: s.trim() === 'running' }; } catch { return { tool: 'firewalld', active: false }; } }
+    if (stdout.trim()) { try { const { stdout: s } = await execAsync('firewall-cmd --state 2>/dev/null', { timeout: 3000 }); return { tool: 'firewalld', active: s.trim() === 'running', rawOutput: s }; } catch { return { tool: 'firewalld', active: false, rawOutput: '' }; } }
   } catch {}
   try { const { stdout } = await execAsync('which nft 2>/dev/null', { timeout: 3000 });
-    if (stdout.trim()) { try { await execAsync('nft list tables 2>/dev/null', { timeout: 3000 }); return { tool: 'nftables', active: true }; } catch {} }
+    if (stdout.trim()) { try { const { stdout: s } = await execAsync('nft -j list ruleset 2>/dev/null', { timeout: 3000 }); return { tool: 'nftables', active: true, rawOutput: s }; } catch { return { tool: 'nftables', active: true, rawOutput: '' }; } }
   } catch {}
-  try { const { stdout } = await execAsync('which iptables 2>/dev/null', { timeout: 3000 }); if (stdout.trim()) return { tool: 'iptables', active: true }; } catch {}
-  return { tool: 'none', active: false };
+  try { const { stdout } = await execAsync('which iptables 2>/dev/null', { timeout: 3000 });
+    if (stdout.trim()) { try { const { stdout: s } = await execAsync('iptables -S INPUT 2>/dev/null', { timeout: 3000 }); return { tool: 'iptables', active: true, rawOutput: s }; } catch { return { tool: 'iptables', active: true, rawOutput: '' }; } }
+  } catch {}
+  return { tool: 'none', active: false, rawOutput: '' };
 }
 
 // Filtert die Firewall wirklich? — Spiegelung von filterZustand() in
 // backend/src/utils/firewallAdapters.js.
-// `detectAgentFirewall` sagt nur, welches Werkzeug da ist: nftables und iptables gelten
-// dort als „aktiv", sobald sie installiert sind. Auf einem Server mit Docker existieren
-// aber immer nft-Tabellen, ohne dass eine eingehende Verbindung gefiltert würde.
-async function agentFilterZustand(tool) {
+async function agentFilterZustand(tool, rawOutput = null) {
   const offen  = (grund) => ({ filtert: false, grund });
   const dicht  = (grund) => ({ filtert: true,  grund });
   const lauf   = (cmd) => execAsync(cmd, { timeout: 5000 });
 
   try {
     if (tool === 'ufw') {
-      const { stdout } = await lauf('ufw status 2>/dev/null');
+      const stdout = rawOutput !== null ? rawOutput : (await lauf('ufw status 2>/dev/null')).stdout;
       return /Status:\s*active/i.test(stdout)
         ? dicht('UFW ist eingeschaltet und filtert eingehende Verbindungen.')
         : offen('UFW ist installiert, aber ausgeschaltet — es wird nichts gefiltert.');
     }
     if (tool === 'firewalld') {
-      const { stdout } = await lauf('firewall-cmd --state 2>/dev/null');
+      const stdout = rawOutput !== null ? rawOutput : (await lauf('firewall-cmd --state 2>/dev/null')).stdout;
       return stdout.trim() === 'running'
         ? dicht('firewalld läuft und filtert eingehende Verbindungen.')
         : offen('firewalld ist installiert, läuft aber nicht — es wird nichts gefiltert.');
     }
     if (tool === 'iptables') {
-      const { stdout } = await lauf('iptables -S INPUT 2>/dev/null');
+      const stdout = rawOutput !== null ? rawOutput : (await lauf('iptables -S INPUT 2>/dev/null')).stdout;
       if (/^-P INPUT (DROP|REJECT)/m.test(stdout)) {
         return dicht('Alles ist gesperrt, was keine ausdrückliche Freigabe hat (Standard-Regel DROP).');
       }
@@ -386,7 +385,7 @@ async function agentFilterZustand(tool) {
         : offen('Die INPUT-Kette lässt alles durch: Standard-Regel ACCEPT und keine sperrende Regel.');
     }
     if (tool === 'nftables') {
-      const { stdout } = await lauf('nft -j list ruleset 2>/dev/null');
+      const stdout = rawOutput !== null ? rawOutput : (await lauf('nft -j list ruleset 2>/dev/null')).stdout;
       let daten = {};
       try { daten = JSON.parse(stdout || '{}'); } catch { return offen('Der nftables-Regelsatz war nicht lesbar.'); }
       const eintraege = Array.isArray(daten.nftables) ? daten.nftables : [];
