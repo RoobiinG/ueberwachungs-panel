@@ -16,6 +16,28 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.9.6.0] - 2026-08-22 (Build 334) — *Freigabe-Links laufen ab*
+
+### 🔒 Sicherheit
+- **Freigabe-Links für Panel-Protokolle galten unbegrenzt.** Ein solcher Link ist ohne
+  Anmeldung abrufbar — das ist sein Zweck. Er lief bisher aber nie ab: Wer ihn einmal
+  weitergegeben hat, per Chat, Ticket oder Mail, hinterließ eine dauerhaft offene Tür.
+  Panel-Protokolle enthalten Aufrufpfade und Fehlerspuren.
+  Beim Erstellen wird jetzt eine Gültigkeitsdauer vergeben — **sieben Tage als Vorgabe**,
+  höchstens 90. Danach antwortet der Link wie ein unbekannter, ohne zu verraten, dass es ihn
+  einmal gab. Das Erstellen wird zudem im Prüfprotokoll vermerkt.
+- **Bestehende Links** bekommen mit dem Update eine Frist von sieben Tagen — gerechnet ab dem
+  Update, nicht ab ihrer Erstellung, damit ein gerade verschickter Link nicht sofort ins Leere
+  läuft.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank:** neue Spalte `expires_at` in `panel_log_shares`, wird beim Start angelegt.
+  Bestehende Einträge werden einmalig mit einer Frist versehen. Kein Eingriff nötig.
+- **Agent:** unverändert bei 2.9.0.
+- **Zu beachten:** Wer bisher einen Link dauerhaft im Umlauf hatte — etwa in einem Ticket —
+  muss ihn nach Ablauf neu erzeugen. Das ist beabsichtigt.
+- Die Übersicht der Freigaben zeigt das Ablaufdatum mit an.
+
 ## [5.9.5.1] - 2026-08-19 (Build 333) — *Vorsorgliche Härtung der Warnmail*
 
 ### 🔧 Änderungen

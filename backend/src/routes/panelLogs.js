@@ -10,6 +10,7 @@ const router            = require('express').Router();
 const crypto            = require('crypto');
 const db                = require('../db');
 const { requirePermission } = require('../middleware/requirePermission');
+const { auditLog }          = require('../utils/audit');
 
 const MAX_LOGS = 500;   // Max. gespeicherte Einträge
 const MAX_MSG  = 2000;  // Max. Länge einer Nachricht
@@ -102,17 +103,24 @@ router.post('/share', requirePermission('settings.manage'), (req, res) => {
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids fehlt' });
   const safeIds = ids.map(Number).filter(n => Number.isFinite(n) && n > 0);
   if (!safeIds.length) return res.status(400).json({ error: 'Keine gültigen IDs' });
+  // Gültigkeitsdauer in Tagen, Vorgabe sieben, höchstens 90. Ein Freigabe-Link ist ohne
+  // Anmeldung abrufbar — ohne Frist bleibt er für immer offen, auch wenn niemand mehr
+  // daran denkt.
+  const tage = Math.min(90, Math.max(1, parseInt(req.body?.tage, 10) || 7));
+
   const token = crypto.randomBytes(20).toString('hex');
   db.prepare(
-    'INSERT INTO panel_log_shares (token, log_ids, label) VALUES (?, ?, ?)'
-  ).run(token, JSON.stringify(safeIds), label ? String(label).slice(0, 100) : null);
-  res.json({ token });
+    `INSERT INTO panel_log_shares (token, log_ids, label, expires_at)
+     VALUES (?, ?, ?, datetime('now', ?))`
+  ).run(token, JSON.stringify(safeIds), label ? String(label).slice(0, 100) : null, `+${tage} days`);
+  auditLog(req, 'logs.share_create', 'share', label || token.slice(0, 8), { gueltigTage: tage });
+  res.json({ token, gueltigTage: tage });
 });
 
 // ── GET /api/logs/shares  (Admin → alle Share-Links) ─────────────────────────
 router.get('/shares', requirePermission('settings.view'), (req, res) => {
   const shares = db.prepare(
-    'SELECT id, token, log_ids, label, created_at, accessed_at, access_count FROM panel_log_shares ORDER BY created_at DESC'
+    'SELECT id, token, log_ids, label, created_at, accessed_at, access_count, expires_at FROM panel_log_shares ORDER BY created_at DESC'
   ).all();
   res.json(shares);
 });

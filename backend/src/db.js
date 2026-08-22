@@ -312,6 +312,16 @@ db.exec(`
 `);
 // Audit-Log: Standort-Spalte (Stadt, Land via GeoIP)
 try { db.exec('ALTER TABLE audit_log ADD COLUMN location TEXT'); } catch {}
+// Freigabe-Links für Panel-Protokolle: Ablaufdatum. Bis hierher galt ein einmal erzeugter
+// Link unbegrenzt — wer ihn je weitergegeben hat, ließ eine dauerhaft offene Tür zurück,
+// und Protokolle enthalten Aufrufpfade und Fehlerspuren.
+try { db.exec('ALTER TABLE panel_log_shares ADD COLUMN expires_at DATETIME'); } catch {}
+// Bereits bestehende Links bekommen eine Frist, statt weiter ewig zu gelten. Sieben Tage
+// ab jetzt — nicht ab ihrer Erstellung, damit ein gerade verschickter Link nicht sofort
+// ungültig wird.
+try {
+  db.prepare(`UPDATE panel_log_shares SET expires_at = datetime('now', '+7 days') WHERE expires_at IS NULL`).run();
+} catch {}
 // Dockhand-Integration: Environment-ID pro Remote-Agent
 try { db.exec('ALTER TABLE remote_agents ADD COLUMN dockhand_env_id INTEGER'); } catch {}
 // PatchMon-Integration: Verknüpfung zu einem PatchMon-Host (dessen id) pro Remote-Agent

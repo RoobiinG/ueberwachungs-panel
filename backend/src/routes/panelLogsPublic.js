@@ -17,6 +17,13 @@ module.exports = (req, res) => {
 
   if (!share) return res.status(404).json({ error: 'Link nicht gefunden oder widerrufen' });
 
+  // Abgelaufene Links geben nichts mehr heraus. Bewusst dieselbe Sprache wie bei einem
+  // unbekannten Link, nur mit dem Zusatz „abgelaufen" — wer den Link nicht kennt, soll
+  // daraus nicht schließen können, dass es ihn einmal gab.
+  if (share.expires_at && new Date(share.expires_at.replace(' ', 'T') + 'Z') < new Date()) {
+    return res.status(404).json({ error: 'Link nicht gefunden oder abgelaufen' });
+  }
+
   const ids = JSON.parse(share.log_ids);
   const placeholders = ids.map(() => '?').join(',');
   const logs = db.prepare(
