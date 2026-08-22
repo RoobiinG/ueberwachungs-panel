@@ -46,6 +46,23 @@ function resolveLocation(ip) {
   const geoip = getGeoip();
   if (!geoip) return null;
 
+  // Nur wohlgeformte Adressen weiterreichen.
+  //
+  // Hintergrund: Die Standort-Bibliothek bringt eine Abhängigkeit mit, die Adressen mit
+  // führender Null (`010.0.0.1`) anders auslegt als der Rest des Systems — dezimal statt
+  // oktal. Für dieses Panel ist das ungefährlich, weil hier nur ein Ort zur Anzeige
+  // nachgeschlagen wird und keine Zugriffsentscheidung davon abhängt; die zweite bekannte
+  // Schwachstelle betrifft eine HTML-Ausgabe, die hier gar nicht aufgerufen wird.
+  //
+  // Bewusst wurde deshalb *nicht* auf die ältere Fassung zurückgegangen, die das Werkzeug
+  // vorschlägt — sie brächte zwei Jahre alte Standortdaten, um Lücken zu schließen, die
+  // hier nicht greifen. Stattdessen kommt nur herein, was sauber aussieht: Damit ist der
+  // Punkt unabhängig von der Fassung der Bibliothek erledigt.
+  const istIPv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(clean)
+    && clean.split('.').every(o => o.length <= 3 && !(o.length > 1 && o[0] === '0') && +o <= 255);
+  const istIPv6 = /^[0-9a-fA-F:]{2,45}$/.test(clean) && clean.includes(':');
+  if (!istIPv4 && !istIPv6) return null;
+
   try {
     const geo = geoip.lookup(clean);
     if (!geo) return null;

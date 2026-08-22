@@ -16,6 +16,36 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.9.8.0] - 2026-08-22 (Build 336) — *Standortabfrage abgesichert, Agent-Token zeitkonstant*
+
+### 🔒 Sicherheit
+- **Der Agent vergleicht sein Zugangs-Token jetzt zeitkonstant.** Ein gewöhnlicher Vergleich
+  bricht beim ersten abweichenden Zeichen ab; aus der Antwortzeit ließe sich das Token
+  theoretisch Zeichen für Zeichen erraten. Über das Netz ist das durch Laufzeitschwankungen
+  praktisch nicht auswertbar — der Aufwand für die saubere Lösung war aber so gering, dass
+  sich die Abwägung erübrigt. Betrifft beide Stellen: normale Anfragen und die Konsole.
+- **Die Standortabfrage bekommt nur noch wohlgeformte Adressen.** Die dafür genutzte
+  Bibliothek bringt eine Abhängigkeit mit, die Adressen mit führender Null (`010.0.0.1`)
+  anders auslegt als der Rest des Systems.
+
+### 🔧 Änderungen
+- **Bewusst kein Rückschritt bei der Standort-Bibliothek.** Das Prüfwerkzeug schlägt vor, auf
+  eine zwei Jahre ältere Fassung zurückzugehen. Beide gemeldeten Schwachstellen greifen hier
+  aber nicht: Die eine betrifft eine HTML-Ausgabe, die das Panel nie aufruft; die andere die
+  Auslegung von Adressen bei Zugriffsentscheidungen — hier wird lediglich ein Ort zur Anzeige
+  nachgeschlagen, und die Ausgabe landet in der Datenbank, nicht in einer Regel.
+  Ein Rückschritt hätte veraltete Standortdaten gebracht, um nichts zu gewinnen. Stattdessen
+  wird die Eingabe geprüft — das erledigt den Punkt unabhängig von der Fassung.
+  Das Prüfwerkzeug meldet die Bibliothek daher weiterhin; das ist bekannt und bewertet.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank:** keine Migration.
+- **Agent:** neue Version **2.10.0**, verteilt sich über die automatische Aktualisierung.
+  Bis dahin arbeiten ältere Agenten unverändert weiter — der Token-Vergleich ist eine
+  Verbesserung im Agenten selbst, keine Absprache zwischen Panel und Agent.
+- **Standortanzeige:** Für übliche Adressen ändert sich nichts. Ungewöhnlich geschriebene
+  Adressen zeigen künftig keinen Ort mehr an, statt einen möglicherweise falschen.
+
 ## [5.9.7.0] - 2026-08-22 (Build 335) — *Sicherheits-Kopfzeilen*
 
 ### 🔒 Sicherheit

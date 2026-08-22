@@ -1,6 +1,6 @@
 {
-  "version": "5.9.7.0",
-  "build": 335,
+  "version": "5.9.8.0",
+  "build": 336,
   "date": "2026-08-22",
-  "codename": "Sicherheits-Kopfzeilen"
+  "codename": "Standortabfrage abgesichert, Agent-Token zeitkonstant"
 }

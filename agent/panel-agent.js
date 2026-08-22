@@ -17,7 +17,7 @@ const execAsync = promisify(exec);
 // sondern ein Argument-Array. Sonderzeichen in Volume-/Netzwerk-/Image-Namen können
 // so nicht als Shell-Syntax gedeutet werden.
 const execFileAsync = promisify(execFile);
-const VERSION = '2.9.0';
+const VERSION = '2.10.0';
 
 // Ob die Container-Konsole angeboten werden kann. Steht erst nach dem Laden von
 // ws/node-pty am Ende dieser Datei fest und wird über /ping und /version gemeldet,
@@ -783,9 +783,22 @@ function respond(res, status, data) {
   res.end(JSON.stringify(data));
 }
 
+// Zeitkonstanter Vergleich. Ein gewöhnliches `!==` bricht beim ersten abweichenden
+// Zeichen ab; aus der Antwortzeit ließe sich das Token theoretisch Zeichen für Zeichen
+// erraten. Über das Netz ist das durch Laufzeitschwankungen praktisch nicht auswertbar —
+// der Aufwand hier ist aber so gering, dass sich die Überlegung erübrigt.
+// Zuerst die Länge über einen Hash angleichen, weil `timingSafeEqual` sonst bei
+// ungleich langen Puffern wirft und damit selbst wieder etwas verrät.
+function tokenGleich(vorgelegt) {
+  if (!TOKEN || typeof vorgelegt !== 'string' || !vorgelegt) return false;
+  const a = crypto.createHash('sha256').update(vorgelegt).digest();
+  const b = crypto.createHash('sha256').update(TOKEN).digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
 async function handler(req, res) {
   // SICHERHEIT: Leerer TOKEN bedeutet nicht "kein Schutz" sondern "alle abweisen"
-  if (!TOKEN || req.headers['x-agent-token'] !== TOKEN) {
+  if (!tokenGleich(req.headers['x-agent-token'])) {
     return respond(res, 401, { error: 'Unauthorized' });
   }
 
@@ -1109,7 +1122,7 @@ try {
       tokenUrl = u.searchParams.get('token');
     } catch {}
     
-    if (!TOKEN || (tokenHeader !== TOKEN && tokenUrl !== TOKEN)) {
+    if (!tokenGleich(tokenHeader) && !tokenGleich(tokenUrl)) {
       ws.close(1008, 'Unauthorized');
       return;
     }
