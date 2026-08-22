@@ -16,6 +16,24 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.9.5.1] - 2026-08-19 (Build 333) — *Auch der Textteil der Warnmail ist dicht*
+
+### 🔒 Sicherheit
+- **Nachbesserung zur vorigen Fassung:** Dort wurden die eingesetzten Angaben nur für den
+  HTML-Teil der Warnmail entschärft. Im reinen Textteil derselben Nachricht ist HTML zwar
+  wirkungslos — **Zeilenumbrüche sind es nicht**. Über die Browserkennung ließ sich damit ein
+  vollständiger, frei erfundener Abschnitt in die Mail schreiben, etwa „Ihr Konto wurde
+  gesperrt, hier entsperren: …". Im Textteil wirkt das genauso überzeugend wie eingeschleustes
+  HTML, und viele Mail-Programme machen aus der enthaltenen Adresse einen anklickbaren Link.
+  Benutzername, Adresse und Browserkennung werden jetzt vor jeder Verwendung auf eine Zeile
+  gebracht und gekürzt. Aufgefallen ist das erst beim Nachstellen des Angriffs — die vorige
+  Fassung hatte den Textteil nicht geprüft.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank:** keine Migration. **Agent:** unverändert bei 2.9.0.
+- **Darstellung:** Sehr lange Browserkennungen erscheinen in der Warnmail gekürzt (200 Zeichen),
+  Benutzername und Adresse bei 64 Zeichen. Für echte Werte ändert sich damit nichts.
+
 ## [5.9.5.0] - 2026-08-19 (Build 332) — *Sichere Mails*
 
 ### 🔒 Sicherheit

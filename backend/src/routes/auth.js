@@ -98,6 +98,13 @@ const htmlText = (wert) => String(wert ?? '')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
 
+// Für den Textteil derselben Mail: auf eine Zeile bringen und kürzen. Im reinen Text ist
+// HTML zwar wirkungslos — Zeilenumbrüche sind es nicht. Ohne diese Begrenzung ließe sich
+// über die Browserkennung ein vollständiger, frei erfundener Abschnitt in die Mail
+// schreiben („Ihr Konto wurde gesperrt, hier entsperren: …"), der im Textteil genauso
+// überzeugt wie eingeschleustes HTML.
+const einzeilig = (wert, max = 200) => String(wert ?? '').replace(/[\r\n\t]+/g, ' ').trim().slice(0, max);
+
 async function sendResetMail(toEmail, resetUrl) {
   const nodemailer = require('nodemailer');
   const smtp = getSmtp();
@@ -141,6 +148,11 @@ async function sendFailedLoginMail(toEmail, username, ip, userAgent) {
     auth: smtp.user ? { user: smtp.user, pass: smtp.pass } : undefined,
   });
   const timeStr = new Date().toLocaleString('de-DE');
+  // Beide Angaben stammen aus Kopfzeilen der Anfrage und sind frei wählbar — vor jeder
+  // weiteren Verwendung auf eine Zeile bringen.
+  username  = einzeilig(username, 64);
+  ip        = einzeilig(ip, 64);
+  userAgent = einzeilig(userAgent, 200);
   await transporter.sendMail({
     from:    smtp.from,
     to:      toEmail,
