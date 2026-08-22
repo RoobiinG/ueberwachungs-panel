@@ -98,11 +98,12 @@ const htmlText = (wert) => String(wert ?? '')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#39;');
 
-// Für den Textteil derselben Mail: auf eine Zeile bringen und kürzen. Im reinen Text ist
-// HTML zwar wirkungslos — Zeilenumbrüche sind es nicht. Ohne diese Begrenzung ließe sich
-// über die Browserkennung ein vollständiger, frei erfundener Abschnitt in die Mail
-// schreiben („Ihr Konto wurde gesperrt, hier entsperren: …"), der im Textteil genauso
-// überzeugt wie eingeschleustes HTML.
+// Für den Textteil derselben Mail: auf eine Zeile bringen und kürzen.
+// Vorsorglich, nicht als Abwehr einer offenen Lücke: Ein Umbruch im Textteil würde einen
+// frei erfundenen Abschnitt ermöglichen, über HTTP-Kopfzeilen kommen Umbrüche aber gar
+// nicht erst herein — die werden schon von der Netzwerkschicht abgewiesen (nachgestellt).
+// Die Begrenzung kostet nichts und trägt, falls dieselben Werte später aus einer Quelle
+// stammen, bei der Umbrüche möglich sind.
 const einzeilig = (wert, max = 200) => String(wert ?? '').replace(/[\r\n\t]+/g, ' ').trim().slice(0, max);
 
 async function sendResetMail(toEmail, resetUrl) {

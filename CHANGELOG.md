@@ -16,23 +16,25 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
-## [5.9.5.1] - 2026-08-19 (Build 333) — *Auch der Textteil der Warnmail ist dicht*
+## [5.9.5.1] - 2026-08-19 (Build 333) — *Vorsorgliche Härtung der Warnmail*
 
-### 🔒 Sicherheit
-- **Nachbesserung zur vorigen Fassung:** Dort wurden die eingesetzten Angaben nur für den
-  HTML-Teil der Warnmail entschärft. Im reinen Textteil derselben Nachricht ist HTML zwar
-  wirkungslos — **Zeilenumbrüche sind es nicht**. Über die Browserkennung ließ sich damit ein
-  vollständiger, frei erfundener Abschnitt in die Mail schreiben, etwa „Ihr Konto wurde
-  gesperrt, hier entsperren: …". Im Textteil wirkt das genauso überzeugend wie eingeschleustes
-  HTML, und viele Mail-Programme machen aus der enthaltenen Adresse einen anklickbaren Link.
-  Benutzername, Adresse und Browserkennung werden jetzt vor jeder Verwendung auf eine Zeile
-  gebracht und gekürzt. Aufgefallen ist das erst beim Nachstellen des Angriffs — die vorige
-  Fassung hatte den Textteil nicht geprüft.
+### 🔧 Änderungen
+- **Benutzername, Adresse und Browserkennung werden in der Warnmail auf eine Zeile gebracht
+  und gekürzt.** Anlass war die Überlegung, ob sich über die Browserkennung Zeilenumbrüche in
+  den Textteil der Mail schmuggeln lassen — dort ist HTML wirkungslos, ein frei erfundener
+  Abschnitt („Ihr Konto wurde gesperrt, hier entsperren: …") wäre aber genauso überzeugend.
+  **Beim Nachstellen zeigte sich: Dieser Weg ist gar nicht gangbar.** Zeilenumbrüche sind in
+  HTTP-Kopfzeilen nicht zulässig und werden schon von der Netzwerkschicht abgewiesen, lange
+  bevor das Panel sie zu sehen bekommt. Es wurde hier also keine offene Lücke geschlossen.
+  Die Begrenzung bleibt trotzdem drin: Sie kostet nichts und trägt, falls dieselben Werte
+  später einmal aus einer anderen Quelle stammen, bei der Umbrüche möglich sind.
 
 ### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
 - **Datenbank:** keine Migration. **Agent:** unverändert bei 2.9.0.
-- **Darstellung:** Sehr lange Browserkennungen erscheinen in der Warnmail gekürzt (200 Zeichen),
-  Benutzername und Adresse bei 64 Zeichen. Für echte Werte ändert sich damit nichts.
+- **Darstellung:** Sehr lange Browserkennungen erscheinen gekürzt (200 Zeichen), Benutzername
+  und Adresse bei 64 Zeichen. Für echte Werte ändert sich nichts.
+- Die tatsächlich geschlossene Lücke — eingeschleustes HTML im HTML-Teil — steht in v5.9.5.0
+  und ist davon unberührt.
 
 ## [5.9.5.0] - 2026-08-19 (Build 332) — *Sichere Mails*
 
