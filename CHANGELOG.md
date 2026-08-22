@@ -16,6 +16,16 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.9.8.1] - 2026-08-22 (Build 337) — *Firewall-Erkennung Fix*
+
+### Bugfixes
+- **Firewall-Erkennung korrigiert:** Die automatische Erkennung (`detectFirewall`) prüft nun wieder alle installierten Firewall-Werkzeuge (UFW, firewalld, nftables, iptables) in absteigender Reihenfolge und gibt das ranghöchste Werkzeug zurück, **auch wenn dieses aktuell deaktiviert ist**. Zuvor wurden inaktive Werkzeuge übersprungen, wodurch das Panel auf nftables zurückfiel und anzeigte, nftables filtere nicht. Inaktive Werkzeuge können nun wieder wie vorgesehen über die Oberfläche aktiviert werden.
+- **Feinere Rückmeldung für nftables:** Zeigt nftables keine Filter-Kette für eingehende Verbindungen an, lautet die Begründung nicht mehr pauschal "vorhandene Tabellen stammen von Docker", sondern allgemeingültiger: "Es gibt keine Kette für eingehende Verbindungen — alle Verbindungen werden zugelassen."
+
+### System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Agenten-Kompatibilität:** Der Agent (v2.10.1) wurde entsprechend aktualisiert, damit Remote-Server dasselbe korrigierte Erkennungsverhalten zeigen wie der lokale Host. Das Panel kann die neue Agenten-Version über die automatische Update-Funktion ausrollen.
+- **Rückkehr zu UFW / firewalld:** Systeme, auf denen UFW oder firewalld inaktiv war und die fälschlicherweise nftables angezeigt bekamen, zeigen nun wieder das eigentliche Werkzeug an. Dort kann es über das Panel aktiviert werden.
+
 ## [5.9.8.0] - 2026-08-22 (Build 336) — *Standortabfrage abgesichert, Agent-Token zeitkonstant*
 
 ### 🔒 Sicherheit

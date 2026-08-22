@@ -47,15 +47,16 @@ const isIPv6 = (addr) => addr.includes(':');
  * @returns {{ tool: string, active: boolean }}
  */
 async function detectFirewall(exec) {
-  // Nur AKTIVE Tools werden zurückgegeben — inaktive werden übersprungen
+  // Wir geben das am höchsten abstrahierte Tool zurück, das installiert ist (z. B. UFW
+  // vor iptables), auch wenn es gerade deaktiviert ist. Nur so kann das Panel anzeigen,
+  // dass es ausgeschaltet ist, und einen "Aktivieren"-Button anbieten.
 
   // 1. UFW
   try {
     const { stdout } = await exec('which ufw 2>/dev/null');
     if (stdout.trim()) {
       const { stdout: s } = await exec('ufw status 2>/dev/null').catch(() => ({ stdout: '' }));
-      if (/Status:\s*active/i.test(s)) return { tool: 'ufw', active: true };
-      // UFW installiert aber inaktiv → nächstes Tool prüfen
+      return { tool: 'ufw', active: /Status:\s*active/i.test(s) };
     }
   } catch {}
 
@@ -64,7 +65,7 @@ async function detectFirewall(exec) {
     const { stdout } = await exec('which firewall-cmd 2>/dev/null');
     if (stdout.trim()) {
       const { stdout: s } = await exec('firewall-cmd --state 2>/dev/null').catch(() => ({ stdout: '' }));
-      if (s.trim() === 'running') return { tool: 'firewalld', active: true };
+      return { tool: 'firewalld', active: s.trim() === 'running' };
     }
   } catch {}
 
@@ -138,7 +139,7 @@ async function filterZustand(tool, exec) {
       // sagt nichts darüber aus, ob eingehende Verbindungen gefiltert werden.
       const eingang = eintraege.map(e => e.chain).filter(c => c && c.hook === 'input');
       if (!eingang.length) {
-        return offen('Es gibt keine Kette für eingehende Verbindungen — vorhandene Tabellen stammen von Docker.');
+        return offen('Es gibt keine Kette für eingehende Verbindungen — alle Verbindungen werden zugelassen.');
       }
 
       const gesperrt = eingang.filter(c => ['drop', 'reject'].includes(String(c.policy || '').toLowerCase()));
