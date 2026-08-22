@@ -17,7 +17,7 @@ const execAsync = promisify(exec);
 // sondern ein Argument-Array. Sonderzeichen in Volume-/Netzwerk-/Image-Namen können
 // so nicht als Shell-Syntax gedeutet werden.
 const execFileAsync = promisify(execFile);
-const VERSION = '2.10.0';
+const VERSION = '2.10.1';
 
 // Ob die Container-Konsole angeboten werden kann. Steht erst nach dem Laden von
 // ws/node-pty am Ende dieser Datei fest und wird über /ping und /version gemeldet,
@@ -336,13 +336,14 @@ const _validFrom = (f) => {
 
 const _isIPv6 = (addr) => addr.includes(':');
 
-// Erkennt aktive Firewall-Software — inaktive Tools werden übersprungen
+// Erkennt aktive Firewall-Software. Wir geben das am höchsten abstrahierte Tool
+// zurück, das installiert ist, auch wenn es gerade deaktiviert ist.
 async function detectAgentFirewall() {
   try { const { stdout } = await execAsync('which ufw 2>/dev/null', { timeout: 3000 });
-    if (stdout.trim()) { try { const { stdout: s } = await execAsync('ufw status 2>/dev/null', { timeout: 3000 }); if (/Status:\s*active/i.test(s)) return { tool: 'ufw', active: true }; } catch {} }
+    if (stdout.trim()) { try { const { stdout: s } = await execAsync('ufw status 2>/dev/null', { timeout: 3000 }); return { tool: 'ufw', active: /Status:\s*active/i.test(s) }; } catch { return { tool: 'ufw', active: false }; } }
   } catch {}
   try { const { stdout } = await execAsync('which firewall-cmd 2>/dev/null', { timeout: 3000 });
-    if (stdout.trim()) { try { const { stdout: s } = await execAsync('firewall-cmd --state 2>/dev/null', { timeout: 3000 }); if (s.trim() === 'running') return { tool: 'firewalld', active: true }; } catch {} }
+    if (stdout.trim()) { try { const { stdout: s } = await execAsync('firewall-cmd --state 2>/dev/null', { timeout: 3000 }); return { tool: 'firewalld', active: s.trim() === 'running' }; } catch { return { tool: 'firewalld', active: false }; } }
   } catch {}
   try { const { stdout } = await execAsync('which nft 2>/dev/null', { timeout: 3000 });
     if (stdout.trim()) { try { await execAsync('nft list tables 2>/dev/null', { timeout: 3000 }); return { tool: 'nftables', active: true }; } catch {} }
@@ -391,7 +392,7 @@ async function agentFilterZustand(tool) {
       const eintraege = Array.isArray(daten.nftables) ? daten.nftables : [];
       const eingang = eintraege.map(e => e.chain).filter(c => c && c.hook === 'input');
       if (!eingang.length) {
-        return offen('Es gibt keine Kette für eingehende Verbindungen — vorhandene Tabellen stammen von Docker.');
+        return offen('Es gibt keine Kette für eingehende Verbindungen — alle Verbindungen werden zugelassen.');
       }
       const gesperrt = eingang.filter(c => ['drop', 'reject'].includes(String(c.policy || '').toLowerCase()));
       if (gesperrt.length) {
