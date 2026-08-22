@@ -85,6 +85,19 @@ const getSmtp = () => {
   };
 };
 
+// Alles, was in eine HTML-Mail eingesetzt wird, muss entschärft werden. Bei der Warnung
+// über fehlgeschlagene Anmeldungen stammen Adresse und Browserkennung aus den Kopfzeilen
+// der Anfrage — beide sind frei wählbar. Ohne diese Umwandlung könnte ein einziger
+// absichtlich fehlgeschlagener Anmeldeversuch beliebiges HTML in die Mail an den
+// Kontoinhaber bringen, abgeschickt von der Adresse des eigenen Panels. Ein Link darin
+// wäre ein überzeugender Köder.
+const htmlText = (wert) => String(wert ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;');
+
 async function sendResetMail(toEmail, resetUrl) {
   const nodemailer = require('nodemailer');
   const smtp = getSmtp();
@@ -98,7 +111,7 @@ async function sendResetMail(toEmail, resetUrl) {
     to:      toEmail,
     subject: 'Passwort zurücksetzen — Überwachungs-Panel',
     text:    `Klicke auf diesen Link um dein Passwort zurückzusetzen:\n\n${resetUrl}\n\nDer Link ist 1 Stunde gültig.`,
-    html:    `<p>Klicke auf diesen Link um dein Passwort zurückzusetzen:</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>Der Link ist 1 Stunde gültig.</p>`,
+    html:    `<p>Klicke auf diesen Link um dein Passwort zurückzusetzen:</p><p><a href="${htmlText(resetUrl)}">${htmlText(resetUrl)}</a></p><p>Der Link ist 1 Stunde gültig.</p>`,
   });
 }
 
@@ -115,7 +128,7 @@ async function send2faMail(toEmail, code) {
     to:      toEmail,
     subject: '2FA-Bestätigungscode — Überwachungs-Panel',
     text:    `Dein 2FA Bestätigungscode für das Überwachungs-Panel lautet: ${code}\n\nDer Code ist 10 Minuten gültig.`,
-    html:    `<p>Dein 2FA Bestätigungscode für das Überwachungs-Panel lautet:</p><h2 style="font-size:24px;letter-spacing:4px;color:#3b82f6;">${code}</h2><p>Der Code ist 10 Minuten gültig.</p>`,
+    html:    `<p>Dein 2FA Bestätigungscode für das Überwachungs-Panel lautet:</p><h2 style="font-size:24px;letter-spacing:4px;color:#3b82f6;">${htmlText(code)}</h2><p>Der Code ist 10 Minuten gültig.</p>`,
   });
 }
 
@@ -133,7 +146,7 @@ async function sendFailedLoginMail(toEmail, username, ip, userAgent) {
     to:      toEmail,
     subject: 'Sicherheitswarnung: Fehlgeschlagener Anmeldeversuch — Überwachungs-Panel',
     text:    `Hallo ${username},\n\nes gab gerade einen fehlgeschlagenen Anmeldeversuch am Überwachungs-Panel mit einem falschen Passwort.\n\nDetails:\n• Zeit: ${timeStr}\n• IP-Adresse: ${ip || 'Unbekannt'}\n• Gerät/Browser: ${userAgent || 'Unbekannt'}\n\nFalls du das nicht warst, empfehlen wir dir dringend, dein Passwort zu prüfen und 2FA zu aktivieren.`,
-    html:    `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;color:#333;"><p>Hallo <strong>${username}</strong>,</p><p>es gab gerade einen fehlgeschlagenen Anmeldeversuch am Überwachungs-Panel mit einem falschen Passwort.</p><div style="background:#1e293b;padding:16px;border-radius:8px;margin:16px 0;font-family:monospace;color:#f8fafc;"><p style="margin:4px 0;"><strong>Zeit:</strong> ${timeStr}</p><p style="margin:4px 0;"><strong>IP-Adresse:</strong> ${ip || 'Unbekannt'}</p><p style="margin:4px 0;"><strong>Gerät/Browser:</strong> ${userAgent || 'Unbekannt'}</p></div><p>Falls du das nicht warst, empfehlen wir dir dringend, dein Passwort zu prüfen und 2FA zu aktivieren.</p></div>`,
+    html:    `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;color:#333;"><p>Hallo <strong>${htmlText(username)}</strong>,</p><p>es gab gerade einen fehlgeschlagenen Anmeldeversuch am Überwachungs-Panel mit einem falschen Passwort.</p><div style="background:#1e293b;padding:16px;border-radius:8px;margin:16px 0;font-family:monospace;color:#f8fafc;"><p style="margin:4px 0;"><strong>Zeit:</strong> ${htmlText(timeStr)}</p><p style="margin:4px 0;"><strong>IP-Adresse:</strong> ${htmlText(ip || 'Unbekannt')}</p><p style="margin:4px 0;"><strong>Gerät/Browser:</strong> ${htmlText(userAgent || 'Unbekannt')}</p></div><p>Falls du das nicht warst, empfehlen wir dir dringend, dein Passwort zu prüfen und 2FA zu aktivieren.</p></div>`,
   });
 }
 

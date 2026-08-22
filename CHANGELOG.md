@@ -16,6 +16,34 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [5.9.5.0] - 2026-08-19 (Build 332) — *Sichere Mails*
+
+### 🔒 Sicherheit
+- **Die Mail-Bibliothek war von acht bekannten Schwachstellen betroffen** und ist von Fassung 6
+  auf 9 gehoben. Darunter waren das Einschleusen von SMTP-Befehlen und Kopfzeilen, eine
+  **fehlerhafte Prüfung des TLS-Zertifikats beim Abholen von OAuth2-Zugangsdaten** sowie die
+  Umgehung der Sperren für Datei- und Netzwerkzugriffe beim Zusammenbauen einer Nachricht.
+  Betroffen waren damit alle Mails des Panels: Zwei-Faktor-Codes, das Zurücksetzen von
+  Passwörtern und die Warnung vor fehlgeschlagenen Anmeldungen.
+- **In der Warnung vor fehlgeschlagenen Anmeldungen ließ sich beliebiges HTML unterbringen.**
+  Die Mail nennt Adresse und Browserkennung des Versuchs — beide Angaben stammen aus den
+  Kopfzeilen der Anfrage und sind damit frei wählbar. Sie wurden ungefiltert in die Nachricht
+  gesetzt.
+  Ein einziger absichtlich fehlgeschlagener Anmeldeversuch genügte also, um dem Kontoinhaber
+  eine Mail mit eingeschleustem Inhalt zu schicken — abgeschickt von der Adresse des eigenen
+  Panels und mit dem Betreff einer Sicherheitswarnung. Ein untergeschobener Link wäre ein
+  überzeugender Köder gewesen.
+  Alle in Mails eingesetzten Werte werden jetzt umgewandelt, bevor sie in den HTML-Teil
+  gelangen — auch dort, wo die Werte bereits aus vertrauenswürdiger Quelle stammen.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank:** keine Migration. **Agent:** unverändert bei 2.9.0.
+- **Mailversand:** Die Einstellungen (Server, Port, Verschlüsselung, Zugangsdaten) bleiben
+  unverändert gültig; es ist nichts neu einzutragen. Der Sprung über drei Hauptversionen wurde
+  gegen einen echten SMTP-Dialog geprüft.
+- **Darstellung:** Sonderzeichen in Benutzernamen oder Browserkennungen erscheinen in Mails
+  jetzt als Zeichen statt als Auszeichnung — inhaltlich ändert sich nichts.
+
 ## [5.9.4.0] - 2026-08-19 (Build 331) — *„Aktiv" heißt jetzt auch geschützt*
 
 ### 🔒 Sicherheit
