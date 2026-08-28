@@ -44,6 +44,7 @@ export default function Agents() {
   const [editError,    setEditError]    = useState('');
   const [patchmonHosts,      setPatchmonHosts]      = useState([]);
   const [editPatchmonHostId, setEditPatchmonHostId] = useState('');
+  const [editDockerEngine, setEditDockerEngine] = useState('agents');
   const navigate = useNavigate();
 
   const load = useCallback(async () => {
@@ -120,6 +121,7 @@ export default function Agents() {
       if (match) pmId = match.id;
     }
     setEditPatchmonHostId(pmId);
+    setEditDockerEngine(agent.docker_engine || 'agents');
     setEditError('');
     setShowEditToken(false);
   };
@@ -131,8 +133,9 @@ export default function Agents() {
       await axios.put(`/api/agents/${editAgent.id}`, {
         name:  editName.trim(),
         url:   editUrl.trim(),
-        token: editToken, // leer = unverändert lassen wenn Backend COALESCE nutzt
+        token: editToken || undefined, // leer = unverändert lassen wenn Backend COALESCE nutzt
         patchmon_host_id: editPatchmonHostId || null, // '' / null = Verknüpfung entfernen
+        docker_engine: editDockerEngine
       });
       setEditAgent(null);
       load();
