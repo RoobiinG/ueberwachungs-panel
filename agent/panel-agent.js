@@ -299,6 +299,129 @@ async function killProcess(pid, signal = 'SIGTERM') {
   return `Prozess ${targetPid} beendet (${sig === '-9' ? 'SIGKILL' : 'SIGTERM'})`;
 }
 
+}
+
+
+// ─── Cron-Jobs ────────────────────────────────────────────────────────────────
+async function getCronUsers() {
+  try {
+    const { stdout } = await execAsync('cat /etc/passwd', { timeout: 3000 });
+    return stdout.trim().split('\n')
+      .map(line => {
+        const parts = line.split(':');
+        return parts[0] ? parts[0].trim() : null;
+      })
+      .filter(u => u && /^[a-zA-Z0-9_-]+$/.test(u))
+      .sort((a, b) => {
+        if (a === 'root') return -1;
+        if (b === 'root') return 1;
+        return a.localeCompare(b);
+      });
+  } catch { return []; }
+}
+
+async function getCronJobs(user) {
+  if (!/^[a-zA-Z0-9_-]+$/.test(user)) throw new Error('Ungültiger Benutzer');
+  try {
+    const { stdout } = await execAsync(`crontab -u ${user} -l`, { timeout: 3000 });
+    return stdout.trim().split('\n')
+      .map(line => line.trim())
+      .filter(line => line && !line.startsWith('#'))
+      .map(line => {
+        const parts = line.split(/\s+/);
+        if (parts.length >= 6) {
+          return { schedule: parts.slice(0, 5).join(' '), command: parts.slice(5).join(' ') };
+        }
+        return { schedule: '?', command: line };
+      });
+  } catch (err) {
+    if (err.message.includes('no crontab')) return [];
+    throw err;
+  }
+}
+
+async function addCronJob(user, schedule, command) {
+  if (!/^[a-zA-Z0-9_-]+$/.test(user)) throw new Error('Ungültiger Benutzer');
+  if (!schedule || !command) throw new Error('Fehlende Felder');
+  if (schedule.includes('\n') || command.includes('\n')) throw new Error('Zeilenumbrüche sind nicht erlaubt');
+  
+  let currentCrontab = '';
+  try {
+    const { stdout } = await execAsync(`crontab -u ${user} -l`, { timeout: 3000 });
+    currentCrontab = stdout.trim();
+  } catch (err) {
+    if (!err.message.includes('no crontab')) throw err;
+  }
+  
+  const newJob = `${schedule} ${command}`;
+  const updatedCrontab = currentCrontab ? `${currentCrontab}\n${newJob}\n` : `${newJob}\n`;
+  
+  const cp = require('child_process');
+  await new Promise((resolve, reject) => {
+    const child = cp.spawn('crontab', ['-u', user, '-']);
+    let errData = '';
+    child.stderr.on('data', d => errData += d.toString());
+    child.on('close', code => {
+      if (code === 0) resolve();
+      else reject(new Error(`crontab beendet mit ${code}: ${errData}`));
+    });
+    child.on('error', reject);
+    child.stdin.write(updatedCrontab);
+    child.stdin.end();
+  });
+}
+
+async function deleteCronJob(user, index) {
+  if (!/^[a-zA-Z0-9_-]+$/.test(user)) throw new Error('Ungültiger Benutzer');
+  const idx = parseInt(index, 10);
+  if (isNaN(idx) || idx < 0) throw new Error('Ungültiger Index');
+  
+  let currentCrontab = '';
+  try {
+    const { stdout } = await execAsync(`crontab -u ${user} -l`, { timeout: 3000 });
+    currentCrontab = stdout.trim();
+  } catch (err) {
+    if (err.message.includes('no crontab')) throw new Error('Keine Crontab gefunden');
+    throw err;
+  }
+  
+  const lines = currentCrontab.split('\n');
+  const validLines = [];
+  let jobCounter = 0;
+  let deletedJob = null;
+  
+  for (const line of lines) {
+    const tLine = line.trim();
+    if (!tLine || tLine.startsWith('#')) {
+      validLines.push(line);
+    } else {
+      if (jobCounter === idx) {
+        deletedJob = tLine;
+      } else {
+        validLines.push(line);
+      }
+      jobCounter++;
+    }
+  }
+  
+  if (!deletedJob) throw new Error('Job nicht gefunden');
+  const updatedCrontab = validLines.join('\n') + '\n';
+  
+  const cp = require('child_process');
+  await new Promise((resolve, reject) => {
+    const child = cp.spawn('crontab', ['-u', user, '-']);
+    let errData = '';
+    child.stderr.on('data', d => errData += d.toString());
+    child.on('close', code => {
+      if (code === 0) resolve();
+      else reject(new Error(`crontab beendet mit ${code}: ${errData}`));
+    });
+    child.on('error', reject);
+    child.stdin.write(updatedCrontab);
+    child.stdin.end();
+  });
+}
+
 
 // ─── Firewall (Multi-Tool: UFW, iptables, nftables, firewalld) ───────────────
 //
@@ -1002,6 +1125,28 @@ async function handler(req, res) {
       const output = await killProcess(pid, signal);
       respond(res, 200, { success: true, message: output });
 
+
+    // ── Cron-Jobs ──────────────────────────────────────────────────────────────
+    } else if (url === '/cron/users' && req.method === 'GET') {
+      respond(res, 200, await getCronUsers());
+
+    } else if (url.startsWith('/cron/jobs/') && req.method === 'GET') {
+      const user = decodeURIComponent(url.split('/')[3] || '');
+      respond(res, 200, await getCronJobs(user));
+
+    } else if (url.startsWith('/cron/jobs/') && req.method === 'POST') {
+      const user = decodeURIComponent(url.split('/')[3] || '');
+      const raw = await new Promise((resolve) => { const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8'))); });
+      const { schedule, command } = JSON.parse(raw || '{}');
+      await addCronJob(user, schedule, command);
+      respond(res, 200, { success: true });
+
+    } else if (url.startsWith('/cron/jobs/') && req.method === 'DELETE') {
+      const parts = url.split('/');
+      const user = decodeURIComponent(parts[3] || '');
+      const idx = parts[4] || '';
+      await deleteCronJob(user, idx);
+      respond(res, 200, { success: true });
 
     // ── Firewall ──────────────────────────────────────────────────────────────
     } else if (url === '/firewall/detect' && req.method === 'GET') {

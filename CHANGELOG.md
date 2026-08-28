@@ -16,6 +16,15 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [6.1.0.1] - 2026-08-28 (Build 341) — *Agent Cron-Route Fix*
+
+### 🐛 Bugfixes
+- **Remote Cron-Verwaltung 502/404 Fehler:** Die Routen (`/cron/users`, `/cron/jobs/...`) fehlten im Code des Remote-Agenten (`panel-agent.js`), was beim Abrufen von Remote-Cron-Jobs zu einem HTTP 502 Fehler führte. Diese wurden nun im Agenten ergänzt.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Agenten-Update zwingend:** Die Remote-Server müssen im Panel aktualisiert werden (Agent-Neuinstallation/Update), damit die neuen Cron-Routen auf dem Server verfügbar sind. Vorher bleibt der Fehler bestehen.
+
+
 ## [6.1.0.0] - 2026-08-28 (Build 340) — *Zentrale Cron-Job Verwaltung & Lokaler Support*
 
 ### ✨ Features
