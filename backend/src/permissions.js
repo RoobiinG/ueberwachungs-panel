@@ -13,6 +13,7 @@ const PERMISSIONS = [
   { key: 'agents.delete',       category: 'Remote-Server',      label: 'Server löschen',                  description: 'Remote-Server entfernen' },
   { key: 'agents.update',       category: 'Remote-Server',      label: 'Agent aktualisieren',             description: 'Agent-Software auf Servern aktualisieren' },
   { key: 'agents.manage_processes', category: 'Remote-Server',  label: 'Prozesse verwalten',              description: 'Top-Prozesse auf Remote-Servern ansehen und hängende Prozesse beenden' },
+  { key: 'agents.manage_cron',      category: 'Remote-Server',  label: 'Cron-Jobs verwalten',             description: 'System-Cron-Jobs auf Remote-Servern ansehen, anlegen und löschen' },
 
 
   // ─── Docker ───────────────────────────────────────────────────────────────
@@ -98,7 +99,7 @@ const ALL_KEYS = PERMISSIONS.map(p => p.key);
 
 const OPERATOR_PERMISSIONS = [
   'dashboard.view',
-  'agents.view', 'agents.add', 'agents.edit', 'agents.update', 'agents.manage_processes',
+  'agents.view', 'agents.add', 'agents.edit', 'agents.update', 'agents.manage_processes', 'agents.manage_cron',
 
   'docker.view', 'docker.control', 'docker.logs', 'docker.label',
   'docker.images.view', 'docker.images.control',

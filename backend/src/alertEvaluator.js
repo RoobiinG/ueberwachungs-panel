@@ -217,19 +217,27 @@ function getServerList(rule) {
     try { return JSON.parse(rule.agent_ids || '[]'); } catch { return []; }
   })();
 
+  const agents = getAgentCache();
+
   if (ids.length > 0) {
-    const agents = getAgentCache();
     return ids.map(id => {
       if (id === 'local') return { key: 'local', name: 'Lokal', agentId: null };
       const a = agents.get(String(id));
       return a ? { key: String(a.id), name: a.name, agentId: a.id } : null;
     }).filter(Boolean);
   }
+  
   // Fallback: altes agent_id-Format
   if (rule.agent_id) {
     return [{ key: String(rule.agent_id), name: rule.agent_name || `Agent #${rule.agent_id}`, agentId: rule.agent_id }];
   }
-  return [{ key: 'local', name: 'Lokal', agentId: null }];
+  
+  // Keine explizite Auswahl und kein Fallback -> "Alle Server"
+  const allServers = [{ key: 'local', name: 'Lokal', agentId: null }];
+  for (const a of agents.values()) {
+    allServers.push({ key: String(a.id), name: a.name, agentId: a.id });
+  }
+  return allServers;
 }
 
 // ─── Server-Liste für PatchMon-Regeln ────────────────────────────────────────

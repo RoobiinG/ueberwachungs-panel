@@ -16,6 +16,17 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [6.0.0.0] - 2026-08-28 (Build 339) — *Cron-Job Verwaltung*
+
+### ✨ Features
+- **Verwaltung von Cron-Jobs:** System-Cron-Jobs auf Remote-Servern können nun direkt aus dem Panel heraus angesehen, angelegt und gelöscht werden. Die Verwaltung geschieht im neuen Reiter "Cron Jobs" in der Detailansicht eines Servers.
+- **Benutzerspezifische Cron-Jobs:** Es können gezielt Cron-Jobs für verschiedene Systembenutzer (z. B. `root`, `www-data`) bearbeitet werden.
+- **Rechtesystem:** Die Cron-Job-Verwaltung ist durch das neue Recht `agents.manage_cron` abgesichert.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Agenten-Kompatibilität:** Der Agent benötigt ein Update auf die neueste Version, um die Endpunkte für die Cron-Verwaltung bereitzustellen. Ohne Update bleibt der Tab funktionslos.
+- **Datenbank:** Keine Migration erforderlich. Das neue Recht wird automatisch über den Code bereitgestellt.
+
 ## [5.9.8.2] - 2026-08-22 (Build 338) — *Firewall-Erkennung & Performance Fix*
 
 ### Bugfixes
