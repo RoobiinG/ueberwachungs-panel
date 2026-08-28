@@ -16,6 +16,13 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [6.1.0.3] - 2026-08-28 (Build 343) — *Agenten-Edit Fix*
+
+### 🐛 Bugfixes
+- **Absturz auf der Server-Seite:** Das Modal zum Bearbeiten von Servern/Agenten stürzte mit dem Fehler `editDockerEngine is not defined` ab, da ein Status-Feld fehlte. Dies wurde behoben.
+- **Unbeabsichtigtes Überschreiben des Tokens:** Beim Speichern von Server-Einstellungen über das UI wurde der Agent-Token ungewollt geleert, falls das Token-Feld leer gelassen wurde. Dadurch konnten Agenten die Verbindung verlieren. Leere Felder werden jetzt wieder korrekt ignoriert, sodass der alte Token erhalten bleibt.
+
+
 ## [6.1.0.2] - 2026-08-28 (Build 342) — *Agent Syntax Fix*
 
 ### 🐛 Bugfixes
