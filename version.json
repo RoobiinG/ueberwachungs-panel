@@ -1,6 +1,6 @@
 {
-  "version": "5.9.8.2",
-  "build": 338,
-  "date": "2026-08-22",
-  "codename": "Firewall-Erkennung & Performance Fix"
+  "version": "6.0.0.0",
+  "build": 339,
+  "date": "2026-08-28",
+  "codename": "Cron-Job Verwaltung"
 }

@@ -776,6 +776,106 @@ function getPublicIp() {
   });
 }
 
+// ─── Cron ─────────────────────────────────────────────────────────────────────
+
+function getCronUsers() {
+  try {
+    const passwd = fs.readFileSync('/etc/passwd', 'utf8');
+    return passwd.split('\n').filter(Boolean).map(line => {
+      const parts = line.split(':');
+      return { user: parts[0], uid: parseInt(parts[2], 10) };
+    }).filter(u => !isNaN(u.uid) && (u.uid >= 1000 || u.user === 'root')).map(u => u.user);
+  } catch {
+    return ['root'];
+  }
+}
+
+async function getCronJobs(user) {
+  if (!/^[a-z_][a-z0-9_-]*[$]?$/.test(user)) throw new Error('Ungültiger Benutzername');
+  try {
+    const { stdout } = await execAsync(`crontab -u ${user} -l`, { timeout: 5000 });
+    const lines = stdout.split('\n');
+    const jobs = [];
+    lines.forEach((line, index) => {
+      if (!line.trim() || line.trim().startsWith('#')) return; // skip comments and empty lines
+      const parts = line.trim().split(/\s+/);
+      if (parts.length >= 6 || (parts.length >= 2 && parts[0].startsWith('@'))) {
+        let schedule = '';
+        let command = '';
+        if (parts[0].startsWith('@')) {
+           schedule = parts[0];
+           command = parts.slice(1).join(' ');
+        } else {
+           schedule = parts.slice(0, 5).join(' ');
+           command = parts.slice(5).join(' ');
+        }
+        jobs.push({ index, schedule, command, raw: line });
+      } else {
+        jobs.push({ index, schedule: '', command: line, raw: line });
+      }
+    });
+    return jobs;
+  } catch (e) {
+    if (e.message.includes('no crontab for')) return [];
+    throw new Error('Fehler beim Abrufen der Cron-Jobs: ' + e.message);
+  }
+}
+
+async function addCronJob(user, schedule, command) {
+  if (!/^[a-z_][a-z0-9_-]*[$]?$/.test(user)) throw new Error('Ungültiger Benutzername');
+  if (!schedule || !command) throw new Error('Zeitplan und Befehl sind erforderlich');
+  try {
+    let crontab = '';
+    try {
+      const { stdout } = await execAsync(`crontab -u ${user} -l`, { timeout: 5000 });
+      crontab = stdout;
+    } catch (e) {
+      if (!e.message.includes('no crontab for')) throw e;
+    }
+    const newLine = `${schedule} ${command}\n`;
+    const newCrontab = crontab.endsWith('\n') || crontab === '' ? crontab + newLine : crontab + '\n' + newLine;
+    
+    const child = require('child_process').spawn('crontab', ['-u', user, '-']);
+    child.stdin.write(newCrontab);
+    child.stdin.end();
+    await new Promise((resolve, reject) => {
+      child.on('close', code => {
+        if (code === 0) resolve();
+        else reject(new Error(`crontab beendet mit Code ${code}`));
+      });
+    });
+    return { success: true };
+  } catch (e) {
+    throw new Error('Fehler beim Hinzufügen des Cron-Jobs: ' + e.message);
+  }
+}
+
+async function deleteCronJob(user, index) {
+  if (!/^[a-z_][a-z0-9_-]*[$]?$/.test(user)) throw new Error('Ungültiger Benutzername');
+  const targetIndex = parseInt(index, 10);
+  try {
+    const { stdout } = await execAsync(`crontab -u ${user} -l`, { timeout: 5000 });
+    const lines = stdout.split('\n');
+    if (targetIndex < 0 || targetIndex >= lines.length) throw new Error('Ungültiger Index');
+    
+    lines.splice(targetIndex, 1);
+    const newCrontab = lines.join('\n') + (lines.length > 0 && lines[lines.length-1] !== '' ? '\n' : '');
+    
+    const child = require('child_process').spawn('crontab', ['-u', user, '-']);
+    child.stdin.write(newCrontab);
+    child.stdin.end();
+    await new Promise((resolve, reject) => {
+      child.on('close', code => {
+        if (code === 0) resolve();
+        else reject(new Error(`crontab beendet mit Code ${code}`));
+      });
+    });
+    return { success: true };
+  } catch (e) {
+    throw new Error('Fehler beim Löschen des Cron-Jobs: ' + e.message);
+  }
+}
+
 // ─── HTTP Handler ─────────────────────────────────────────────────────────────
 
 function respond(res, status, data) {
@@ -1052,6 +1152,23 @@ async function handler(req, res) {
 
     } else if (url === '/network/public-ip' && req.method === 'GET') {
       respond(res, 200, await getPublicIp());
+
+    // ── Cron ──────────────────────────────────────────────────────────────────
+    } else if (url === '/cron/users' && req.method === 'GET') {
+      respond(res, 200, getCronUsers());
+    } else if (url.startsWith('/cron/jobs/') && req.method === 'GET') {
+      const user = decodeURIComponent(url.split('/')[3] || '');
+      respond(res, 200, await getCronJobs(user));
+    } else if (url.startsWith('/cron/jobs/') && req.method === 'POST') {
+      const user = decodeURIComponent(url.split('/')[3] || '');
+      const raw = await new Promise((resolve) => { const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8'))); });
+      const { schedule, command } = JSON.parse(raw || '{}');
+      respond(res, 200, await addCronJob(user, schedule, command));
+    } else if (url.startsWith('/cron/jobs/') && req.method === 'DELETE') {
+      const parts = url.split('/');
+      const user = decodeURIComponent(parts[3] || '');
+      const index = decodeURIComponent(parts[4] || '');
+      respond(res, 200, await deleteCronJob(user, index));
 
     // ── Deinstallation ────────────────────────────────────────────────────────
     } else if (url === '/uninstall' && req.method === 'POST') {

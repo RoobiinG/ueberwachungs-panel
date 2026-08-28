@@ -277,6 +277,58 @@ router.post('/:id/processes/:pid/kill', requirePermission('agents.manage_process
   }
 });
 
+// ── Cron-Jobs ────────────────────────────────────────────────────────────────
+
+router.get('/:id/cron/users', requirePermission('agents.manage_cron'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  try {
+    const { data } = await agentApi(agent).get('/cron/users');
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.response?.data?.error || err.message });
+  }
+});
+
+router.get('/:id/cron/jobs/:user', requirePermission('agents.manage_cron'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  try {
+    const { data } = await agentApi(agent).get(`/cron/jobs/${encodeURIComponent(req.params.user)}`);
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.response?.data?.error || err.message });
+  }
+});
+
+router.post('/:id/cron/jobs/:user', requirePermission('agents.manage_cron'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  try {
+    const { data } = await agentApi(agent).post(`/cron/jobs/${encodeURIComponent(req.params.user)}`, req.body);
+    auditLog(req, 'agent.cron.add', 'cron', `${req.params.user}: ${req.body.schedule}`, { agentId: agent.id, server: agent.name });
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.response?.data?.error || err.message });
+  }
+});
+
+router.delete('/:id/cron/jobs/:user/:index', requirePermission('agents.manage_cron'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  try {
+    const { data } = await agentApi(agent).delete(`/cron/jobs/${encodeURIComponent(req.params.user)}/${encodeURIComponent(req.params.index)}`);
+    auditLog(req, 'agent.cron.delete', 'cron', `User: ${req.params.user}, Index: ${req.params.index}`, { agentId: agent.id, server: agent.name });
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.response?.data?.error || err.message });
+  }
+});
+
 // ── Server-Notizbuch & Wartungsmodus (Modul 4) ───────────────────────────────
 
 router.get('/:id/notes', requirePermission('agents.view'), (req, res) => {
