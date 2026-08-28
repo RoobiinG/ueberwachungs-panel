@@ -279,7 +279,7 @@ router.post('/:id/processes/:pid/kill', requirePermission('agents.manage_process
 
 // ── Cron-Jobs ────────────────────────────────────────────────────────────────
 
-router.get('/:id/cron/users', requirePermission('agents.manage_cron'), async (req, res) => {
+router.get('/:id/cron/users', requirePermission('cron.manage'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
@@ -291,7 +291,7 @@ router.get('/:id/cron/users', requirePermission('agents.manage_cron'), async (re
   }
 });
 
-router.get('/:id/cron/jobs/:user', requirePermission('agents.manage_cron'), async (req, res) => {
+router.get('/:id/cron/jobs/:user', requirePermission('cron.manage'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
@@ -303,7 +303,7 @@ router.get('/:id/cron/jobs/:user', requirePermission('agents.manage_cron'), asyn
   }
 });
 
-router.post('/:id/cron/jobs/:user', requirePermission('agents.manage_cron'), async (req, res) => {
+router.post('/:id/cron/jobs/:user', requirePermission('cron.manage'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
@@ -316,7 +316,7 @@ router.post('/:id/cron/jobs/:user', requirePermission('agents.manage_cron'), asy
   }
 });
 
-router.delete('/:id/cron/jobs/:user/:index', requirePermission('agents.manage_cron'), async (req, res) => {
+router.delete('/:id/cron/jobs/:user/:index', requirePermission('cron.manage'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });

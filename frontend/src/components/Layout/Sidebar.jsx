@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Container, Wrench, Shield,
   Webhook, Users, Cloud, Gamepad2, ChevronLeft, ChevronRight,
   Server, Settings, ServerCog, MonitorCheck, Bell, ShieldCheck, ClipboardList,
-  BarChart2, AlertCircle, Trash2, ScrollText, PackageCheck,
+  BarChart2, AlertCircle, Trash2, ScrollText, PackageCheck, Clock
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
@@ -21,6 +21,7 @@ export const navItems = [
     permission: ['docker.view', 'docker.images.view', 'docker.volumes.view', 'docker.networks.view', 'docker.stacks.view'] },
   { to: '/services',    icon: Wrench,       label: 'Services' },
   { to: '/firewall',    icon: Shield,       label: 'Firewall' },
+  { to: '/cron',        icon: Clock,        label: 'Cron Jobs', permission: 'cron.manage' },
   { to: '/monitoring',  icon: BarChart2,    label: 'Monitoring' },
   { to: '/agents',      icon: ServerCog,    label: 'Server' },
 

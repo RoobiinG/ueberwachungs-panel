@@ -16,6 +16,19 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [6.1.0.0] - 2026-08-28 (Build 340) — *Zentrale Cron-Job Verwaltung & Lokaler Support*
+
+### ✨ Features
+- **Zentrale Cron-Job Verwaltung:** Die Cron-Job Verwaltung wurde aus der Agent-Detailansicht in eine zentrale Seite ("Cron Jobs") unter der Kategorie "Infrastruktur" in der Seitenleiste verschoben.
+- **Lokaler Server-Support:** Cron-Jobs können nun auch für den Panel-Server selbst (lokal) angelegt und bearbeitet werden. Um trotz Docker-Container-Betrieb die Cron-Jobs des Host-Betriebssystems zu verwalten, werden die entsprechenden Systembefehle sicher per `nsenter` im Host-Namespace (`pid=1`) ausgeführt.
+- **Berechtigungen:** Das Recht für Cron-Jobs wurde von `agents.manage_cron` auf `cron.manage` umbenannt, da es sich nicht mehr nur auf Agenten bezieht.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Sicherheit (nsenter):** Die lokale Verwaltung der Host-Crontabs durch den Container erfordert erweiterte Rechte auf Host-Ebene (`--target 1 --mount --uts --ipc --net --pid`). Dies ist durch die bestehenden Systemarchitektur-Privilegien des Panel-Containers abgedeckt, sollte jedoch bei Umzügen bedacht werden.
+- **Kompatibilität:** Rollen, denen zuvor das Recht `agents.manage_cron` gewährt wurde, müssen dieses eventuell anpassen. (Im Code wurde die Umbenennung auf `cron.manage` durchgehend vorgenommen).
+- **Datenbank:** Keine manuellen Migrationen nötig.
+
+
 ## [6.0.0.0] - 2026-08-28 (Build 339) — *Cron-Job Verwaltung*
 
 ### ✨ Features

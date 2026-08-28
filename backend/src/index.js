@@ -113,6 +113,7 @@ app.use('/api/mchost', auth, require('./routes/mchost'));
 app.use('/api/settings', auth, require('./routes/settings'));
 app.use('/api/backups',  auth, require('./routes/backups'));
 app.use('/api/agents',  auth, require('./routes/agents'));
+app.use('/api/cron',    auth, requireLocalAccess, require('./routes/cron'));
 app.use('/api/metrics',    auth, require('./routes/metrics'));    // Kein requireLocalAccess: Daten kommen aus lokaler SQLite (auch Remote-Agent-Daten)
 app.use('/api/dashboard',  auth, require('./routes/dashboard'));
 app.use('/api/uptime-kuma', auth, require('./routes/uptimeKuma'));

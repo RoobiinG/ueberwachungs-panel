@@ -18,6 +18,7 @@ const Dashboard     = lazy(() => import('./pages/Dashboard'));
 const DockerCenter  = lazy(() => import('./pages/DockerCenter'));
 const Services      = lazy(() => import('./pages/Services'));
 const Firewall      = lazy(() => import('./pages/Firewall'));
+const CronJobs      = lazy(() => import('./pages/CronJobs'));
 const Webhooks      = lazy(() => import('./pages/Webhooks'));
 const Users         = lazy(() => import('./pages/Users'));
 const Hetzner       = lazy(() => import('./pages/Hetzner'));
@@ -92,6 +93,7 @@ const AppRoutes = () => {
             <Route path="/docker-resources" element={<Navigate to="/docker" replace />} />
             <Route path="/services" element={<Services />} />
             <Route path="/firewall" element={<Firewall />} />
+            <Route path="/cron" element={<CronJobs />} />
             <Route path="/network"    element={<Navigate to="/monitoring" replace />} />
             <Route path="/monitoring" element={<Monitoring liveStats={liveStats} />} />
             <Route path="/agents" element={<Agents />} />
