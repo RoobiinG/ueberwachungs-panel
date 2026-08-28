@@ -16,6 +16,12 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [6.1.0.2] - 2026-08-28 (Build 342) — *Agent Syntax Fix*
+
+### 🐛 Bugfixes
+- **Agent Crash (Syntax-Fehler):** Ein Syntaxfehler (zusätzliche schließende Klammer), der sich im letzten Update des Remote-Agenten eingeschlichen hatte und den Agent-Dienst sofort beim Start abstürzen ließ (`status=1/FAILURE`), wurde behoben.
+
+
 ## [6.1.0.1] - 2026-08-28 (Build 341) — *Agent Cron-Route Fix*
 
 ### 🐛 Bugfixes
