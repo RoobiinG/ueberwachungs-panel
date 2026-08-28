@@ -299,8 +299,6 @@ async function killProcess(pid, signal = 'SIGTERM') {
   return `Prozess ${targetPid} beendet (${sig === '-9' ? 'SIGKILL' : 'SIGTERM'})`;
 }
 
-}
-
 
 // ─── Cron-Jobs ────────────────────────────────────────────────────────────────
 async function getCronUsers() {
