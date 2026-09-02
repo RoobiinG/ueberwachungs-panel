@@ -21,9 +21,9 @@ const PANEL_DEFS = [
   { type: 'stat_cards',      label: 'Live-Stats',                needsMetrics: false, defaultW: 3 },
   { type: 'network_live',    label: 'Live-Traffic-Chart',        needsMetrics: false, defaultW: 3 },
   { type: 'network_history', label: 'Netzwerk-Verlauf',          needsMetrics: true,  defaultW: 3 },
-  { type: 'metric_cpu',      label: 'CPU-Verlauf',               needsMetrics: true,  defaultW: 1 },
-  { type: 'metric_mem',      label: 'Arbeitsspeicher-Verlauf',   needsMetrics: true,  defaultW: 1 },
-  { type: 'metric_disk',     label: 'Festplatten-Verlauf',       needsMetrics: true,  defaultW: 1 },
+  { type: 'metric_cpu',      label: 'CPU-Verlauf',               needsMetrics: true,  defaultW: 3 },
+  { type: 'metric_mem',      label: 'Arbeitsspeicher-Verlauf',   needsMetrics: true,  defaultW: 3 },
+  { type: 'metric_disk',     label: 'Festplatten-Verlauf',       needsMetrics: true,  defaultW: 3 },
   { type: 'interfaces',      label: 'Netzwerk-Interfaces',       needsMetrics: false, defaultW: 3 },
 ];
 
@@ -40,9 +40,9 @@ const mkDefault = () => [
   { id: uid(), type: 'stat_cards',      w: 3 },
   { id: uid(), type: 'network_live',    w: 3 },
   { id: uid(), type: 'network_history', w: 3 },
-  { id: uid(), type: 'metric_cpu',      w: 1 },
-  { id: uid(), type: 'metric_mem',      w: 1 },
-  { id: uid(), type: 'metric_disk',     w: 1 },
+  { id: uid(), type: 'metric_cpu',      w: 3 },
+  { id: uid(), type: 'metric_mem',      w: 3 },
+  { id: uid(), type: 'metric_disk',     w: 3 },
   { id: uid(), type: 'interfaces',      w: 3 },
 ];
 
@@ -443,6 +443,16 @@ export default function Monitoring({ liveStats }) {
       try {
         const r = await axios.get(`/api/agents/${networkAgentId}/network/stats`);
         setRemoteStats(r.data);
+        
+        // Live-History befüllen
+        const t = Math.floor(Date.now() / 1000);
+        const rx = r.data[0]?.rxSec ?? r.data[0]?.rx_sec ?? 0;
+        const tx = r.data[0]?.txSec ?? r.data[0]?.tx_sec ?? 0;
+        setNetHistory(prev => {
+          const next = [...prev, { t, rx, tx }];
+          if (next.length > 60) next.shift(); // 60 Datenpunkte = ~3 Minuten (bei 3s Intervall)
+          return next;
+        });
       } catch {} finally { inflight = false; }
     };
     poll();

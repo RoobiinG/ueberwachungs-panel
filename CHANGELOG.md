@@ -16,6 +16,12 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [6.1.1.4] - 2026-09-02 (Build 348) — *Agent Only Architecture (Hotfix 4)*
+
+### 🐛 Bugfixes
+- **UI:** Im Monitoring-Dashboard wurde der Live-Traffic Graph gefixt, der nach dem Architektur-Umbau stellenweise in einem "Warte auf Daten..." Zustand hängen blieb.
+- **UI:** Die drei kleinen System-Metriken (CPU, RAM, Festplatte) im Monitoring wurden im Standardlayout vergrößert und nutzen nun die volle Breite, analog zum Netzwerk-Graphen.
+
 ## [6.1.1.3] - 2026-09-02 (Build 347) — *Agent Only Architecture (Hotfix 3)*
 
 ### 🧹 Refactoring
