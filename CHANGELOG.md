@@ -16,6 +16,15 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [6.1.1.1] - 2026-09-02 (Build 345) — *Agent Only Architecture (Hotfix)*
+
+### 🐛 Bugfixes
+- **Sidebar:** Das Hosting-Provider Menü wird nun korrekt ausgeblendet, wenn sowohl Hetzner als auch MC-Host24 deaktiviert sind.
+- **Monitoring:** Ein Fehler wurde behoben, durch den die Metriken-Übersicht ("Live-Stats", "Netzwerk") "Keine Daten" anzeigte. Der Datenfluss für den lokalen Panel-Server wurde vollständig an die neue reine Remote-Agent Architektur (API-Polling statt lokaler WebSocket) angepasst.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Monitoring-Verhalten:** WebSocket-Statistiken für den lokalen Node-Prozess werden nicht länger gepollt. Auch für den Panel-Server selbst fragt das Dashboard nun alle 5 Sekunden den Agent-Endpunkt (`/api/agents/:id/system/stats`) per HTTP ab, wie bei jedem anderen Server auch.
+
 ## [6.1.1.0] - 2026-09-02 (Build 344) — *Agent Only Architecture*
 
 ### ✨ Features
