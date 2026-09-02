@@ -11,8 +11,16 @@ export const AuthProvider = ({ children }) => {
   const [permissions, setPermissions] = useState(() => {
     try { return JSON.parse(localStorage.getItem('permissions')) || []; } catch { return []; }
   });
+  const [modules, setModules] = useState({});
 
   if (token) axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+
+  const loadModules = useCallback(async () => {
+    try {
+      const { data } = await axios.get('/api/settings/modules');
+      setModules(data);
+    } catch {}
+  }, []);
 
   // Beim Start: frische Daten + Permissions vom Server holen
   useEffect(() => {
@@ -33,12 +41,13 @@ export const AuthProvider = ({ children }) => {
       setPermissions(r.data.permissions || []);
       localStorage.setItem('user', JSON.stringify(u));
       localStorage.setItem('permissions', JSON.stringify(r.data.permissions || []));
+      loadModules(); // Module laden, wenn Auth erfolgreich
     }).catch(() => {
       // Token abgelaufen / ungültig → ausloggen
       logout();
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [token, loadModules]);
 
   const saveSession = useCallback((userData, tokenStr, perms = []) => {
     const u = {
@@ -96,7 +105,7 @@ export const AuthProvider = ({ children }) => {
 
   return (
     <AuthContext.Provider value={{
-      user, token, permissions,
+      user, token, permissions, modules, loadModules,
       login, verify2FA, logout, saveSession,
       isAdmin, isOperator, canWrite,
       hasPermission,

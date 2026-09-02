@@ -16,6 +16,16 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [6.1.1.7] - 2026-09-02 (Build 351) — *Agent Only Architecture (Hotfix 7)*
+
+- **Bugfix (Frontend-Polling):** Das Dashboard fragt im Hintergrund nicht mehr stumpf alle Dienste ab (Hetzner, PatchMon, Uptime Kuma), wenn diese in den Einstellungen deaktiviert wurden.
+- **Bugfix (Panel-Log Bereinigung):** Der globale Frontend-Error-Catcher ignoriert nun "nicht konfiguriert"-Meldungen und `502 Bad Gateway` Fehler ungenutzter Schnittstellen. Dadurch entstehen keine falschen Alarmierungen ("rote Badges") mehr, wenn z. B. Dockhand oder Hetzner bewusst deaktiviert sind.
+- **Verbesserung (Globaler State):** Der `AuthContext` ruft nun einmalig nach dem Login die aktiven System-Module vom Backend (`/api/settings/modules`) ab und stellt sie allen Ansichten (Sidebar, Dashboard, Settings) synchron zur Verfügung.
+
+**System-Auswirkungen & Nachwirken (Impact Analysis)**
+- **Datenbank & Panel:** Keine Schema-Änderung. Das Audit-Log und die Panel-Logs füllen sich künftig langsamer, da absichtliche Konfigurationslücken nicht mehr gemeldet werden.
+- **Agenten:** Keine Änderung.
+
 ## [6.1.1.6] - 2026-09-02 (Build 350) — *Agent Only Architecture (Hotfix 6)*
 
 ### 🧹 Refactoring

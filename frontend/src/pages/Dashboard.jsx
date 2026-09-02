@@ -609,20 +609,29 @@ export default function Dashboard({ liveStats }) {
       .then(r => setAgents(r.data))
       .catch(() => {})
       .finally(() => { agentsRef.current = true; setAgentsGeladen(true); });
+      
     // PatchMon-Gesamtübersicht (fail-soft — nicht konfiguriert = Kachel ausblenden)
-    axios.get('/api/patchmon/hosts').then(r => setPatchmonHosts(r.data.hosts || [])).catch(() => setPatchmonHosts([]));
-  }, []);
+    if (modules.patchmon !== false) {
+      axios.get('/api/patchmon/hosts').then(r => setPatchmonHosts(r.data.hosts || [])).catch(() => setPatchmonHosts([]));
+    } else {
+      setPatchmonHosts([]);
+    }
+  }, [modules.patchmon]);
 
   // ── Hetzner Storage Boxes (fail-soft, alle 60s) ─────────────────────────────
   useEffect(() => {
     // Bei einem Fehlschlag den letzten bekannten Stand behalten statt auf leer zu setzen —
     // ein kurzer Aussetzer der Hetzner-API darf die Kachel nicht aus dem Layout werfen.
+    if (modules.hetzner === false) {
+      setHetznerBoxes([]);
+      return;
+    }
     const load = () => axios.get('/api/hetzner/storage_boxes')
       .then(r => setHetznerBoxes(r.data.boxes || [])).catch(() => {});
     load();
     const t = setInterval(load, 60_000);
     return () => clearInterval(t);
-  }, []);
+  }, [modules.hetzner]);
 
   // ── Remote-Agent-Stats pollen ──────────────────────────────────────────────
   const pollAgents = useCallback((list) => {
@@ -680,16 +689,20 @@ export default function Dashboard({ liveStats }) {
   // ── Status-Panel (Uptime-Kuma + Firewall), fail-soft, alle 60s ──────────────
   useEffect(() => {
     const load = () => {
-      axios.get('/api/uptime-kuma/monitors')
-        .then(r => { const m = r.data.monitors || []; setUptime({ up: m.filter(x => x.status === 1).length, total: m.length }); })
-        .catch(() => setUptime(null));
+      if (modules.uptimekuma !== false) {
+        axios.get('/api/uptime-kuma/monitors')
+          .then(r => { const m = r.data.monitors || []; setUptime({ up: m.filter(x => x.status === 1).length, total: m.length }); })
+          .catch(() => setUptime(null));
+      } else {
+        setUptime(null);
+      }
       axios.get('/api/firewall/status')
         .then(r => setFirewall({ active: !!r.data.active })).catch(() => setFirewall(null));
     };
     load();
     const t = setInterval(load, 60_000);
     return () => clearInterval(t);
-  }, []);
+  }, [modules.uptimekuma]);
 
   // ── Gespeichertes Widget-Layout laden (nur echtes RGL-Format) ───────────────
   useEffect(() => {
