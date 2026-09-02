@@ -16,6 +16,11 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [6.1.1.2] - 2026-09-02 (Build 346) — *Agent Only Architecture (Hotfix 2)*
+
+### 🐛 Bugfixes
+- **Monitoring:** Ein verbleibendes Fragment der alten lokalen Architektur im Backend (`metrics.js`) wurde entfernt, welches dazu führte, dass ein Dummy-Eintrag "Panel (lokal)" in der Serverliste generiert wurde, obwohl der lokale Host-Agent jetzt regulär über die Agentenliste verwaltet wird.
+
 ## [6.1.1.1] - 2026-09-02 (Build 345) — *Agent Only Architecture (Hotfix)*
 
 ### 🐛 Bugfixes

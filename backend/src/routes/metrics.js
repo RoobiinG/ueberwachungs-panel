@@ -39,10 +39,10 @@ const autoRange = (spanSeconds) => {
 };
 
 const resolveServerId = (server) => {
-  if (!server || server === 'local') return 'local';
+  if (!server) return null;
   const id = parseInt(server, 10);
   if (!isNaN(id)) return `agent:${id}`;
-  return 'local';
+  return server;
 };
 
 // ─── Query-Funktionen ─────────────────────────────────────────────────────────
@@ -111,7 +111,7 @@ const queryRows = (table, from, to, bucket, serverId) =>
 
 // Server-Liste
 router.get('/servers', requirePermission('metrics.view'), (req, res) => {
-  const servers = [{ id: 'local', label: 'Panel (lokal)' }];
+  const servers = [];
   const userRow = db.prepare('SELECT role FROM users WHERE id = ?').get(req.user?.id);
   const perms   = userRow ? getPermissions(userRow.role) : [];
   if (perms.includes('agents.view')) {
