@@ -1,6 +1,5 @@
 const WebSocket = require('ws');
 const jwt   = require('jsonwebtoken');
-const cache = require('./metricsCache'); // gemeinsamer Mess-Cache — kein zweiter si.currentLoad()
 
 let wss;
 
@@ -12,28 +11,6 @@ const broadcast = (data) => {
   });
 };
 
-// Abonniert den metricsCache und broadcastet bei jedem neuen Tick
-const startMonitoring = () => {
-  cache.subscribe(({ cpu, mem, network, ts }) => {
-    let containers = {};
-    try { containers = require('./dockerMetricsRecorder').getLatestStats(); } catch {}
-
-    broadcast({
-      type: 'stats',
-      payload: {
-        cpu,
-        memory: {
-          total:      mem.total,
-          used:       mem.total - mem.available,
-          usedPercent: Math.round(((mem.total - mem.available) / mem.total) * 100),
-        },
-        network: network.map(n => ({ iface: n.iface, rxSec: n.rx_sec, txSec: n.tx_sec })),
-        containers,
-        timestamp: ts * 1000,
-      },
-    });
-  });
-};
 
 // Pfade des Terminal-Proxys aus index.js. Sie hängen am selben `upgrade`-Ereignis und
 // müssen hier durchgelassen werden.
@@ -98,7 +75,6 @@ const setup = (server) => {
     ws.on('close', () => {});
     ws.on('error', console.error);
   });
-  startMonitoring();
 };
 
 module.exports = { setup, broadcast };

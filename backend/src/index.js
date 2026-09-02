@@ -135,7 +135,6 @@ app.get(/^(?!\/api).*/, (req, res) => {
   res.sendFile(path.join(frontendDist, 'index.html'));
 });
 
-require('./metricsCache').start();     // Muss VOR websocket + metricsRecorder starten
 setupWS(server);
 
 // ─── Terminal-WebSocket ───────────────────────────────────────────────────────
@@ -253,7 +252,6 @@ server.on('upgrade', (request, socket, head) => {
   }
 });
 
-require('./metricsRecorder').start();
 require('./metricsAggregator').start();
 require('./alertEvaluator').start();
 // dockerMetricsRecorder entfernt — Docker-Stats kommen jetzt von Dockhand API
