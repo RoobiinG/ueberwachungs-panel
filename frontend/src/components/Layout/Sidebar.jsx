@@ -29,7 +29,7 @@ export const navItems = [
   { to: '/uptime-kuma', icon: MonitorCheck, label: 'Uptime Kuma',       moduleKey: 'uptimekuma', permission: 'uptimekuma.view' },
   { to: '/patchmon',    icon: PackageCheck, label: 'PatchMon',          moduleKey: 'patchmon',   permission: 'patchmon.view' },
   { to: '/alerts',      icon: Bell,         label: 'Benachrichtigungen' },
-  { to: '/hosting',     icon: Cloud,        label: 'Hosting-Provider',  permission: ['hetzner.view', 'mchost.view'] },
+  { to: '/hosting',     icon: Cloud,        label: 'Hosting-Provider',  permission: ['hetzner.view', 'mchost.view'], moduleKey: ['hetzner', 'mchost'] },
 
   { section: 'Verwaltung' },
   { to: '/users',      icon: Users,         label: 'Benutzer',        adminOnly: true },
@@ -41,9 +41,8 @@ export const navItems = [
 
 export const Sidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
-  const { user, isAdmin, hasPermission } = useAuth();
+  const { user, isAdmin, hasPermission, modules } = useAuth();
   const [version, setVersion] = useState(null);
-  const [modules, setModules] = useState({});
   const [updateStatus, setUpdateStatus] = useState(null);
   const { errors, clearErrors } = useErrors();
   const [showPrideFlag, setShowPrideFlag] = useState(() => localStorage.getItem('show_pride_flag') !== 'false');
@@ -62,7 +61,6 @@ export const Sidebar = () => {
 
   useEffect(() => {
     axios.get('/api/version').then(r => setVersion(r.data)).catch(() => {});
-    axios.get('/api/settings/modules').then(r => setModules(r.data)).catch(() => {});
     axios.get('/api/update/status').then(r => setUpdateStatus(r.data)).catch(() => {});
   }, []);
 
@@ -94,7 +92,10 @@ export const Sidebar = () => {
           }
           if (item.adminOnly && !isAdmin) return null;
           if (item.permission && !(Array.isArray(item.permission) ? item.permission.some(hasPermission) : hasPermission(item.permission))) return null;
-          if (item.moduleKey && modules[item.moduleKey] === false) return null;
+          if (item.moduleKey) {
+            const keys = Array.isArray(item.moduleKey) ? item.moduleKey : [item.moduleKey];
+            if (keys.every(k => modules[k] === false)) return null;
+          }
           return (
             <NavLink
               key={item.to}

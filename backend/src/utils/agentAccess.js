@@ -28,13 +28,4 @@ const erlaubteAgenten = (roleName) => {
   `).all(role.id);
 };
 
-// Darf die Rolle den Panel-Server selbst sehen? Entspricht der Middleware
-// `requireLocalAccess`, die hier nicht greift, weil die Suche mehrere Quellen
-// zugleich abfragt und einzelne davon nur überspringen soll.
-const darfLokal = (roleName) => {
-  const role = db.prepare('SELECT is_admin, hide_local FROM roles WHERE name = ?').get(roleName);
-  if (!role) return false;
-  return !!role.is_admin || !role.hide_local;
-};
-
-module.exports = { canAccessAgent, erlaubteAgenten, darfLokal };
+module.exports = { canAccessAgent, erlaubteAgenten };

@@ -11,11 +11,16 @@ export const AuthProvider = ({ children }) => {
   const [permissions, setPermissions] = useState(() => {
     try { return JSON.parse(localStorage.getItem('permissions')) || []; } catch { return []; }
   });
-  const [hideLocal, setHideLocal] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('hideLocal')) || false; } catch { return false; }
-  });
+  const [modules, setModules] = useState({});
 
   if (token) axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+
+  const loadModules = useCallback(async () => {
+    try {
+      const { data } = await axios.get('/api/settings/modules');
+      setModules(data);
+    } catch {}
+  }, []);
 
   // Beim Start: frische Daten + Permissions vom Server holen
   useEffect(() => {
@@ -32,21 +37,19 @@ export const AuthProvider = ({ children }) => {
         last_login_ip: r.data.last_login_ip,
         last_login_from: r.data.last_login_from,
       };
-      const hl = !!r.data.hideLocal;
       setUser(u);
       setPermissions(r.data.permissions || []);
-      setHideLocal(hl);
       localStorage.setItem('user', JSON.stringify(u));
       localStorage.setItem('permissions', JSON.stringify(r.data.permissions || []));
-      localStorage.setItem('hideLocal', JSON.stringify(hl));
+      loadModules(); // Module laden, wenn Auth erfolgreich
     }).catch(() => {
       // Token abgelaufen / ungültig → ausloggen
       logout();
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [token, loadModules]);
 
-  const saveSession = useCallback((userData, tokenStr, perms = [], hl = false) => {
+  const saveSession = useCallback((userData, tokenStr, perms = []) => {
     const u = {
       id: userData.id,
       username: userData.username,
@@ -61,11 +64,9 @@ export const AuthProvider = ({ children }) => {
     setUser(u);
     setToken(tokenStr);
     setPermissions(perms);
-    setHideLocal(hl);
     localStorage.setItem('token', tokenStr);
     localStorage.setItem('user', JSON.stringify(u));
     localStorage.setItem('permissions', JSON.stringify(perms));
-    localStorage.setItem('hideLocal', JSON.stringify(hl));
     axios.defaults.headers.common['Authorization'] = `Bearer ${tokenStr}`;
   }, []);
 
@@ -74,13 +75,13 @@ export const AuthProvider = ({ children }) => {
     if (data.require2FA) {
       return data;
     }
-    saveSession(data.user, data.token, data.permissions || [], !!data.hideLocal);
+    saveSession(data.user, data.token, data.permissions || []);
     return data;
   }, [saveSession]);
 
   const verify2FA = useCallback(async (tempToken, code) => {
     const { data } = await axios.post('/api/auth/2fa/verify', { tempToken, code });
-    saveSession(data.user, data.token, data.permissions || [], !!data.hideLocal);
+    saveSession(data.user, data.token, data.permissions || []);
     return data;
   }, [saveSession]);
 
@@ -88,11 +89,9 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
     setToken(null);
     setPermissions([]);
-    setHideLocal(false);
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     localStorage.removeItem('permissions');
-    localStorage.removeItem('hideLocal');
     delete axios.defaults.headers.common['Authorization'];
   }, []);
 
@@ -106,10 +105,10 @@ export const AuthProvider = ({ children }) => {
 
   return (
     <AuthContext.Provider value={{
-      user, token, permissions,
+      user, token, permissions, modules, loadModules,
       login, verify2FA, logout, saveSession,
       isAdmin, isOperator, canWrite,
-      hasPermission, hideLocal,
+      hasPermission,
     }}>
       {children}
     </AuthContext.Provider>

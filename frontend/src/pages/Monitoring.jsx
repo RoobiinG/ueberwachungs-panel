@@ -21,9 +21,9 @@ const PANEL_DEFS = [
   { type: 'stat_cards',      label: 'Live-Stats',                needsMetrics: false, defaultW: 3 },
   { type: 'network_live',    label: 'Live-Traffic-Chart',        needsMetrics: false, defaultW: 3 },
   { type: 'network_history', label: 'Netzwerk-Verlauf',          needsMetrics: true,  defaultW: 3 },
-  { type: 'metric_cpu',      label: 'CPU-Verlauf',               needsMetrics: true,  defaultW: 1 },
-  { type: 'metric_mem',      label: 'Arbeitsspeicher-Verlauf',   needsMetrics: true,  defaultW: 1 },
-  { type: 'metric_disk',     label: 'Festplatten-Verlauf',       needsMetrics: true,  defaultW: 1 },
+  { type: 'metric_cpu',      label: 'CPU-Verlauf',               needsMetrics: true,  defaultW: 3 },
+  { type: 'metric_mem',      label: 'Arbeitsspeicher-Verlauf',   needsMetrics: true,  defaultW: 3 },
+  { type: 'metric_disk',     label: 'Festplatten-Verlauf',       needsMetrics: true,  defaultW: 3 },
   { type: 'interfaces',      label: 'Netzwerk-Interfaces',       needsMetrics: false, defaultW: 3 },
 ];
 
@@ -40,9 +40,9 @@ const mkDefault = () => [
   { id: uid(), type: 'stat_cards',      w: 3 },
   { id: uid(), type: 'network_live',    w: 3 },
   { id: uid(), type: 'network_history', w: 3 },
-  { id: uid(), type: 'metric_cpu',      w: 1 },
-  { id: uid(), type: 'metric_mem',      w: 1 },
-  { id: uid(), type: 'metric_disk',     w: 1 },
+  { id: uid(), type: 'metric_cpu',      w: 3 },
+  { id: uid(), type: 'metric_mem',      w: 3 },
+  { id: uid(), type: 'metric_disk',     w: 3 },
   { id: uid(), type: 'interfaces',      w: 3 },
 ];
 
@@ -365,7 +365,7 @@ export default function Monitoring({ liveStats }) {
   const canViewMetrics = isAdmin || hasPermission('metrics.view');
 
   const [servers,    setServers]    = useState([]);
-  const [server,     setServer]     = useState('local');
+  const [server,     setServer]     = useState('');
   const [range,      setRange]      = useState('1h');
   const [metricData, setMetricData] = useState([]);
   const [spanSeconds,setSpanSeconds]= useState(3600);
@@ -393,7 +393,7 @@ export default function Monitoring({ liveStats }) {
 
   const timerRef    = useRef(null);
   const liveDiskRef = useRef(null);  // letzter bekannter Disk-Wert für live-Stream
-  const networkAgentId = server !== 'local' ? server : null;
+  const networkAgentId = server || null;
 
   /* ── Drag & Drop ────────────────────────────────────────── */
   const [dragIdx,     setDragIdx]     = useState(null);
@@ -401,12 +401,18 @@ export default function Monitoring({ liveStats }) {
 
   /* ── Server-Liste ───────────────────────────────────────── */
   useEffect(() => {
-    axios.get('/api/metrics/servers').then(r => setServers(r.data)).catch(() => {});
+    axios.get('/api/metrics/servers')
+      .then(r => {
+        setServers(r.data);
+        if (r.data.length > 0) setServer(r.data[0].id);
+      })
+      .catch(() => {});
   }, []);
 
   /* ── System-Infos (RAM-Total, Disk-Total, CPU-Kerne) ─────── */
   useEffect(() => {
-    const base = server !== 'local' ? `/api/agents/${server}` : '/api';
+    if (!server) return;
+    const base = `/api/agents/${server}`;
     axios.get(`${base}/system/stats`)
       .then(r => setSysInfo(r.data))
       .catch(() => setSysInfo(null));
@@ -437,6 +443,16 @@ export default function Monitoring({ liveStats }) {
       try {
         const r = await axios.get(`/api/agents/${networkAgentId}/network/stats`);
         setRemoteStats(r.data);
+        
+        // Live-History befüllen
+        const t = Math.floor(Date.now() / 1000);
+        const rx = r.data[0]?.rxSec ?? r.data[0]?.rx_sec ?? 0;
+        const tx = r.data[0]?.txSec ?? r.data[0]?.tx_sec ?? 0;
+        setNetHistory(prev => {
+          const next = [...prev, { t, rx, tx }];
+          if (next.length > 60) next.shift(); // 60 Datenpunkte = ~3 Minuten (bei 3s Intervall)
+          return next;
+        });
       } catch {} finally { inflight = false; }
     };
     poll();
@@ -462,62 +478,11 @@ export default function Monitoring({ liveStats }) {
     return () => { clearInterval(id); };
   }, [networkAgentId]);
 
-  /* ── Live-Chart lokal ───────────────────────────────────── */
-  useEffect(() => {
-    if (networkAgentId || !liveStats?.network?.[0]) return;
-    const n = liveStats.network[0];
-    setNetHistory(h => [...h.slice(-59), {
-      t: Math.floor(Date.now() / 1000),
-      rx: Math.round((n.rxSec || 0) / 1024),
-      tx: Math.round((n.txSec || 0) / 1024),
-    }]);
-  }, [liveStats, networkAgentId]);
-
-  /* ── Live-Chart remote ──────────────────────────────────── */
-  useEffect(() => {
-    if (!networkAgentId || !remoteStats?.[0]) return;
-    const n = remoteStats[0];
-    setNetHistory(h => [...h.slice(-59), {
-      t: Math.floor(Date.now() / 1000),
-      rx: Math.round((n.rx_sec || 0) / 1024),
-      tx: Math.round((n.tx_sec || 0) / 1024),
-    }]);
-  }, [remoteStats, networkAgentId]);
-
-  const n0 = networkAgentId ? remoteStats?.[0] : liveStats?.network?.[0];
-
-  /* ── Live-Stream (lokal) — WS-Daten direkt in Chart ─────── */
-  useWSMessage('stats', (msg) => {
-    if (!liveMode || server !== 'local') return;
-    const p   = msg.payload;
-    const ts  = Math.floor(Date.now() / 1000);
-    const cpu = p?.cpu ?? null;
-    const mem = p?.memory ? Math.round(p.memory.usedPercent * 10) / 10 : null;
-    let rxKBs = 0, txKBs = 0;
-    for (const n of (p?.network || [])) {
-      if (n.iface === 'lo') continue;
-      rxKBs += (n.rxSec || 0) / 1024;
-      txKBs += (n.txSec || 0) / 1024;
-    }
-    const point = {
-      t: ts, cpu, mem,
-      disk: liveDiskRef.current,
-      net_rx: Math.round(rxKBs * 100) / 100,
-      net_tx: Math.round(txKBs * 100) / 100,
-    };
-    startTransition(() => {
-      setMetricData(prev => {
-        const cutoff = ts - 180; // 3 Minuten Rolling-Window im Live-Modus
-        return [...prev.filter(p => p.t >= cutoff), point];
-      });
-      setSpanSeconds(180);
-      setLastUpdate(new Date());
-    });
-  });
+  const n0 = remoteStats?.[0];
 
   /* ── Metriken laden ─────────────────────────────────────── */
   const loadMetrics = useCallback(async (silent = false) => {
-    if (!canViewMetrics) return;
+    if (!canViewMetrics || !server) return;
     if (!silent) setLoading(true);
     try {
       let url, span;
@@ -547,35 +512,29 @@ export default function Monitoring({ liveStats }) {
   const clearTimer = () => { clearInterval(timerRef.current); timerRef.current = null; };
 
   useEffect(() => {
-    if (!canViewMetrics) return;
+    if (!canViewMetrics || !server) return;
     clearTimer();
 
     if (liveMode) {
-      if (server === 'local') {
-        // Lokal: WS-Stream übernimmt, nur einmal initialen Schnappschuss laden
-        setMetricData([]); setSpanSeconds(180);
-        loadMetrics(true);
-      } else {
-        // Remote: 5s API-Polling der letzten 5min (weniger Last, ausreichend für Live-Ansicht)
-        let inflightLive = false;
-        const fetchLive = async () => {
-          if (inflightLive) return;
-          inflightLive = true;
-          try {
-            const now  = Math.floor(Date.now() / 1000);
-            const { data: res } = await axios.get(`/api/metrics?from=${now - 300}&to=${now}&server=${server}`);
-            startTransition(() => {
-              const rows = res.rows || [];
-              rows.forEach(r => { if (r.disk != null) liveDiskRef.current = r.disk; });
-              setMetricData(rows);
-              setSpanSeconds(300);
-              setLastUpdate(new Date());
-            });
-          } catch {} finally { inflightLive = false; }
-        };
-        fetchLive();
-        timerRef.current = setInterval(fetchLive, 5_000); // war 1s → jetzt 5s
-      }
+      // 5s API-Polling der letzten 5min (ausreichend für Live-Ansicht)
+      let inflightLive = false;
+      const fetchLive = async () => {
+        if (inflightLive) return;
+        inflightLive = true;
+        try {
+          const now  = Math.floor(Date.now() / 1000);
+          const { data: res } = await axios.get(`/api/metrics?from=${now - 300}&to=${now}&server=${server}`);
+          startTransition(() => {
+            const rows = res.rows || [];
+            rows.forEach(r => { if (r.disk != null) liveDiskRef.current = r.disk; });
+            setMetricData(rows);
+            setSpanSeconds(300);
+            setLastUpdate(new Date());
+          });
+        } catch {} finally { inflightLive = false; }
+      };
+      fetchLive();
+      timerRef.current = setInterval(fetchLive, 5_000);
     } else {
       setLoading(true); setMetricData([]);
       loadMetrics();
@@ -684,15 +643,11 @@ export default function Monitoring({ liveStats }) {
 
     switch (panel.type) {
       case 'stat_cards': {
-        const isRemote = !!networkAgentId;
+        // CPU
+        const cpu = remoteLive?.cpu?.usage ?? null;
 
-        // CPU — Remote: aus remoteLive, Lokal: aus WebSocket
-        const cpu = isRemote
-          ? (remoteLive?.cpu?.usage ?? null)
-          : (liveStats?.cpu ?? null);
-
-        // RAM — Remote: aus remoteLive, Lokal: aus WebSocket
-        const memObj = isRemote ? remoteLive?.memory : liveStats?.memory;
+        // RAM
+        const memObj = remoteLive?.memory;
         const mem    = memObj ? Math.round(memObj.usedPercent) : null;
         const ramUsed  = fmtBytes(memObj?.used);
         const ramTotal = fmtBytes(memObj?.total);
@@ -705,8 +660,8 @@ export default function Monitoring({ liveStats }) {
         const rx = n0 ? Math.round((n0.rxSec ?? n0.rx_sec ?? 0)) : null;
         const tx = n0 ? Math.round((n0.txSec ?? n0.tx_sec ?? 0)) : null;
 
-        // Disk — Remote: aus remoteLive, Lokal: aus sysInfo
-        const diskArr  = isRemote ? remoteLive?.disk : sysInfo?.disk;
+        // Disk
+        const diskArr  = remoteLive?.disk;
         const rootDisk = diskArr?.find(d => d.mount === '/') ?? diskArr?.[0];
         const diskPct  = rootDisk ? Math.round(rootDisk.usedPercent) : null;
         const diskUsed = fmtBytes(rootDisk?.used);
@@ -909,7 +864,7 @@ export default function Monitoring({ liveStats }) {
         {liveMode
           ? <span className="text-[10px] text-red-400/70 flex items-center gap-1">
               <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
-              {server === 'local' ? 'WS-Stream aktiv' : '1s Polling aktiv'}
+              1s Polling aktiv
             </span>
           : lastUpdate && !loading && (
               <span className="text-[10px] text-gray-600">

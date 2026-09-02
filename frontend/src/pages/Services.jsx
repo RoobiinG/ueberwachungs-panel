@@ -7,9 +7,9 @@ import { RefreshCw, Play, Square, RotateCcw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function Services() {
-  const { canWrite, hideLocal } = useAuth();
+  const { canWrite } = useAuth();
 
-  const [selectedServer, setSelectedServer] = useState(null); // null = lokal
+  const [selectedServer, setSelectedServer] = useState(null);
   const [services, setServices] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [filter,   setFilter]   = useState('');
@@ -17,11 +17,10 @@ export default function Services() {
   const [actBusy,  setActBusy]  = useState({});
 
   const load = async (silent = false) => {
+    if (!selectedServer) return;
     if (!silent) setLoading(true);
     try {
-      const url = selectedServer
-        ? `/api/agents/${selectedServer}/services`
-        : '/api/services';
+      const url = `/api/agents/${selectedServer}/services`;
       const { data } = await axios.get(url);
       setServices(data);
     } catch {
@@ -31,21 +30,18 @@ export default function Services() {
   };
 
   useEffect(() => {
-    // Warte auf Auto-Select wenn lokaler Zugriff ausgeblendet ist
-    if (hideLocal && selectedServer === null) return;
+    if (!selectedServer) return;
     setServices([]);
     setActError('');
     load();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedServer, hideLocal]);
+  }, [selectedServer]);
 
   const act = async (name, action) => {
     setActError('');
     setActBusy(b => ({ ...b, [name]: action }));
     try {
-      const url = selectedServer
-        ? `/api/agents/${selectedServer}/services/${encodeURIComponent(name)}/${action}`
-        : `/api/services/${encodeURIComponent(name)}/${action}`;
+      const url = `/api/agents/${selectedServer}/services/${encodeURIComponent(name)}/${action}`;
       await axios.post(url);
       await load(true);
     } catch (err) {

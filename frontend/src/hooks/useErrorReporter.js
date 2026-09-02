@@ -79,12 +79,18 @@ export function useErrorReporter() {
           const errMsg  = error.response?.data?.error
                        ?? error.response?.data?.message
                        ?? error.message;
-          report(
-            'API',
-            `${method} ${url} → ${status ? `HTTP ${status}` : 'Netzwerkfehler'}: ${errMsg}`,
-            null,
-            url,
-          );
+
+          // Absichtlich fehlende Konfiguration (z. B. ungenutzte Module) nicht global als "Panel-Fehler" loggen
+          const isConfigError = /nicht konfiguriert/i.test(errMsg);
+          
+          if (!isConfigError) {
+            report(
+              'API',
+              `${method} ${url} → ${status ? `HTTP ${status}` : 'Netzwerkfehler'}: ${errMsg}`,
+              null,
+              url,
+            );
+          }
         }
         return Promise.reject(error);
       },

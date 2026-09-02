@@ -16,6 +16,61 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [6.1.1.7] - 2026-09-02 (Build 351) — *Agent Only Architecture (Hotfix 7)*
+
+- **Bugfix (Frontend-Polling):** Das Dashboard fragt im Hintergrund nicht mehr stumpf alle Dienste ab (Hetzner, PatchMon, Uptime Kuma), wenn diese in den Einstellungen deaktiviert wurden.
+- **Bugfix (Panel-Log Bereinigung):** Der globale Frontend-Error-Catcher ignoriert nun "nicht konfiguriert"-Meldungen und `502 Bad Gateway` Fehler ungenutzter Schnittstellen. Dadurch entstehen keine falschen Alarmierungen ("rote Badges") mehr, wenn z. B. Dockhand oder Hetzner bewusst deaktiviert sind.
+- **Verbesserung (Globaler State):** Der `AuthContext` ruft nun einmalig nach dem Login die aktiven System-Module vom Backend (`/api/settings/modules`) ab und stellt sie allen Ansichten (Sidebar, Dashboard, Settings) synchron zur Verfügung.
+
+**System-Auswirkungen & Nachwirken (Impact Analysis)**
+- **Datenbank & Panel:** Keine Schema-Änderung. Das Audit-Log und die Panel-Logs füllen sich künftig langsamer, da absichtliche Konfigurationslücken nicht mehr gemeldet werden.
+- **Agenten:** Keine Änderung.
+
+## [6.1.1.6] - 2026-09-02 (Build 350) — *Agent Only Architecture (Hotfix 6)*
+
+### 🧹 Refactoring
+- **Codebase:** Einige nicht mehr verwendete Variablen und Importe (`localEnvId`, `dockerSocket`) in `dockerQuellen.js` wurden entfernt, um Build-Fehler der CI (GitHub Actions Linter) zu beheben, die nach dem Entfernen der alten lokalen Architektur übrig geblieben waren.
+
+## [6.1.1.5] - 2026-09-02 (Build 349) — *Agent Only Architecture (Hotfix 5)*
+
+### 🐛 Bugfixes
+- **Sidebar:** Der Menüpunkt "Hosting-Provider" verschwindet nun wieder zuverlässig, wenn sowohl Hetzner als auch MC-Host24 deaktiviert sind. Zuvor verhinderte ein falscher interner Modul-Schlüssel (mchost24 statt mchost), dass das System die Deaktivierung richtig erkannte.
+
+## [6.1.1.4] - 2026-09-02 (Build 348) — *Agent Only Architecture (Hotfix 4)*
+
+### 🐛 Bugfixes
+- **UI:** Im Monitoring-Dashboard wurde der Live-Traffic Graph gefixt, der nach dem Architektur-Umbau stellenweise in einem "Warte auf Daten..." Zustand hängen blieb.
+- **UI:** Die drei kleinen System-Metriken (CPU, RAM, Festplatte) im Monitoring wurden im Standardlayout vergrößert und nutzen nun die volle Breite, analog zum Netzwerk-Graphen.
+
+## [6.1.1.3] - 2026-09-02 (Build 347) — *Agent Only Architecture (Hotfix 3)*
+
+### 🧹 Refactoring
+- **Architektur:** Letzte Rest-Fragmente der obsoleten lokalen Berechtigungsstruktur (`hide_local`, `darfLokal`) sowie die direkten lokalen Docker-Socket Abfragen wurden tief im Backend (Docker-Suche und Agent-Access) final ausgebaut. Die "Agent-Only" Architektur ist nun 100% konsistent.
+
+## [6.1.1.2] - 2026-09-02 (Build 346) — *Agent Only Architecture (Hotfix 2)*
+
+### 🐛 Bugfixes
+- **Monitoring:** Ein verbleibendes Fragment der alten lokalen Architektur im Backend (`metrics.js`) wurde entfernt, welches dazu führte, dass ein Dummy-Eintrag "Panel (lokal)" in der Serverliste generiert wurde, obwohl der lokale Host-Agent jetzt regulär über die Agentenliste verwaltet wird.
+
+## [6.1.1.1] - 2026-09-02 (Build 345) — *Agent Only Architecture (Hotfix)*
+
+### 🐛 Bugfixes
+- **Sidebar:** Das Hosting-Provider Menü wird nun korrekt ausgeblendet, wenn sowohl Hetzner als auch MC-Host24 deaktiviert sind.
+- **Monitoring:** Ein Fehler wurde behoben, durch den die Metriken-Übersicht ("Live-Stats", "Netzwerk") "Keine Daten" anzeigte. Der Datenfluss für den lokalen Panel-Server wurde vollständig an die neue reine Remote-Agent Architektur (API-Polling statt lokaler WebSocket) angepasst.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Monitoring-Verhalten:** WebSocket-Statistiken für den lokalen Node-Prozess werden nicht länger gepollt. Auch für den Panel-Server selbst fragt das Dashboard nun alle 5 Sekunden den Agent-Endpunkt (`/api/agents/:id/system/stats`) per HTTP ab, wie bei jedem anderen Server auch.
+
+## [6.1.1.0] - 2026-09-02 (Build 344) — *Agent Only Architecture*
+
+### ✨ Features
+- **Agent Only Architecture:** Der lokale Server (Panel-Server) wird nun vollständig wie ein normaler Remote-Agent behandelt. Alle speziellen lokalen Fallbacks und Abfragen (`hideLocal`) wurden aus der Benutzeroberfläche und den Auth-APIs entfernt.
+- **Cron-Job Verwaltung:** Die Cron-Job UI wurde überarbeitet. Anstelle von reinen Text-Strings gibt es nun ein Dropdown für den Rhythmus (z. B. Täglich, Wöchentlich) und eine native Zeit-Auswahl (Timepicker) für den genauen Startzeitpunkt.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Kompatibilität:** Rollen-Berechtigungen rund um `hideLocal` (Lokaler Server) sind entfallen, da der Host-Server nun über die Standard-Agent-Verwaltung berechtigt wird.
+- **Datenbank:** Das Feld `hide_local` wird nicht länger abgefragt und aus `roles` bei zukünftigen Instanzen ignoriert bzw. entfernt. Keine aktive manuelle Migration notwendig.
+
 ## [6.1.0.3] - 2026-08-28 (Build 343) — *Agenten-Edit Fix*
 
 ### 🐛 Bugfixes

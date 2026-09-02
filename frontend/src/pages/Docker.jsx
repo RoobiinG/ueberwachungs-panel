@@ -33,11 +33,11 @@ const fmtBytes = (b) => {
 // ─── Haupt-Komponente ─────────────────────────────────────────────────────────
 
 export default function Docker() {
-  const { canWrite, hideLocal, hasPermission, isAdmin } = useAuth();
+  const { canWrite, hasPermission, isAdmin } = useAuth();
   const canLabel = isAdmin || hasPermission('docker.label');
   const canLogs  = isAdmin || hasPermission('docker.logs');
 
-  const [selectedServer, setSelectedServer] = useState(null); // null = lokal
+  const [selectedServer, setSelectedServer] = useState(null);
   const [containers, setContainers]         = useState([]);
   const [loading, setLoading]               = useState(true);
   const [busy, setBusy]                     = useState({});
@@ -85,12 +85,11 @@ export default function Docker() {
   // ── Container laden ────────────────────────────────────────────────────────
 
   const load = useCallback(async () => {
+    if (!selectedServer) return;
     setLoading(true);
     setError('');
     try {
-      const url = selectedServer
-        ? `/api/agents/${selectedServer}/docker/containers`
-        : '/api/docker/containers';
+      const url = `/api/agents/${selectedServer}/docker/containers`;
       const { data } = await axios.get(url);
       setContainers(data);
     } catch (err) {
@@ -100,7 +99,8 @@ export default function Docker() {
   }, [selectedServer]);
 
   const loadLabels = useCallback(async () => {
-    const srv = selectedServer ? String(selectedServer) : 'local';
+    if (!selectedServer) return;
+    const srv = String(selectedServer);
     try {
       const { data } = await axios.get(`/api/docker/labels?server=${encodeURIComponent(srv)}`);
       setLabels(data);
@@ -118,7 +118,7 @@ export default function Docker() {
   }, []);
 
   useEffect(() => {
-    if (hideLocal && selectedServer === null) return;
+    if (!selectedServer) return;
     setContainers([]);
     setStatsMap({});
     setEditingLabel(null);
@@ -126,7 +126,7 @@ export default function Docker() {
     loadLabels();
     loadPelican();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedServer, hideLocal]);
+  }, [selectedServer]);
 
   // Kann dieser Agent überhaupt eine Konsole anbieten? Fehlen ihm `ws`/`node-pty`, soll der
   // Menüeintrag den Grund nennen, statt in einen Verbindungsfehler zu laufen.
@@ -165,12 +165,11 @@ export default function Docker() {
   // gleichzeitig zu — bei zehn Containern zog sich das über zehn Sekunden und begann alle
   // acht Sekunden von vorn. Das Bündeln übernimmt jetzt der Server.
   const pollStats = useCallback(async (clist) => {
+    if (!selectedServer) return;
     const running = clist.filter(c => c.state === 'running');
     if (!running.length) return;
 
-    const url = selectedServer
-      ? `/api/agents/${selectedServer}/docker/stats`
-      : '/api/docker/stats';
+    const url = `/api/agents/${selectedServer}/docker/stats`;
 
     let daten;
     try {
@@ -212,7 +211,8 @@ export default function Docker() {
   };
 
   const saveLabel = async (cid) => {
-    const server = selectedServer ? String(selectedServer) : 'local';
+    if (!selectedServer) return;
+    const server = String(selectedServer);
     try {
       await axios.put('/api/docker/labels', {
         server,
@@ -236,11 +236,10 @@ export default function Docker() {
   };
 
   const fetchLogs = async (cid, tail = 200) => {
+    if (!selectedServer) return;
     setLogsLoading(p => ({ ...p, [cid]: true }));
     try {
-      const url = selectedServer
-        ? `/api/agents/${selectedServer}/docker/containers/${cid}/logs?tail=${tail}`
-        : `/api/docker/containers/${cid}/logs?tail=${tail}`;
+      const url = `/api/agents/${selectedServer}/docker/containers/${cid}/logs?tail=${tail}`;
       const { data } = await axios.get(url);
       // Logs können als Array oder String kommen
       const text = Array.isArray(data) ? data.join('\n') : (typeof data === 'string' ? data : JSON.stringify(data));
@@ -258,17 +257,17 @@ export default function Docker() {
   // Remote-Server laufen über ihren Panel-Agent, Container auf dem Panel-Server
   // selbst direkt über dessen Docker-Installation.
   const openTerminal = (c) => {
-    setTerminalState({ server: selectedServer || 'local', containerId: c.id, containerName: c.name });
+    if (!selectedServer) return;
+    setTerminalState({ server: selectedServer, containerId: c.id, containerName: c.name });
   };
 
   // ── Aktionen (Start/Stop/Restart) ─────────────────────────────────────────
 
   const act = async (cid, action) => {
+    if (!selectedServer) return;
     setBusy(b => ({ ...b, [cid]: action }));
     try {
-      const url = selectedServer
-        ? `/api/agents/${selectedServer}/docker/containers/${cid}/${action}`
-        : `/api/docker/containers/${cid}/${action}`;
+      const url = `/api/agents/${selectedServer}/docker/containers/${cid}/${action}`;
       await axios.post(url);
       await load();
     } catch {}
@@ -307,7 +306,7 @@ export default function Docker() {
   // Sprung vom Treffer zum Container: Server wechseln, Suche schließen und die Zeile
   // kurz hervorheben — sonst sucht man sie in einer langen Liste erneut.
   const zumTreffer = (t) => {
-    setSelectedServer(t.serverId === 'local' ? null : t.serverId);
+    setSelectedServer(t.serverId);
     setSuche('');
     setHervorheben(t.id);
     setTimeout(() => setHervorheben(null), 4000);
@@ -407,16 +406,7 @@ export default function Docker() {
         </Card>
       )}
 
-      {/* Der lokale Panel-Server wird für Listen und Aktionen über Dockhand bedient.
-          Die Konsole läuft dort seit v5.7.0.0 direkt über die Docker-Installation. */}
-      {!selectedServer && (
-        <p className="text-[11px] text-panel-muted flex items-center gap-1.5">
-          <Info size={11} className="flex-shrink-0" />
-          Container des lokalen Panel-Servers laufen über Dockhand Pro — die Einstellung
-          „Docker Verwaltung" gilt nur für Remote-Server. Die Konsole spricht hier direkt
-          die Docker-Installation dieses Servers an.
-        </p>
-      )}
+
 
       {error && (
         <div className="bg-panel-orange/10 border border-panel-orange/30 text-panel-orange text-sm rounded-md px-3 py-2">
@@ -603,9 +593,7 @@ export default function Docker() {
                             ? 'Die Module ws und node-pty werden gerade auf diesem Server installiert. Das dauert einige Minuten; danach steht die Konsole bereit.'
                             : terminalFehlt
                               ? 'Auf diesem Server fehlen dem Agenten die Module ws und node-pty. Das Panel rüstet sie beim nächsten Start selbst nach — oder von Hand: cd /opt/panel-agent && npm install --save ws node-pty && systemctl restart panel-agent'
-                              : selectedServer
-                                ? 'Terminal im Panel, über den Panel-Agent'
-                                : 'Terminal im Panel, direkt über die Docker-Installation dieses Servers',
+                              : 'Terminal im Panel, über den Panel-Agent',
                         },
                         canLabel && {
                           icon: Tag,

@@ -432,12 +432,10 @@ function AddWidgetModal({ isOpen, onClose, onAdd, serverKeys, serverName }) {
   const [selectedType, setSelectedType] = useState('multi_server_comp');
   const [title, setTitle]               = useState('Server-Vergleich (CPU)');
   const [selectedServers, setSelectedServers] = useState([]);
-  const [singleServer, setSingleServer] = useState(serverKeys[0] || 'local');
+  const [singleServer, setSingleServer] = useState(serverKeys[0]);
   const [metric, setMetric]             = useState('cpu');
 
-  // Vorauswahl nur beim Öffnen setzen. `serverKeys` ist bei jedem Render der Startseite ein
-  // neues Array — als Abhängigkeit lief der Effekt dadurch ständig und hat eine vom Benutzer
-  // geleerte Auswahl sofort wieder mit den ersten beiden Servern gefüllt.
+  // Vorauswahl nur beim Öffnen setzen.
   useEffect(() => {
     if (!isOpen) return;
     setSelectedServers(prev => (prev.length ? prev : serverKeys.slice(0, 2)));
@@ -585,10 +583,8 @@ function AddWidgetModal({ isOpen, onClose, onAdd, serverKeys, serverName }) {
 
 export default function Dashboard({ liveStats }) {
   const navigate  = useNavigate();
-  const { hideLocal } = useAuth();
   const liveInterval = useLiveInterval();
 
-  const [localInfo,   setLocalInfo]   = useState(null);
   const [agents,      setAgents]      = useState([]);
   const [agentStats,  setAgentStats]  = useState({});   // { [id]: stats }
   const [agentOnline, setAgentOnline] = useState({});   // { [id]: bool }
@@ -608,26 +604,34 @@ export default function Dashboard({ liveStats }) {
 
   // ── Initial-Daten ──────────────────────────────────────────────────────────
   useEffect(() => {
-    axios.get('/api/system/stats').then(r => setLocalInfo(r.data)).catch(() => {});
     // Auch im Fehlerfall als "geladen" markieren — sonst bliebe das Layout dauerhaft gesperrt
     axios.get('/api/agents')
       .then(r => setAgents(r.data))
       .catch(() => {})
       .finally(() => { agentsRef.current = true; setAgentsGeladen(true); });
+      
     // PatchMon-Gesamtübersicht (fail-soft — nicht konfiguriert = Kachel ausblenden)
-    axios.get('/api/patchmon/hosts').then(r => setPatchmonHosts(r.data.hosts || [])).catch(() => setPatchmonHosts([]));
-  }, []);
+    if (modules.patchmon !== false) {
+      axios.get('/api/patchmon/hosts').then(r => setPatchmonHosts(r.data.hosts || [])).catch(() => setPatchmonHosts([]));
+    } else {
+      setPatchmonHosts([]);
+    }
+  }, [modules.patchmon]);
 
   // ── Hetzner Storage Boxes (fail-soft, alle 60s) ─────────────────────────────
   useEffect(() => {
     // Bei einem Fehlschlag den letzten bekannten Stand behalten statt auf leer zu setzen —
     // ein kurzer Aussetzer der Hetzner-API darf die Kachel nicht aus dem Layout werfen.
+    if (modules.hetzner === false) {
+      setHetznerBoxes([]);
+      return;
+    }
     const load = () => axios.get('/api/hetzner/storage_boxes')
       .then(r => setHetznerBoxes(r.data.boxes || [])).catch(() => {});
     load();
     const t = setInterval(load, 60_000);
     return () => clearInterval(t);
-  }, []);
+  }, [modules.hetzner]);
 
   // ── Remote-Agent-Stats pollen ──────────────────────────────────────────────
   const pollAgents = useCallback((list) => {
@@ -653,7 +657,7 @@ export default function Dashboard({ liveStats }) {
 
   // ── Verlaufs-Historie für Mini-Charts (echte Metriken, alle 30s) ────────────
   const loadHistories = useCallback(async () => {
-    const targets = [...(hideLocal ? [] : ['local']), ...agents.map(a => String(a.id))];
+    const targets = agents.map(a => String(a.id));
     if (targets.length === 0) return;
     const results = await Promise.all(targets.map(key =>
       axios.get(`/api/metrics?range=15m&server=${key}`)
@@ -665,7 +669,7 @@ export default function Dashboard({ liveStats }) {
       for (const [key, data] of results) if (data) next[key] = data;
       return next;
     });
-  }, [agents, hideLocal]);
+  }, [agents]);
 
   useEffect(() => {
     loadHistories();
@@ -685,16 +689,20 @@ export default function Dashboard({ liveStats }) {
   // ── Status-Panel (Uptime-Kuma + Firewall), fail-soft, alle 60s ──────────────
   useEffect(() => {
     const load = () => {
-      axios.get('/api/uptime-kuma/monitors')
-        .then(r => { const m = r.data.monitors || []; setUptime({ up: m.filter(x => x.status === 1).length, total: m.length }); })
-        .catch(() => setUptime(null));
+      if (modules.uptimekuma !== false) {
+        axios.get('/api/uptime-kuma/monitors')
+          .then(r => { const m = r.data.monitors || []; setUptime({ up: m.filter(x => x.status === 1).length, total: m.length }); })
+          .catch(() => setUptime(null));
+      } else {
+        setUptime(null);
+      }
       axios.get('/api/firewall/status')
         .then(r => setFirewall({ active: !!r.data.active })).catch(() => setFirewall(null));
     };
     load();
     const t = setInterval(load, 60_000);
     return () => clearInterval(t);
-  }, []);
+  }, [modules.uptimekuma]);
 
   // ── Gespeichertes Widget-Layout laden (nur echtes RGL-Format) ───────────────
   useEffect(() => {
@@ -710,21 +718,10 @@ export default function Dashboard({ liveStats }) {
       .finally(() => { readyRef.current = true; });
   }, []);
 
-  // ── Lokaler Server: Live-Stats einmischen ──────────────────────────────────
-  const localCpu    = liveStats?.cpu ?? localInfo?.cpu?.usage ?? 0;
-  const localMemPct = liveStats?.memory?.usedPercent ?? localInfo?.memory?.usedPercent ?? 0;
-  const localStats  = localInfo
-    ? {
-        ...localInfo,
-        cpu:    { ...localInfo.cpu,    usage: localCpu },
-        memory: { ...localInfo.memory, usedPercent: localMemPct },
-      }
-    : null;
-
   // ── Zusammenfassung ────────────────────────────────────────────────────────
-  const totalServers  = (hideLocal ? 0 : 1) + agents.length;
+  const totalServers  = agents.length;
   const onlineRemote  = Object.values(agentOnline).filter(Boolean).length;
-  const totalOnline   = onlineRemote + (hideLocal ? 0 : 1);
+  const totalOnline   = onlineRemote;
   const totalContainerRunning = Object.values(agentDocker)
     .flat()
     .filter(c => c?.state === 'running').length;
@@ -739,7 +736,6 @@ export default function Dashboard({ liveStats }) {
 
   // ── KPI-Kennzahlen ──────────────────────────────────────────────────────────
   const onlineStats = [
-    ...(hideLocal || !localStats ? [] : [{ cpu: localCpu, mem: localMemPct }]),
     ...agents.filter(a => agentOnline[a.id]).map(a => ({
       cpu: agentStats[a.id]?.cpu?.usage ?? 0,
       mem: agentStats[a.id]?.memory?.usedPercent ?? 0,
@@ -761,7 +757,7 @@ export default function Dashboard({ liveStats }) {
   })();
 
   // ── Frei anordbares Layout (react-grid-layout) ──────────────────────────────
-  const serverKeys = [...(hideLocal ? [] : ['local']), ...agents.map(a => String(a.id))];
+  const serverKeys = agents.map(a => String(a.id));
   const hasStorage = hetznerBoxes.length > 0;
   const gridLayout = useMemo(
     () => reconcileRgl(rgl ?? mkDefaultRgl(serverKeys, hasStorage), serverKeys, hasStorage, agentsGeladen),
@@ -814,7 +810,7 @@ export default function Dashboard({ liveStats }) {
     axios.put('/api/dashboard/home-layout', { layout: next }).catch(() => {});
   };
 
-  const serverName = (key) => (key === 'local' ? 'Panel-Server' : (agents.find(a => String(a.id) === key)?.name || 'Server'));
+  const serverName = (key) => agents.find(a => String(a.id) === key)?.name || 'Server';
 
   // Inhalt eines Widgets (füllt die Höhe der Kachel)
   const widgetContent = (id) => {
@@ -906,9 +902,6 @@ export default function Dashboard({ liveStats }) {
     );
     if (id.startsWith('server:')) {
       const k = id.slice(7);
-      if (k === 'local') return (
-        <ServerCard name="Panel-Server" stats={localStats} online={true} isLocal={true} docker={null} history={histories.local} />
-      );
       const a = agents.find(x => String(x.id) === k);
       if (!a) return <div className="h-full bg-panel-card border border-panel-border/70 rounded-2xl" />;
       return (
@@ -1007,10 +1000,9 @@ export default function Dashboard({ liveStats }) {
     }
 
     if (cType === 'gauge_tile') {
-      const sid = item.serverId || 'local';
+      const sid = item.serverId;
       let pct = 0;
-      if (sid === 'local') pct = localCpu;
-      else pct = agentStats[sid]?.cpu?.usage ?? 0;
+      pct = agentStats[sid]?.cpu?.usage ?? 0;
       pct = Math.round(pct);
       const gaugeColor = pct >= 90 ? '#ef4444' : pct >= 75 ? '#f97316' : '#3fb950';
       const radius = 38;

@@ -5,7 +5,6 @@ const compression = require('compression');
 const http        = require('http');
 const path        = require('path');
 const auth               = require('./middleware/auth');
-const requireLocalAccess = require('./middleware/requireLocalAccess');
 const { setup: setupWS } = require('./websocket');
 
 // ─── Startup-Sicherheitscheck ────────────────────────────────────────────────
@@ -93,18 +92,10 @@ try {
   app.use('/api/passkeys', auth, passkeyRouter);
 } catch (e) { console.warn('Passkey-Route übersprungen:', e.message); }
 // Docker-Labels: panel-seitig in SQLite, kein lokaler Docker-Zugriff nötig
-// Muss VOR /api/docker gemountet sein, damit requireLocalAccess nicht greift
 app.use('/api/docker/labels', auth, require('./routes/dockerLabels'));
 // Die serverübergreifende Suche ebenso: Sie betrifft alle Server, nicht den lokalen.
-// Rollen mit `hide_local` sollen dabei den Panel-Server auslassen — nicht die ganze
-// Suche verweigert bekommen. Die Rechteprüfung macht der Router selbst.
 app.use('/api/docker/search', auth, require('./routes/dockerSuche'));
-// Lokaler Server — hide_local wird jetzt auch backend-seitig durchgesetzt
-app.use('/api/system',  auth, requireLocalAccess, require('./routes/system'));
-app.use('/api/docker',  auth, requireLocalAccess, require('./routes/docker'));
-app.use('/api/services',auth, requireLocalAccess, require('./routes/services'));
-app.use('/api/firewall',auth, requireLocalAccess, require('./routes/firewall'));
-app.use('/api/network', auth, requireLocalAccess, require('./routes/network'));
+
 app.use('/api/users', auth, require('./routes/users'));
 app.use('/api/roles', auth, require('./routes/roles'));
 app.use('/api/webhooks', auth, require('./routes/webhooks'));
@@ -113,7 +104,6 @@ app.use('/api/mchost', auth, require('./routes/mchost'));
 app.use('/api/settings', auth, require('./routes/settings'));
 app.use('/api/backups',  auth, require('./routes/backups'));
 app.use('/api/agents',  auth, require('./routes/agents'));
-app.use('/api/cron',    auth, requireLocalAccess, require('./routes/cron'));
 app.use('/api/metrics',    auth, require('./routes/metrics'));    // Kein requireLocalAccess: Daten kommen aus lokaler SQLite (auch Remote-Agent-Daten)
 app.use('/api/dashboard',  auth, require('./routes/dashboard'));
 app.use('/api/uptime-kuma', auth, require('./routes/uptimeKuma'));
@@ -145,25 +135,19 @@ app.get(/^(?!\/api).*/, (req, res) => {
   res.sendFile(path.join(frontendDist, 'index.html'));
 });
 
-require('./metricsCache').start();     // Muss VOR websocket + metricsRecorder starten
 setupWS(server);
 
 // ─── Terminal-WebSocket ───────────────────────────────────────────────────────
-// Zwei Wege, gleiche Bedienung:
-//   /api/agents/:id/docker/containers/:cid/terminal → weitergereicht an den Panel-Agent
-//   /api/docker/containers/:cid/terminal            → Container auf dem Panel-Server
-//                                                     selbst, direkt über die Docker-Engine
-// Einmal-Ticket, Rechteprüfung und Audit-Eintrag sind für beide Wege identisch.
+// Ausschließlich über Remote-Agenten:
+//   /api/agents/:id/docker/containers/:cid/terminal
 const WebSocket = require('ws');
 const { getPermissions }         = require('./middleware/requirePermission');
 const { canAccessAgent }         = require('./utils/agentAccess');
 const { checkServerIdentityFor } = require('./utils/agentTls');
 const { auditLog }               = require('./utils/audit');
 const terminalTickets            = require('./utils/terminalTickets');
-const dockerSocket               = require('./utils/dockerSocket');
 
 const PFAD_AGENT = /^\/api\/agents\/(\d+)\/docker\/containers\/(.+)\/terminal$/;
-const PFAD_LOKAL = /^\/api\/docker\/containers\/(.+)\/terminal$/;
 
 server.on('upgrade', (request, socket, head) => {
   if (!request.url.includes('/terminal')) return;
@@ -177,11 +161,10 @@ server.on('upgrade', (request, socket, head) => {
 
   const url    = new URL(request.url, 'http://' + request.headers.host);
   const agentM = url.pathname.match(PFAD_AGENT);
-  const lokalM = agentM ? null : url.pathname.match(PFAD_LOKAL);
-  if (!agentM && !lokalM) return;   // kein Terminal-Pfad → nicht unsere Zuständigkeit
+  if (!agentM) return;   // kein Terminal-Pfad → nicht unsere Zuständigkeit
 
-  const agentId     = agentM ? agentM[1] : 'local';
-  const containerId = agentM ? agentM[2] : lokalM[1];
+  const agentId     = agentM[1];
+  const containerId = agentM[2];
 
   // Authentifizierung über ein Einmal-Ticket, das zuvor per regulärer API geholt wurde.
   // So landet kein Session-JWT in den Access-Logs des Reverse Proxy.
@@ -200,48 +183,6 @@ server.on('upgrade', (request, socket, head) => {
     if (!getPermissions(user.role).includes('docker.control')) return deny(403, 'Forbidden');
 
     request.user = user;   // für auditLog
-
-    // ── Container auf dem Panel-Server selbst ────────────────────────────────
-    if (!agentM) {
-      dockerSocket.konsoleOeffnen(containerId).then(({ strom, execId }) => {
-        auditLog(request, 'docker.terminal.open', 'container', containerId, { server: 'local' });
-
-        const wssTerm = new WebSocket.Server({ noServer: true });
-        wssTerm.handleUpgrade(request, socket, head, (clientWs) => {
-          clientWs.on('message', (daten, isBinary) => {
-            // Größenangaben kommen als JSON-Text, alles andere ist Tastatureingabe.
-            if (!isBinary) {
-              const text = daten.toString();
-              if (text.startsWith('{')) {
-                try {
-                  const { cols, rows } = JSON.parse(text);
-                  if (cols && rows) return dockerSocket.groesseAendern(execId, cols, rows);
-                } catch { /* kein JSON → als Eingabe behandeln */ }
-              }
-            }
-            if (!strom.destroyed) strom.write(daten);
-          });
-
-          strom.on('data', (d) => {
-            if (clientWs.readyState === WebSocket.OPEN) clientWs.send(d, { binary: false });
-          });
-
-          const keepAlive = setInterval(() => {
-            try { if (clientWs.readyState === WebSocket.OPEN) clientWs.ping(); } catch {}
-          }, 30000);
-          const stop = () => { clearInterval(keepAlive); try { strom.destroy(); } catch {} };
-
-          strom.on('close', () => { stop(); try { clientWs.close(); } catch {} });
-          strom.on('error', () => { stop(); try { clientWs.close(); } catch {} });
-          clientWs.on('close', stop);
-          clientWs.on('error', stop);
-        });
-      }).catch((err) => {
-        console.warn('[Terminal] Lokale Konsole nicht möglich:', err.message);
-        deny(502, 'Bad Gateway');
-      });
-      return;
-    }
 
     // ── Container auf einem Remote-Server, über dessen Agent ─────────────────
     const agent = db.prepare('SELECT * FROM remote_agents WHERE id = ?').get(agentId);
@@ -311,7 +252,6 @@ server.on('upgrade', (request, socket, head) => {
   }
 });
 
-require('./metricsRecorder').start();
 require('./metricsAggregator').start();
 require('./alertEvaluator').start();
 // dockerMetricsRecorder entfernt — Docker-Stats kommen jetzt von Dockhand API

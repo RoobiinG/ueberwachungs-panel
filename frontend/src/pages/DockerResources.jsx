@@ -43,7 +43,7 @@ const TABS = [
  * Ohne diese Props verhält sich die Seite wie zuvor eigenständig.
  */
 export default function DockerResources({ tab: controlledTab, onTabChange, hideTabs = false }) {
-  const { hasPermission, isAdmin, hideLocal } = useAuth();
+  const { hasPermission, isAdmin } = useAuth();
 
   const availableTabs = TABS.filter(t => isAdmin || hasPermission(`docker.${t.key}.view`));
 
@@ -78,7 +78,7 @@ export default function DockerResources({ tab: controlledTab, onTabChange, hideT
   const canView = availableTabs.length > 0;
   const canControl = isAdmin || (cfg && hasPermission(`docker.${cfg.key}.control`));
 
-  const getUrl = (base) => selectedServer ? `/api/agents/${selectedServer}${base.replace('/api', '')}` : base;
+  const getUrl = (base) => `/api/agents/${selectedServer}${base.replace('/api', '')}`;
 
   const load = useCallback(async () => {
     if (!canView || !cfg) return;
@@ -90,10 +90,10 @@ export default function DockerResources({ tab: controlledTab, onTabChange, hideT
   }, [cfg.endpoint, canView, selectedServer]);
 
   useEffect(() => {
-    if (hideLocal && selectedServer === null) return;
+    if (!selectedServer) return;
     setItems([]);
     load();
-  }, [load, hideLocal, selectedServer, tab]);
+  }, [load, selectedServer, tab]);
 
   const act = async (fn) => {
     setBusy(true); setError('');
