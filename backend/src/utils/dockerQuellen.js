@@ -12,7 +12,6 @@
 
 const db = require('../db');
 const dockhand = require('./dockhandClient');
-const dockerSocket = require('./dockerSocket');
 const { agentClient } = require('./agentTls');
 const { erlaubteAgenten } = require('./agentAccess');
 
@@ -21,7 +20,6 @@ const ABFRAGE_TIMEOUT = 6000;
 // Die Abfrage bewusst erst beim Aufruf vorbereiten: Beim Laden des Moduls kann die
 // Migration der Tabelle noch nicht durch sein (siehe metricsRecorder, v5.6.x).
 const getSetting = (k) => db.prepare('SELECT value FROM settings WHERE key = ?').get(k)?.value ?? null;
-const localEnvId = () => getSetting('dockhandLocalEnvId');
 const engineMode = () => getSetting('dockerEngine') || 'agents';
 
 

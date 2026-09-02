@@ -16,6 +16,11 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [6.1.1.6] - 2026-09-02 (Build 350) — *Agent Only Architecture (Hotfix 6)*
+
+### 🧹 Refactoring
+- **Codebase:** Einige nicht mehr verwendete Variablen und Importe (`localEnvId`, `dockerSocket`) in `dockerQuellen.js` wurden entfernt, um Build-Fehler der CI (GitHub Actions Linter) zu beheben, die nach dem Entfernen der alten lokalen Architektur übrig geblieben waren.
+
 ## [6.1.1.5] - 2026-09-02 (Build 349) — *Agent Only Architecture (Hotfix 5)*
 
 ### 🐛 Bugfixes
