@@ -20,7 +20,7 @@ Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweis
 
 ### ✨ Features
 - **Agent Only Architecture:** Der lokale Server (Panel-Server) wird nun vollständig wie ein normaler Remote-Agent behandelt. Alle speziellen lokalen Fallbacks und Abfragen (`hideLocal`) wurden aus der Benutzeroberfläche und den Auth-APIs entfernt.
-- **Cron-Job Verwaltung:** Die Cron-Job UI wurde verbessert, um bei periodischen Intervallen eine genauere Multiselekt-Auswahl für Stunden und Tage zu ermöglichen, anstatt nur reine Text-Strings eingeben zu müssen.
+- **Cron-Job Verwaltung:** Die Cron-Job UI wurde überarbeitet. Anstelle von reinen Text-Strings gibt es nun ein Dropdown für den Rhythmus (z. B. Täglich, Wöchentlich) und eine native Zeit-Auswahl (Timepicker) für den genauen Startzeitpunkt.
 
 ### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
 - **Kompatibilität:** Rollen-Berechtigungen rund um `hideLocal` (Lokaler Server) sind entfallen, da der Host-Server nun über die Standard-Agent-Verwaltung berechtigt wird.
