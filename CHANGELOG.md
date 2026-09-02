@@ -16,6 +16,11 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [6.1.1.5] - 2026-09-02 (Build 349) — *Agent Only Architecture (Hotfix 5)*
+
+### 🐛 Bugfixes
+- **Sidebar:** Der Menüpunkt "Hosting-Provider" verschwindet nun wieder zuverlässig, wenn sowohl Hetzner als auch MC-Host24 deaktiviert sind. Zuvor verhinderte ein falscher interner Modul-Schlüssel (mchost24 statt mchost), dass das System die Deaktivierung richtig erkannte.
+
 ## [6.1.1.4] - 2026-09-02 (Build 348) — *Agent Only Architecture (Hotfix 4)*
 
 ### 🐛 Bugfixes
