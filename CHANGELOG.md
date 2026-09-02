@@ -16,6 +16,16 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [6.1.1.0] - 2026-09-02 (Build 344) — *Agent Only Architecture*
+
+### ✨ Features
+- **Agent Only Architecture:** Der lokale Server (Panel-Server) wird nun vollständig wie ein normaler Remote-Agent behandelt. Alle speziellen lokalen Fallbacks und Abfragen (`hideLocal`) wurden aus der Benutzeroberfläche und den Auth-APIs entfernt.
+- **Cron-Job Verwaltung:** Die Cron-Job UI wurde verbessert, um bei periodischen Intervallen eine genauere Multiselekt-Auswahl für Stunden und Tage zu ermöglichen, anstatt nur reine Text-Strings eingeben zu müssen.
+
+### 🧩 System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Kompatibilität:** Rollen-Berechtigungen rund um `hideLocal` (Lokaler Server) sind entfallen, da der Host-Server nun über die Standard-Agent-Verwaltung berechtigt wird.
+- **Datenbank:** Das Feld `hide_local` wird nicht länger abgefragt und aus `roles` bei zukünftigen Instanzen ignoriert bzw. entfernt. Keine aktive manuelle Migration notwendig.
+
 ## [6.1.0.3] - 2026-08-28 (Build 343) — *Agenten-Edit Fix*
 
 ### 🐛 Bugfixes

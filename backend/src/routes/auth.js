@@ -223,11 +223,9 @@ router.post('/login', loginLimiter, async (req, res) => {
     { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
   );
   const permissions = getPermissions(user.role);
-  const roleRow = db.prepare('SELECT hide_local, is_admin FROM roles WHERE name = ?').get(user.role);
-  const hideLocal = roleRow?.is_admin ? false : !!roleRow?.hide_local;
   storeSession(token, user.id, req);
   auditLog(req, 'login', 'user', user.username);
-  res.json({ token, user: { id: user.id, username: user.username, role: user.role }, permissions, hideLocal });
+  res.json({ token, user: { id: user.id, username: user.username, role: user.role }, permissions });
 });
 
 // ─── 2FA Verify (Login Schritt 2) ─────────────────────────────────────────────
@@ -272,11 +270,9 @@ router.post('/2fa/verify', loginLimiter, (req, res) => {
     { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
   );
   const permissions = getPermissions(user.role);
-  const roleRow = db.prepare('SELECT hide_local, is_admin FROM roles WHERE name = ?').get(user.role);
-  const hideLocal = roleRow?.is_admin ? false : !!roleRow?.hide_local;
   storeSession(token, user.id, req);
   auditLog(req, 'login.2fa', 'user', user.username);
-  res.json({ token, user: { id: user.id, username: user.username, role: user.role }, permissions, hideLocal });
+  res.json({ token, user: { id: user.id, username: user.username, role: user.role }, permissions });
 });
 
 // ─── Was die Anmeldeseite anbieten darf (öffentlich) ─────────────────────────
@@ -351,11 +347,9 @@ router.get('/me', authMiddleware, (req, res) => {
   const user = db.prepare('SELECT id, username, role, email, twofa_type, created_at, last_login, last_login_ip, last_login_from FROM users WHERE id = ?').get(req.user.id);
   if (!user) return res.status(404).json({ error: 'Benutzer nicht gefunden' });
   const permissions = getPermissions(user.role);
-  // Rollenbezeichnung + hide_local-Flag aus der roles-Tabelle holen
-  const roleRow = db.prepare('SELECT label, hide_local, is_admin FROM roles WHERE name = ?').get(user.role);
-  // Admins sehen immer alles
-  const hideLocal = roleRow?.is_admin ? false : !!roleRow?.hide_local;
-  res.json({ ...user, roleLabel: roleRow?.label || user.role, permissions, hideLocal });
+  // Rollenbezeichnung aus der roles-Tabelle holen
+  const roleRow = db.prepare('SELECT label FROM roles WHERE name = ?').get(user.role);
+  res.json({ ...user, roleLabel: roleRow?.label || user.role, permissions });
 });
 
 router.put('/password', authMiddleware, (req, res) => {

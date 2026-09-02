@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { Monitor, Server } from 'lucide-react';
-import { useAuth } from '../../context/AuthContext';
 
 /**
  * Server-Auswahl-Leiste: "Lokal" + alle Remote-Agents als Pills.
@@ -13,20 +12,20 @@ import { useAuth } from '../../context/AuthContext';
  */
 export function ServerSelector({ selected, onChange }) {
   const [agents, setAgents] = useState([]);
-  const { hideLocal } = useAuth();
 
   useEffect(() => {
     axios.get('/api/agents').then(r => {
       setAgents(r.data);
-      // Auto-Select: wenn Lokal ausgeblendet und noch kein Remote-Server gewählt
-      if (hideLocal && !selected && r.data.length > 0) {
+      // Auto-Select: Da es keinen "Lokal"-Server mehr gibt, wählen wir direkt den ersten Agenten, falls keiner gewählt ist
+      if (!selected && r.data.length > 0) {
         onChange(r.data[0].id);
       }
     }).catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Wenn kein Agent vorhanden → nichts rendern (nur ein Element wäre sinnlos)
+  // Wenn nur ein Server existiert oder keiner, können wir die Serverauswahl auch ausblenden
+  // (Optional: Wir rendern es dennoch, damit der Nutzer sieht, welcher Server aktiv ist)
   if (agents.length === 0) return null;
 
   const pill = (active) =>
@@ -39,11 +38,6 @@ export function ServerSelector({ selected, onChange }) {
   return (
     <div className="flex flex-wrap gap-2 items-center">
       <span className="text-xs text-panel-muted flex-shrink-0">Server:</span>
-      {!hideLocal && (
-        <button className={pill(!selected)} onClick={() => onChange(null)}>
-          <Monitor size={12} />Lokal
-        </button>
-      )}
       {agents.map(a => (
         <button key={a.id} className={pill(selected === a.id)} onClick={() => onChange(a.id)}>
           <Server size={12} />{a.name}

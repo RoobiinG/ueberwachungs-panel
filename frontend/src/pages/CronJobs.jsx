@@ -8,7 +8,7 @@ import { RefreshCw, Plus, Save, Trash2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function CronJobs() {
-  const { canWrite, hideLocal } = useAuth();
+  const { canWrite } = useAuth();
   
   const [selectedServer, setSelectedServer] = useState(null); // null = lokal
   const [cronUsers, setCronUsers] = useState([]);
@@ -21,16 +21,16 @@ export default function CronJobs() {
   
   const [cronModal, setCronModal] = useState(false);
   const [newCron, setNewCron] = useState({ 
-    mode: 'minute', hour: 0, minute: 0, day: 1, interval: 5, customStr: '* * * * *', command: '' 
+    mode: 'minute', minutes: '0', hours: [], days: [], interval: 5, customStr: '* * * * *', command: '' 
   });
 
   const load = useCallback(async (silent = false) => {
-    if (hideLocal && selectedServer === null) return;
+    if (!selectedServer) return; // Kein Server gewählt (Lokal wurde entfernt)
     
     if (!silent) setLoading(true);
     setError('');
     try {
-      const baseUrl = selectedServer ? `/api/agents/${selectedServer}/cron` : '/api/cron';
+      const baseUrl = `/api/agents/${selectedServer}/cron`;
       
       let currentUsers = cronUsers;
       if (!silent || currentUsers.length === 0) {
@@ -59,7 +59,7 @@ export default function CronJobs() {
     }
     if (!silent) setLoading(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedServer, selectedCronUser, hideLocal]);
+  }, [selectedServer, selectedCronUser]);
 
   useEffect(() => {
     load();
@@ -73,22 +73,26 @@ export default function CronJobs() {
 
   const addCronJob = async () => {
     let schedule = '';
+    const m = newCron.minutes || '0';
+    const h = newCron.hours.length > 0 ? newCron.hours.sort((a,b)=>a-b).join(',') : '*';
+    const d = newCron.days.length > 0 ? newCron.days.sort((a,b)=>a-b).join(',') : '*';
+
     switch (newCron.mode) {
       case 'minute': schedule = '* * * * *'; break;
       case 'interval': schedule = `*/${newCron.interval} * * * *`; break;
       case 'hourly': schedule = '0 * * * *'; break;
-      case 'daily': schedule = `${newCron.minute} ${newCron.hour} * * *`; break;
-      case 'weekly': schedule = `${newCron.minute} ${newCron.hour} * * ${newCron.day}`; break;
+      case 'daily': schedule = `${m} ${h} * * *`; break;
+      case 'weekly': schedule = `${m} ${h} * * ${d}`; break;
       case 'custom': schedule = newCron.customStr; break;
       default: schedule = '* * * * *';
     }
     
     setActionLoading(true);
     try {
-      const baseUrl = selectedServer ? `/api/agents/${selectedServer}/cron` : '/api/cron';
+      const baseUrl = `/api/agents/${selectedServer}/cron`;
       await axios.post(`${baseUrl}/jobs/${encodeURIComponent(selectedCronUser)}`, { schedule, command: newCron.command });
       setCronModal(false);
-      setNewCron({ mode: 'minute', hour: 0, minute: 0, day: 1, interval: 5, customStr: '* * * * *', command: '' });
+      setNewCron({ mode: 'minute', minutes: '0', hours: [], days: [], interval: 5, customStr: '* * * * *', command: '' });
       load(true);
     } catch (err) {
       alert(err.response?.data?.error || 'Fehler beim Speichern');
@@ -100,7 +104,7 @@ export default function CronJobs() {
     if (!confirm('Cron Job wirklich löschen?')) return;
     setActionLoading(true);
     try {
-      const baseUrl = selectedServer ? `/api/agents/${selectedServer}/cron` : '/api/cron';
+      const baseUrl = `/api/agents/${selectedServer}/cron`;
       await axios.delete(`${baseUrl}/jobs/${encodeURIComponent(selectedCronUser)}/${index}`);
       load(true);
     } catch (err) {
@@ -228,30 +232,64 @@ export default function CronJobs() {
           )}
 
           {(newCron.mode === 'daily' || newCron.mode === 'weekly') && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-3">
               <div>
-                <label className="block text-panel-muted font-medium mb-1">Stunde (0-23)</label>
-                <input type="number" min="0" max="23" value={newCron.hour} onChange={e => setNewCron(c => ({ ...c, hour: e.target.value }))} className="w-full bg-panel-surface border border-panel-border rounded-lg px-3 py-2 text-panel-text focus:outline-none focus:border-panel-accent" />
+                <label className="block text-panel-muted font-medium mb-2">Stunde(n) <span className="text-[10px] opacity-70 font-normal">(Leer = Jede Stunde)</span></label>
+                <div className="flex flex-wrap gap-1">
+                  {Array.from({length: 24}).map((_, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => {
+                        const h = newCron.hours;
+                        if (h.includes(i)) setNewCron(c => ({ ...c, hours: h.filter(x => x !== i) }));
+                        else setNewCron(c => ({ ...c, hours: [...h, i] }));
+                      }}
+                      className={`w-8 h-8 rounded-md text-xs font-medium transition-colors ${
+                        newCron.hours.includes(i)
+                          ? 'bg-panel-accent text-white border-transparent'
+                          : 'bg-panel-surface border border-panel-border text-panel-muted hover:text-panel-text hover:border-panel-accent/50'
+                      }`}
+                    >
+                      {i.toString().padStart(2, '0')}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div>
-                <label className="block text-panel-muted font-medium mb-1">Minute (0-59)</label>
-                <input type="number" min="0" max="59" value={newCron.minute} onChange={e => setNewCron(c => ({ ...c, minute: e.target.value }))} className="w-full bg-panel-surface border border-panel-border rounded-lg px-3 py-2 text-panel-text focus:outline-none focus:border-panel-accent" />
+              
+              <div className="w-1/2">
+                <label className="block text-panel-muted font-medium mb-1">Minute(n) <span className="text-[10px] opacity-70 font-normal">(z.B. "0", "0,30", "*/15")</span></label>
+                <input type="text" value={newCron.minutes} onChange={e => setNewCron(c => ({ ...c, minutes: e.target.value }))} className="w-full bg-panel-surface border border-panel-border rounded-lg px-3 py-2 text-panel-text focus:outline-none focus:border-panel-accent" />
               </div>
             </div>
           )}
 
           {newCron.mode === 'weekly' && (
             <div>
-              <label className="block text-panel-muted font-medium mb-1">Wochentag</label>
-              <select value={newCron.day} onChange={e => setNewCron(c => ({ ...c, day: e.target.value }))} className="w-full bg-panel-surface border border-panel-border rounded-lg px-3 py-2 text-panel-text focus:outline-none focus:border-panel-accent">
-                <option value="1">Montag</option>
-                <option value="2">Dienstag</option>
-                <option value="3">Mittwoch</option>
-                <option value="4">Donnerstag</option>
-                <option value="5">Freitag</option>
-                <option value="6">Samstag</option>
-                <option value="0">Sonntag</option>
-              </select>
+              <label className="block text-panel-muted font-medium mb-2">Wochentag(e) <span className="text-[10px] opacity-70 font-normal">(Leer = Jeden Tag)</span></label>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { val: 1, label: 'Mo' }, { val: 2, label: 'Di' }, { val: 3, label: 'Mi' },
+                  { val: 4, label: 'Do' }, { val: 5, label: 'Fr' }, { val: 6, label: 'Sa' }, { val: 0, label: 'So' }
+                ].map(d => (
+                  <button
+                    key={d.val}
+                    type="button"
+                    onClick={() => {
+                      const days = newCron.days;
+                      if (days.includes(d.val)) setNewCron(c => ({ ...c, days: days.filter(x => x !== d.val) }));
+                      else setNewCron(c => ({ ...c, days: [...days, d.val] }));
+                    }}
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                      newCron.days.includes(d.val)
+                        ? 'bg-panel-accent text-white border-transparent'
+                        : 'bg-panel-surface border border-panel-border text-panel-muted hover:text-panel-text hover:border-panel-accent/50'
+                    }`}
+                  >
+                    {d.label}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
@@ -276,9 +314,6 @@ export default function CronJobs() {
           <div className="bg-panel-surface/50 p-3 rounded-lg border border-panel-border">
             <span className="text-panel-muted">Der Job wird erstellt für: </span>
             <span className="text-panel-text font-semibold">{selectedCronUser}</span>
-            {!selectedServer && (
-              <p className="text-panel-orange mt-1">Lokal: Der Job wird auf dem Docker-Host-System (nicht im Container) ausgeführt.</p>
-            )}
           </div>
         </div>
       </Modal>
