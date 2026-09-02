@@ -1,17 +1,13 @@
 // ─── Serverübergreifende Container-Suche ──────────────────────────────────────
 //
-// Bewusst ein eigener Router und **nicht** Teil von routes/docker.js: Dort hängt
-// `requireLocalAccess` davor, das jede Anfrage abweist, sobald die Rolle den lokalen
-// Server nicht sehen darf (`hide_local`). Für eine Suche über *alle* Server wäre das
-// falsch — der Panel-Server soll dann nur ausgelassen, nicht die ganze Suche verweigert
-// werden. Deshalb wird dieser Router in index.js vor `/api/docker` gemountet, genau wie
+// Bewusst ein eigener Router und **nicht** Teil von routes/docker.js: 
+// Dieser Router wird in index.js vor `/api/docker` gemountet, genau wie
 // es `/api/docker/labels` schon macht.
 //
 // Zum Rechtesystem: Welche Server abgefragt werden, entscheidet `containerAllerQuellen`
-// anhand der Rolle — `restrict_agents` (nur freigegebene Agenten) und `hide_local` (kein
-// Panel-Server) wirken bereits beim Abruf, nicht erst beim Anzeigen. Über diese Route
-// werden also weder Container noch Namen von Servern übertragen, die der Benutzer nicht
-// sehen darf. Zusätzlich ist wie überall sonst `docker.view` nötig.
+// anhand der Rolle — `restrict_agents` (nur freigegebene Agenten) wirkt bereits beim Abruf, 
+// nicht erst beim Anzeigen. Über diese Route werden also weder Container noch Namen von Servern übertragen, 
+// die der Benutzer nicht sehen darf. Zusätzlich ist wie überall sonst `docker.view` nötig.
 
 const router = require('express').Router();
 const { requirePermission } = require('../middleware/requirePermission');

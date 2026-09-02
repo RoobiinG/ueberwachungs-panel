@@ -14,7 +14,7 @@ const db = require('../db');
 const dockhand = require('./dockhandClient');
 const dockerSocket = require('./dockerSocket');
 const { agentClient } = require('./agentTls');
-const { erlaubteAgenten, darfLokal } = require('./agentAccess');
+const { erlaubteAgenten } = require('./agentAccess');
 
 const ABFRAGE_TIMEOUT = 6000;
 
@@ -24,26 +24,7 @@ const getSetting = (k) => db.prepare('SELECT value FROM settings WHERE key = ?')
 const localEnvId = () => getSetting('dockhandLocalEnvId');
 const engineMode = () => getSetting('dockerEngine') || 'agents';
 
-// ── Container einer einzelnen Quelle ─────────────────────────────────────────
 
-// Panel-Server: bevorzugt Dockhand (dort stehen auch Auslastungswerte), sonst der
-// lokale Docker-Socket. Ohne den Rückfall bliebe der eigene Server in der Suche leer,
-// solange kein Dockhand eingerichtet ist.
-async function lokaleContainer() {
-  const envId = localEnvId();
-  if (envId) {
-    try {
-      const { data } = await dockhand.getContainers(envId);
-      return (Array.isArray(data) ? data : []).map(dockhand.normalizeContainer);
-    } catch (err) {
-      if (!(await dockerSocket.verfuegbar())) throw err;
-    }
-  }
-  if (!(await dockerSocket.verfuegbar())) {
-    throw new Error('Weder Dockhand noch der lokale Docker-Socket sind verfügbar');
-  }
-  return dockerSocket.containerListe(true);
-}
 
 // Remote-Server: je nach Betriebsart über den Agenten oder über Dockhand.
 async function agentContainer(agent) {
@@ -74,11 +55,10 @@ async function agentContainer(agent) {
  */
 async function containerAllerQuellen(roleName) {
   const quellen = [];
-  if (darfLokal(roleName)) quellen.push({ id: 'local', name: 'Lokal', lokal: true });
   for (const a of erlaubteAgenten(roleName)) quellen.push({ id: a.id, name: a.name, agent: a });
 
   const ergebnisse = await Promise.allSettled(
-    quellen.map(q => (q.lokal ? lokaleContainer() : agentContainer(q.agent)))
+    quellen.map(q => agentContainer(q.agent))
   );
 
   const container = [];

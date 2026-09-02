@@ -83,7 +83,6 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     localStorage.removeItem('permissions');
-    localStorage.removeItem('hideLocal'); // Auch den alten Key entfernen
     delete axios.defaults.headers.common['Authorization'];
   }, []);
 

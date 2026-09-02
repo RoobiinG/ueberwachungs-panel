@@ -3,12 +3,8 @@ import axios from 'axios';
 import { Monitor, Server } from 'lucide-react';
 
 /**
- * Server-Auswahl-Leiste: "Lokal" + alle Remote-Agents als Pills.
- * onChange(null)   → Lokal ausgewählt
+ * Server-Auswahl-Leiste: Alle Remote-Agents als Pills.
  * onChange(id)     → Remote-Agent mit dieser ID ausgewählt
- *
- * Wenn die Rolle hideLocal=true hat, wird "Lokal" nicht angezeigt
- * und der erste verfügbare Agent wird automatisch gewählt.
  */
 export function ServerSelector({ selected, onChange }) {
   const [agents, setAgents] = useState([]);

@@ -16,6 +16,11 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [6.1.1.3] - 2026-09-02 (Build 347) — *Agent Only Architecture (Hotfix 3)*
+
+### 🧹 Refactoring
+- **Architektur:** Letzte Rest-Fragmente der obsoleten lokalen Berechtigungsstruktur (`hide_local`, `darfLokal`) sowie die direkten lokalen Docker-Socket Abfragen wurden tief im Backend (Docker-Suche und Agent-Access) final ausgebaut. Die "Agent-Only" Architektur ist nun 100% konsistent.
+
 ## [6.1.1.2] - 2026-09-02 (Build 346) — *Agent Only Architecture (Hotfix 2)*
 
 ### 🐛 Bugfixes
