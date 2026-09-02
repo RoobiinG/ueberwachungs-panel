@@ -21,7 +21,7 @@ export default function CronJobs() {
   
   const [cronModal, setCronModal] = useState(false);
   const [newCron, setNewCron] = useState({ 
-    mode: 'minute', minutes: '0', hours: [], days: [], interval: 5, customStr: '* * * * *', command: '' 
+    mode: 'minute', time: '00:00', days: [], interval: 5, customStr: '* * * * *', command: '' 
   });
 
   const load = useCallback(async (silent = false) => {
@@ -73,14 +73,15 @@ export default function CronJobs() {
 
   const addCronJob = async () => {
     let schedule = '';
-    const m = newCron.minutes || '0';
-    const h = newCron.hours.length > 0 ? newCron.hours.sort((a,b)=>a-b).join(',') : '*';
+    const [hStr, mStr] = newCron.time ? newCron.time.split(':') : ['0', '0'];
+    const h = parseInt(hStr || '0', 10);
+    const m = parseInt(mStr || '0', 10);
     const d = newCron.days.length > 0 ? newCron.days.sort((a,b)=>a-b).join(',') : '*';
 
     switch (newCron.mode) {
       case 'minute': schedule = '* * * * *'; break;
       case 'interval': schedule = `*/${newCron.interval} * * * *`; break;
-      case 'hourly': schedule = '0 * * * *'; break;
+      case 'hourly': schedule = `${m} * * * *`; break;
       case 'daily': schedule = `${m} ${h} * * *`; break;
       case 'weekly': schedule = `${m} ${h} * * ${d}`; break;
       case 'custom': schedule = newCron.customStr; break;
@@ -92,7 +93,7 @@ export default function CronJobs() {
       const baseUrl = `/api/agents/${selectedServer}/cron`;
       await axios.post(`${baseUrl}/jobs/${encodeURIComponent(selectedCronUser)}`, { schedule, command: newCron.command });
       setCronModal(false);
-      setNewCron({ mode: 'minute', minutes: '0', hours: [], days: [], interval: 5, customStr: '* * * * *', command: '' });
+      setNewCron({ mode: 'minute', time: '00:00', days: [], interval: 5, customStr: '* * * * *', command: '' });
       load(true);
     } catch (err) {
       alert(err.response?.data?.error || 'Fehler beim Speichern');
@@ -209,18 +210,18 @@ export default function CronJobs() {
       >
         <div className="space-y-4 text-xs">
           <div>
-            <label className="block text-panel-muted font-medium mb-1">Typ</label>
+            <label className="block text-panel-muted font-medium mb-1">Rhythmus (Intervall)</label>
             <select
               value={newCron.mode}
               onChange={e => setNewCron(c => ({ ...c, mode: e.target.value }))}
               className="w-full bg-panel-surface border border-panel-border rounded-lg px-3 py-2 text-panel-text focus:outline-none focus:border-panel-accent"
             >
-              <option value="minute">Jede Minute (* * * * *)</option>
-              <option value="interval">Intervall (Minuten)</option>
+              <option value="minute">Jede Minute</option>
+              <option value="interval">Regelmäßiges Intervall (Minuten)</option>
               <option value="hourly">Stündlich</option>
               <option value="daily">Täglich</option>
               <option value="weekly">Wöchentlich</option>
-              <option value="custom">Benutzerdefiniert</option>
+              <option value="custom">Benutzerdefiniert (Cron-Syntax)</option>
             </select>
           </div>
 
@@ -231,36 +232,27 @@ export default function CronJobs() {
             </div>
           )}
 
-          {(newCron.mode === 'daily' || newCron.mode === 'weekly') && (
-            <div className="space-y-3">
-              <div>
-                <label className="block text-panel-muted font-medium mb-2">Stunde(n) <span className="text-[10px] opacity-70 font-normal">(Leer = Jede Stunde)</span></label>
-                <div className="flex flex-wrap gap-1">
-                  {Array.from({length: 24}).map((_, i) => (
-                    <button
-                      key={i}
-                      type="button"
-                      onClick={() => {
-                        const h = newCron.hours;
-                        if (h.includes(i)) setNewCron(c => ({ ...c, hours: h.filter(x => x !== i) }));
-                        else setNewCron(c => ({ ...c, hours: [...h, i] }));
-                      }}
-                      className={`w-8 h-8 rounded-md text-xs font-medium transition-colors ${
-                        newCron.hours.includes(i)
-                          ? 'bg-panel-accent text-white border-transparent'
-                          : 'bg-panel-surface border border-panel-border text-panel-muted hover:text-panel-text hover:border-panel-accent/50'
-                      }`}
-                    >
-                      {i.toString().padStart(2, '0')}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              
-              <div className="w-1/2">
-                <label className="block text-panel-muted font-medium mb-1">Minute(n) <span className="text-[10px] opacity-70 font-normal">(z.B. "0", "0,30", "*/15")</span></label>
-                <input type="text" value={newCron.minutes} onChange={e => setNewCron(c => ({ ...c, minutes: e.target.value }))} className="w-full bg-panel-surface border border-panel-border rounded-lg px-3 py-2 text-panel-text focus:outline-none focus:border-panel-accent" />
-              </div>
+          {(newCron.mode === 'daily' || newCron.mode === 'weekly' || newCron.mode === 'hourly') && (
+            <div>
+              <label className="block text-panel-muted font-medium mb-1">
+                {newCron.mode === 'hourly' ? 'Minute der Ausführung (0-59)' : 'Uhrzeit der Ausführung'}
+              </label>
+              {newCron.mode === 'hourly' ? (
+                <input 
+                  type="number" 
+                  min="0" max="59" 
+                  value={newCron.time && newCron.time.includes(':') ? newCron.time.split(':')[1] : '00'} 
+                  onChange={e => setNewCron(c => ({ ...c, time: `00:${(e.target.value || '0').padStart(2, '0')}` }))} 
+                  className="w-full bg-panel-surface border border-panel-border rounded-lg px-3 py-2 text-panel-text focus:outline-none focus:border-panel-accent" 
+                />
+              ) : (
+                <input 
+                  type="time" 
+                  value={newCron.time} 
+                  onChange={e => setNewCron(c => ({ ...c, time: e.target.value }))} 
+                  className="w-full bg-panel-surface border border-panel-border rounded-lg px-3 py-2 text-panel-text focus:outline-none focus:border-panel-accent [&::-webkit-calendar-picker-indicator]:invert" 
+                />
+              )}
             </div>
           )}
 
