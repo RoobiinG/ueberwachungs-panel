@@ -584,6 +584,7 @@ function AddWidgetModal({ isOpen, onClose, onAdd, serverKeys, serverName }) {
 export default function Dashboard({ liveStats }) {
   const navigate  = useNavigate();
   const liveInterval = useLiveInterval();
+  const { modules = {} } = useAuth();
 
   const [agents,      setAgents]      = useState([]);
   const [agentStats,  setAgentStats]  = useState({});   // { [id]: stats }
