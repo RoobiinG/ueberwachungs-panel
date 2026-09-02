@@ -16,6 +16,13 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [6.1.1.8] - 2026-09-02 (Build 352) — *Agent Only Architecture (Hotfix 8)*
+
+- **Bugfix (Dashboard):** Behebt einen `ReferenceError` (`modules is not defined`), der durch eine unvollständige Variablendeklaration im Dashboard-Polling (Hotfix 7) ausgelöst wurde. Das Dashboard lädt nun wieder fehlerfrei.
+
+**System-Auswirkungen & Nachwirken (Impact Analysis)**
+- Keine Änderungen an Datenbank oder Agenten.
+
 ## [6.1.1.7] - 2026-09-02 (Build 351) — *Agent Only Architecture (Hotfix 7)*
 
 - **Bugfix (Frontend-Polling):** Das Dashboard fragt im Hintergrund nicht mehr stumpf alle Dienste ab (Hetzner, PatchMon, Uptime Kuma), wenn diese in den Einstellungen deaktiviert wurden.
