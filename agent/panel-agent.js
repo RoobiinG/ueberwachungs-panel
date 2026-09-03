@@ -17,7 +17,7 @@ const execAsync = promisify(exec);
 // sondern ein Argument-Array. Sonderzeichen in Volume-/Netzwerk-/Image-Namen können
 // so nicht als Shell-Syntax gedeutet werden.
 const execFileAsync = promisify(execFile);
-const VERSION = '2.10.2';
+const VERSION = '2.10.3';
 
 // Ob die Container-Konsole angeboten werden kann. Steht erst nach dem Laden von
 // ws/node-pty am Ende dieser Datei fest und wird über /ping und /version gemeldet,
@@ -703,8 +703,8 @@ async function dockerAction(id, action) {
 
 async function getDockerStacks() {
   try {
-    const { stdout } = await execAsync("docker compose ls -a --format '{{json .}}'", { timeout: 10000 });
-    return stdout.trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+    const { stdout } = await execAsync("docker compose ls -a --format json", { timeout: 10000 });
+    return JSON.parse(stdout.trim() || '[]');
   } catch { return []; }
 }
 
