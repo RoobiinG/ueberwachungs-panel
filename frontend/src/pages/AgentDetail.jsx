@@ -15,7 +15,7 @@ import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
 import { ActionMenu } from '../components/ui/ActionMenu';
 import { useAuth } from '../context/AuthContext';
-import { ShieldAlert, Shield, Key } from 'lucide-react';
+import { Shield, Key } from 'lucide-react';
 import ContainerLogsModal from '../components/Docker/ContainerLogsModal';
 import StackEditorModal from '../components/Docker/StackEditorModal';
 
