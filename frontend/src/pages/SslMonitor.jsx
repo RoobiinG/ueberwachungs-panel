@@ -125,7 +125,7 @@ export default function SslMonitor() {
           }
 
           return (
-            <Card key={m.id} className={\`p-4 flex flex-col justify-between transition-all border \${statusCls}\`}>
+            <Card key={m.id} className={`p-4 flex flex-col justify-between transition-all border ${statusCls}`}>
               <div>
                 <div className="flex justify-between items-start mb-3">
                   <div className="flex gap-3 items-center">
