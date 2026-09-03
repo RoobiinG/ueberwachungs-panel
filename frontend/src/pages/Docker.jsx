@@ -25,6 +25,7 @@ const UUID_MUSTER = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 
 const fmtBytes = (b) => {
   if (b == null || b === 0) return '0 B';
+  if (typeof b === 'string') return b;
   const k = 1024, sizes = ['B', 'KB', 'MB', 'GB'];
   const i = Math.min(Math.floor(Math.log(Math.max(b, 1)) / Math.log(k)), sizes.length - 1);
   return `${(b / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;

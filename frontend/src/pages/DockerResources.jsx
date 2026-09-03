@@ -9,7 +9,8 @@ import { Layers, HardDrive, Network, Trash2, RefreshCw, DownloadCloud, Wand2, Pa
 import { useAuth } from '../context/AuthContext';
 
 const fmtBytes = (b, d = 1) => {
-  if (!b || b <= 0) return '—';
+  if (!b || b === 0) return '—';
+  if (typeof b === 'string') return b;
   const k = 1024, u = ['B', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(b) / Math.log(k));
   return `${parseFloat((b / Math.pow(k, i)).toFixed(d))} ${u[i]}`;
