@@ -16,6 +16,22 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [6.1.2.0] - 2026-09-03 (Build 353) — *Alert Clarity*
+
+- **Verbesserung (Alert-Regelkarten):** Jeder Alert-Typ (Schwellenwert, PatchMon, Storage-Box, MC-Host24, Server-Aktion) hat jetzt ein eigenes Icon, ein farbiges Badge und einen farbigen linken Rand — der Typ einer Regel ist damit auf einen Blick erkennbar, ohne die Details lesen zu müssen.
+- **Verbesserung (Firing-Indikator):** Regeln, die aktuell aktiv feuern, zeigen einen pulsierenden roten Punkt und ein „🔥 Feuert"-Badge. Bei Multi-Server-Regeln wird die Anzahl der betroffenen Server angezeigt.
+- **Verbesserung (Alert-Verlauf):** Im Alert-Verlauf wird neben jedem Eintrag ein Typ-Badge angezeigt (z. B. „Schwellenwert", „PatchMon"), damit man sofort erkennt, welche Art von Alert ausgelöst hat.
+- **Bugfix (Dashboard-KPI „Aktive Alerts"):** Die Zählung aktiver Alerts im Dashboard war unzuverlässig — sie basierte auf dem Activity-Feed (max. 15 Einträge) und zählte unterdrückte/fehlgeschlagene Alerts falsch mit. Jetzt wird ein eigener Backend-Endpunkt `GET /api/alerts/active-count` genutzt, der zuverlässig über die History-Tabelle zählt.
+- **Bugfix (Servernamen bei Multi-Server-Alerts):** Der Alert-Verlauf und der Activity-Feed auf dem Dashboard zeigten bei Multi-Server-Regeln immer „Lokal" als Servernamen an, weil der `agent_id`-JOIN auf NULL lief. Jetzt wird der in der Alert-History gespeicherte `server_key` zur Namensauflösung genutzt.
+- **Neuer Endpunkt:** `GET /api/alerts/active-count` — zählt alle Regel×Server-Kombinationen, deren jüngster History-Eintrag `fired` oder `failed` ist. `suppressed` (Wartungsmodus) wird nicht mitgezählt.
+- **Verbesserung (Rules-API):** `GET /api/alerts/rules` liefert jetzt `is_active` (Boolean) und `active_count` (Anzahl feuernder Server) pro Regel mit, damit das Frontend den Status darstellen kann.
+
+**System-Auswirkungen & Nachwirken (Impact Analysis)**
+- **Datenbank:** Keine Migration nötig — die genutzten Spalten (`server_key`, `type`) existieren bereits.
+- **API-Kompatibilität:** Neue Felder `is_active`/`active_count` in der Rules-Response und `server_key`/`rule_id` in der History-Response sind additive Erweiterungen, keine Breaking Changes.
+- **Agent-Kompatibilität:** Keine Änderungen am Agent.
+- **Neustart-Verhalten:** Kein besonderes — der neue Endpunkt ist sofort verfügbar.
+
 ## [6.1.1.8] - 2026-09-02 (Build 352) — *Agent Only Architecture (Hotfix 8)*
 
 - **Bugfix (Dashboard):** Behebt einen `ReferenceError` (`modules is not defined`), der durch eine unvollständige Variablendeklaration im Dashboard-Polling (Hotfix 7) ausgelöst wurde. Das Dashboard lädt nun wieder fehlerfrei.
