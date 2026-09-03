@@ -31,7 +31,9 @@ router.get('/activity', async (req, res) => {
   // Alerts
   try {
     const rows = db.prepare(`
-      SELECT h.triggered_at, h.type, r.name AS rule_name, a.name AS agent_name
+      SELECT h.triggered_at, h.type, h.server_key,
+             r.name AS rule_name, r.metric,
+             a.name AS agent_name
       FROM alert_history h
       LEFT JOIN alert_rules   r ON h.rule_id  = r.id
       LEFT JOIN remote_agents a ON r.agent_id = a.id
@@ -39,10 +41,21 @@ router.get('/activity', async (req, res) => {
     `).all();
     for (const r of rows) {
       const fired = r.type !== 'resolved';
+      // Servername: bevorzugt aus server_key ableiten, Fallback: agent_name-JOIN
+      let serverName = r.agent_name || 'Lokal';
+      if (r.server_key) {
+        if (r.server_key === 'local') serverName = 'Lokal';
+        else if (r.server_key.startsWith('sbox:')) serverName = `Storage Box #${r.server_key.slice(5)}`;
+        else if (r.server_key.startsWith('mchost:')) serverName = `MC-Host #${r.server_key.slice(7)}`;
+        else {
+          const ag = db.prepare('SELECT name FROM remote_agents WHERE id = ?').get(r.server_key);
+          if (ag) serverName = ag.name;
+        }
+      }
       events.push({
         kind: 'alert', severity: fired ? 'danger' : 'success',
         title: `${fired ? 'Alert ausgelöst' : 'Alert erholt'} — ${r.rule_name || 'Regel'}`,
-        sub: r.agent_name || 'Lokal', at: toEpoch(r.triggered_at),
+        sub: serverName, at: toEpoch(r.triggered_at),
       });
     }
   } catch {}

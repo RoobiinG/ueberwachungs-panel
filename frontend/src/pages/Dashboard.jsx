@@ -596,6 +596,7 @@ export default function Dashboard({ liveStats }) {
   const [activity,    setActivity]    = useState([]);   // Ereignis-Feed
   const [uptime,      setUptime]      = useState(null);  // { up, total }
   const [firewall,    setFirewall]    = useState(null);  // { active }
+  const [activeAlertCount, setActiveAlertCount] = useState(0);  // Zuverlässig vom Backend
   const [rgl, setRgl] = useState(null);   // gespeichertes RGL-Layout (null = Standard)
   const [showAddWidget, setShowAddWidget] = useState(false);
   const persistRef    = useRef(null);
@@ -687,6 +688,15 @@ export default function Dashboard({ liveStats }) {
     return () => clearInterval(t);
   }, []);
 
+  // ── Aktive Alerts (zuverlässig über Backend statt Activity-Feed) ─────────────
+  useEffect(() => {
+    const load = () => axios.get('/api/alerts/active-count')
+      .then(r => setActiveAlertCount(r.data.count || 0)).catch(() => {});
+    load();
+    const t = setInterval(load, 30_000);
+    return () => clearInterval(t);
+  }, []);
+
   // ── Status-Panel (Uptime-Kuma + Firewall), fail-soft, alle 60s ──────────────
   useEffect(() => {
     const load = () => {
@@ -746,16 +756,8 @@ export default function Dashboard({ liveStats }) {
   const avgCpu = avg(onlineStats, 'cpu');
   const avgRam = avg(onlineStats, 'mem');
 
-  // Aktive Alerts: Regeln, deren jüngstes Ereignis "ausgelöst" (nicht "erholt") ist
-  const activeAlerts = (() => {
-    const seen = {};
-    for (const e of activity) {
-      if (e.kind !== 'alert') continue;
-      const key = e.title.replace(/^Alert (ausgelöst|erholt) — /, '') + '|' + e.sub;
-      if (!(key in seen)) seen[key] = e.severity === 'danger';
-    }
-    return Object.values(seen).filter(Boolean).length;
-  })();
+  // Aktive Alerts: direkt vom Backend-Endpunkt (statt fehleranfälligem Activity-Feed-Parsing)
+  const activeAlerts = activeAlertCount;
 
   // ── Frei anordbares Layout (react-grid-layout) ──────────────────────────────
   const serverKeys = agents.map(a => String(a.id));

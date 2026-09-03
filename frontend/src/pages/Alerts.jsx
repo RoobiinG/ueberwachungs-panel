@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import {
   Bell, Plus, Trash2, Play, ToggleLeft, ToggleRight, Pencil,
-  AlertTriangle, Clock, CheckCircle, XCircle, Server, Monitor, Info, Webhook
+  AlertTriangle, Clock, CheckCircle, XCircle, Server, Monitor, Info, Webhook,
+  Activity, HardDrive, Gamepad2, Zap, PackageCheck, Flame
 } from 'lucide-react';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
@@ -14,6 +15,54 @@ import Webhooks from './Webhooks';
 const METRIC_LABELS  = { cpu: 'CPU', memory: 'RAM', disk: 'Disk', net_rx: 'Netzwerk ↓ (RX)', net_tx: 'Netzwerk ↑ (TX)', action: 'Server-Aktionen', patchmon_updates: 'PatchMon Updates', patchmon_security: 'PatchMon Security', hetzner_storage_usage: 'Storage Box', mchost_runtime: 'MC-Host Laufzeit' };
 const METRIC_COLORS  = { cpu: 'text-blue-400', memory: 'text-green-400', disk: 'text-yellow-400', net_rx: 'text-purple-400', net_tx: 'text-purple-400', action: 'text-panel-accent', patchmon_updates: 'text-panel-orange', patchmon_security: 'text-panel-red', hetzner_storage_usage: 'text-panel-accent', mchost_runtime: 'text-panel-green' };
 const METRIC_UNIT    = { cpu: '%', memory: '%', disk: '%', net_rx: ' MB/s', net_tx: ' MB/s', action: '', patchmon_updates: '', patchmon_security: '', hetzner_storage_usage: '%', mchost_runtime: ' Tage' };
+
+// ─── Typ-spezifische Konfiguration für Regelkarten ──────────────────────────
+const TYPE_CONFIG = {
+  threshold: {
+    icon: Activity,
+    label: 'Schwellenwert',
+    badgeCls: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+    borderCls: 'border-l-blue-500',
+    dotCls: 'bg-blue-500',
+  },
+  patchmon: {
+    icon: PackageCheck,
+    label: 'PatchMon',
+    badgeCls: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
+    borderCls: 'border-l-orange-500',
+    dotCls: 'bg-orange-500',
+  },
+  storage: {
+    icon: HardDrive,
+    label: 'Storage-Box',
+    badgeCls: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
+    borderCls: 'border-l-purple-500',
+    dotCls: 'bg-purple-500',
+  },
+  mchost: {
+    icon: Gamepad2,
+    label: 'MC-Host24',
+    badgeCls: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+    borderCls: 'border-l-emerald-500',
+    dotCls: 'bg-emerald-500',
+  },
+  action: {
+    icon: Zap,
+    label: 'Server-Aktion',
+    badgeCls: 'bg-panel-accent/15 text-panel-accent border-panel-accent/30',
+    borderCls: 'border-l-panel-accent',
+    dotCls: 'bg-panel-accent',
+  },
+};
+
+// Regeltyp aus der Metrik ableiten
+function getRuleType(metric) {
+  if (metric === 'action') return 'action';
+  if (metric === 'patchmon_updates' || metric === 'patchmon_security') return 'patchmon';
+  if (metric === 'hetzner_storage_usage') return 'storage';
+  if (metric === 'mchost_runtime') return 'mchost';
+  return 'threshold';
+}
 const CONDITION_LABELS = { gt: 'über', lt: 'unter' };
 
 const THRESHOLD_MAX  = { cpu: 100, memory: 100, disk: 100, net_rx: 1000, net_tx: 1000, patchmon_updates: 9999, patchmon_security: 9999, hetzner_storage_usage: 100, mchost_runtime: 365 };
@@ -540,17 +589,41 @@ export default function Alerts() {
           </div>
         ) : (
           <div className="space-y-2">
-            {rules.map(rule => (
+            {rules.map(rule => {
+              const ruleType = getRuleType(rule.metric);
+              const tc = TYPE_CONFIG[ruleType];
+              const TypeIcon = tc.icon;
+              return (
               <div key={rule.id}
-                className={`p-3 rounded-lg border transition-colors
-                  ${rule.enabled ? 'border-panel-border bg-panel-surface' : 'border-panel-border/40 bg-panel-bg opacity-60'}`}>
+                className={`p-3 rounded-lg border-l-[3px] border border-panel-border transition-all
+                  ${rule.enabled
+                    ? `${tc.borderCls} bg-panel-surface`
+                    : 'border-l-panel-border/40 border-panel-border/40 bg-panel-bg opacity-60'}`}>
                 <div className="flex items-center gap-3">
-                  <AlertTriangle size={15} className={`flex-shrink-0 ${METRIC_COLORS[rule.metric]}`} />
+                  {/* Typ-Icon mit Firing-Indikator */}
+                  <div className="relative flex-shrink-0">
+                    <TypeIcon size={16} className={rule.enabled ? tc.badgeCls.split(' ').find(c => c.startsWith('text-')) || 'text-panel-muted' : 'text-panel-muted'} />
+                    {rule.is_active && rule.enabled && (
+                      <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-panel-red opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-panel-red" />
+                      </span>
+                    )}
+                  </div>
                   <div className="flex-1 min-w-0">
-                    {/* Name + Server + Webhook */}
+                    {/* Name + Typ-Badge + Server + Webhook */}
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-semibold text-panel-text">{rule.name}</span>
-                      {rule.metric === 'action' && <span className="text-xs text-panel-accent">⚡ Server-Aktion</span>}
+                      {/* Typ-Badge */}
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${tc.badgeCls}`}>
+                        {tc.label}
+                      </span>
+                      {/* Firing-Badge */}
+                      {rule.is_active && rule.enabled && (
+                        <span className="flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-panel-red/15 text-panel-red border border-panel-red/30 animate-pulse">
+                          <Flame size={10} />Feuert{rule.active_count > 1 ? ` (${rule.active_count})` : ''}
+                        </span>
+                      )}
                       {/* Logic-Badge */}
                       {rule.metric !== 'action' && (() => {
                         let conds = [];
@@ -639,7 +712,8 @@ export default function Alerts() {
                 )}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Card>
@@ -655,6 +729,8 @@ export default function Alerts() {
               const isFailed   = h.type === 'failed';
               const style = HISTORY_STYLES[h.type] || HISTORY_STYLES.fired;
               const Icon  = style.icon;
+              const historyRuleType = getRuleType(h.metric);
+              const htc = TYPE_CONFIG[historyRuleType];
 
               let cleanMsg = String(h.message || '').replace(/<[^>]+>/g, '');
               // Vorangestellte Notiz in eckigen Klammern abtrennen — z.B. der Grund einer
@@ -677,6 +753,10 @@ export default function Alerts() {
                     <Icon size={13} className={`${style.iconCls || METRIC_COLORS[h.metric] || 'text-panel-orange'} flex-shrink-0`} />
                     <span className={`font-semibold ${style.text}`}>{style.label}</span>
                     <span className="text-panel-text font-medium">{h.rule_name || 'Gelöschte Regel'}</span>
+                    {/* Metrik-Typ-Badge */}
+                    <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full border ${htc.badgeCls}`}>
+                      {htc.label}
+                    </span>
                     <span className="text-panel-muted">{fmtDate(h.triggered_at)}</span>
                     {(h.agent_name || h.agent_id) && (
                       <span className="flex items-center gap-1 text-panel-muted bg-panel-bg px-1.5 py-0.5 rounded border border-panel-border/40">

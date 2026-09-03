@@ -6,6 +6,23 @@ const { auditLog } = require('../utils/audit');
 
 // ─── Regel-CRUD ───────────────────────────────────────────────────────────────
 
+// Hilfsfunktion: Servername aus server_key ableiten
+function resolveServerName(serverKey) {
+  if (!serverKey) return null;
+  if (serverKey === 'local') return 'Lokal';
+  if (serverKey.startsWith('sbox:')) {
+    const boxId = serverKey.slice(5);
+    return `Storage Box #${boxId}`;
+  }
+  if (serverKey.startsWith('mchost:')) {
+    const srvId = serverKey.slice(7);
+    return `MC-Host VServer #${srvId}`;
+  }
+  // Numerischer Key → Agent-ID
+  const agent = db.prepare('SELECT name FROM remote_agents WHERE id = ?').get(serverKey);
+  return agent?.name || `Agent #${serverKey}`;
+}
+
 router.get('/rules', requirePermission('alerts.view'), (req, res) => {
   const rules = db.prepare(`
     SELECT r.*, w.name AS webhook_name, w.type AS webhook_type,
@@ -15,7 +32,25 @@ router.get('/rules', requirePermission('alerts.view'), (req, res) => {
     LEFT JOIN remote_agents a ON r.agent_id = a.id
     ORDER BY r.created_at DESC
   `).all();
-  res.json(rules);
+
+  // is_active pro Regel: Prüfen ob der letzte History-Eintrag pro Regel×Server noch
+  // vom Typ 'fired' oder 'failed' ist (also nicht erholt / aufgelöst).
+  const activeStmt = db.prepare(`
+    SELECT COUNT(*) AS cnt FROM (
+      SELECT server_key, type FROM alert_history
+      WHERE rule_id = ?
+      GROUP BY COALESCE(server_key, '__none__')
+      HAVING id = MAX(id)
+    ) sub WHERE sub.type IN ('fired', 'failed')
+  `);
+
+  const enriched = rules.map(rule => {
+    let activeCount = 0;
+    try { activeCount = activeStmt.get(rule.id)?.cnt || 0; } catch {}
+    return { ...rule, is_active: activeCount > 0, active_count: activeCount };
+  });
+
+  res.json(enriched);
 });
 
 const VALID_METRICS    = ['cpu', 'memory', 'disk', 'net_rx', 'net_tx', 'action', 'patchmon_updates', 'patchmon_security', 'hetzner_storage_usage', 'mchost_runtime'];
@@ -150,6 +185,8 @@ router.get('/history', requirePermission('alerts.view'), (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 50, 200);
   const rows = db.prepare(`
     SELECT h.id, h.triggered_at, h.value, h.message, h.type,
+           h.server_key,
+           h.rule_id,
            r.name AS rule_name, r.metric, r.threshold, r.condition, r.agent_id,
            a.name AS agent_name
     FROM alert_history h
@@ -158,7 +195,38 @@ router.get('/history', requirePermission('alerts.view'), (req, res) => {
     ORDER BY h.triggered_at DESC
     LIMIT ?
   `).all(limit);
-  res.json(rows);
+
+  // Servername aus server_key ableiten (Fallback: alter agent_name-JOIN)
+  const enriched = rows.map(row => {
+    const resolvedName = row.server_key
+      ? resolveServerName(row.server_key)
+      : (row.agent_name || null);
+    return { ...row, agent_name: resolvedName || row.agent_name || null };
+  });
+
+  res.json(enriched);
+});
+
+// ─── Aktive-Alerts-Zählung (für Dashboard-KPI) ──────────────────────────────
+
+router.get('/active-count', requirePermission('alerts.view'), (req, res) => {
+  // Zählt alle Regeln, deren jüngster History-Eintrag (pro server_key) 'fired' oder 'failed' ist.
+  // 'suppressed' wird nicht mitgezählt — im Wartungsmodus soll kein aktiver Alert angezeigt werden.
+  try {
+    const rows = db.prepare(`
+      SELECT DISTINCT h.rule_id, h.server_key
+      FROM alert_history h
+      INNER JOIN alert_rules r ON h.rule_id = r.id AND r.enabled = 1
+      WHERE h.id IN (
+        SELECT MAX(id) FROM alert_history
+        GROUP BY rule_id, COALESCE(server_key, '__none__')
+      )
+      AND h.type IN ('fired', 'failed')
+    `).all();
+    res.json({ count: rows.length, details: rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
