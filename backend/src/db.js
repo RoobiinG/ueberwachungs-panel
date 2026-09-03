@@ -397,6 +397,27 @@ db.exec(`
     PRIMARY KEY (vserver_id, tag)
   );
 `);
+
+// Modul 8: SSL/TLS Zertifikats-Wächter
+db.exec(`
+  CREATE TABLE IF NOT EXISTS ssl_monitors (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    domain         TEXT NOT NULL,
+    port           INTEGER NOT NULL DEFAULT 443,
+    name           TEXT DEFAULT '',
+    active         INTEGER NOT NULL DEFAULT 1,
+    last_check     DATETIME,
+    valid_to       DATETIME,
+    issuer         TEXT,
+    days_remaining INTEGER,
+    status         TEXT DEFAULT 'ok',
+    error_msg      TEXT,
+    notify_30      INTEGER NOT NULL DEFAULT 0,
+    notify_14      INTEGER NOT NULL DEFAULT 0,
+    notify_7       INTEGER NOT NULL DEFAULT 0,
+    notify_3       INTEGER NOT NULL DEFAULT 0
+  );
+`);
 // Aktions-Benachrichtigungen
 db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('action_notifications', '0')").run();
 db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('action_webhook_id', '')").run();

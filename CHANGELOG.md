@@ -16,6 +16,17 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [6.2.0.0] - 2026-09-03 (Build 355) — *Modul 8: SSL/TLS-Wächter*
+
+- **Feature (Modul 8):** Neues, eigenständiges Modul zur Zertifikats-Überwachung eingeführt! Das Panel kann ab sofort beliebig viele Domains (HTTPS) auf ihre Zertifikatsgültigkeit prüfen.
+- Die Überprüfung findet rein serverseitig alle 12 Stunden statt; es wird kein Agent auf dem Zielserver benötigt.
+- **Benachrichtigungen:** Bei weniger als 30, 14, 7 und 3 Tagen Restlaufzeit wird automatisch eine Webhook-Benachrichtigung (Typ "System") versendet, um ein unbemerktes Ablaufen zu verhindern.
+- **UI:** Neue Ansicht "Zertifikate" (🔒) im Reiter "Dienste" hinzugefügt, welche die Domains inklusive Status (ok, warning, critical, expired) übersichtlich darstellt.
+
+**System-Auswirkungen & Nachwirken (Impact Analysis)**
+- **Datenbank:** Eine neue Tabelle `ssl_monitors` wird automatisch angelegt. Die Migration erfolgt abwärtskompatibel über ein idempotentes `CREATE TABLE IF NOT EXISTS` Schema.
+- **Berechtigungen:** Die Verwaltung der Zertifikate läuft über die bestehende Berechtigung `alerts.manage` und ist damit automatisch für alle Admin-Rollen sowie Nutzer freigeschaltet, die Alerting verwalten dürfen.
+
 ## [6.1.3.0] - 2026-09-03 (Build 354) — *Active Alerts Widget*
 
 - **Feature (Dashboard):** Neues, optionales Widget "Aktive Alarme" hinzugefügt, das die aktuell feuernden Alerts übersichtlich als Liste anzeigt (inkl. Typ, Server, Auslösezeitpunkt und Fehlermeldung). Das Widget kann über den "Widget hinzufügen"-Dialog auf dem Dashboard aktiviert werden.
