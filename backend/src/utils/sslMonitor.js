@@ -122,7 +122,7 @@ function checkDomain(domain, port) {
 }
 
 async function checkAllMonitors() {
-  const systemWebhooks = db.prepare("SELECT * FROM webhooks WHERE type = 'system' AND enabled = 1").all();
+  const systemWebhooks = db.prepare("SELECT * FROM webhooks WHERE type = 'system' AND active = 1").all();
 
   // 1. Zuerst NPM synchronisieren
   await syncNpmCertificates(systemWebhooks);
