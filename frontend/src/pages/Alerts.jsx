@@ -110,7 +110,7 @@ function ConditionRow({ cond, onChange, onRemove, canRemove, activeType }) {
               <option value="net_tx">Netz ↑</option>
             </optgroup>
             <optgroup label="Sicherheit">
-              <option value="port_drift">Unerlaubte Ports (> 0)</option>
+              <option value="port_drift">Unerlaubte Ports (&gt; 0)</option>
             </optgroup>
           </>
         )}
