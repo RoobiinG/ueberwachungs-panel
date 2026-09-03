@@ -16,6 +16,16 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [6.8.0.0] - 2026-09-03 (Build 367) - *Weekly Reporter*
+
+- **Feature (Modul 11):** Automatische Auslastungsberichte hinzugefügt. Es kann nun ein wöchentlicher HTML-Bericht (Montags 08:00 Uhr) über die Server-Auslastung (Uptime, CPU-/RAM-Spitzen, Zwischenfälle) konfiguriert und per E-Mail versendet werden.
+- **Abschluss (Modul 6):** Das Modul zur Docker Container Control & Stack-Verwaltung ("Dockhand") wurde offiziell in der Roadmap als abgeschlossen markiert (war bereits in vorherigen Versionen integriert).
+
+**System-Auswirkungen & Nachwirken (Impact Analysis):**
+- Neue Keys `report_email` und `report_weekly_enabled` werden in der SQLite-Settings-Tabelle gespeichert.
+- Benötigt eine eingerichtete SMTP-Konfiguration.
+- Keine Migrationen oder Neustarts von Agenten erforderlich.
+
 ## [6.7.0.0] - 2026-09-03 (Build 366) — *Log Collector*
 
 - **Feature (Modul 14):** Integriertes Log-Management. In der Seitenleiste befindet sich nun der Reiter "Zentrale Logs", der eine serverübergreifende Ansicht über alle Systemlogs (Syslog, Journald) bietet. Inklusive Filter (Server, Error/Warnung) und Volltextsuche.

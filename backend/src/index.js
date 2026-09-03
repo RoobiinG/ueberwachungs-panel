@@ -120,6 +120,7 @@ app.get('/api/logs/share/:token', require('./routes/panelLogsPublic'));
 app.use('/api/logs',        auth, require('./routes/panelLogs'));
 app.use('/api/version',          require('./routes/version'));
 app.use('/api/update',      auth, require('./routes/update'));
+app.use('/api/reports',     auth, require('./routes/reports'));
 
 // Serve React frontend in production
 const frontendDist = path.join(__dirname, '../../frontend/dist');
@@ -259,6 +260,7 @@ require('./alertEvaluator').start();
 // dockerMetricsRecorder entfernt - Docker-Stats kommen jetzt von Dockhand API
 try { require('./remoteMetricsRecorder').start(); } catch (e) { console.warn('Remote-Metriken deaktiviert:', e.message); }
 try { require('./logCollector').start(); } catch (e) { console.warn('Log-Collector deaktiviert:', e.message); }
+try { require('./reportScheduler').start(); } catch (e) { console.warn('Report-Scheduler deaktiviert:', e.message); }
 try { require('./utils/updateCheck').startPeriodicCheck(); } catch (e) { console.warn('UpdateCheck deaktiviert:', e.message); }
 // Nach jedem Start prüfen, ob die Agenten älter sind als das Script in diesem Image.
 try { require('./utils/agentAutoUpdate').start(); } catch (e) { console.warn('Automatisches Agent-Update deaktiviert:', e.message); }

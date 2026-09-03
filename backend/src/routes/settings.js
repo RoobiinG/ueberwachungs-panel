@@ -25,6 +25,8 @@ router.get('/', requirePermission('settings.view'), (req, res) => {
     smtp_from:         get('smtp_from'),
     smtp_secure:       get('smtp_secure') || 'false',
     github_token:      get('github_token') ? '***gesetzt***' : '',
+    report_email:      get('report_email') || '',
+    report_weekly_enabled: get('report_weekly_enabled') === 'true',
     
     // NGINX Proxy Manager
     npm_host:          get('npm_host'),
@@ -184,6 +186,15 @@ router.put('/smtp', requirePermission('settings.manage'), (req, res) => {
   if (from !== undefined) set('smtp_from', from.trim());
   if (secure !== undefined) set('smtp_secure', String(secure));
   auditLog(req, 'settings.smtp_save', 'settings', 'SMTP');
+  res.json({ success: true });
+});
+
+// ─── Berichte-Konfiguration ───
+router.put('/reports', requirePermission('settings.manage'), (req, res) => {
+  const { report_email, report_weekly_enabled } = req.body;
+  if (report_email !== undefined) set('report_email', report_email.trim());
+  if (report_weekly_enabled !== undefined) set('report_weekly_enabled', report_weekly_enabled ? 'true' : 'false');
+  auditLog(req, 'settings.reports_save', 'settings', 'Reports');
   res.json({ success: true });
 });
 

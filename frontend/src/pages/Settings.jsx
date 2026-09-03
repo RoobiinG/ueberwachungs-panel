@@ -9,7 +9,7 @@ import {
   User, Settings2, Layers, Timer, Bell, Monitor, Smartphone,
   Globe, LogOut, Laptop, PackageCheck,
   Download, Upload, Database, QrCode, Copy, Check, ShieldAlert, Gamepad2,
-  FileText, ExternalLink, ArrowUpCircle, AlertTriangle
+  FileText, ExternalLink, ArrowUpCircle, AlertTriangle, PieChart
 } from 'lucide-react';
 import { invalidateLiveIntervalCache } from '../hooks/useLiveInterval';
 
@@ -831,6 +831,7 @@ export default function Settings() {
   // SMTP
   const [smtp, setSmtp] = useState({ host: '', port: 587, user: '', pass: '', from: '', secure: false });
   const [showSmtpPw, setShowSmtpPw] = useState(false);
+  const [report, setReport] = useState({ email: '', weekly_enabled: false });
 
   // Passkeys
   const [passkeys,     setPasskeys]     = useState([]);
@@ -917,6 +918,9 @@ export default function Settings() {
       if (data.smtp_user)  setSmtp(s => ({ ...s, user:   data.smtp_user  || '' }));
       if (data.smtp_from)  setSmtp(s => ({ ...s, from:   data.smtp_from  || '' }));
       if (data.smtp_secure !== undefined) setSmtp(s => ({ ...s, secure: !!data.smtp_secure }));
+      
+      if (data.report_email !== undefined) setReport(r => ({ ...r, email: data.report_email }));
+      if (data.report_weekly_enabled !== undefined) setReport(r => ({ ...r, weekly_enabled: data.report_weekly_enabled }));
     } catch {}
   };
 
@@ -1246,6 +1250,29 @@ export default function Settings() {
       feedback('smtp', 'err', err.response?.data?.error || 'Versand fehlgeschlagen');
     }
     busy('smtp_test', false);
+  };
+
+  const saveReport = async () => {
+    busy('report', true);
+    try {
+      await axios.put('/api/settings/reports', { report_email: report.email, report_weekly_enabled: report.weekly_enabled });
+      await loadAdmin();
+      feedback('report', 'ok', 'Bericht-Einstellungen gespeichert');
+    } catch (err) {
+      feedback('report', 'err', err.response?.data?.error || 'Fehler');
+    }
+    busy('report', false);
+  };
+
+  const testReport = async () => {
+    busy('report_test', true);
+    try {
+      await axios.post('/api/reports/trigger');
+      feedback('report', 'ok', 'Test-Bericht gesendet');
+    } catch (err) {
+      feedback('report', 'err', err.response?.data?.error || 'Versand fehlgeschlagen');
+    }
+    busy('report_test', false);
   };
 
   const fmtDate = (s) => s ? new Date(s).toLocaleString('de-DE') : '—';
@@ -2338,6 +2365,44 @@ export default function Settings() {
                   </Button>
                 </div>
                 <Msg msg={msgs.smtp} />
+              </div>
+            </Card>
+          )}
+
+          {/* 📊 Automatische Auslastungsberichte (Modul 11) */}
+          {hasPermission('settings.manage') && (
+            <Card title={<span className="flex items-center gap-2"><PieChart size={14} />Auslastungsberichte</span>}>
+              <div className="space-y-4">
+                <p className="text-xs text-panel-muted leading-relaxed">
+                  Konfiguriere den automatischen wöchentlichen Versand eines zusammenfassenden Auslastungsberichts 
+                  (Uptime, CPU-/RAM-Spitzen, Zwischenfälle). Der Bericht wird jeden Montag um 08:00 Uhr generiert und gesendet.
+                  (Erfordert eine konfigurierte SMTP-Verbindung).
+                </p>
+                <div>
+                  <label className="block text-xs text-panel-muted mb-1">Empfänger-E-Mail</label>
+                  <input type="email" value={report.email} onChange={e => setReport(r => ({ ...r, email: e.target.value }))} placeholder="admin@beispiel.de" className={inputCls} />
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <input
+                    type="checkbox"
+                    id="reportWeekly"
+                    checked={report.weekly_enabled}
+                    onChange={e => setReport(r => ({ ...r, weekly_enabled: e.target.checked }))}
+                    className="rounded border-panel-border bg-panel-surface text-panel-accent focus:ring-panel-accent/50"
+                  />
+                  <label htmlFor="reportWeekly" className="text-xs text-panel-text cursor-pointer">
+                    Wöchentlichen Bericht (Montags 08:00) aktivieren
+                  </label>
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <Button onClick={saveReport} disabled={loading.report} size="sm">
+                    Speichern
+                  </Button>
+                  <Button onClick={testReport} disabled={loading.report_test || !report.email} size="sm" variant="ghost">
+                    <Send size={12} className="mr-1" /> Test-Bericht jetzt generieren & senden
+                  </Button>
+                </div>
+                <Msg msg={msgs.report} />
               </div>
             </Card>
           )}
