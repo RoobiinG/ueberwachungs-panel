@@ -133,9 +133,14 @@ export default function SslMonitor() {
                       {icon}
                     </div>
                     <div>
-                      <h3 className="font-semibold text-panel-text text-sm truncate max-w-[180px]" title={m.domain}>
-                        {m.name || m.domain}
-                      </h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold text-panel-text text-sm truncate max-w-[180px]" title={m.domain}>
+                          {m.name || m.domain}
+                        </h3>
+                        {m.source === 'npm' && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-panel-accent/20 text-panel-accent font-bold uppercase tracking-wider" title="Aus dem NGINX Proxy Manager synchronisiert">NPM</span>
+                        )}
+                      </div>
                       <a 
                         href={`https://${m.domain}:${m.port}`} 
                         target="_blank" rel="noreferrer"
@@ -148,8 +153,10 @@ export default function SslMonitor() {
                   <ActionMenu items={[
                     { label: 'Jetzt prüfen', icon: RefreshCw, onClick: () => handleForceCheck(m.id) },
                     { label: m.active ? 'Pausieren' : 'Aktivieren', icon: m.active ? ShieldAlert : ShieldCheck, onClick: () => toggleActive(m) },
-                    { label: 'Bearbeiten', icon: Pencil, onClick: () => openModal(m) },
-                    { label: 'Löschen', icon: Trash2, onClick: () => handleDelete(m.id), danger: true }
+                    ...(m.source !== 'npm' ? [
+                      { label: 'Bearbeiten', icon: Pencil, onClick: () => openModal(m) },
+                      { label: 'Löschen', icon: Trash2, onClick: () => handleDelete(m.id), danger: true }
+                    ] : [])
                   ]} />
                 </div>
                 

@@ -44,6 +44,15 @@ router.put('/:id', (req, res) => {
   const { domain, port, name, active } = req.body;
   
   try {
+    const existing = db.prepare("SELECT source FROM ssl_monitors WHERE id = ?").get(req.params.id);
+    if (existing && existing.source === 'npm') {
+      // NPM Zertifikate dürfen nur (de)aktiviert werden, aber keine Domain-Änderungen!
+      // In unserem Fall lassen wir nur "active" ändern.
+      const stmt = db.prepare(`UPDATE ssl_monitors SET active = ? WHERE id = ?`);
+      stmt.run(active === 1 || active === true ? 1 : 0, req.params.id);
+      return res.json({ message: 'Monitor aktualisiert' });
+    }
+
     const stmt = db.prepare(`
       UPDATE ssl_monitors 
       SET domain = ?, port = ?, name = ?, active = ?
@@ -59,6 +68,11 @@ router.put('/:id', (req, res) => {
 // DELETE /api/ssl/:id - Monitor löschen
 router.delete('/:id', (req, res) => {
   try {
+    const existing = db.prepare("SELECT source FROM ssl_monitors WHERE id = ?").get(req.params.id);
+    if (existing && existing.source === 'npm') {
+      return res.status(403).json({ error: 'Zertifikate von NPM können hier nicht gelöscht werden (in NPM löschen).' });
+    }
+
     db.prepare("DELETE FROM ssl_monitors WHERE id = ?").run(req.params.id);
     res.json({ message: 'Monitor gelöscht' });
   } catch (err) {
@@ -73,6 +87,7 @@ router.post('/:id/check', async (req, res) => {
     if (!monitor) return res.status(404).json({ error: 'Monitor nicht gefunden' });
 
     await checkAndStoreDomain(monitor.id, monitor.domain, monitor.port);
+    // Wenn NPM-Zertifikat, löst checkAndStoreDomain tls.connect aus, das ist aber als manueller Fallback ok.
     const updated = db.prepare("SELECT * FROM ssl_monitors WHERE id = ?").get(req.params.id);
     res.json(updated);
   } catch (err) {

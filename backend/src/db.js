@@ -141,6 +141,9 @@ try { db.exec("UPDATE users SET role = 'guest' WHERE role = 'viewer'"); } catch 
 try { db.exec("UPDATE users SET username = 'Admin' WHERE username = 'admin' AND role = 'admin'"); } catch {}
 // Server-Zugriffskontrolle: Einschränkungsmodus pro Rolle
 try { db.exec('ALTER TABLE roles ADD COLUMN restrict_agents INTEGER NOT NULL DEFAULT 0'); } catch {}
+// SSL-Monitore: NPM Integration
+try { db.exec("ALTER TABLE ssl_monitors ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'"); } catch {}
+try { db.exec('ALTER TABLE ssl_monitors ADD COLUMN npm_id INTEGER'); } catch {}
 // Alerts: Remote-Agent-Unterstützung + History-Typ
 try { db.exec('ALTER TABLE alert_rules ADD COLUMN agent_id INTEGER REFERENCES remote_agents(id) ON DELETE SET NULL'); } catch {}
 try { db.exec("ALTER TABLE alert_history ADD COLUMN type TEXT NOT NULL DEFAULT 'fired'"); } catch {}
@@ -402,6 +405,8 @@ db.exec(`
 db.exec(`
   CREATE TABLE IF NOT EXISTS ssl_monitors (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    source         TEXT NOT NULL DEFAULT 'manual',
+    npm_id         INTEGER,
     domain         TEXT NOT NULL,
     port           INTEGER NOT NULL DEFAULT 443,
     name           TEXT DEFAULT '',
