@@ -30,6 +30,7 @@ const UptimeKuma    = lazy(() => import('./pages/UptimeKuma'));
 const PatchMon      = lazy(() => import('./pages/PatchMon'));
 const Settings      = lazy(() => import('./pages/Settings'));
 const Alerts        = lazy(() => import('./pages/Alerts'));
+const Logs          = lazy(() => import('./pages/Logs'));
 const SslMonitor    = lazy(() => import('./pages/SslMonitor'));
 const Roles         = lazy(() => import('./pages/Roles'));
 const AuditLog      = lazy(() => import('./pages/AuditLog'));
@@ -106,6 +107,7 @@ const AppRoutes = () => {
             <Route path="/mchost" element={<Navigate to="/hosting" replace />} />
 
             <Route path="/alerts" element={<ProtectedRoute permission="alerts.manage"><Alerts /></ProtectedRoute>} />
+            <Route path="/logs" element={<ProtectedRoute permission="alerts.manage"><Logs /></ProtectedRoute>} />
             <Route path="/ssl" element={<ProtectedRoute permission="alerts.manage"><SslMonitor /></ProtectedRoute>} />
             <Route path="/webhooks" element={<ProtectedRoute permission="alerts.manage"><Webhooks /></ProtectedRoute>} />
             <Route path="/users"     element={<ProtectedRoute adminOnly><Users /></ProtectedRoute>} />

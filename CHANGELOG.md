@@ -16,6 +16,16 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [6.7.0.0] - 2026-09-03 (Build 366) — *Log Collector*
+
+- **Feature (Modul 14):** Integriertes Log-Management. In der Seitenleiste befindet sich nun der Reiter "Zentrale Logs", der eine serverübergreifende Ansicht über alle Systemlogs (Syslog, Journald) bietet. Inklusive Filter (Server, Error/Warnung) und Volltextsuche.
+- **Backend:** Ein neuer `logCollector` Worker pollst die Server einmal pro Minute nach neuen Logs. Aufbewahrungsfrist ist automatisch 7 Tage, danach räumt sich die DB auf.
+- **Agent (v2.12.0):** Ein neuer Endpunkt `/logs?since=...` liest Logs via `journalctl -o json` sicher und formatiert aus.
+
+### System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Datenbank:** Eine neue Tabelle `syslogs` wird automatisch angelegt. Sie bereinigt sich eigenständig, sodass die SQLite-Datei nicht ins Endlose wächst.
+- **Agent-Kompatibilität:** Da der `logCollector` alle Agenten nach `/logs` fragt, antworten ältere Agenten (vor v2.12.0) einfach mit 404 und werden übersprungen.
+
 ## [6.6.0.0] - 2026-09-03 (Build 365) — *Security & Maintenance*
 
 - **Feature (Modul 12):** Auto-Remediation (Bash-Befehl) für Alarmregeln. Sobald ein Alarm auslöst, wird der definierte Befehl (z.B. `systemctl restart nginx`) auf dem Server als Root ausgeführt.

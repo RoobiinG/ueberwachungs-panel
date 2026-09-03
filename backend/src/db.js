@@ -358,6 +358,19 @@ db.exec(`
     accessed_at  DATETIME,
     access_count INTEGER NOT NULL DEFAULT 0
   );
+
+  CREATE TABLE IF NOT EXISTS syslogs (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id   INTEGER NOT NULL,
+    timestamp  DATETIME NOT NULL,
+    source     TEXT NOT NULL,
+    level      TEXT NOT NULL,
+    message    TEXT NOT NULL,
+    FOREIGN KEY(agent_id) REFERENCES remote_agents(id) ON DELETE CASCADE
+  );
+  CREATE INDEX IF NOT EXISTS idx_syslogs_agent ON syslogs(agent_id);
+  CREATE INDEX IF NOT EXISTS idx_syslogs_ts ON syslogs(timestamp DESC);
+  CREATE INDEX IF NOT EXISTS idx_syslogs_level ON syslogs(level);
 `);
 
 // Audit-Log: alle sicherheitsrelevanten Aktionen protokollieren

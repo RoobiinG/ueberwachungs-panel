@@ -28,6 +28,47 @@ let TERMINAL_BEREIT = false;
 let TERMINAL_SETUP = { zustand: null, meldung: null, seit: null };
 const REPO_RAW = 'https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master/agent/panel-agent.js';
 const PORT  = parseInt(process.env.PANEL_AGENT_PORT || '7331');
+
+async function getSyslogs(since) {
+  try {
+    // Falls kein since angegeben, Default = letzte 1 Stunde (als Sekunden)
+    const sinceTimestamp = since ? parseInt(since) : Math.floor(Date.now() / 1000) - 3600;
+    const { stdout } = await execAsync(`journalctl --since "@${sinceTimestamp}" -o json --no-pager -n 1000`);
+    const logs = [];
+    stdout.split('\n').forEach(line => {
+      if (!line.trim()) return;
+      try {
+        const obj = JSON.parse(line);
+        let level = 'info';
+        const prio = parseInt(obj.PRIORITY || 6);
+        if (prio <= 3) level = 'error';
+        else if (prio === 4) level = 'warn';
+
+        logs.push({
+          timestamp: parseInt(obj.__REALTIME_TIMESTAMP) / 1000, // ms
+          source: obj.SYSLOG_IDENTIFIER || obj._COMM || 'syslog',
+          level,
+          message: obj.MESSAGE || ''
+        });
+      } catch (e) {}
+    });
+    return logs;
+  } catch (err) {
+    // Fallback: /var/log/syslog (sehr primitiv, ohne echtes 'since' - nur tail)
+    try {
+      const { stdout } = await execAsync('tail -n 200 /var/log/syslog');
+      return stdout.split('\n').filter(l => l.trim()).map(line => {
+        let level = 'info';
+        if (line.match(/error|fail|crit|fatal/i)) level = 'error';
+        else if (line.match(/warn/i)) level = 'warn';
+        return { timestamp: Date.now(), source: 'syslog', level, message: line };
+      });
+    } catch (e) {
+      return [];
+    }
+  }
+}
+
 const TOKEN = process.env.PANEL_AGENT_TOKEN || '';
 const DIR   = __dirname;
 
@@ -1483,6 +1524,12 @@ async function handler(req, res) {
 
     } else if (url === '/network/ports' && req.method === 'GET') {
       respond(res, 200, await getOpenPorts());
+
+    // ── Logs ──
+    } else if (url === '/logs' && req.method === 'GET') {
+      const q = new URL(req.url, 'http://localhost').searchParams;
+      const since = q.get('since');
+      respond(res, 200, await getSyslogs(since));
 
     // ── Packages ────────────────────────────────────────────────────────────────
     } else if (url === '/packages/update' && req.method === 'POST') {

@@ -108,6 +108,7 @@ app.use('/api/metrics',    auth, require('./routes/metrics'));    // Kein requir
 app.use('/api/dashboard',  auth, require('./routes/dashboard'));
 app.use('/api/uptime-kuma', auth, require('./routes/uptimeKuma'));
 app.use('/api/alerts',      auth, require('./routes/alerts'));
+app.use('/api/logs',        auth, require('./routes/logs'));
 app.use('/api/ssl',         auth, require('./routes/ssl'));
 app.use('/api/sessions',    auth, require('./routes/sessions'));
 app.use('/api/dockhand',    auth, require('./routes/dockhand'));
@@ -255,8 +256,9 @@ server.on('upgrade', (request, socket, head) => {
 
 require('./metricsAggregator').start();
 require('./alertEvaluator').start();
-// dockerMetricsRecorder entfernt — Docker-Stats kommen jetzt von Dockhand API
+// dockerMetricsRecorder entfernt - Docker-Stats kommen jetzt von Dockhand API
 try { require('./remoteMetricsRecorder').start(); } catch (e) { console.warn('Remote-Metriken deaktiviert:', e.message); }
+try { require('./logCollector').start(); } catch (e) { console.warn('Log-Collector deaktiviert:', e.message); }
 try { require('./utils/updateCheck').startPeriodicCheck(); } catch (e) { console.warn('UpdateCheck deaktiviert:', e.message); }
 // Nach jedem Start prüfen, ob die Agenten älter sind als das Script in diesem Image.
 try { require('./utils/agentAutoUpdate').start(); } catch (e) { console.warn('Automatisches Agent-Update deaktiviert:', e.message); }
