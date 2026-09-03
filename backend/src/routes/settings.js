@@ -3,6 +3,7 @@ const axios = require('axios');
 const db = require('../db');
 const { requirePermission } = require('../middleware/requirePermission');
 const { auditLog } = require('../utils/audit');
+const { checkAllMonitors } = require('../utils/sslMonitor');
 
 const SENSITIVE = ['hetzner_api_token', 'mchost_password', 'mchost_api_token', 'smtp_pass', 'github_token', 'npm_password', 'npm_token'];
 
@@ -82,6 +83,10 @@ router.post('/npm/login', requirePermission('settings.manage'), async (req, res)
       set('npm_email', email);
       if (password) set('npm_password', password);
       set('npm_token', data.token);
+      
+      // NPM-Zertifikate sofort im Hintergrund synchronisieren
+      checkAllMonitors().catch(err => console.error('[NPM] Sync nach Login fehlgeschlagen:', err));
+      
       res.json({ success: true, message: 'NPM Login erfolgreich' });
     } else {
       res.status(401).json({ error: 'NPM Login fehlgeschlagen: Kein Token erhalten' });
