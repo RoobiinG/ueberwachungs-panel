@@ -867,6 +867,9 @@ export default function Settings() {
   const [npmEmail,        setNpmEmail]        = useState('');
   const [npmPassword,     setNpmPassword]     = useState('');
   const [showNpmPw,       setShowNpmPw]       = useState(false);
+  const [npmRequires2fa,  setNpmRequires2fa]  = useState(false);
+  const [npmChallengeToken, setNpmChallengeToken] = useState('');
+  const [npmTotp,         setNpmTotp]         = useState('');
 
   // Dockhand
   const [dockhandUrl,      setDockhandUrl]      = useState('');
@@ -1183,13 +1186,26 @@ export default function Settings() {
   };
 
   const loginNpm = async () => {
-    if (!npmHost || !npmEmail || !npmPassword) return;
+    if (!npmHost || !npmEmail || (!npmPassword && !npmChallengeToken)) return;
     busy('npm', true);
     try {
-      const { data } = await axios.post('/api/settings/npm/login', { host: npmHost, port: npmPort, email: npmEmail, password: npmPassword });
-      setNpmPassword('');
-      await loadAdmin();
-      feedback('npm', 'ok', data.message || 'Login erfolgreich');
+      const payload = npmRequires2fa 
+        ? { host: npmHost, port: npmPort, email: npmEmail, totp_code: npmTotp, challenge_token: npmChallengeToken }
+        : { host: npmHost, port: npmPort, email: npmEmail, password: npmPassword };
+      const { data } = await axios.post('/api/settings/npm/login', payload);
+      
+      if (data.requires_2fa) {
+        setNpmRequires2fa(true);
+        setNpmChallengeToken(data.challenge_token);
+        feedback('npm', 'ok', '2FA-Code benötigt');
+      } else {
+        setNpmPassword('');
+        setNpmTotp('');
+        setNpmRequires2fa(false);
+        setNpmChallengeToken('');
+        await loadAdmin();
+        feedback('npm', 'ok', data.message || 'Login erfolgreich');
+      }
     } catch (err) {
       feedback('npm', 'err', err.response?.data?.error || 'Login fehlgeschlagen');
     }
@@ -2157,7 +2173,8 @@ export default function Settings() {
                     onChange={e => setNpmPassword(e.target.value)}
                     placeholder="••••••••"
                     className={inputCls + ' pr-9'}
-                    onKeyDown={e => e.key === 'Enter' && loginNpm()}
+                    onKeyDown={e => e.key === 'Enter' && !npmRequires2fa && loginNpm()}
+                    disabled={npmRequires2fa}
                   />
                   <button type="button" onClick={() => setShowNpmPw(v => !v)}
                     className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
@@ -2166,9 +2183,44 @@ export default function Settings() {
                 </div>
               </div>
               
-              <Button onClick={loginNpm} disabled={!npmHost || !npmEmail || !npmPassword || loading.npm} size="sm">
-                {status.npm_token_set ? 'Neu verbinden' : 'Verbinden & Token speichern'}
-              </Button>
+              {npmRequires2fa && (
+                <div>
+                  <label className="block text-xs font-semibold text-panel-accent mb-1">2FA Code (Authenticator)</label>
+                  <input
+                    type="text"
+                    value={npmTotp}
+                    onChange={e => setNpmTotp(e.target.value)}
+                    placeholder="123456"
+                    maxLength={6}
+                    className={`${inputCls} tracking-widest font-mono border-panel-accent/50 focus:border-panel-accent`}
+                    onKeyDown={e => e.key === 'Enter' && npmTotp.length === 6 && loginNpm()}
+                    autoFocus
+                  />
+                  <p className="text-[10px] text-panel-muted mt-1">
+                    Bitte gib den 6-stelligen Code aus deiner Authenticator-App ein.
+                    Beachte: Mit 2FA muss der Token ggf. manuell erneuert werden.
+                  </p>
+                </div>
+              )}
+              
+              <div className="flex gap-2">
+                <Button 
+                  onClick={loginNpm} 
+                  disabled={!npmHost || !npmEmail || (!npmRequires2fa && !npmPassword) || (npmRequires2fa && npmTotp.length !== 6) || loading.npm} 
+                  size="sm"
+                >
+                  {npmRequires2fa ? '2FA Code bestätigen' : (status.npm_token_set ? 'Neu verbinden' : 'Verbinden & Token speichern')}
+                </Button>
+                {npmRequires2fa && (
+                  <Button 
+                    onClick={() => { setNpmRequires2fa(false); setNpmTotp(''); setNpmChallengeToken(''); }} 
+                    size="sm" 
+                    variant="secondary"
+                  >
+                    Abbrechen
+                  </Button>
+                )}
+              </div>
               <Msg msg={msgs.npm} />
             </div>
           </Card>

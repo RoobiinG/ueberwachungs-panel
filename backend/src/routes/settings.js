@@ -51,26 +51,36 @@ router.delete('/hetzner', requirePermission('settings.manage'), (req, res) => {
 
 // NGINX Proxy Manager
 router.post('/npm/login', requirePermission('settings.manage'), async (req, res) => {
-  const { host, port, email, password } = req.body;
-  if (!host || !email || !password) {
-    return res.status(400).json({ error: 'Host, E-Mail und Passwort sind erforderlich' });
+  const { host, port, email, password, totp_code, challenge_token } = req.body;
+  
+  if (!host || !email) {
+    return res.status(400).json({ error: 'Host und E-Mail sind erforderlich' });
+  }
+  if (!password && !challenge_token) {
+    return res.status(400).json({ error: 'Passwort oder Challenge Token erforderlich' });
   }
 
   try {
-    const url = `${host}:${port || 81}/api/tokens`;
-    const { data } = await axios.post(url, {
-      identity: email,
-      secret: password
-    }, {
+    const baseUrl = `${host}:${port || 81}/api/tokens`;
+    const url = totp_code ? `${baseUrl}/2fa` : baseUrl;
+    const payload = totp_code 
+      ? { challenge_token, code: totp_code } 
+      : { identity: email, secret: password };
+
+    const { data } = await axios.post(url, payload, {
       headers: { 'Content-Type': 'application/json' },
       timeout: 5000
     });
+
+    if (data && data.requires_2fa) {
+      return res.json({ requires_2fa: true, challenge_token: data.challenge_token });
+    }
 
     if (data && data.token) {
       set('npm_host', host);
       set('npm_port', port || 81);
       set('npm_email', email);
-      set('npm_password', password);
+      if (password) set('npm_password', password);
       set('npm_token', data.token);
       res.json({ success: true, message: 'NPM Login erfolgreich' });
     } else {
