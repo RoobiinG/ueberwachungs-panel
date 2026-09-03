@@ -162,7 +162,7 @@ export default function SslMonitor() {
                     <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
                       <div className="bg-panel-bg p-2 rounded border border-panel-border/50">
                         <span className="block text-panel-muted mb-0.5">Gültig bis</span>
-                        <span className={\`font-medium \${statusTextCls}\`}>
+                        <span className={`font-medium ${statusTextCls}`}>
                           {m.days_remaining} {m.days_remaining === 1 ? 'Tag' : 'Tage'}
                         </span>
                         <span className="block text-[10px] text-panel-muted mt-0.5">
