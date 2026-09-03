@@ -861,6 +861,16 @@ export default function Settings() {
   const [pelicanHasToken, setPelicanHasToken] = useState(false);
   const [showPelicanToken, setShowPelicanToken] = useState(false);
 
+  // Nginx Proxy Manager (NPM)
+  const [npmHost,         setNpmHost]         = useState('');
+  const [npmPort,         setNpmPort]         = useState('81');
+  const [npmEmail,        setNpmEmail]        = useState('');
+  const [npmPassword,     setNpmPassword]     = useState('');
+  const [showNpmPw,       setShowNpmPw]       = useState(false);
+  const [npmRequires2fa,  setNpmRequires2fa]  = useState(false);
+  const [npmChallengeToken, setNpmChallengeToken] = useState('');
+  const [npmTotp,         setNpmTotp]         = useState('');
+
   // Dockhand
   const [dockhandUrl,      setDockhandUrl]      = useState('');
   const [dockhandToken,    setDockhandToken]    = useState('');
@@ -899,6 +909,9 @@ export default function Settings() {
         setPelicanHasToken(!!p.hasToken);
       } catch {}
       if (data.mchost_username) setMcUsername(data.mchost_username);
+      if (data.npm_host) setNpmHost(data.npm_host);
+      if (data.npm_port) setNpmPort(data.npm_port);
+      if (data.npm_email) setNpmEmail(data.npm_email);
       if (data.smtp_host)  setSmtp(s => ({ ...s, host:   data.smtp_host  || '' }));
       if (data.smtp_port)  setSmtp(s => ({ ...s, port:   data.smtp_port  || 587 }));
       if (data.smtp_user)  setSmtp(s => ({ ...s, user:   data.smtp_user  || '' }));
@@ -1170,6 +1183,44 @@ export default function Settings() {
       feedback('mchost', 'ok', 'Zugangsdaten gelöscht');
     } catch { feedback('mchost', 'err', 'Fehler beim Löschen'); }
     busy('mchost_del', false);
+  };
+
+  const loginNpm = async () => {
+    if (!npmHost || !npmEmail || (!npmPassword && !npmChallengeToken)) return;
+    busy('npm', true);
+    try {
+      const payload = npmRequires2fa 
+        ? { host: npmHost, port: npmPort, email: npmEmail, totp_code: npmTotp, challenge_token: npmChallengeToken }
+        : { host: npmHost, port: npmPort, email: npmEmail, password: npmPassword };
+      const { data } = await axios.post('/api/settings/npm/login', payload);
+      
+      if (data.requires_2fa) {
+        setNpmRequires2fa(true);
+        setNpmChallengeToken(data.challenge_token);
+        feedback('npm', 'ok', '2FA-Code benötigt');
+      } else {
+        setNpmPassword('');
+        setNpmTotp('');
+        setNpmRequires2fa(false);
+        setNpmChallengeToken('');
+        await loadAdmin();
+        feedback('npm', 'ok', data.message || 'Login erfolgreich');
+      }
+    } catch (err) {
+      feedback('npm', 'err', err.response?.data?.error || 'Login fehlgeschlagen');
+    }
+    busy('npm', false);
+  };
+
+  const deleteNpm = async () => {
+    busy('npm_del', true);
+    try {
+      await axios.delete('/api/settings/npm');
+      setNpmHost(''); setNpmPort('81'); setNpmEmail(''); setNpmPassword('');
+      await loadAdmin();
+      feedback('npm', 'ok', 'Verbindung entfernt');
+    } catch { feedback('npm', 'err', 'Fehler beim Entfernen'); }
+    busy('npm_del', false);
   };
 
   const saveSmtp = async () => {
@@ -2077,6 +2128,100 @@ export default function Settings() {
               </div>
 
               <Msg msg={msgs.pelican} />
+            </div>
+          </Card>
+
+          {/* ── Nginx Proxy Manager ── */}
+          <Card title={<span className="flex items-center gap-2"><Globe size={14} />NGINX Proxy Manager (SSL)</span>}>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs text-panel-muted leading-relaxed">
+                  Liest automatisch alle Zertifikate aus deinem NPM aus, um deren Ablaufdatum für den SSL-Wächter zu synchronisieren.
+                </p>
+                <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                  <StatusBadge set={status.npm_token_set} />
+                  {status.npm_token_set && (
+                    <Button size="sm" variant="danger" onClick={deleteNpm} disabled={loading.npm_del}>
+                      <Trash2 size={12} className="mr-1" />Trennen
+                    </Button>
+                  )}
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-2">
+                  <label className="block text-xs text-panel-muted mb-1">Host (z.B. http://192.168.1.100)</label>
+                  <input type="url" value={npmHost} onChange={e => setNpmHost(e.target.value)} placeholder="http://192.168.1.100" className={inputCls} />
+                </div>
+                <div>
+                  <label className="block text-xs text-panel-muted mb-1">API Port</label>
+                  <input type="number" value={npmPort} onChange={e => setNpmPort(e.target.value)} placeholder="81" className={inputCls} />
+                </div>
+              </div>
+              
+              <div>
+                <label className="block text-xs text-panel-muted mb-1">E-Mail (NPM Login)</label>
+                <input type="email" value={npmEmail} onChange={e => setNpmEmail(e.target.value)} placeholder="admin@example.com" className={inputCls} />
+              </div>
+              
+              <div>
+                <label className="block text-xs text-panel-muted mb-1">Passwort</label>
+                <div className="relative">
+                  <input
+                    type={showNpmPw ? 'text' : 'password'}
+                    value={npmPassword}
+                    onChange={e => setNpmPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className={inputCls + ' pr-9'}
+                    onKeyDown={e => e.key === 'Enter' && !npmRequires2fa && loginNpm()}
+                    disabled={npmRequires2fa}
+                  />
+                  <button type="button" onClick={() => setShowNpmPw(v => !v)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
+                    {showNpmPw ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+              </div>
+              
+              {npmRequires2fa && (
+                <div>
+                  <label className="block text-xs font-semibold text-panel-accent mb-1">2FA Code (Authenticator)</label>
+                  <input
+                    type="text"
+                    value={npmTotp}
+                    onChange={e => setNpmTotp(e.target.value)}
+                    placeholder="123456"
+                    maxLength={6}
+                    className={`${inputCls} tracking-widest font-mono border-panel-accent/50 focus:border-panel-accent`}
+                    onKeyDown={e => e.key === 'Enter' && npmTotp.length === 6 && loginNpm()}
+                    autoFocus
+                  />
+                  <p className="text-[10px] text-panel-muted mt-1">
+                    Bitte gib den 6-stelligen Code aus deiner Authenticator-App ein.
+                    Beachte: Mit 2FA muss der Token ggf. manuell erneuert werden.
+                  </p>
+                </div>
+              )}
+              
+              <div className="flex gap-2">
+                <Button 
+                  onClick={loginNpm} 
+                  disabled={!npmHost || !npmEmail || (!npmRequires2fa && !npmPassword) || (npmRequires2fa && npmTotp.length !== 6) || loading.npm} 
+                  size="sm"
+                >
+                  {npmRequires2fa ? '2FA Code bestätigen' : (status.npm_token_set ? 'Neu verbinden' : 'Verbinden & Token speichern')}
+                </Button>
+                {npmRequires2fa && (
+                  <Button 
+                    onClick={() => { setNpmRequires2fa(false); setNpmTotp(''); setNpmChallengeToken(''); }} 
+                    size="sm" 
+                    variant="secondary"
+                  >
+                    Abbrechen
+                  </Button>
+                )}
+              </div>
+              <Msg msg={msgs.npm} />
             </div>
           </Card>
 

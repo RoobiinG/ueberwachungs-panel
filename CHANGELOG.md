@@ -16,6 +16,28 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [6.3.0.0] - 2026-09-03 (Build 356) — *Modul 8 Erweiterung - NPM Integration*
+
+- **Feature (Modul 8 Erweiterung):** NGINX Proxy Manager (NPM) Integration. SSL-Zertifikate, die über NPM verwaltet werden, können nun automatisch in den SSL-Wächter synchronisiert werden.
+- Das Panel verbindet sich mit der API des NPM, importiert alle Zertifikate und liest deren genaues Ablaufdatum aus — ohne eigene Verbindungen übers Internet aufbauen zu müssen.
+- Löscht man ein Zertifikat in NPM, verschwindet es auch automatisch im Panel. Alle Alarm-Webhooks bleiben wie bei manuellen Zertifikaten erhalten.
+- **UI:** Neuer Einstellungs-Bereich unter "System & Backup -> Cloud & APIs". Synchronisierte Zertifikate im Wächter tragen zur Unterscheidung ein kleines "[NPM]" Badge und lassen sich nicht mehr manuell bearbeiten.
+- **System-Auswirkungen & Nachwirken (Impact Analysis):**
+  - DB-Migration: Die Tabelle `ssl_monitors` wurde um die Spalten `source` und `npm_id` erweitert.
+  - Einstellungen: Neue Keys (`npm_host`, `npm_port`, `npm_email`, `npm_password`, `npm_token`) wurden zu `settings` hinzugefügt (Passwort und Token werden sensibel behandelt).
+  - Neustart / Session: Die NPM-Synchronisation reiht sich nahtlos in den bestehenden 12h-Cronjob ein; kein Neustart erforderlich.
+
+## [6.2.0.0] - 2026-09-03 (Build 355) — *Modul 8: SSL/TLS-Wächter*
+
+- **Feature (Modul 8):** Neues, eigenständiges Modul zur Zertifikats-Überwachung eingeführt! Das Panel kann ab sofort beliebig viele Domains (HTTPS) auf ihre Zertifikatsgültigkeit prüfen.
+- Die Überprüfung findet rein serverseitig alle 12 Stunden statt; es wird kein Agent auf dem Zielserver benötigt.
+- **Benachrichtigungen:** Bei weniger als 30, 14, 7 und 3 Tagen Restlaufzeit wird automatisch eine Webhook-Benachrichtigung (Typ "System") versendet, um ein unbemerktes Ablaufen zu verhindern.
+- **UI:** Neue Ansicht "Zertifikate" (🔒) im Reiter "Dienste" hinzugefügt, welche die Domains inklusive Status (ok, warning, critical, expired) übersichtlich darstellt.
+
+**System-Auswirkungen & Nachwirken (Impact Analysis)**
+- **Datenbank:** Eine neue Tabelle `ssl_monitors` wird automatisch angelegt. Die Migration erfolgt abwärtskompatibel über ein idempotentes `CREATE TABLE IF NOT EXISTS` Schema.
+- **Berechtigungen:** Die Verwaltung der Zertifikate läuft über die bestehende Berechtigung `alerts.manage` und ist damit automatisch für alle Admin-Rollen sowie Nutzer freigeschaltet, die Alerting verwalten dürfen.
+
 ## [6.1.3.0] - 2026-09-03 (Build 354) — *Active Alerts Widget*
 
 - **Feature (Dashboard):** Neues, optionales Widget "Aktive Alarme" hinzugefügt, das die aktuell feuernden Alerts übersichtlich als Liste anzeigt (inkl. Typ, Server, Auslösezeitpunkt und Fehlermeldung). Das Widget kann über den "Widget hinzufügen"-Dialog auf dem Dashboard aktiviert werden.

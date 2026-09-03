@@ -141,6 +141,9 @@ try { db.exec("UPDATE users SET role = 'guest' WHERE role = 'viewer'"); } catch 
 try { db.exec("UPDATE users SET username = 'Admin' WHERE username = 'admin' AND role = 'admin'"); } catch {}
 // Server-Zugriffskontrolle: Einschränkungsmodus pro Rolle
 try { db.exec('ALTER TABLE roles ADD COLUMN restrict_agents INTEGER NOT NULL DEFAULT 0'); } catch {}
+// SSL-Monitore: NPM Integration
+try { db.exec("ALTER TABLE ssl_monitors ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'"); } catch {}
+try { db.exec('ALTER TABLE ssl_monitors ADD COLUMN npm_id INTEGER'); } catch {}
 // Alerts: Remote-Agent-Unterstützung + History-Typ
 try { db.exec('ALTER TABLE alert_rules ADD COLUMN agent_id INTEGER REFERENCES remote_agents(id) ON DELETE SET NULL'); } catch {}
 try { db.exec("ALTER TABLE alert_history ADD COLUMN type TEXT NOT NULL DEFAULT 'fired'"); } catch {}
@@ -395,6 +398,29 @@ db.exec(`
     color      TEXT NOT NULL DEFAULT 'blue',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (vserver_id, tag)
+  );
+`);
+
+// Modul 8: SSL/TLS Zertifikats-Wächter
+db.exec(`
+  CREATE TABLE IF NOT EXISTS ssl_monitors (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    source         TEXT NOT NULL DEFAULT 'manual',
+    npm_id         INTEGER,
+    domain         TEXT NOT NULL,
+    port           INTEGER NOT NULL DEFAULT 443,
+    name           TEXT DEFAULT '',
+    active         INTEGER NOT NULL DEFAULT 1,
+    last_check     DATETIME,
+    valid_to       DATETIME,
+    issuer         TEXT,
+    days_remaining INTEGER,
+    status         TEXT DEFAULT 'ok',
+    error_msg      TEXT,
+    notify_30      INTEGER NOT NULL DEFAULT 0,
+    notify_14      INTEGER NOT NULL DEFAULT 0,
+    notify_7       INTEGER NOT NULL DEFAULT 0,
+    notify_3       INTEGER NOT NULL DEFAULT 0
   );
 `);
 // Aktions-Benachrichtigungen

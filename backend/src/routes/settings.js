@@ -3,8 +3,9 @@ const axios = require('axios');
 const db = require('../db');
 const { requirePermission } = require('../middleware/requirePermission');
 const { auditLog } = require('../utils/audit');
+const { checkAllMonitors } = require('../utils/sslMonitor');
 
-const SENSITIVE = ['hetzner_api_token', 'mchost_password', 'mchost_api_token', 'smtp_pass', 'github_token'];
+const SENSITIVE = ['hetzner_api_token', 'mchost_password', 'mchost_api_token', 'smtp_pass', 'github_token', 'npm_password', 'npm_token'];
 
 const get = (key) => db.prepare('SELECT value FROM settings WHERE key = ?').get(key)?.value || '';
 const set = (key, value) => db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)').run(key, value);
@@ -24,6 +25,13 @@ router.get('/', requirePermission('settings.view'), (req, res) => {
     smtp_from:         get('smtp_from'),
     smtp_secure:       get('smtp_secure') || 'false',
     github_token:      get('github_token') ? '***gesetzt***' : '',
+    
+    // NGINX Proxy Manager
+    npm_host:          get('npm_host'),
+    npm_port:          get('npm_port') || '81',
+    npm_email:         get('npm_email'),
+    npm_password:      get('npm_password') ? '***gesetzt***' : '',
+    npm_token_set:     !!get('npm_token'),
   });
 });
 
@@ -39,6 +47,62 @@ router.put('/hetzner', requirePermission('settings.manage'), (req, res) => {
 // Hetzner Token löschen
 router.delete('/hetzner', requirePermission('settings.manage'), (req, res) => {
   del('hetzner_api_token');
+  res.json({ success: true });
+});
+
+// NGINX Proxy Manager
+router.post('/npm/login', requirePermission('settings.manage'), async (req, res) => {
+  const { host, port, email, password, totp_code, challenge_token } = req.body;
+  
+  if (!host || !email) {
+    return res.status(400).json({ error: 'Host und E-Mail sind erforderlich' });
+  }
+  if (!password && !challenge_token) {
+    return res.status(400).json({ error: 'Passwort oder Challenge Token erforderlich' });
+  }
+
+  try {
+    const baseUrl = `${host}:${port || 81}/api/tokens`;
+    const url = totp_code ? `${baseUrl}/2fa` : baseUrl;
+    const payload = totp_code 
+      ? { challenge_token, code: totp_code } 
+      : { identity: email, secret: password };
+
+    const { data } = await axios.post(url, payload, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 5000
+    });
+
+    if (data && data.requires_2fa) {
+      return res.json({ requires_2fa: true, challenge_token: data.challenge_token });
+    }
+
+    if (data && data.token) {
+      set('npm_host', host);
+      set('npm_port', port || 81);
+      set('npm_email', email);
+      if (password) set('npm_password', password);
+      set('npm_token', data.token);
+      
+      // NPM-Zertifikate sofort im Hintergrund synchronisieren
+      checkAllMonitors().catch(err => console.error('[NPM] Sync nach Login fehlgeschlagen:', err));
+      
+      res.json({ success: true, message: 'NPM Login erfolgreich' });
+    } else {
+      res.status(401).json({ error: 'NPM Login fehlgeschlagen: Kein Token erhalten' });
+    }
+  } catch (err) {
+    const msg = err.response?.data?.error?.message || err.message;
+    res.status(err.response?.status || 500).json({ error: `NPM API Fehler: ${msg}` });
+  }
+});
+
+router.delete('/npm', requirePermission('settings.manage'), (req, res) => {
+  del('npm_host');
+  del('npm_port');
+  del('npm_email');
+  del('npm_password');
+  del('npm_token');
   res.json({ success: true });
 });
 
