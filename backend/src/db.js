@@ -148,6 +148,7 @@ try { db.exec('ALTER TABLE ssl_monitors ADD COLUMN npm_id INTEGER'); } catch {}
 try { db.exec('ALTER TABLE alert_rules ADD COLUMN agent_id INTEGER REFERENCES remote_agents(id) ON DELETE SET NULL'); } catch {}
 try { db.exec("ALTER TABLE alert_history ADD COLUMN type TEXT NOT NULL DEFAULT 'fired'"); } catch {}
 try { db.exec("ALTER TABLE alert_history ADD COLUMN server_key TEXT DEFAULT NULL"); } catch {}
+try { db.exec("ALTER TABLE alert_rules ADD COLUMN remediation_cmd TEXT DEFAULT NULL"); } catch {}
 // Alert-Rules: CHECK-Constraints entfernen + multi-server agent_ids + neue Metriken
 try {
   const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='alert_rules'").get();
@@ -329,6 +330,8 @@ try {
 try { db.exec('ALTER TABLE remote_agents ADD COLUMN dockhand_env_id INTEGER'); } catch {}
 // PatchMon-Integration: Verknüpfung zu einem PatchMon-Host (dessen id) pro Remote-Agent
 try { db.exec('ALTER TABLE remote_agents ADD COLUMN patchmon_host_id TEXT'); } catch {}
+// Port-Wächter (Modul 13)
+try { db.exec('ALTER TABLE remote_agents ADD COLUMN allowed_ports TEXT NOT NULL DEFAULT "[]"'); } catch {}
 // Users: Letzter Login-Zeitpunkt, IP und Herkunft
 try { db.exec('ALTER TABLE users ADD COLUMN last_login DATETIME'); } catch {}
 try { db.exec('ALTER TABLE users ADD COLUMN last_login_ip TEXT'); } catch {}

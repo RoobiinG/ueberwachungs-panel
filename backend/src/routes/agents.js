@@ -85,11 +85,11 @@ router.get('/', requirePermission('agents.view'), (req, res) => {
   let agents;
   if (!role || role.is_admin || !role.restrict_agents) {
     agents = db.prepare(
-      'SELECT id, name, url, fingerprint, dockhand_env_id, patchmon_host_id, created_at FROM remote_agents ORDER BY name'
+      'SELECT id, name, url, fingerprint, dockhand_env_id, patchmon_host_id, allowed_ports, created_at FROM remote_agents ORDER BY name'
     ).all();
   } else {
     agents = db.prepare(`
-      SELECT ra.id, ra.name, ra.url, ra.fingerprint, ra.dockhand_env_id, ra.patchmon_host_id, ra.created_at
+      SELECT ra.id, ra.name, ra.url, ra.fingerprint, ra.dockhand_env_id, ra.patchmon_host_id, ra.allowed_ports, ra.created_at
       FROM remote_agents ra
       INNER JOIN agent_grants ag ON ag.agent_id = ra.id
       WHERE ag.role_id = ?
@@ -144,15 +144,20 @@ router.put('/:id', requirePermission('agents.edit'), async (req, res) => {
     ? (patchmon_host_id ? String(patchmon_host_id).trim() : null)
     : (agent.patchmon_host_id ?? null);
 
+  const newAllowedPorts = ('allowed_ports' in req.body)
+    ? (Array.isArray(req.body.allowed_ports) ? JSON.stringify(req.body.allowed_ports) : '[]')
+    : (agent.allowed_ports ?? '[]');
+
   db.prepare(`
     UPDATE remote_agents SET
       name             = COALESCE(?, name),
       url              = ?,
       token            = COALESCE(?, token),
       fingerprint      = ?,
-      patchmon_host_id = ?
+      patchmon_host_id = ?,
+      allowed_ports    = ?
     WHERE id = ?
-  `).run(name?.trim() ?? null, newUrl, token !== undefined ? token.trim() : null, fingerprint, pmHostId, agent.id);
+  `).run(name?.trim() ?? null, newUrl, token !== undefined ? token.trim() : null, fingerprint, pmHostId, newAllowedPorts, agent.id);
 
   auditLog(req, 'agent.edit', 'agent', agent.name, { newUrl });
   res.json({ success: true });
@@ -453,6 +458,31 @@ router.post('/:id/update', requirePermission('agents.update'), async (req, res) 
     res.status(502).json({ error: err.response?.data?.error || err.message });
   }
 });
+
+// POST /api/agents/:id/packages/update
+router.post('/:id/packages/update', requirePermission('system.update'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+
+  auditLog(req, 'agent.packages_update', 'agent', agent.name, { agentId: agent.id });
+
+  if (useNative()) {
+    try {
+      const response = await agentApi(agent).post('/packages/update', {}, { responseType: 'stream' });
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Transfer-Encoding', 'chunked');
+      response.data.pipe(res);
+      return;
+    } catch (err) {
+      if (!allowFallback(req, agent, req.originalUrl, err)) {
+        return res.status(502).json({ error: err.response?.data?.error || err.message });
+      }
+    }
+  }
+  res.status(501).json({ error: 'Paket-Updates via Dockhand nicht unterstützt. Bitte auf Native Agent umstellen.' });
+});
+
 
 // ── Docker via Dockhand Hawser ────────────────────────────────────────────────
 // Remote-Container werden jetzt über Dockhand Environments abgefragt,

@@ -17,7 +17,7 @@ const execAsync = promisify(exec);
 // sondern ein Argument-Array. Sonderzeichen in Volume-/Netzwerk-/Image-Namen können
 // so nicht als Shell-Syntax gedeutet werden.
 const execFileAsync = promisify(execFile);
-const VERSION = '2.10.3';
+const VERSION = '2.11.0';
 
 // Ob die Container-Konsole angeboten werden kann. Steht erst nach dem Laden von
 // ws/node-pty am Ende dieser Datei fest und wird über /ping und /version gemeldet,
@@ -884,6 +884,27 @@ function getNetworkInterfaces() {
   return result;
 }
 
+// Offene Ports auslesen (Modul 13)
+async function getOpenPorts() {
+  try {
+    const { stdout } = await execAsync('ss -tuln');
+    const lines = stdout.split('\n').slice(1);
+    const ports = new Set();
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const parts = line.trim().split(/\s+/);
+      const localAddrStr = parts.find(p => p.includes(':') && !p.startsWith('::1') && !p.startsWith('127.'));
+      if (localAddrStr) {
+        const portMatch = localAddrStr.match(/:(\d+)$/);
+        if (portMatch) ports.add(parseInt(portMatch[1], 10));
+      }
+    }
+    return Array.from(ports).sort((a, b) => a - b);
+  } catch (err) {
+    return [];
+  }
+}
+
 // Netzwerk-Traffic — Live-Messung (für /network/stats, 1s Messfenster)
 async function getNetworkStats() {
   try {
@@ -1258,6 +1279,17 @@ async function handler(req, res) {
       const output = await killProcess(pid, signal);
       respond(res, 200, { success: true, message: output });
 
+    } else if (url === '/run-command' && req.method === 'POST') {
+      const raw = await new Promise((resolve) => { const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8'))); });
+      const { command } = JSON.parse(raw || '{}');
+      if (!command) return respond(res, 400, { error: 'Kein Kommando übergeben' });
+      try {
+        const { stdout, stderr } = await execAsync(command, { timeout: 30000 });
+        respond(res, 200, { success: true, output: (stdout + '\n' + stderr).trim() });
+      } catch (err) {
+        respond(res, 500, { success: false, error: err.message, output: err.stdout + '\n' + err.stderr });
+      }
+
 
     // ── Cron-Jobs ──────────────────────────────────────────────────────────────
     } else if (url === '/cron/users' && req.method === 'GET') {
@@ -1448,6 +1480,27 @@ async function handler(req, res) {
 
     } else if (url === '/network/public-ip' && req.method === 'GET') {
       respond(res, 200, await getPublicIp());
+
+    } else if (url === '/network/ports' && req.method === 'GET') {
+      respond(res, 200, await getOpenPorts());
+
+    // ── Packages ────────────────────────────────────────────────────────────────
+    } else if (url === '/packages/update' && req.method === 'POST') {
+      res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Transfer-Encoding': 'chunked' });
+      const mgr = await programmVorhanden('apt-get') ? 'apt-get' : (await programmVorhanden('dnf') ? 'dnf' : null);
+      if (!mgr) {
+        res.end('Fehler: Weder apt-get noch dnf auf diesem System gefunden.\n');
+        return;
+      }
+      res.write(`Start Paket-Update via ${mgr}...\n\n`);
+      const args = mgr === 'apt-get' 
+        ? ['-c', 'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::="--force-confold" upgrade'] 
+        : ['-c', 'dnf upgrade -y'];
+      const child = require('child_process').spawn('sh', args, { env: { ...process.env, DEBIAN_FRONTEND: 'noninteractive' } });
+      child.stdout.on('data', d => res.write(d));
+      child.stderr.on('data', d => res.write(d));
+      child.on('close', code => res.end(`\n[Vorgang beendet mit Code ${code}]\n`));
+      child.on('error', err => res.end(`\n[Fehler: ${err.message}]\n`));
 
     // ── Cron ──────────────────────────────────────────────────────────────────
     } else if (url === '/cron/users' && req.method === 'GET') {

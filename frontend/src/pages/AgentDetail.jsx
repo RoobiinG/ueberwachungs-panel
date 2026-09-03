@@ -18,6 +18,7 @@ import { useAuth } from '../context/AuthContext';
 import { Shield, Key } from 'lucide-react';
 import ContainerLogsModal from '../components/Docker/ContainerLogsModal';
 import StackEditorModal from '../components/Docker/StackEditorModal';
+import SystemUpdateModal from '../components/SystemUpdateModal';
 
 import { useLiveInterval } from '../hooks/useLiveInterval';
 
@@ -162,6 +163,7 @@ export default function AgentDetail() {
   const { canWrite, token, hasPermission } = useAuth();
   const liveInterval = useLiveInterval();
 
+  const [agentData, setAgentData]         = useState(null);
   const [agentName, setAgentName]         = useState('');
   const [stats,     setStats]             = useState(null);
   const [services,  setServices]          = useState([]);
@@ -198,10 +200,17 @@ export default function AgentDetail() {
   const [logsModal, setLogsModal]         = useState(null);
   const [stackEditorModal, setStackEditorModal] = useState(null);
 
+  // ── Modul 15 (System Updates) ──────────────────────────────────────────────
+  const [systemUpdateModal, setSystemUpdateModal] = useState(false);
+
   // ── Modul 9 (SSH & Sicherheit) ──────────────────────────────────────────────
   const [sshKeys, setSshKeys]             = useState([]);
   const [sshConfig, setSshConfig]         = useState(null);
   const [loadingSsh, setLoadingSsh]       = useState(false);
+
+  // ── Modul 13 (Port-Wächter) ──
+  const [allowedPorts, setAllowedPorts]   = useState('');
+  const [savingPorts, setSavingPorts]     = useState(false);
 
   const loadSshData = useCallback(async () => {
     setLoadingSsh(true);
@@ -226,6 +235,22 @@ export default function AgentDetail() {
     }
   };
 
+  const saveAllowedPorts = async () => {
+    setSavingPorts(true);
+    try {
+      const portList = allowedPorts.split(',')
+        .map(p => parseInt(p.trim(), 10))
+        .filter(p => !isNaN(p) && p > 0 && p <= 65535);
+      
+      await axios.put(`/api/agents/${id}`, { allowed_ports: portList });
+      load(true); // AgentData neu laden
+      alert('Erlaubte Ports gespeichert.');
+    } catch (err) {
+      alert('Fehler beim Speichern der Ports.');
+    }
+    setSavingPorts(false);
+  };
+
   useEffect(() => {
     if (activeTab === 'ssh') loadSshData();
   }, [activeTab, loadSshData]);
@@ -242,7 +267,14 @@ export default function AgentDetail() {
         axios.get(`/api/agents/${id}/services`).catch(() => ({ data: [] })),
       ]);
       const agent = agentsRes.data.find(a => String(a.id) === String(id));
-      if (agent) setAgentName(agent.name);
+      if (agent) {
+        setAgentData(agent);
+        setAgentName(agent.name);
+        try {
+          const portsArr = JSON.parse(agent.allowed_ports || '[]');
+          setAllowedPorts(portsArr.join(', '));
+        } catch { setAllowedPorts(''); }
+      }
       setAgentPmId(agent?.patchmon_host_id || null);
       setStats(statsRes.data);
       setServices(servicesRes.data);
@@ -500,6 +532,20 @@ export default function AgentDetail() {
               <OverviewBox icon={Server} label="Pakete" value={pmHost.totalPackages || '—'}
                 color="text-panel-accent" />
             </div>
+
+            {pmHost.updatesAvailable && (
+              <div className="mt-2">
+                <Button 
+                  size="sm" 
+                  variant="primary" 
+                  className="w-full"
+                  onClick={() => setSystemUpdateModal(true)}
+                  disabled={agent?.type === 'dockhand'}
+                >
+                  {agent?.type === 'dockhand' ? 'Via Dockhand nicht verfügbar' : 'Updates jetzt installieren'}
+                </Button>
+              </div>
+            )}
 
             {/* Neustart-Status + Kernel (laufend vs. installiert) aus PatchMon /system */}
             {(pmHost.needsReboot || (pmSystem && (pmSystem.kernelRunning || pmSystem.kernelInstalled))) && (
@@ -1234,6 +1280,28 @@ export default function AgentDetail() {
             )}
           </Card>
           
+          <Card title="Port-Wächter (Modul 13)">
+            <p className="text-xs text-panel-muted mb-3">
+              Definiere hier, welche Ports (für 0.0.0.0 oder ::) auf dem Server offen sein dürfen.
+              Trage die Ports kommagetrennt ein (z. B. 22, 80, 443).
+              Über die Alert-Regeln kannst du bei Port-Drift (unerlaubte offene Ports) benachrichtigt werden.
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                className="bg-panel-bg text-panel-text text-sm rounded-lg border border-panel-border px-3 py-1.5 focus:border-panel-accent focus:ring-1 focus:ring-panel-accent outline-none w-full"
+                placeholder="22, 80, 443"
+                value={allowedPorts}
+                onChange={(e) => setAllowedPorts(e.target.value)}
+              />
+              {canWrite && (
+                <Button size="sm" onClick={saveAllowedPorts} disabled={savingPorts}>
+                  {savingPorts ? 'Speichere...' : 'Speichern'}
+                </Button>
+              )}
+            </div>
+          </Card>
+
           <Card title="Autorisierte SSH-Schlüssel">
             {loadingSsh ? (
               <p className="text-xs text-panel-muted">Lade Schlüssel...</p>
@@ -1275,13 +1343,18 @@ export default function AgentDetail() {
       
       {stackEditorModal && (
         <StackEditorModal 
-          agentId={id} 
+          agentId={agent.id} 
           stackName={stackEditorModal} 
           onClose={() => setStackEditorModal(null)} 
         />
       )}
 
+      {systemUpdateModal && (
+        <SystemUpdateModal 
+          agentId={agent.id} 
+          onClose={() => setSystemUpdateModal(false)} 
+        />
+      )}
     </div>
   );
 }
-

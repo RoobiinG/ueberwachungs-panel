@@ -82,6 +82,7 @@ const emptyCondition = () => ({ metric: 'cpu', condition: 'gt', threshold: 80 })
 const defaultForm = {
   name: '', metric: 'cpu', duration_seconds: 60, cooldown_minutes: 30, webhook_id: '',
   agent_ids: [], conditions: [emptyCondition()], logic: 'and', notify_resolved: false, target_ref: [],
+  remediation_cmd: ''
 };
 
 // ─── Bedingungs-Zeile ──────────────────────────────────────────────────────────
@@ -107,6 +108,9 @@ function ConditionRow({ cond, onChange, onRemove, canRemove, activeType }) {
             <optgroup label="Netzwerk">
               <option value="net_rx">Netz ↓</option>
               <option value="net_tx">Netz ↑</option>
+            </optgroup>
+            <optgroup label="Sicherheit">
+              <option value="port_drift">Unerlaubte Ports (> 0)</option>
             </optgroup>
           </>
         )}
@@ -236,6 +240,7 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
         webhook_id:       parseInt(form.webhook_id),
         agent_ids:        form.agent_ids || [],
         target_ref:       (isStorage || isMCHost) ? JSON.stringify(form.target_ref || []) : null,
+        remediation_cmd:  form.remediation_cmd || null,
       });
       onClose();
     } catch (e) {
@@ -467,6 +472,18 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
             </p>
           )}
         </div>
+
+        {/* Modul 12: Auto-Remediation */}
+        {!isAction && (
+          <div>
+            <label className="text-xs text-panel-muted block mb-1">Auto-Behebung (Bash-Kommando)</label>
+            <input type="text" className={inputCls} placeholder="z. B. systemctl restart nginx (optional)" 
+                   value={form.remediation_cmd || ''} onChange={e => set('remediation_cmd', e.target.value)} />
+            <p className="text-xs text-panel-muted mt-1">
+              Wird auf dem betroffenen Server als Root ausgeführt, sobald der Alarm auslöst.
+            </p>
+          </div>
+        )}
 
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="ghost" onClick={onClose}>Abbrechen</Button>

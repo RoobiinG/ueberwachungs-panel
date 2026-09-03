@@ -27,4 +27,15 @@ async function fetchAgentStats(agentId) {
   }
 }
 
-module.exports = { fetchAgentStats };
+async function fetchAgentPorts(agentId) {
+  const agent = db.prepare('SELECT * FROM remote_agents WHERE id = ?').get(agentId);
+  if (!agent) return null;
+  try {
+    const { data } = await agentClient(agent, 6000).get('/network/ports');
+    return Array.isArray(data) ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+module.exports = { fetchAgentStats, fetchAgentPorts };

@@ -88,13 +88,14 @@ router.post('/rules', requirePermission('alerts.manage'), (req, res) => {
   const mainThreshold = condArr[0]?.threshold ?? parseFloat(threshold) ?? 0;
 
   const result = db.prepare(
-    'INSERT INTO alert_rules (name, metric, condition, threshold, duration_seconds, cooldown_minutes, webhook_id, agent_id, agent_ids, conditions, logic, notify_resolved, target_ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO alert_rules (name, metric, condition, threshold, duration_seconds, cooldown_minutes, webhook_id, agent_id, agent_ids, conditions, logic, notify_resolved, target_ref, remediation_cmd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(
     name.trim(), mainMetric, mainCondition, mainThreshold,
     parseInt(duration_seconds) || 0, parseInt(cooldown_minutes) || 30,
     webhook_id, null,
     JSON.stringify(agent_ids), JSON.stringify(condArr), logic, notify_resolved ? 1 : 0,
-    target_ref ? String(target_ref) : null
+    target_ref ? String(target_ref) : null,
+    req.body.remediation_cmd || null
   );
 
   auditLog(req, 'alert.create', 'alert_rule', name, { conditions: condArr.length, servers: agent_ids.length, logic });
@@ -105,7 +106,7 @@ router.put('/rules/:id', requirePermission('alerts.manage'), (req, res) => {
   const {
     name, metric, condition, threshold,
     duration_seconds, cooldown_minutes, webhook_id,
-    agent_ids, enabled, conditions, logic, notify_resolved, target_ref,
+    agent_ids, enabled, conditions, logic, notify_resolved, target_ref, remediation_cmd
   } = req.body;
   const rule = db.prepare('SELECT id FROM alert_rules WHERE id = ?').get(req.params.id);
   if (!rule) return res.status(404).json({ error: 'Regel nicht gefunden' });
@@ -130,7 +131,8 @@ router.put('/rules/:id', requirePermission('alerts.manage'), (req, res) => {
       logic            = COALESCE(?, logic),
       notify_resolved  = COALESCE(?, notify_resolved),
       enabled          = COALESCE(?, enabled),
-      target_ref       = COALESCE(?, target_ref)
+      target_ref       = COALESCE(?, target_ref),
+      remediation_cmd  = COALESCE(?, remediation_cmd)
     WHERE id = ?
   `).run(
     name ?? null, mainMetric, mainCondition, mainThreshold,
@@ -143,6 +145,7 @@ router.put('/rules/:id', requirePermission('alerts.manage'), (req, res) => {
     notify_resolved != null ? (notify_resolved ? 1 : 0) : null,
     enabled ?? null,
     target_ref != null ? String(target_ref) : null,
+    remediation_cmd !== undefined ? (remediation_cmd || null) : null,
     req.params.id
   );
   res.json({ success: true });

@@ -1,6 +1,6 @@
 const db              = require('./db');
 const { sendWebhook } = require('./utils/sendWebhook');
-const { fetchAgentStats } = require('./utils/agentFetch');
+const { fetchAgentStats, fetchAgentPorts } = require('./utils/agentFetch');
 const patchmon        = require('./routes/patchmon');   // .fetchHosts (30s-Cache intern)
 const hetzner         = require('./routes/hetzner');    // .getStorageBoxes (45s-Cache intern)
 const mchost          = require('./routes/mchost');     // .getVserversSafe
@@ -134,6 +134,24 @@ async function getMetricValue(metric, agentId, targetRef) {
     const box = boxes.find(b => String(b.id) === String(targetRef));
     if (!box) return null;
     return box.usagePct ?? (box.quotaBytes > 0 ? (box.usedBytes / box.quotaBytes) * 100 : null);
+  }
+
+  // Port-Wächter (Modul 13): Zählt die Anzahl unerlaubter offener Ports
+  if (metric === 'port_drift') {
+    if (agentId == null) return null; // Lokaler Server hat keine Port-Wächter Unterstützung
+    const agentRow = db.prepare('SELECT allowed_ports FROM remote_agents WHERE id = ?').get(agentId);
+    if (!agentRow || !agentRow.allowed_ports || agentRow.allowed_ports === '[]') return 0;
+    
+    let allowedPorts;
+    try { allowedPorts = JSON.parse(agentRow.allowed_ports); } catch { return 0; }
+    if (!Array.isArray(allowedPorts) || allowedPorts.length === 0) return 0;
+    
+    const openPorts = await fetchAgentPorts(agentId);
+    if (!openPorts) return null; // Bei Fehler ignorieren (kein Fehlalarm)
+    
+    // Wie viele offene Ports sind NICHT in der allowedPorts-Liste?
+    const unauthorizedPorts = openPorts.filter(p => !allowedPorts.includes(p));
+    return unauthorizedPorts.length; // Wenn > 0, greift die Alarmbedingung > 0
   }
 
   // MC-Host24 Laufzeit: Restlaufzeit in Tagen des per target_ref gebundenen VServers
@@ -408,6 +426,21 @@ async function evaluate() {
             histType = 'suppressed';
             histMsg  = `[Wartungsmodus] ${message}`;
           } else {
+            if (rule.remediation_cmd && srv.agentId != null) {
+              try {
+                const { agentClient } = require('./utils/agentTls');
+                const agent = db.prepare('SELECT * FROM remote_agents WHERE id = ?').get(srv.agentId);
+                if (agent) {
+                  const { data } = await agentClient(agent, 30000).post('/run-command', { command: rule.remediation_cmd });
+                  histMsg += `\n\n[Auto-Behebung ausgeführt] -> ${data.success ? 'Erfolgreich' : 'Fehlgeschlagen'}`;
+                  if (data.output) histMsg += `\nAusgabe: ${data.output}`;
+                }
+              } catch (err) {
+                histMsg += `\n\n[Auto-Behebung Fehler] -> ${err.response?.data?.error || err.message}`;
+              }
+              message = histMsg; // Damit der Webhook den Text auch bekommt
+            }
+
             const sent = await deliverWebhook(rule, message, {
               ruleName: rule.name, serverName: srv.name, value: fireValue, alertType: 'fired',
             });

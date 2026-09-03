@@ -16,6 +16,19 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [6.6.0.0] - 2026-09-03 (Build 365) — *Security & Maintenance*
+
+- **Feature (Modul 12):** Auto-Remediation (Bash-Befehl) für Alarmregeln. Sobald ein Alarm auslöst, wird der definierte Befehl (z.B. `systemctl restart nginx`) auf dem Server als Root ausgeführt.
+- **Feature (Modul 13):** Port-Wächter (Port-Drift-Erkennung). Auf der Server-Detailseite im Tab "SSH & Sicherheit" können erlaubte Ports hinterlegt werden. Bei unbekannten offenen Ports schlägt eine neue Alarmregel-Art (`port_drift`) an.
+- **Feature (Modul 15):** Remote Paket-Updates. Auf der Server-Detailseite gibt es im Tab "System" einen Button, um anstehende Linux-Paketupdates direkt auf dem Agenten auszuführen (via `apt` oder `dnf`) und den Output live im Frontend zu verfolgen.
+- **Agent (v2.11.0):** Unterstützt den neuen `POST /run-command` (Modul 12), `GET /network/ports` (Modul 13) und `POST /packages/update` (Modul 15) Endpunkt.
+
+### ⚠️ System-Auswirkungen & Nachwirken (Impact Analysis)
+- `remote_agents` Tabelle um `allowed_ports` Spalte erweitert (Default `[]`).
+- `alert_rules` Tabelle um `remediation_cmd` Spalte erweitert (Default `NULL`).
+- Auto-Remediation nutzt den neuen `POST /run-command` Endpunkt des Agenten.
+- Remote System-Updates verwenden chunked Transfer-Encoding, um den Konsolen-Output während des Update-Laufs live ans Frontend durchzureichen.
+
 ## [6.5.0.0] - 2026-09-03 (Build 364) — *Dashboard Extensions*
 
 - **Feature:** Das Widget "Aktive Alarme" (mit Details und Server-Zuweisung, nicht nur der nackten Anzahl) ist nun standardmäßig direkt auf dem Dashboard sichtbar.
