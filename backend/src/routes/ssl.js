@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { requirePermission } = require('../permissions');
+const { requirePermission } = require('../middleware/requirePermission');
 const { checkDomain } = require('../utils/sslMonitor');
 
 // Nur Admins oder Nutzer mit alerts.manage dürfen Zertifikate überwachen
