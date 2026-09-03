@@ -16,6 +16,10 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [6.4.0.2] - 2026-09-03 (Build 361) — *Hotfix UI*
+
+- **Bugfix:** Behebt einen UI-Absturz (`TypeError: Cannot read properties of undefined (reading 'toFixed')`) auf der Server-Detailseite, der auftrat, wenn Docker-Container oder Remote-Prozesse keine Metriken für CPU/RAM geliefert haben (z.B. weil `c.cpu` oder `p.cpu` `undefined` war).
+
 ## [6.4.0.0] - 2026-09-03 (Build 360) — *Docker & Security Suite*
 
 ### ✨ Features
