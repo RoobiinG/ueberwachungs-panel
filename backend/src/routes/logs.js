@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { requirePermission } = require('../permissions');
+const { requirePermission } = require('../middleware/requirePermission');
 
 // GET /api/logs
 // Parameter: ?agent_id=1&level=error&search=cron&limit=100&offset=0
