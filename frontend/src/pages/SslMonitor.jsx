@@ -41,7 +41,7 @@ export default function SslMonitor() {
     
     const payload = { ...form, domain: cleanDomain, active: form.active ? 1 : 0 };
     const req = editingId 
-      ? axios.put(\`/api/ssl/\${editingId}\`, payload)
+      ? axios.put(`/api/ssl/${editingId}`, payload)
       : axios.post('/api/ssl', payload);
       
     req.then(() => {
@@ -52,12 +52,12 @@ export default function SslMonitor() {
 
   const handleDelete = (id) => {
     if (!confirm('Diesen SSL-Monitor wirklich löschen?')) return;
-    axios.delete(\`/api/ssl/\${id}\`).then(load);
+    axios.delete(`/api/ssl/${id}`).then(load);
   };
 
   const handleForceCheck = (id) => {
     setRefreshing(id);
-    axios.post(\`/api/ssl/\${id}/check\`)
+    axios.post(`/api/ssl/${id}/check`)
       .then(r => {
         setMonitors(prev => prev.map(m => m.id === id ? r.data : m));
         setRefreshing(null);
@@ -70,7 +70,7 @@ export default function SslMonitor() {
   };
 
   const toggleActive = (m) => {
-    axios.put(\`/api/ssl/\${m.id}\`, { ...m, active: m.active ? 0 : 1 }).then(load);
+    axios.put(`/api/ssl/${m.id}`, { ...m, active: m.active ? 0 : 1 }).then(load);
   };
 
   const openModal = (m = null) => {
@@ -137,11 +137,11 @@ export default function SslMonitor() {
                         {m.name || m.domain}
                       </h3>
                       <a 
-                        href={\`https://\${m.domain}:\${m.port}\`} 
+                        href={`https://${m.domain}:${m.port}`} 
                         target="_blank" rel="noreferrer"
                         className="text-xs text-panel-muted hover:text-panel-accent transition-colors flex items-center gap-1"
                       >
-                        {m.domain}{m.port !== 443 ? \`:\${m.port}\` : ''} <ExternalLink size={10} />
+                        {m.domain}{m.port !== 443 ? `:${m.port}` : ''} <ExternalLink size={10} />
                       </a>
                     </div>
                   </div>
@@ -189,7 +189,7 @@ export default function SslMonitor() {
               </div>
               
               <div className="mt-4 pt-3 border-t border-panel-border/50 flex justify-between items-center text-[10px] text-panel-muted">
-                <span>{m.last_check ? \`Letzter Check: \${new Date(m.last_check).toLocaleTimeString()}\` : 'Nie geprüft'}</span>
+                <span>{m.last_check ? `Letzter Check: ${new Date(m.last_check).toLocaleTimeString()}` : 'Nie geprüft'}</span>
                 {refreshing === m.id && <RefreshCw size={12} className="animate-spin text-panel-accent" />}
               </div>
             </Card>

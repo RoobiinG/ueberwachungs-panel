@@ -91,7 +91,7 @@ async function checkAllMonitors() {
       }
 
       if (triggerWebhook && systemWebhooks.length > 0) {
-        const msg = \`🔒 **SSL-Zertifikat läuft ab!**\\n\\n**Domain:** \${monitor.name ? monitor.name + ' (' + monitor.domain + ')' : monitor.domain}\\n**Ablaufdatum:** \${result.validTo.toISOString().split('T')[0]}\\n**Noch gültig:** \${daysRemaining} Tage\\n\\nBitte rechtzeitig erneuern!\`;
+        const msg = `🔒 **SSL-Zertifikat läuft ab!**\n\n**Domain:** ${monitor.name ? monitor.name + ' (' + monitor.domain + ')' : monitor.domain}\n**Ablaufdatum:** ${result.validTo.toISOString().split('T')[0]}\n**Noch gültig:** ${daysRemaining} Tage\n\nBitte rechtzeitig erneuern!`;
         for (const w of systemWebhooks) {
           try {
             await sendWebhook({ type: w.type, url: w.url, method: w.method, headers: w.headers, template: w.template }, msg, { alertType: 'system' });
