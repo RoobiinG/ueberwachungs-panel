@@ -653,7 +653,7 @@ export default function AgentDetail() {
                         <div className="hidden sm:flex items-center gap-4 flex-shrink-0">
                           {c.cpu != null && (
                             <div className="text-right">
-                              <p className="text-xs font-medium text-panel-text">{(c.cpu).toFixed(1)}%</p>
+                              <p className="text-xs font-medium text-panel-text">{Number(c.cpu || 0).toFixed(1)}%</p>
                               <p className="text-xs text-panel-muted">CPU</p>
                             </div>
                           )}
@@ -726,7 +726,7 @@ export default function AgentDetail() {
                           <div className="space-y-2">
                             {c.cpu != null && (
                               <PctBar label="CPU" value={c.cpu} max={100}
-                                sub={`${(c.cpu ?? 0).toFixed(1)}%`} />
+                                sub={`${Number(c.cpu || 0).toFixed(1)}%`} />
                             )}
                             {c.memUsed != null && (
                               <PctBar label="RAM"
@@ -1031,10 +1031,10 @@ export default function AgentDetail() {
                         <td className="py-2 px-2 text-panel-text">{p.pid}</td>
                         <td className="py-2 px-2 text-panel-muted">{p.user}</td>
                         <td className={`py-2 px-2 text-right font-semibold ${p.cpu > 50 ? 'text-panel-red' : p.cpu > 20 ? 'text-panel-orange' : 'text-panel-text'}`}>
-                          {p.cpu.toFixed(1)}%
+                          {Number(p.cpu || 0).toFixed(1)}%
                         </td>
                         <td className={`py-2 px-2 text-right font-semibold ${p.mem > 50 ? 'text-panel-red' : p.mem > 20 ? 'text-panel-orange' : 'text-panel-text'}`}>
-                          {p.mem.toFixed(1)}%
+                          {Number(p.mem || 0).toFixed(1)}%
                         </td>
                         <td className="py-2 px-2 text-panel-text truncate max-w-xs sm:max-w-md" title={p.command}>
                           {p.command}
