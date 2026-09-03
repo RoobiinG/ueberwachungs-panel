@@ -13,6 +13,7 @@ const PERMISSIONS = [
   { key: 'agents.delete',       category: 'Remote-Server',      label: 'Server löschen',                  description: 'Remote-Server entfernen' },
   { key: 'agents.update',       category: 'Remote-Server',      label: 'Agent aktualisieren',             description: 'Agent-Software auf Servern aktualisieren' },
   { key: 'agents.manage_processes', category: 'Remote-Server',  label: 'Prozesse verwalten',              description: 'Top-Prozesse auf Remote-Servern ansehen und hängende Prozesse beenden' },
+  { key: 'agents.manage_ssh',   category: 'Remote-Server',      label: 'SSH-Keys verwalten',              description: 'SSH-Schlüssel ansehen und entfernen sowie Security-Audit durchführen' },
   { key: 'cron.manage',         category: 'Remote-Server',      label: 'Cron-Jobs verwalten',             description: 'System-Cron-Jobs auf Remote-Servern ansehen, anlegen und löschen' },
 
 

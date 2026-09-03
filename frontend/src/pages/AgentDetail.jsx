@@ -15,6 +15,9 @@ import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
 import { ActionMenu } from '../components/ui/ActionMenu';
 import { useAuth } from '../context/AuthContext';
+import { Shield, Key } from 'lucide-react';
+import ContainerLogsModal from '../components/Docker/ContainerLogsModal';
+import StackEditorModal from '../components/Docker/StackEditorModal';
 
 import { useLiveInterval } from '../hooks/useLiveInterval';
 
@@ -190,6 +193,42 @@ export default function AgentDetail() {
   const [notesSaved,      setNotesSaved]      = useState(false);
   const [maintenance,     setMaintenance]     = useState(null);
   const [settingMaintenance, setSettingMaintenance] = useState(false);
+
+  // ── Modul 6 (Docker Erweiterung) ───────────────────────────────────────────
+  const [logsModal, setLogsModal]         = useState(null);
+  const [stackEditorModal, setStackEditorModal] = useState(null);
+
+  // ── Modul 9 (SSH & Sicherheit) ──────────────────────────────────────────────
+  const [sshKeys, setSshKeys]             = useState([]);
+  const [sshConfig, setSshConfig]         = useState(null);
+  const [loadingSsh, setLoadingSsh]       = useState(false);
+
+  const loadSshData = useCallback(async () => {
+    setLoadingSsh(true);
+    try {
+      const [keysRes, confRes] = await Promise.all([
+        axios.get(`/api/agents/${id}/ssh/keys`).catch(() => ({ data: [] })),
+        axios.get(`/api/agents/${id}/ssh/audit`).catch(() => ({ data: null }))
+      ]);
+      setSshKeys(keysRes.data || []);
+      setSshConfig(confRes.data || null);
+    } catch (e) { }
+    setLoadingSsh(false);
+  }, [id]);
+
+  const removeSshKey = async (identifier) => {
+    if (!confirm('SSH-Key wirklich entfernen?')) return;
+    try {
+      await axios.delete(`/api/agents/${id}/ssh/keys/${encodeURIComponent(identifier)}`);
+      loadSshData();
+    } catch (e) {
+      alert('Fehler beim Entfernen des Schlüssels');
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'ssh') loadSshData();
+  }, [activeTab, loadSshData]);
 
   const load = useCallback(async (silent = false) => {
 
@@ -372,6 +411,7 @@ export default function AgentDetail() {
     { id: 'services',  label: 'Services',  icon: Activity },
     { id: 'processes', label: 'Prozesse',  icon: Cpu },
     { id: 'notes',     label: 'Notizbuch', icon: FileText },
+    ...(hasPermission('agents.manage_ssh') ? [{ id: 'ssh', label: 'Sicherheit', icon: Shield }] : []),
   ];
 
   // Initialen Tab setzen wenn Docker nicht verfügbar
@@ -559,6 +599,27 @@ export default function AgentDetail() {
             </div>
           )}
 
+          {/* Stacks Liste (wenn native/Agent) */}
+          {dockerAvailable && Array.isArray(docker?.stacks) && docker.stacks.length > 0 && (
+             <Card title="Docker Stacks">
+               <div className="space-y-2">
+                 {docker.stacks.map(s => (
+                   <div key={s.Name} className="flex items-center justify-between p-3 border border-panel-border rounded-lg bg-panel-surface/50">
+                     <div>
+                       <h4 className="text-sm font-semibold text-panel-text">{s.Name}</h4>
+                       <p className="text-xs text-panel-muted">{s.Services || 0} Services</p>
+                     </div>
+                     {canWrite && s.ConfigFiles && (
+                       <Button size="sm" variant="ghost" onClick={() => setStackEditorModal(s.Name)}>
+                         <FileText size={14} className="mr-1" /> Stack editieren
+                       </Button>
+                     )}
+                   </div>
+                 ))}
+               </div>
+             </Card>
+          )}
+
           {/* Container Liste */}
           <Card title="Container">
             <div className="space-y-2">
@@ -636,6 +697,11 @@ export default function AgentDetail() {
                           </Button>
                           <ActionMenu
                             items={[
+                              {
+                                icon: FileText,
+                                label: 'Logs ansehen',
+                                onClick: () => setLogsModal({ id: c.id, name: c.name }),
+                              },
                               isRunning && {
                                 icon: Pause,
                                 label: 'Pausieren',
@@ -643,7 +709,7 @@ export default function AgentDetail() {
                                 disabled: actionLoading[`${c.id}_pause`],
                                 title: 'Prozesse einfrieren (SIGSTOP), Container bleibt bestehen',
                               },
-                            ]}
+                            ].filter(Boolean)}
                           />
                         </div>
                       )}
@@ -1139,6 +1205,81 @@ export default function AgentDetail() {
         )}
       </Modal>
 
+      {/* ══════════════════════════════════════════════════════════════════
+          TAB: SSH & SICHERHEIT
+      ═══════════════════════════════════════════════════════════════════ */}
+      {currentTab === 'ssh' && hasPermission('agents.manage_ssh') && (
+        <div className="space-y-4">
+          <Card title="SSH Sicherheits-Audit">
+            {loadingSsh ? (
+              <p className="text-xs text-panel-muted">Lade Daten...</p>
+            ) : sshConfig ? (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className={`p-3 rounded-lg border ${sshConfig.PermitRootLogin === 'yes' ? 'bg-panel-red/10 border-panel-red/30' : 'bg-panel-green/10 border-panel-green/30'}`}>
+                   <p className="text-xs text-panel-muted mb-1">Root Login</p>
+                   <p className="text-sm font-semibold text-panel-text">{sshConfig.PermitRootLogin}</p>
+                   {sshConfig.PermitRootLogin === 'yes' && <p className="text-[10px] text-panel-red mt-1">Sicherheitsrisiko!</p>}
+                </div>
+                <div className={`p-3 rounded-lg border ${sshConfig.PasswordAuthentication === 'yes' ? 'bg-panel-orange/10 border-panel-orange/30' : 'bg-panel-green/10 border-panel-green/30'}`}>
+                   <p className="text-xs text-panel-muted mb-1">Passwort Auth</p>
+                   <p className="text-sm font-semibold text-panel-text">{sshConfig.PasswordAuthentication}</p>
+                </div>
+                <div className="p-3 rounded-lg border bg-panel-surface border-panel-border">
+                   <p className="text-xs text-panel-muted mb-1">SSH Port</p>
+                   <p className="text-sm font-semibold text-panel-text">{sshConfig.Port}</p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-panel-muted">Keine SSH-Konfiguration gefunden.</p>
+            )}
+          </Card>
+          
+          <Card title="Autorisierte SSH-Schlüssel">
+            {loadingSsh ? (
+              <p className="text-xs text-panel-muted">Lade Schlüssel...</p>
+            ) : sshKeys.length === 0 ? (
+              <p className="text-xs text-panel-muted">Keine autorisierten Schlüssel gefunden.</p>
+            ) : (
+              <div className="space-y-2">
+                {sshKeys.map((k, i) => (
+                  <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 border border-panel-border rounded-lg bg-panel-surface/50">
+                    <div className="min-w-0">
+                       <div className="flex items-center gap-2 mb-1">
+                         <Badge color="blue">{k.user}</Badge>
+                         <span className="text-sm font-medium text-panel-text truncate">{k.comment || 'Unbenannt'}</span>
+                       </div>
+                       <p className="text-xs text-panel-muted font-mono">{k.fingerprint}</p>
+                       <p className="text-[10px] text-panel-muted mt-1 truncate max-w-xl">{k.type} ...{k.key.slice(-20)}</p>
+                    </div>
+                    {canWrite && (
+                       <Button size="sm" variant="danger" onClick={() => removeSshKey(k.fingerprint)}>
+                         <Trash2 size={14} className="mr-1" /> Entfernen
+                       </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {logsModal && (
+        <ContainerLogsModal 
+          agentId={id} 
+          containerId={logsModal.id} 
+          containerName={logsModal.name} 
+          onClose={() => setLogsModal(null)} 
+        />
+      )}
+      
+      {stackEditorModal && (
+        <StackEditorModal 
+          agentId={id} 
+          stackName={stackEditorModal} 
+          onClose={() => setStackEditorModal(null)} 
+        />
+      )}
 
     </div>
   );

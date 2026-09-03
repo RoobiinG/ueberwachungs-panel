@@ -1287,6 +1287,44 @@ router.get('/:id/network/public-ip', requirePermission('metrics.view'), async (r
   }
 });
 
+// ── SSH & Sicherheit Proxy ────────────────────────────────────────────────────
+router.get('/:id/ssh/keys', requirePermission('agents.manage_ssh'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  try {
+    const { data } = await agentApi(agent).get('/ssh/keys');
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.response?.data?.error || err.message });
+  }
+});
+
+router.delete('/:id/ssh/keys/:identifier', requirePermission('agents.manage_ssh'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  try {
+    const { data } = await agentApi(agent).delete(`/ssh/keys/${encodeURIComponent(req.params.identifier)}`);
+    auditLog(req, 'agent.ssh.remove_key', 'agent', agent.name, { identifier: req.params.identifier });
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.response?.data?.error || err.message });
+  }
+});
+
+router.get('/:id/ssh/audit', requirePermission('agents.manage_ssh'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  try {
+    const { data } = await agentApi(agent).get('/ssh/audit');
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.response?.data?.error || err.message });
+  }
+});
+
 // ── Agent deinstallieren (stoppt + entfernt Service auf dem Server) ──────────
 
 router.post('/:id/uninstall', requirePermission('agents.delete'), async (req, res) => {

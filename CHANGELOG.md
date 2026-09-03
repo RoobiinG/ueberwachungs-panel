@@ -16,7 +16,20 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
-## [6.3.0.0] - 2026-09-03 (Build 356) — *Modul 8 Erweiterung - NPM Integration*
+## [6.4.0.0] - 2026-09-03 (Build 360) — *Docker & Security Suite*
+
+### ✨ Features
+- **Modul 10 (Docker Stack-Editor)**: Direkte Bearbeitung von `docker-compose.yml` Dateien auf Remote-Servern über den in der UI eingebetteten Monaco Editor.
+- **Docker Container Logs**: Eigenes Modal zur schnellen Live-Ansicht von Container Logs (Option für letzte 100, 500, 1000 oder 5000 Zeilen).
+- **Modul 9 (SSH-Schlüsselverwaltung & Audit)**: Neuer Reiter "SSH & Sicherheit" in der Remote-Server-Ansicht zur Überwachung der Sicherheitseinstellungen (`sshd_config`) und Entfernen von autorisierten SSH-Schlüsseln.
+
+### ⚙️ System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Agent-Kompatibilität**: Die neuen Funktionen (`/ssh/keys`, `/ssh/audit`, `/docker/stacks/.../file`) erfordern, dass die Agenten auf den Zielservern aktualisiert werden. Ohne Update können die Funktionen nicht genutzt werden.
+- **Rechte-System**: Ein neues Recht `agents.manage_ssh` wurde hinzugefügt (Standardmäßig deaktiviert für Operator). Administratoren müssen dieses Recht erst zuweisen.
+- **Docker Modus**: Docker Features greifen direkt auf die native Docker Engine zu (`useNative()`), Dockhand Fallbacks existieren aktuell nur für Docker Basic Control und noch nicht für Stack Edit oder Container Logs.
+- **Frontend-Pakete**: `@monaco-editor/react` wurde zu `package.json` hinzugefügt und das Image wird beim Build dadurch etwas größer.
+
+## [6.3.0.0] - 2026-09-03 (Build 359) — *Modul 8 Erweiterung - NPM Integration*
 
 - **Feature (Modul 8 Erweiterung):** NGINX Proxy Manager (NPM) Integration. SSL-Zertifikate, die über NPM verwaltet werden, können nun automatisch in den SSL-Wächter synchronisiert werden.
 - Das Panel verbindet sich mit der API des NPM, importiert alle Zertifikate und liest deren genaues Ablaufdatum aus — ohne eigene Verbindungen übers Internet aufbauen zu müssen.
