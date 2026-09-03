@@ -723,6 +723,26 @@ async function dockerStackAction(id, action) {
   } catch (e) { throw new Error(e.message); }
 }
 
+async function getDockerStackFile(id) {
+  try {
+    const stacks = await getDockerStacks();
+    const stack = stacks.find(s => s.Name === id);
+    if (!stack || !stack.ConfigFiles) throw new Error('Stack nicht gefunden');
+    const content = fs.readFileSync(stack.ConfigFiles, 'utf8');
+    return { content, path: stack.ConfigFiles };
+  } catch (e) { throw new Error(e.message); }
+}
+
+async function writeDockerStackFile(id, content) {
+  try {
+    const stacks = await getDockerStacks();
+    const stack = stacks.find(s => s.Name === id);
+    if (!stack || !stack.ConfigFiles) throw new Error('Stack nicht gefunden');
+    fs.writeFileSync(stack.ConfigFiles, content, 'utf8');
+    return { success: true };
+  } catch (e) { throw new Error(e.message); }
+}
+
 async function getDockerVolumes() {
   try {
     const { stdout } = await execAsync("docker volume ls --format '{{json .}}'", { timeout: 10000 });
@@ -997,6 +1017,121 @@ async function deleteCronJob(user, index) {
   }
 }
 
+// ─── SSH & Sicherheit ─────────────────────────────────────────────────────────
+
+async function getSshKeys() {
+  const keys = [];
+  try {
+    // 1. root-Keys
+    if (fs.existsSync('/root/.ssh/authorized_keys')) {
+      const content = fs.readFileSync('/root/.ssh/authorized_keys', 'utf8');
+      content.split('\n').forEach(line => {
+        const l = line.trim();
+        if (l && !l.startsWith('#')) {
+          const parts = l.split(' ');
+          if (parts.length >= 2) {
+             const keyData = Buffer.from(parts[1], 'base64');
+             const fingerprint = crypto.createHash('sha256').update(keyData).digest('base64').replace(/=$/, '');
+             keys.push({ user: 'root', type: parts[0], key: parts[1], comment: parts.slice(2).join(' '), fingerprint: 'SHA256:' + fingerprint, raw: l });
+          }
+        }
+      });
+    }
+    // 2. User-Keys (/home/*/.ssh/authorized_keys)
+    const users = getCronUsers().filter(u => u !== 'root'); // borrow getCronUsers since it reads /etc/passwd users >=1000
+    for (const u of users) {
+       const keyPath = `/home/${u}/.ssh/authorized_keys`;
+       if (fs.existsSync(keyPath)) {
+          const content = fs.readFileSync(keyPath, 'utf8');
+          content.split('\n').forEach(line => {
+            const l = line.trim();
+            if (l && !l.startsWith('#')) {
+              const parts = l.split(' ');
+              if (parts.length >= 2) {
+                 const keyData = Buffer.from(parts[1], 'base64');
+                 const fingerprint = crypto.createHash('sha256').update(keyData).digest('base64').replace(/=$/, '');
+                 keys.push({ user: u, type: parts[0], key: parts[1], comment: parts.slice(2).join(' '), fingerprint: 'SHA256:' + fingerprint, raw: l });
+              }
+            }
+          });
+       }
+    }
+  } catch (e) {
+    // Ignorieren, falls nicht lesbar
+  }
+  return keys;
+}
+
+async function removeSshKey(identifier) {
+  let removed = 0;
+  try {
+    const paths = ['/root/.ssh/authorized_keys'];
+    const users = getCronUsers().filter(u => u !== 'root');
+    for (const u of users) paths.push(`/home/${u}/.ssh/authorized_keys`);
+    
+    for (const p of paths) {
+      if (!fs.existsSync(p)) continue;
+      const content = fs.readFileSync(p, 'utf8');
+      const lines = content.split('\n');
+      const newLines = [];
+      let changed = false;
+      
+      for (const line of lines) {
+         const l = line.trim();
+         if (!l || l.startsWith('#')) {
+           newLines.push(line);
+           continue;
+         }
+         const parts = l.split(' ');
+         if (parts.length >= 2) {
+           const keyData = Buffer.from(parts[1], 'base64');
+           const fingerprint = 'SHA256:' + crypto.createHash('sha256').update(keyData).digest('base64').replace(/=$/, '');
+           const comment = parts.slice(2).join(' ');
+           
+           if (fingerprint === identifier || comment === identifier) {
+             changed = true;
+             removed++;
+             continue; // Skip this line (remove)
+           }
+         }
+         newLines.push(line);
+      }
+      
+      if (changed) {
+        fs.writeFileSync(p, newLines.join('\n') + (newLines.length > 0 && newLines[newLines.length-1] !== '' ? '\n' : ''), 'utf8');
+      }
+    }
+  } catch (e) {
+    throw new Error('Fehler beim Entfernen des Schlüssels: ' + e.message);
+  }
+  return { success: true, removed };
+}
+
+async function getSshConfig() {
+  const config = {
+    PermitRootLogin: 'yes', // Default Annahme falls nicht gefunden (Worst case)
+    PasswordAuthentication: 'yes',
+    Port: '22'
+  };
+  try {
+    if (fs.existsSync('/etc/ssh/sshd_config')) {
+      const content = fs.readFileSync('/etc/ssh/sshd_config', 'utf8');
+      content.split('\n').forEach(line => {
+        const l = line.trim();
+        if (l && !l.startsWith('#')) {
+          const parts = l.split(/\s+/);
+          if (parts[0] === 'PermitRootLogin') config.PermitRootLogin = parts[1];
+          if (parts[0] === 'PasswordAuthentication') config.PasswordAuthentication = parts[1];
+          if (parts[0] === 'Port') config.Port = parts[1];
+        }
+      });
+    }
+  } catch (e) {
+    // Ignorieren
+  }
+  return config;
+}
+
 // ─── HTTP Handler ─────────────────────────────────────────────────────────────
 
 function respond(res, status, data) {
@@ -1220,6 +1355,15 @@ async function handler(req, res) {
       await firewallDeleteRule(id);
       respond(res, 200, { success: true });
 
+    // ── SSH & Sicherheit ──────────────────────────────────────────────────────
+    } else if (url === '/ssh/keys' && req.method === 'GET') {
+      respond(res, 200, await getSshKeys());
+    } else if (url.startsWith('/ssh/keys/') && req.method === 'DELETE') {
+      const identifier = decodeURIComponent(url.split('/')[3] || '');
+      respond(res, 200, await removeSshKey(identifier));
+    } else if (url === '/ssh/audit' && req.method === 'GET') {
+      respond(res, 200, await getSshConfig());
+
     // ── Docker ────────────────────────────────────────────────────────────────
     } else if (url === '/docker/containers' && req.method === 'GET') {
       respond(res, 200, await getDockerContainers());
@@ -1240,6 +1384,15 @@ async function handler(req, res) {
 
     } else if (url === '/docker/stacks' && req.method === 'GET') {
       respond(res, 200, await getDockerStacks());
+    } else if (url.startsWith('/docker/stacks/') && url.endsWith('/file') && req.method === 'GET') {
+      const parts = url.split('/');
+      respond(res, 200, await getDockerStackFile(decodeURIComponent(parts[3])));
+    } else if (url.startsWith('/docker/stacks/') && url.endsWith('/file') && req.method === 'PUT') {
+      const parts = url.split('/');
+      const raw = await new Promise((resolve) => { const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8'))); });
+      const { content } = JSON.parse(raw || '{}');
+      if (!content) return respond(res, 400, { error: 'Content fehlt' });
+      respond(res, 200, await writeDockerStackFile(decodeURIComponent(parts[3]), content));
     } else if (url.startsWith('/docker/stacks/') && req.method === 'POST') {
       const parts = url.split('/');
       if (parts.length === 5) {
