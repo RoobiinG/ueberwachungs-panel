@@ -16,6 +16,10 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [6.1.3.0] - 2026-09-03 (Build 354) — *Active Alerts Widget*
+
+- **Feature (Dashboard):** Neues, optionales Widget "Aktive Alarme" hinzugefügt, das die aktuell feuernden Alerts übersichtlich als Liste anzeigt (inkl. Typ, Server, Auslösezeitpunkt und Fehlermeldung). Das Widget kann über den "Widget hinzufügen"-Dialog auf dem Dashboard aktiviert werden.
+
 ## [6.1.2.0] - 2026-09-03 (Build 353) — *Alert Clarity*
 
 - **Verbesserung (Alert-Regelkarten):** Jeder Alert-Typ (Schwellenwert, PatchMon, Storage-Box, MC-Host24, Server-Aktion) hat jetzt ein eigenes Icon, ein farbiges Badge und einen farbigen linken Rand — der Typ einer Regel ist damit auf einen Blick erkennbar, ohne die Details lesen zu müssen.

@@ -7,7 +7,7 @@ import {
   Cpu, WifiOff, Container, ChevronRight, Server, Activity,
   MemoryStick, HardDrive, Network, ArrowDownToLine, ArrowUpFromLine,
   Clock, Monitor, Package, ShieldAlert, RotateCw, Bell,
-  GripVertical, RotateCcw, Trash2, Plus, FileText,
+  GripVertical, RotateCcw, Trash2, Plus, FileText, Flame
 } from 'lucide-react';
 import { LineChart, Line, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import axios from 'axios';
@@ -483,6 +483,7 @@ function AddWidgetModal({ isOpen, onClose, onAdd, serverKeys, serverName }) {
                 if (e.target.value === 'patchmon_tile') setTitle('PatchMon Sicherheitsampel');
                 if (e.target.value === 'uptime_tile') setTitle('Uptime Kuma Statuskachel');
                 if (e.target.value === 'log_ticker') setTitle('Live-Log-Ticker');
+                if (e.target.value === 'active_alerts_tile') setTitle('Aktive Alarme');
               }}
               className="w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-panel-text focus:outline-none focus:border-panel-accent"
             >
@@ -491,6 +492,7 @@ function AddWidgetModal({ isOpen, onClose, onAdd, serverKeys, serverName }) {
               <option value="patchmon_tile">🛡️ PatchMon Sicherheitsampel</option>
               <option value="uptime_tile">🟢 Uptime-Kuma Statuskachel</option>
               <option value="log_ticker">📜 Live-Log-Ticker (Aktuelle Fehlermeldungen)</option>
+              <option value="active_alerts_tile">🔥 Aktive Alarme Liste</option>
             </select>
           </div>
 
@@ -596,7 +598,7 @@ export default function Dashboard({ liveStats }) {
   const [activity,    setActivity]    = useState([]);   // Ereignis-Feed
   const [uptime,      setUptime]      = useState(null);  // { up, total }
   const [firewall,    setFirewall]    = useState(null);  // { active }
-  const [activeAlertCount, setActiveAlertCount] = useState(0);  // Zuverlässig vom Backend
+  const [activeAlertData, setActiveAlertData] = useState({ count: 0, details: [] });  // Zuverlässig vom Backend
   const [rgl, setRgl] = useState(null);   // gespeichertes RGL-Layout (null = Standard)
   const [showAddWidget, setShowAddWidget] = useState(false);
   const persistRef    = useRef(null);
@@ -691,7 +693,7 @@ export default function Dashboard({ liveStats }) {
   // ── Aktive Alerts (zuverlässig über Backend statt Activity-Feed) ─────────────
   useEffect(() => {
     const load = () => axios.get('/api/alerts/active-count')
-      .then(r => setActiveAlertCount(r.data.count || 0)).catch(() => {});
+      .then(r => setActiveAlertData({ count: r.data.count || 0, details: r.data.details || [] })).catch(() => {});
     load();
     const t = setInterval(load, 30_000);
     return () => clearInterval(t);
@@ -757,7 +759,7 @@ export default function Dashboard({ liveStats }) {
   const avgRam = avg(onlineStats, 'mem');
 
   // Aktive Alerts: direkt vom Backend-Endpunkt (statt fehleranfälligem Activity-Feed-Parsing)
-  const activeAlerts = activeAlertCount;
+  const activeAlerts = activeAlertData.count;
 
   // ── Frei anordbares Layout (react-grid-layout) ──────────────────────────────
   const serverKeys = agents.map(a => String(a.id));
@@ -997,6 +999,59 @@ export default function Dashboard({ liveStats }) {
                 <span className="text-panel-muted">Keine Server ausgewählt.</span>
               )}
             </div>
+          </div>
+        </div>
+      );
+    }
+
+    if (cType === 'active_alerts_tile') {
+      const details = activeAlertData.details || [];
+      return (
+        <div className="h-full flex flex-col bg-panel-card border border-panel-border/70 rounded-2xl overflow-hidden relative group/custom">
+          <div className="px-4 py-2 border-b border-panel-border/50 flex items-center justify-between flex-shrink-0">
+            <span className="text-xs font-semibold text-panel-text flex items-center gap-1.5">
+              <Flame size={13} className="text-panel-red" />
+              {item.title || 'Aktive Alarme'}
+            </span>
+            <button
+              type="button"
+              onClick={() => removeCustomWidget(item.i)}
+              className="p-1 rounded-md text-panel-muted hover:text-panel-red transition-colors opacity-0 group-hover/custom:opacity-100 cursor-pointer"
+              title="Widget löschen"
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
+          <div className="flex-1 overflow-auto p-3">
+            {details.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-center space-y-2">
+                <div className="w-10 h-10 rounded-full bg-panel-green/15 flex items-center justify-center text-panel-green text-lg">
+                  ✓
+                </div>
+                <div className="text-xs text-panel-muted font-medium">Keine aktiven Alarme</div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {details.map((h, idx) => (
+                  <div key={idx} className="p-2.5 rounded-lg text-xs border border-panel-red/30 bg-panel-red/5 flex flex-col gap-1.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-panel-red truncate">{h.rule_name || 'Unbekannt'}</span>
+                      <span className="flex items-center gap-1 text-[10px] text-panel-muted bg-panel-bg px-1.5 py-0.5 rounded border border-panel-border/40">
+                        <Server size={10} />{h.agent_name || `Agent #${h.server_key}`}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-end">
+                      <span className="text-[11px] text-panel-muted truncate">
+                        {(h.message || '').split('\n')[0].replace(/<[^>]+>/g, '') || 'Keine Details'}
+                      </span>
+                      <span className="text-[9px] text-panel-muted whitespace-nowrap">
+                        {new Date(h.triggered_at + 'Z').toLocaleString('de-DE', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       );

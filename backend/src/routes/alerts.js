@@ -214,16 +214,29 @@ router.get('/active-count', requirePermission('alerts.view'), (req, res) => {
   // 'suppressed' wird nicht mitgezählt — im Wartungsmodus soll kein aktiver Alert angezeigt werden.
   try {
     const rows = db.prepare(`
-      SELECT DISTINCT h.rule_id, h.server_key
+      SELECT h.id, h.triggered_at, h.value, h.message, h.type,
+             h.server_key, h.rule_id,
+             r.name AS rule_name, r.metric, r.threshold, r.condition, r.agent_id,
+             a.name AS agent_name
       FROM alert_history h
       INNER JOIN alert_rules r ON h.rule_id = r.id AND r.enabled = 1
+      LEFT JOIN remote_agents a ON r.agent_id = a.id
       WHERE h.id IN (
         SELECT MAX(id) FROM alert_history
         GROUP BY rule_id, COALESCE(server_key, '__none__')
       )
       AND h.type IN ('fired', 'failed')
+      ORDER BY h.triggered_at DESC
     `).all();
-    res.json({ count: rows.length, details: rows });
+
+    const enriched = rows.map(row => {
+      const resolvedName = row.server_key
+        ? resolveServerName(row.server_key)
+        : (row.agent_name || null);
+      return { ...row, agent_name: resolvedName || row.agent_name || null };
+    });
+
+    res.json({ count: enriched.length, details: enriched });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
