@@ -45,15 +45,16 @@ const widgetTitle = (id, serverName, item) => {
 // Höhe (in Grid-Zeilen) so, dass eine Server-Karte komplett passt (rowHeight 30 + margin 14 → ~514px)
 const SERVER_H = 12;
 // Layout-Schema-Version — bei Bump werden alte/kaputte gespeicherte Layouts verworfen
-const LAYOUT_VERSION = 3;
+const LAYOUT_VERSION = 4;
 
 const mkDefaultRgl = (serverKeys, wantStorage) => {
   const items = [
     { i: 'kpi',      x: 0, y: 0,             w: 12, h: 2,        minW: 4, minH: 2 },
-    { i: 'activity', x: 8, y: 2,             w: 4,  h: SERVER_H, minW: 3, minH: 5 },
-    { i: 'status',   x: 8, y: 2 + SERVER_H,  w: 4,  h: 6,        minW: 3, minH: 3 },
+    { i: 'custom:default_alerts', x: 8, y: 2, w: 4, h: 6,        minW: 3, minH: 3, customType: 'active_alerts_tile', title: 'Aktive Alarme' },
+    { i: 'activity', x: 8, y: 8,             w: 4,  h: SERVER_H, minW: 3, minH: 5 },
+    { i: 'status',   x: 8, y: 8 + SERVER_H,  w: 4,  h: 6,        minW: 3, minH: 3 },
   ];
-  if (wantStorage) items.push({ i: 'hetzner_storage', x: 8, y: 8 + SERVER_H, w: 4, h: 6, minW: 3, minH: 3 });
+  if (wantStorage) items.push({ i: 'hetzner_storage', x: 8, y: 14 + SERVER_H, w: 4, h: 6, minW: 3, minH: 3 });
   serverKeys.forEach((k, idx) => {
     items.push({ i: 'server:' + k, x: (idx % 2) * 4, y: 2 + Math.floor(idx / 2) * SERVER_H, w: 4, h: SERVER_H, minW: 3, minH: 6 });
   });

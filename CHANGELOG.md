@@ -16,6 +16,11 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [6.5.0.0] - 2026-09-03 (Build 364) — *Dashboard Extensions*
+
+- **Feature:** Das Widget "Aktive Alarme" (mit Details und Server-Zuweisung, nicht nur der nackten Anzahl) ist nun standardmäßig direkt auf dem Dashboard sichtbar.
+  *(System-Auswirkungen: Das Layout-Schema wurde auf v4 angehoben; beim nächsten Aufruf wird das Dashboard-Layout für alle Nutzer einmalig auf den neuen Standard zurückgesetzt, um das Widget einzubinden).*
+
 ## [6.4.0.4] - 2026-09-03 (Build 363) — *Hotfix Agent Docker Stacks*
 
 - **Bugfix (Agent v2.10.3):** Behebt einen Fehler, bei dem Docker-Stacks auf Remote-Servern nicht im Panel angezeigt wurden, weil die neuere `docker compose` Version das `--format '{{json .}}'` nicht mehr unterstützt. Der Agent nutzt nun `--format json`. Agent muss aktualisiert werden!
