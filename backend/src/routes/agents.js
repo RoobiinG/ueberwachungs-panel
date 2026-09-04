@@ -13,6 +13,7 @@ const { agentClient } = require('../utils/agentTls');
 const terminalTickets = require('../utils/terminalTickets');
 const statsCache      = require('../utils/statsCache');
 const { zugangGesichert, warnung } = require('../utils/firewallSchutz');
+const geoip           = require('geoip-lite');
 
 const AGENT_RAW_URL = 'https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master/agent/panel-agent.js';
 
@@ -1350,6 +1351,26 @@ router.get('/:id/ssh/audit', requirePermission('agents.manage_ssh'), async (req,
   try {
     const { data } = await agentApi(agent).get('/ssh/audit');
     res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.response?.data?.error || err.message });
+  }
+});
+
+router.get('/:id/ssh/sessions', requirePermission('agents.manage_ssh'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  try {
+    const { data: ips } = await agentApi(agent).get('/network/ssh-sessions');
+    const sessions = (ips || []).map(ip => {
+      const geo = geoip.lookup(ip);
+      return {
+        ip,
+        country: geo ? geo.country : 'Unknown',
+        city: geo ? geo.city : ''
+      };
+    });
+    res.json(sessions);
   } catch (err) {
     res.status(502).json({ error: err.response?.data?.error || err.message });
   }

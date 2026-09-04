@@ -206,6 +206,7 @@ export default function AgentDetail() {
   // ── Modul 9 (SSH & Sicherheit) ──────────────────────────────────────────────
   const [sshKeys, setSshKeys]             = useState([]);
   const [sshConfig, setSshConfig]         = useState(null);
+  const [sshSessions, setSshSessions]     = useState([]);
   const [loadingSsh, setLoadingSsh]       = useState(false);
 
   // ── Modul 13 (Port-Wächter) ──
@@ -215,12 +216,14 @@ export default function AgentDetail() {
   const loadSshData = useCallback(async () => {
     setLoadingSsh(true);
     try {
-      const [keysRes, confRes] = await Promise.all([
+      const [keysRes, confRes, sessRes] = await Promise.all([
         axios.get(`/api/agents/${id}/ssh/keys`).catch(() => ({ data: [] })),
-        axios.get(`/api/agents/${id}/ssh/audit`).catch(() => ({ data: null }))
+        axios.get(`/api/agents/${id}/ssh/audit`).catch(() => ({ data: null })),
+        axios.get(`/api/agents/${id}/ssh/sessions`).catch(() => ({ data: [] }))
       ]);
       setSshKeys(keysRes.data || []);
       setSshConfig(confRes.data || null);
+      setSshSessions(sessRes.data || []);
     } catch (e) { }
     setLoadingSsh(false);
   }, [id]);
@@ -1300,6 +1303,30 @@ export default function AgentDetail() {
                 </Button>
               )}
             </div>
+          </Card>
+
+          <Card title="Aktive SSH Sitzungen">
+            {loadingSsh ? (
+              <p className="text-xs text-panel-muted">Lade aktive Sitzungen...</p>
+            ) : sshSessions.length === 0 ? (
+              <p className="text-xs text-panel-muted">Keine aktiven SSH-Verbindungen gefunden.</p>
+            ) : (
+              <div className="space-y-2">
+                {sshSessions.map((s, i) => (
+                  <div key={i} className="flex items-center justify-between p-3 border border-panel-border rounded-lg bg-panel-surface/50">
+                    <div>
+                      <h4 className="text-sm font-semibold text-panel-text">{s.ip}</h4>
+                      {s.country && s.country !== 'Unknown' && (
+                         <p className="text-xs text-panel-muted">
+                           {(s.country || '').toUpperCase()} {s.city ? `— ${s.city}` : ''}
+                         </p>
+                      )}
+                    </div>
+                    <Badge color="green">Aktiv</Badge>
+                  </div>
+                ))}
+              </div>
+            )}
           </Card>
 
           <Card title="Autorisierte SSH-Schlüssel">

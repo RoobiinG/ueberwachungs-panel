@@ -946,6 +946,26 @@ async function getOpenPorts() {
   }
 }
 
+async function getSshSessions() {
+  try {
+    const { stdout } = await execAsync("ss -tn state established sport = :22 || true");
+    const lines = stdout.split('\n').slice(1);
+    const ips = new Set();
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const parts = line.trim().split(/\s+/);
+      if (parts.length >= 4) {
+        const peerAddrStr = parts[3]; // z.B. 31.18.56.53:65144
+        const ipMatch = peerAddrStr.match(/^(.+):\d+$/);
+        if (ipMatch) ips.add(ipMatch[1]);
+      }
+    }
+    return Array.from(ips);
+  } catch (err) {
+    return [];
+  }
+}
+
 // Netzwerk-Traffic — Live-Messung (für /network/stats, 1s Messfenster)
 async function getNetworkStats() {
   try {
@@ -1524,6 +1544,9 @@ async function handler(req, res) {
 
     } else if (url === '/network/ports' && req.method === 'GET') {
       respond(res, 200, await getOpenPorts());
+
+    } else if (url === '/network/ssh-sessions' && req.method === 'GET') {
+      respond(res, 200, await getSshSessions());
 
     // ── Logs ──
     } else if (url === '/logs' && req.method === 'GET') {

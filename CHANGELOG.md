@@ -16,6 +16,16 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [6.9.0.0] - 2026-09-04 (Build 368) - *Geo Tracker*
+
+### Features
+- **Aktive SSH Verbindungen**: Das Panel zeigt nun auf der Server-Detailseite unter "Sicherheit" die aktiv verbundenen SSH-Sitzungen in Echtzeit an.
+- **Geo-Tracking**: Die IPs der Sitzungen werden mittels `geoip-lite` vom Backend aufgelöst und mit Land und Stadt auf dem Panel visualisiert.
+
+### System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Agent-Kompatibilität:** Ältere Agenten, die `/network/ssh-sessions` noch nicht implementieren, werden im Frontend graceful behandelt (leere Anzeige).
+- **Abhängigkeiten:** Nutzt die bereits im Backend vorhandene Library `geoip-lite`.
+
 ## [6.8.0.0] - 2026-09-03 (Build 367) - *Weekly Reporter*
 
 - **Feature (Modul 11):** Automatische Auslastungsberichte hinzugefügt. Es kann nun ein wöchentlicher HTML-Bericht (Montags 08:00 Uhr) über die Server-Auslastung (Uptime, CPU-/RAM-Spitzen, Zwischenfälle) konfiguriert und per E-Mail versendet werden.
