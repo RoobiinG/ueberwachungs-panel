@@ -25,8 +25,16 @@ export default function SystemUpdateModal({ agentId, onClose }) {
       });
       
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Serverfehler');
+        const text = await response.text();
+        let errorMsg = 'Serverfehler';
+        try {
+          const data = JSON.parse(text);
+          errorMsg = data.error || errorMsg;
+        } catch {
+          errorMsg = `Serverfehler (HTTP ${response.status}): Die Antwort war kein JSON.`;
+          console.error('Non-JSON Error Response:', text);
+        }
+        throw new Error(errorMsg);
       }
 
       const reader = response.body.getReader();
