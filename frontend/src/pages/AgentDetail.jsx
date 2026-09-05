@@ -543,9 +543,9 @@ export default function AgentDetail() {
                   variant="primary" 
                   className="w-full"
                   onClick={() => setSystemUpdateModal(true)}
-                  disabled={agent?.type === 'dockhand'}
+                  disabled={agentData?.type === 'dockhand'}
                 >
-                  {agent?.type === 'dockhand' ? 'Via Dockhand nicht verfügbar' : 'Updates jetzt installieren'}
+                  {agentData?.type === 'dockhand' ? 'Via Dockhand nicht verfügbar' : 'Updates jetzt installieren'}
                 </Button>
               </div>
             )}
