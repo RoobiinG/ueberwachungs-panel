@@ -1370,7 +1370,7 @@ export default function AgentDetail() {
       
       {stackEditorModal && (
         <StackEditorModal 
-          agentId={agent.id} 
+          agentId={id} 
           stackName={stackEditorModal} 
           onClose={() => setStackEditorModal(null)} 
         />
@@ -1378,7 +1378,7 @@ export default function AgentDetail() {
 
       {systemUpdateModal && (
         <SystemUpdateModal 
-          agentId={agent.id} 
+          agentId={id} 
           onClose={() => setSystemUpdateModal(false)} 
         />
       )}

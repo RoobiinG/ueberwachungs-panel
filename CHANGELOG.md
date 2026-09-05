@@ -16,6 +16,15 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [6.9.0.2] - 2026-09-05 (Build 370) - *Geo Tracker*
+
+- **Bugfix (Frontend):** Behebung eines weiteren "agent is not defined" Fehlers, der auftrat, sobald man den Button "Updates jetzt installieren" oder Stack Editor Modal geklickt hat (Falsche Variablen-Referenz in den Modalen).
+
+**System-Auswirkungen & Nachwirken (Impact Analysis)**
+- **Datenbank-Migrationen:** Keine.
+- **Agent-Kompatibilität:** Keine Änderungen am Agent.
+- **Dienste / Container:** Der Panel-Container baut neu (Build 370) beim nächsten Pull.
+
 ## [6.9.0.1] - 2026-09-05 (Build 369) - *Geo Tracker*
 
 - **Bugfix (Frontend):** Behebung eines Absturzes ("agent is not defined") auf der Server-Detailseite, der durch einen falschen Variablenaufruf (`agent` statt `agentData`) beim Prüfen der Update-Buttons verursacht wurde.
