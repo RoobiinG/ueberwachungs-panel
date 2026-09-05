@@ -476,8 +476,9 @@ router.post('/:id/packages/update', requirePermission('system.update'), async (r
       response.data.pipe(res);
       return;
     } catch (err) {
+      console.error('[Update Error]', err.message, err.response?.data);
       if (!allowFallback(req, agent, req.originalUrl, err)) {
-        return res.status(502).json({ error: err.response?.data?.error || err.message });
+        return res.status(400).json({ error: err.response?.data?.error || err.message });
       }
     }
   }
