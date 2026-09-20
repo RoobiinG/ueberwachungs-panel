@@ -470,9 +470,30 @@ router.post('/:id/packages/update', requirePermission('system.update'), async (r
 
   if (useNative()) {
     try {
-      const response = await agentApi(agent).post('/packages/update', {}, { responseType: 'stream' });
+      // Eigener Client mit langem Timeout: die 8 Sekunden des Standard-Clients sind
+      // eine Socket-Inaktivitätsgrenze und würden ein laufendes Update abschneiden,
+      // sobald apt einmal länger keine Zeile ausgibt (z. B. beim Entpacken).
+      const response = await agentClient(agent, 60 * 60 * 1000)
+        .post('/packages/update', {}, { responseType: 'stream' });
+
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
       res.setHeader('Transfer-Encoding', 'chunked');
+      // NGINX puffert Proxy-Antworten von sich aus. Ohne diesen Header käme das
+      // Live-Log erst am Schluss an — und bei einem Abbruch überhaupt nicht.
+      res.setHeader('X-Accel-Buffering', 'no');
+      res.flushHeaders?.();
+
+      // Reißt die Verbindung zum Agenten ab — typisch, wenn das Update Docker oder
+      // den Server selbst neu startet —, darf der ungefangene Stream-Fehler nicht
+      // den ganzen Panel-Prozess mitnehmen.
+      response.data.on('error', (streamErr) => {
+        console.error('[Update Stream]', agent.name, streamErr.message);
+        if (!res.writableEnded) res.end(`\n[Verbindung zum Agenten abgerissen: ${streamErr.message}]\n`);
+      });
+      // Bricht der Browser ab, auch die Leitung zum Agenten schließen. Das Update
+      // selbst läuft auf dem Zielserver weiter — es hängt nicht an der Verbindung.
+      req.on('close', () => response.data.destroy());
+
       response.data.pipe(res);
       return;
     } catch (err) {

@@ -16,6 +16,20 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [7.0.0.1] - 2026-09-20 (Build 373) - *Patch Pilot*
+
+- **Bugfix (Live-Log):** Die Ausgabe des Paket-Updates kam hinter dem Reverse Proxy gar nicht an, weil NGINX die Antwort puffert. Das Backend sendet für diesen Stream jetzt `X-Accel-Buffering: no` und schickt die Header sofort los — die Ausgabe läuft damit wirklich live durch.
+- **Bugfix (Timeout):** Der Aufruf an den Agenten nutzte den Standard-Client mit 8 Sekunden Timeout. Da das eine Socket-Inaktivitätsgrenze ist, konnte ein laufendes Update abgeschnitten werden, sobald `apt` einmal länger keine Zeile ausgab. Für diese Route gilt jetzt eine Stunde.
+- **Bugfix (Verbindungsabbruch):** Ein Abbruch des Agenten-Streams wird abgefangen und sauber ans Ende des Logs geschrieben, statt als ungefangener Stream-Fehler im Panel-Prozess zu landen. Bricht der Browser ab, wird auch die Leitung zum Agenten geschlossen.
+- **Bugfix (Fehlermeldung):** Ein `502`/`504` wurde als „Serverfehler … war kein JSON" gemeldet. Läuft das Panel auf dem Server, der gerade aktualisiert wird, startet es durch ein Docker- oder Kernel-Update aber selbst neu — genau das sagt die Meldung jetzt, zusammen mit dem Hinweis, dass das Update auf dem Server zu Ende läuft.
+- **Änderung (Panel-Server erkennen):** `GET /api/patchmon/hosts` markiert den Host, auf dem das Panel selbst läuft (`istPanelHost`, aus der bestehenden Einstellung `patchmonLocalHostId`). Die Bestätigung warnt vor dem Verbindungsabbruch, und beim Sammel-Update wird dieser Server **zuletzt** aktualisiert, damit die übrigen vorher sauber durchlaufen.
+
+**System-Auswirkungen & Nachwirken (Impact Analysis)**
+- **Datenbank-Migrationen:** Keine.
+- **Agent-Kompatibilität:** Keine Änderung am Agent. Der Agent sendet während eines Updates kein Lebenszeichen, wenn `apt` lange nichts ausgibt — ein sehr knapp gesetzter `proxy_read_timeout` im Reverse Proxy kann die Verbindung daher weiterhin kappen. Das Update läuft auf dem Zielserver in dem Fall trotzdem zu Ende.
+- **Neustart-/Session-Verhalten:** Unverändert — mit der Einschränkung, dass ein Update auf dem Panel-Server den Panel-Container mit neu startet, sobald es Docker aktualisiert. Laufende Sessions bleiben gültig, die Oberfläche lädt nach dem Neustart wieder.
+- **Dienste / Container:** Der Panel-Container baut neu (Build 373) beim nächsten Pull.
+
 ## [7.0.0.0] - 2026-09-20 (Build 372) - *Patch Pilot*
 
 - **Feature (PatchMon-Seite):** Updates lassen sich jetzt direkt aus der PatchMon-Übersicht installieren. Der bisherige Platzhalter-Button auf jeder Host-Karte ist aktiv und startet dieselbe Update-Ausführung wie auf der Server-Detailseite (`POST /api/agents/:id/packages/update`, Live-Log im Dialog).

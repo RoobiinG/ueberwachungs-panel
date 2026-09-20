@@ -206,10 +206,13 @@ export default function PatchMon() {
 
   // Alle Hosts, die ausstehende Updates haben *und* über einen Panel-Agenten
   // erreichbar sind — nur die lassen sich per „Alle aktualisieren" abarbeiten.
-  const sammelZiele = useMemo(
-    () => hosts.filter(h => h.agentId && h.updatesAvailable).map(h => ({ id: h.agentId, name: h.name })),
-    [hosts]
-  );
+  const sammelZiele = useMemo(() => {
+    const ziele = hosts.filter(h => h.agentId && h.updatesAvailable);
+    // Der Server, auf dem das Panel selbst läuft, kommt zuletzt: Reißt dort durch
+    // ein Docker- oder Kernel-Update die Verbindung ab, sind die anderen schon durch.
+    ziele.sort((a, b) => (a.istPanelHost ? 1 : 0) - (b.istPanelHost ? 1 : 0));
+    return ziele.map(h => ({ id: h.agentId, name: h.name, istPanelHost: h.istPanelHost }));
+  }, [hosts]);
 
   // Einzelner Server
   const frageEinzeln = (h) => setFrage({
@@ -217,14 +220,16 @@ export default function PatchMon() {
     text:  h.updatesAvailable
       ? `${h.updatesCount} ausstehende Updates${h.securityCount > 0 ? ` (davon ${h.securityCount} Security)` : ''} werden über den Agenten „${h.agentName}" installiert.`
       : `Auf „${h.agentName}" wird ein Paket-Update ausgeführt. PatchMon meldet aktuell keine ausstehenden Updates.`,
-    ziele: [{ id: h.agentId, name: h.name }],
+    panelHinweis: !!h.istPanelHost,
+    ziele: [{ id: h.agentId, name: h.name, istPanelHost: h.istPanelHost }],
   });
 
   // Alle auf einmal
   const frageAlle = () => setFrage({
     titel: `Updates auf ${sammelZiele.length} Servern installieren?`,
     text:  'Die Server werden nacheinander aktualisiert. Der Vorgang lässt sich nicht abbrechen:',
-    liste: sammelZiele.map(z => z.name),
+    liste: sammelZiele,
+    panelHinweis: sammelZiele.some(z => z.istPanelHost),
     ziele: sammelZiele,
   });
 
@@ -426,13 +431,26 @@ export default function PatchMon() {
           <p className="text-sm text-panel-muted">{frage.text}</p>
           {frage.liste && (
             <ul className="mt-3 space-y-1 max-h-48 overflow-y-auto">
-              {frage.liste.map(name => (
-                <li key={name} className="text-sm text-panel-text flex items-center gap-2">
+              {frage.liste.map(z => (
+                <li key={z.id} className="text-sm text-panel-text flex items-center gap-2">
                   <Server size={12} className="text-panel-muted flex-shrink-0" />
-                  {name}
+                  {z.name}
+                  {z.istPanelHost && (
+                    <span className="text-[11px] text-panel-orange">— Panel läuft hier, deshalb zuletzt</span>
+                  )}
                 </li>
               ))}
             </ul>
+          )}
+          {frage.panelHinweis && (
+            <div className="mt-3 flex items-start gap-2 bg-panel-orange/10 border border-panel-orange/30 rounded px-3 py-2 text-xs text-panel-orange">
+              <ShieldAlert size={13} className="flex-shrink-0 mt-0.5" />
+              <span>
+                Auf diesem Server läuft das Panel selbst. Aktualisiert das Update Docker oder den Kernel,
+                startet der Panel-Container mit — die Live-Ausgabe bricht dann ab.
+                Das Update läuft auf dem Server trotzdem zu Ende.
+              </span>
+            </div>
           )}
           <p className="mt-3 text-xs text-panel-muted/80">
             Ausgeführt wird <code className="font-mono">apt-get upgrade</code> (bzw. <code className="font-mono">dnf upgrade</code>)

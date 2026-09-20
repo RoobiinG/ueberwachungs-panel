@@ -224,10 +224,20 @@ function mitAgenten(hosts, roleName) {
   ).all();
   const nachHostId = new Map(rows.map(r => [String(r.patchmon_host_id), r]));
 
+  // Der Host, auf dem das Panel selbst läuft. Ein Update dort kann Docker oder den
+  // Server neu starten und damit die eigene Verbindung kappen — das Update läuft
+  // trotzdem zu Ende, die Oberfläche muss es nur richtig erklären.
+  const lokalerHost = getSetting('patchmonLocalHostId');
+
   return hosts.map(h => {
     const a = nachHostId.get(String(h.id));
     const erlaubt = a && canAccessAgent(a.id, roleName);
-    return { ...h, agentId: erlaubt ? a.id : null, agentName: erlaubt ? a.name : null };
+    return {
+      ...h,
+      agentId:      erlaubt ? a.id : null,
+      agentName:    erlaubt ? a.name : null,
+      istPanelHost: !!lokalerHost && String(h.id) === String(lokalerHost),
+    };
   });
 }
 

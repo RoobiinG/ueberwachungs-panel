@@ -40,22 +40,36 @@ export default function SystemUpdateModal({ agentId, targets, onClose, onFinishe
     if (!response.ok) {
       // Antwort kann eine HTML-Fehlerseite des Reverse Proxys sein → nicht blind parsen.
       const text = await response.text();
-      let errorMsg = 'Serverfehler';
-      try {
-        errorMsg = JSON.parse(text).error || errorMsg;
-      } catch {
-        errorMsg = `Serverfehler (HTTP ${response.status}): Die Antwort war kein JSON.`;
+      let errorMsg = null;
+      try { errorMsg = JSON.parse(text).error; } catch { /* kein JSON — siehe unten */ }
+
+      if (!errorMsg) {
         console.error('Non-JSON Error Response:', text);
+        // 502/504 kommen vom Reverse Proxy, nicht vom Panel: Läuft das Panel auf dem
+        // Server, der gerade aktualisiert wird, startet es durch das Update selbst neu.
+        errorMsg = (response.status === 502 || response.status === 504)
+          ? `Verbindung zum Panel unterbrochen (HTTP ${response.status}). `
+            + 'Läuft das Panel auf dem aktualisierten Server, startet es durch das Update selbst neu — '
+            + 'das Update läuft dort trotzdem zu Ende.'
+          : `Serverfehler (HTTP ${response.status}): Die Antwort war kein JSON.`;
       }
       throw new Error(errorMsg);
     }
 
     const reader  = response.body.getReader();
     const decoder = new TextDecoder('utf-8');
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      schreibe(decoder.decode(value, { stream: true }));
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        schreibe(decoder.decode(value, { stream: true }));
+      }
+    } catch {
+      // Abbruch mitten im Stream — dasselbe Muster wie oben, nur später.
+      throw new Error(
+        'Verbindung während des Updates abgerissen. Das Update läuft auf dem Zielserver weiter; '
+        + 'das Ergebnis steht nach dem nächsten PatchMon-Check-in in der Übersicht.'
+      );
     }
   };
 
