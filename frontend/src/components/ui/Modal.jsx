@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 // Dialoge nichts ändert; `wide` und `full` sind für die Container-Konsole dazugekommen.
 const BREITEN = {
   lg:   'max-w-lg',
+  xl:   'max-w-4xl',
   wide: 'max-w-6xl',
   full: 'max-w-none w-[98vw]',
 };

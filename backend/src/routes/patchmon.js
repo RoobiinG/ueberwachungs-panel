@@ -3,6 +3,7 @@ const axios       = require('axios');
 const db          = require('../db');
 const { requirePermission } = require('../middleware/requirePermission');
 const { validatePublicUrl } = require('../utils/validateUrl');
+const { canAccessAgent } = require('../utils/agentAccess');
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -211,6 +212,25 @@ async function fetchHostSystem(url, tokenKey, tokenSecret, id) {
   return system;
 }
 
+// ─── Verknüpfte Panel-Agenten ────────────────────────────────────────────────
+// Ein PatchMon-Host kann über `remote_agents.patchmon_host_id` einem Panel-Agenten
+// zugeordnet sein. Nur dann lässt sich das Update von hier aus auch ausführen
+// (POST /api/agents/:id/packages/update). Die Rollen-Beschränkung auf einzelne
+// Server gilt dabei genauso wie auf der Server-Seite: Wer den Agenten nicht sehen
+// darf, bekommt hier auch keine Agent-ID und damit keinen Update-Button.
+function mitAgenten(hosts, roleName) {
+  const rows = db.prepare(
+    "SELECT id, name, patchmon_host_id FROM remote_agents WHERE patchmon_host_id IS NOT NULL AND TRIM(patchmon_host_id) != ''"
+  ).all();
+  const nachHostId = new Map(rows.map(r => [String(r.patchmon_host_id), r]));
+
+  return hosts.map(h => {
+    const a = nachHostId.get(String(h.id));
+    const erlaubt = a && canAccessAgent(a.id, roleName);
+    return { ...h, agentId: erlaubt ? a.id : null, agentName: erlaubt ? a.name : null };
+  });
+}
+
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
 // GET /api/patchmon/config
@@ -244,7 +264,8 @@ router.get('/hosts', requirePermission('patchmon.view'), async (req, res) => {
   if (!tokenKey || !tokenSecret)  return res.status(400).json({ error: 'PatchMon-API-Token nicht konfiguriert.' });
 
   try {
-    return res.json(await fetchHosts(url, tokenKey, tokenSecret));
+    const { hosts } = await fetchHosts(url, tokenKey, tokenSecret);
+    return res.json({ hosts: mitAgenten(hosts, req.user?.role) });
   } catch (err) {
     const status = err?.response?.status;
     const serverMsg = extractServerMsg(err?.response?.data);   // konkrete PatchMon-Meldung, falls vorhanden

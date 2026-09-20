@@ -6,7 +6,11 @@ import {
 import axios from 'axios';
 import { Card } from '../components/ui/Card';
 import { StatCard } from '../components/ui/StatCard';
+import { Modal } from '../components/ui/Modal';
+import { Button } from '../components/ui/Button';
+import SystemUpdateModal from '../components/SystemUpdateModal';
 import { useErrors } from '../context/ErrorContext';
+import { useAuth } from '../context/AuthContext';
 
 const InputField = ({ label, value, onChange, placeholder, hint }) => (
   <div>
@@ -24,8 +28,17 @@ const InputField = ({ label, value, onChange, placeholder, hint }) => (
 );
 
 // ── Host-Karte ──────────────────────────────────────────────────────────────
-function HostCard({ h }) {
+function HostCard({ h, onUpdate, darfUpdaten }) {
   const hasUpdates = h.updatesAvailable;
+  // Ausführen geht nur über einen verknüpften Panel-Agenten (remote_agents.patchmon_host_id).
+  const kannUpdaten = !!h.agentId && darfUpdaten;
+  const buttonTitel = !darfUpdaten
+    ? 'Keine Berechtigung zum Ausführen von Updates'
+    : !h.agentId
+    ? 'Kein Panel-Agent verknüpft — unter Server → Bearbeiten einem PatchMon-Host zuordnen'
+    : hasUpdates
+    ? `${h.updatesCount} Updates auf „${h.agentName}" installieren`
+    : `Paket-Update auf „${h.agentName}" ausführen (aktuell nichts ausstehend)`;
   // Technische Zweitzeile: echter Hostname (falls vom Anzeigenamen abweichend) + IP.
   const sub = [h.hostname && h.hostname !== h.name ? h.hostname : null, h.ip]
     .filter(Boolean).join(' · ');
@@ -75,7 +88,7 @@ function HostCard({ h }) {
         )}
       </div>
 
-      {/* Footer: Pakete gesamt · letzter Check-in + Update-Button-Platzhalter */}
+      {/* Footer: Pakete gesamt · letzter Check-in + Update-Button */}
       <div className="flex items-center gap-2 text-xs text-panel-muted mt-auto pt-1 border-t border-panel-border/50">
         {h.totalPackages > 0 && (
           <span className="tabular-nums" title="Installierte Pakete gesamt">{h.totalPackages} Pakete</span>
@@ -89,9 +102,16 @@ function HostCard({ h }) {
           </span>
         )}
         <button
-          disabled
-          title="Update-Ausführung folgt in einem späteren Schritt"
-          className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded border border-panel-border text-panel-muted/50 cursor-not-allowed"
+          disabled={!kannUpdaten}
+          onClick={() => onUpdate(h)}
+          title={buttonTitel}
+          className={`ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded border transition-colors ${
+            !kannUpdaten
+              ? 'border-panel-border text-panel-muted/50 cursor-not-allowed'
+              : hasUpdates
+              ? 'border-panel-orange/40 bg-panel-orange/10 text-panel-orange hover:bg-panel-orange/20'
+              : 'border-panel-border text-panel-muted hover:text-panel-text hover:border-panel-muted/50'
+          }`}
         >
           <ArrowUpCircle size={11} /> Update
         </button>
@@ -113,7 +133,13 @@ export default function PatchMon() {
   const [showSecret, setShowSecret] = useState(false);
   const [search,     setSearch]     = useState('');
 
+  // Update-Ausführung: erst Sicherheitsabfrage (`frage`), dann der Log-Dialog (`updateZiele`).
+  const [frage,       setFrage]       = useState(null);   // { titel, text, ziele }
+  const [updateZiele, setUpdateZiele] = useState(null);   // [{ id, name }]
+
   const { addError } = useErrors();
+  const { hasPermission } = useAuth();
+  const darfUpdaten = hasPermission('system.update');
 
   // Konfiguration laden
   useEffect(() => {
@@ -178,6 +204,35 @@ export default function PatchMon() {
     );
   }, [hosts, search]);
 
+  // Alle Hosts, die ausstehende Updates haben *und* über einen Panel-Agenten
+  // erreichbar sind — nur die lassen sich per „Alle aktualisieren" abarbeiten.
+  const sammelZiele = useMemo(
+    () => hosts.filter(h => h.agentId && h.updatesAvailable).map(h => ({ id: h.agentId, name: h.name })),
+    [hosts]
+  );
+
+  // Einzelner Server
+  const frageEinzeln = (h) => setFrage({
+    titel: `Updates auf „${h.name}" installieren?`,
+    text:  h.updatesAvailable
+      ? `${h.updatesCount} ausstehende Updates${h.securityCount > 0 ? ` (davon ${h.securityCount} Security)` : ''} werden über den Agenten „${h.agentName}" installiert.`
+      : `Auf „${h.agentName}" wird ein Paket-Update ausgeführt. PatchMon meldet aktuell keine ausstehenden Updates.`,
+    ziele: [{ id: h.agentId, name: h.name }],
+  });
+
+  // Alle auf einmal
+  const frageAlle = () => setFrage({
+    titel: `Updates auf ${sammelZiele.length} Servern installieren?`,
+    text:  'Die Server werden nacheinander aktualisiert. Der Vorgang lässt sich nicht abbrechen:',
+    liste: sammelZiele.map(z => z.name),
+    ziele: sammelZiele,
+  });
+
+  const starteUpdate = () => {
+    setUpdateZiele(frage.ziele);
+    setFrage(null);
+  };
+
   // Kennzahlen
   const withUpdates    = hosts.filter(h => h.updatesAvailable).length;
   const totalPackages  = hosts.reduce((s, h) => s + (h.updatesCount  || 0), 0);
@@ -201,6 +256,19 @@ export default function PatchMon() {
           )}
         </div>
         <div className="flex items-center gap-1">
+          {darfUpdaten && hosts.length > 0 && (
+            <button
+              onClick={frageAlle}
+              disabled={sammelZiele.length === 0}
+              title={sammelZiele.length === 0
+                ? 'Kein Server mit ausstehenden Updates und verknüpftem Panel-Agenten'
+                : `Updates auf ${sammelZiele.length} Servern nacheinander installieren`}
+              className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors text-panel-orange bg-panel-orange/10 hover:bg-panel-orange/20 disabled:opacity-40 disabled:cursor-not-allowed disabled:bg-transparent disabled:text-panel-muted/50"
+            >
+              <ArrowUpCircle size={13} />
+              Alle aktualisieren{sammelZiele.length > 0 && ` (${sammelZiele.length})`}
+            </button>
+          )}
           <button onClick={load} disabled={loading || !config.url || !config.hasToken}
             className="inline-flex items-center gap-1 px-2 py-1 text-xs text-panel-muted hover:text-panel-text hover:bg-panel-card rounded transition-colors disabled:opacity-40"
             title="Daten neu von PatchMon abrufen">
@@ -329,7 +397,9 @@ export default function PatchMon() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {filtered.map(h => <HostCard key={h.id} h={h} />)}
+            {filtered.map(h => (
+              <HostCard key={h.id} h={h} onUpdate={frageEinzeln} darfUpdaten={darfUpdaten} />
+            ))}
           </div>
 
           {filtered.length === 0 && search && (
@@ -338,6 +408,46 @@ export default function PatchMon() {
             </div>
           )}
         </>
+      )}
+
+      {/* Sicherheitsabfrage vor dem Update */}
+      {frage && (
+        <Modal
+          open
+          title={frage.titel}
+          onClose={() => setFrage(null)}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setFrage(null)}>Abbrechen</Button>
+              <Button variant="warning" onClick={starteUpdate}>Jetzt installieren</Button>
+            </>
+          }
+        >
+          <p className="text-sm text-panel-muted">{frage.text}</p>
+          {frage.liste && (
+            <ul className="mt-3 space-y-1 max-h-48 overflow-y-auto">
+              {frage.liste.map(name => (
+                <li key={name} className="text-sm text-panel-text flex items-center gap-2">
+                  <Server size={12} className="text-panel-muted flex-shrink-0" />
+                  {name}
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-3 text-xs text-panel-muted/80">
+            Ausgeführt wird <code className="font-mono">apt-get upgrade</code> (bzw. <code className="font-mono">dnf upgrade</code>)
+            über den jeweiligen Panel-Agenten. Ein nötiger Neustart erfolgt dabei <span className="text-panel-text">nicht</span> automatisch.
+          </p>
+        </Modal>
+      )}
+
+      {/* Live-Log der Update-Ausführung */}
+      {updateZiele && (
+        <SystemUpdateModal
+          targets={updateZiele}
+          onFinished={load}
+          onClose={() => { setUpdateZiele(null); load(); }}
+        />
       )}
 
     </div>

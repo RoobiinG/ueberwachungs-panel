@@ -16,6 +16,21 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [7.0.0.0] - 2026-09-20 (Build 372) - *Patch Pilot*
+
+- **Feature (PatchMon-Seite):** Updates lassen sich jetzt direkt aus der PatchMon-Übersicht installieren. Der bisherige Platzhalter-Button auf jeder Host-Karte ist aktiv und startet dieselbe Update-Ausführung wie auf der Server-Detailseite (`POST /api/agents/:id/packages/update`, Live-Log im Dialog).
+- **Feature (Sammel-Update):** Neuer Button **„Alle aktualisieren (N)"** in der Titelzeile. Er arbeitet alle Server mit ausstehenden Updates **nacheinander** ab — ein Fehler bei einem Server stoppt den Durchlauf nicht, am Ende steht eine Zusammenfassung im Log.
+- **Feature (Sicherheitsabfrage):** Vor jedem Update — einzeln wie gesammelt — erscheint eine Bestätigung mit der Liste der betroffenen Server und dem Hinweis, dass ein nötiger Neustart nicht automatisch erfolgt.
+- **Änderung (Backend):** `GET /api/patchmon/hosts` liefert je Host zusätzlich `agentId` und `agentName` des verknüpften Panel-Agenten. Die Rollen-Beschränkung auf einzelne Server (`agent_grants`) gilt dabei genauso wie auf der Server-Seite: Ohne Zugriff auf den Agenten bleibt der Update-Button gesperrt.
+- **Änderung (Update-Dialog):** `SystemUpdateModal` beherrscht nun mehrere Ziele nacheinander, zeigt den Fortschritt (`3/5`) im Titel und nutzt den gemeinsamen `Modal`-Rahmen. Die bisher wirkungslose Breitenangabe wurde durch die neue Größe `xl` (`max-w-4xl`) ersetzt; Escape und Klick auf den Hintergrund stürzen während eines laufenden Updates nicht mehr ab.
+
+**System-Auswirkungen & Nachwirken (Impact Analysis)**
+- **Datenbank-Migrationen:** Keine. Die Verknüpfung nutzt die bestehende Spalte `remote_agents.patchmon_host_id`.
+- **Agent-Kompatibilität:** Keine Änderung am Agent — der Endpunkt `/packages/update` existiert dort unverändert. Server **ohne** verknüpften Panel-Agenten lassen sich weiterhin nicht aus dem Panel aktualisieren; ihr Button bleibt mit entsprechendem Hinweis gesperrt.
+- **Berechtigungen:** Ausführen erfordert `system.update` (wie bisher auf der Server-Detailseite), Ansehen weiterhin `patchmon.view`. Neue Rechte-Keys gibt es nicht.
+- **Neustart-/Session-Verhalten:** Unverändert. Ein durch Updates nötiger Server-Neustart wird **nicht** automatisch ausgelöst und muss weiterhin von Hand erfolgen.
+- **Dienste / Container:** Der Panel-Container baut neu (Build 372) beim nächsten Pull.
+
 ## [6.9.0.3] - 2026-09-05 (Build 371) - *Geo Tracker*
 
 - **Bugfix (Frontend):** Bessere Fehlerbehandlung im System-Update-Modal: Ein Absturz (`Unexpected token '<' ... is not valid JSON`) beim Auslesen von Fehlerantworten des Servers (z. B. durch Nginx-502-Seiten) wurde behoben. Stattdessen wird der eigentliche HTTP-Fehlercode nun sauber angezeigt.
