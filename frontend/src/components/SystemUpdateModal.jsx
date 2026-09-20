@@ -96,6 +96,11 @@ export default function SystemUpdateModal({ agentId, targets, onClose, onFinishe
       }
     }
 
+    // Ohne diesen Hinweis wirkt ein erfolgreicher Lauf wie ein Fehlschlag: Die
+    // Zähler auf der PatchMon-Seite stammen aus PatchMon und ändern sich erst,
+    // wenn der dortige Agent das nächste Mal Bericht erstattet.
+    schreibe('\nPatchMon meldet den neuen Paketstand erst nach dem nächsten Check-in des Hosts.\n');
+
     if (mehrere) {
       schreibe(`\n${'═'.repeat(58)}\n` + (gescheitert.length
         ? `Fertig — ${ziele.length - gescheitert.length} von ${ziele.length} Servern aktualisiert. `

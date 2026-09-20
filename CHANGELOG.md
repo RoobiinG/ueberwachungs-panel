@@ -16,6 +16,18 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [7.0.0.2] - 2026-09-20 (Build 374) - *Patch Pilot*
+
+- **Bugfix (Agent, v2.13.0):** Das Paket-Update ließ Kernel-Updates dauerhaft liegen. `apt-get upgrade` überspringt jedes Paket, das ein neues Paket mitbringt — und genau das tut ein Kernel-Update (`linux-image-amd64` → `linux-image-6.1.0-53-amd64`). Die Pakete blieben dadurch in PatchMon für immer als „ausstehend" stehen, egal wie oft man das Update anstieß. Der Agent nutzt jetzt `--with-new-pkgs`; entfernt wird weiterhin nichts (das täte erst `dist-upgrade`).
+- **Änderung (Agent):** Bleibt danach trotzdem etwas zurückgehalten, weil es das Entfernen anderer Pakete erfordern würde, meldet der Agent das am Ende des Logs, statt es stillschweigend zu übergehen.
+- **Änderung (Update-Dialog):** Am Ende jedes Laufs steht der Hinweis, dass PatchMon den neuen Paketstand erst nach dem nächsten Check-in des Hosts meldet. Ohne ihn wirkt ein erfolgreicher Lauf wie ein Fehlschlag, weil die Zähler auf der Übersicht zunächst unverändert bleiben.
+
+**System-Auswirkungen & Nachwirken (Impact Analysis)**
+- **Datenbank-Migrationen:** Keine.
+- **Agent-Kompatibilität:** **Der Agent muss auf v2.13.0 aktualisiert werden**, sonst bleibt es beim alten Verhalten — der Update-Befehl läuft im Agenten, nicht im Panel. Die Aktualisierung läuft wie gewohnt über Server → Agent aktualisieren. Ältere Agenten funktionieren weiterhin, installieren aber keine Kernel-Updates.
+- **Neustart-/Session-Verhalten:** Kernel-Updates werden ab jetzt tatsächlich installiert und verlangen danach einen Neustart des Zielservers. Ausgelöst wird er **nicht** automatisch; PatchMon zeigt ihn als „Neustart erforderlich" an.
+- **Dienste / Container:** Der Panel-Container baut neu (Build 374) beim nächsten Pull.
+
 ## [7.0.0.1] - 2026-09-20 (Build 373) - *Patch Pilot*
 
 - **Bugfix (Live-Log):** Die Ausgabe des Paket-Updates kam hinter dem Reverse Proxy gar nicht an, weil NGINX die Antwort puffert. Das Backend sendet für diesen Stream jetzt `X-Accel-Buffering: no` und schickt die Header sofort los — die Ausgabe läuft damit wirklich live durch.

@@ -17,7 +17,7 @@ const execAsync = promisify(exec);
 // sondern ein Argument-Array. Sonderzeichen in Volume-/Netzwerk-/Image-Namen können
 // so nicht als Shell-Syntax gedeutet werden.
 const execFileAsync = promisify(execFile);
-const VERSION = '2.12.0';
+const VERSION = '2.13.0';
 
 // Ob die Container-Konsole angeboten werden kann. Steht erst nach dem Laden von
 // ws/node-pty am Ende dieser Datei fest und wird über /ping und /version gemeldet,
@@ -1563,8 +1563,21 @@ async function handler(req, res) {
         return;
       }
       res.write(`Start Paket-Update via ${mgr}...\n\n`);
-      const args = mgr === 'apt-get' 
-        ? ['-c', 'apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::="--force-confold" upgrade'] 
+      // `--with-new-pkgs`: Ohne diese Option lässt `apt-get upgrade` jedes Paket liegen,
+      // das ein neues Paket mitbringt — in der Praxis genau die Kernel-Updates
+      // (linux-image-amd64 → linux-image-6.1.0-53-amd64). Die blieben sonst dauerhaft
+      // als "ausstehend" stehen, egal wie oft man das Update anstößt. Entfernt wird
+      // dabei nichts; das täte erst `dist-upgrade`.
+      // Danach wird gemeldet, falls trotzdem etwas zurückgehalten wurde.
+      const aptCmd =
+        'apt-get update && ' +
+        'DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::="--force-confold" --with-new-pkgs upgrade; ' +
+        'code=$?; ' +
+        'rest=$(apt-get -s upgrade 2>/dev/null | grep -c "^Inst" || true); ' +
+        '[ "$rest" != "0" ] && printf "\\nHinweis: %s Paket(e) wurden zurückgehalten — sie erfordern das Entfernen anderer Pakete und müssen von Hand mit \'apt-get dist-upgrade\' geprüft werden.\\n" "$rest"; ' +
+        'exit $code';
+      const args = mgr === 'apt-get'
+        ? ['-c', aptCmd]
         : ['-c', 'dnf upgrade -y'];
       const child = require('child_process').spawn('sh', args, { env: { ...process.env, DEBIAN_FRONTEND: 'noninteractive' } });
       child.stdout.on('data', d => res.write(d));
