@@ -16,6 +16,16 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [7.0.0.3] - 2026-09-21 (Build 375) - *Patch Pilot*
+
+- **Fix (Datenbank):** Fehlende Migration (`ALTER TABLE remote_agents ADD COLUMN version TEXT`) in `backend/src/db.js` nachgetragen. Dadurch schlug der Background-Worker nach Agent-Updates fehl.
+
+**System-Auswirkungen & Nachwirken (Impact Analysis)**
+- **Datenbank-Migrationen:** Führt beim Start einmalig die fehlende `version`-Migration in `remote_agents` aus.
+- **Agent-Kompatibilität:** Keine direkte Code-Änderung am Agenten. Löst den Backend-Fehler. Das `Unauthorized`-Lockout erfordert manuelles Einrichten der Tokens.
+- **Neustart-/Session-Verhalten:** Keine Auswirkungen.
+- **Dienste / Container:** Der Panel-Container baut neu (Build 375).
+
 ## [7.0.0.2] - 2026-09-20 (Build 374) - *Patch Pilot*
 
 - **Bugfix (Agent, v2.13.0):** Das Paket-Update ließ Kernel-Updates dauerhaft liegen. `apt-get upgrade` überspringt jedes Paket, das ein neues Paket mitbringt — und genau das tut ein Kernel-Update (`linux-image-amd64` → `linux-image-6.1.0-53-amd64`). Die Pakete blieben dadurch in PatchMon für immer als „ausstehend" stehen, egal wie oft man das Update anstieß. Der Agent nutzt jetzt `--with-new-pkgs`; entfernt wird weiterhin nichts (das täte erst `dist-upgrade`).

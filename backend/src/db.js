@@ -123,6 +123,7 @@ db.exec(`
 `);
 
 // ─── Migrationen ─────────────────────────────────────────────────────────────
+try { db.exec('ALTER TABLE remote_agents ADD COLUMN version TEXT'); } catch {}
 try { db.exec('ALTER TABLE remote_agents ADD COLUMN fingerprint TEXT NOT NULL DEFAULT ""'); } catch {}
 try { 
   db.exec("ALTER TABLE remote_agents ADD COLUMN docker_engine TEXT NOT NULL DEFAULT 'agents'");
