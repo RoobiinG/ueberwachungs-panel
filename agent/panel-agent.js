@@ -651,6 +651,40 @@ async function dockerStackAction(id, action) {
   } catch (e) { throw new Error(e.message); }
 }
 
+async function deployDockerStack(id, res) {
+  try {
+    const stacks = await getDockerStacks();
+    const stack = stacks.find(s => s.Name === id);
+    if (!stack || !stack.ConfigFiles) {
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+      res.end('Stack nicht gefunden\n');
+      return;
+    }
+    const path = stack.ConfigFiles;
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Transfer-Encoding': 'chunked' });
+    res.write(`[Live-Deploy] Starte Deployment für Stack "${id}"...\n`);
+    
+    const { spawn } = require('child_process');
+    const child = spawn('docker', ['compose', '-f', path, 'up', '-d', '--build', '--remove-orphans']);
+    
+    child.stdout.on('data', d => res.write(d));
+    child.stderr.on('data', d => res.write(d));
+    
+    child.on('close', code => {
+      if (code === 0) res.write(`\n[Live-Deploy] Deployment erfolgreich abgeschlossen.\n`);
+      else res.write(`\n[Live-Deploy] Deployment mit Fehlercode ${code} beendet.\n`);
+      res.end();
+    });
+    child.on('error', err => {
+      res.write(`\n[Live-Deploy] Prozess-Fehler: ${err.message}\n`);
+      res.end();
+    });
+  } catch (err) {
+    if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end(`[Live-Deploy] Interner Fehler: ${err.message}\n`);
+  }
+}
+
 async function getDockerStackFile(id) {
   try {
     const stacks = await getDockerStacks();
@@ -1109,6 +1143,99 @@ async function getSshConfig() {
 }
 
 // ─── HTTP Handler ─────────────────────────────────────────────────────────────
+// ── Modul 7: Festplatten-Gesundheit & System-Aufräumen ───────────────────────
+
+async function getSmartData() {
+  try {
+    const { stdout: scanOut } = await execAsync('smartctl --scan', { timeout: 10000 }).catch(() => ({ stdout: '' }));
+    const lines = scanOut.trim().split('\n');
+    const disks = [];
+    
+    for (const line of lines) {
+      if (!line) continue;
+      const match = line.match(/^(\/dev\/\S+)/);
+      if (!match) continue;
+      const dev = match[1];
+      
+      try {
+        const { stdout: smartOut } = await execAsync(`smartctl -j -a ${dev}`, { timeout: 10000 });
+        const data = JSON.parse(smartOut);
+        
+        let passed = data.smart_status?.passed;
+        let temp = data.temperature?.current || null;
+        let wearout = null;
+        let pOH = data.power_on_time?.hours || null;
+        
+        // NVMe (Percentage Used)
+        if (data.nvme_smart_health_information_log) {
+          const used = data.nvme_smart_health_information_log.percentage_used;
+          if (used !== undefined) wearout = used;
+        }
+        
+        // SSD (Wear Leveling Count etc.)
+        if (data.ata_smart_attributes?.table) {
+          const wearAttr = data.ata_smart_attributes.table.find(a => 
+            a.name.toLowerCase().includes('wear_leveling') || 
+            a.name.toLowerCase().includes('media_wearout_indicator')
+          );
+          if (wearAttr) wearout = 100 - wearAttr.value; // Value ist oft remaining health
+        }
+        
+        disks.push({
+          device: dev,
+          model: data.model_name || data.device?.name || 'Unbekannt',
+          serial: data.serial_number || 'Unbekannt',
+          passed,
+          temperature: temp,
+          wearout,
+          powerOnHours: pOH
+        });
+      } catch (err) {
+        // smartctl fails on virtual disks or if smart not supported
+      }
+    }
+    return disks;
+  } catch (e) {
+    return [];
+  }
+}
+
+async function runSmartTest(disk) {
+  try {
+    await execAsync(`smartctl -t short ${disk}`);
+    return { success: true };
+  } catch (e) {
+    throw new Error(`Konnte Test auf ${disk} nicht starten: ${e.message}`);
+  }
+}
+
+async function runCleanup(tasks) {
+  const results = {};
+  
+  if (tasks.apt) {
+    try {
+      await execAsync('apt-get clean && apt-get autoremove -y', { timeout: 60000 });
+      results.apt = 'Erfolgreich gereinigt';
+    } catch (e) { results.apt = `Fehler: ${e.message}`; }
+  }
+  
+  if (tasks.journal) {
+    try {
+      await execAsync('journalctl --vacuum-time=3d', { timeout: 30000 });
+      results.journal = 'Erfolgreich bereinigt';
+    } catch (e) { results.journal = `Fehler: ${e.message}`; }
+  }
+  
+  if (tasks.docker) {
+    try {
+      await execAsync('docker system prune -a -f', { timeout: 120000 });
+      results.docker = 'Docker Ressourcen erfolgreich entfernt';
+    } catch (e) { results.docker = `Fehler: ${e.message}`; }
+  }
+  
+  return { success: true, results };
+}
+
 
 function respond(res, status, data) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -1358,6 +1485,19 @@ async function handler(req, res) {
       await firewallDeleteRule(id);
       respond(res, 200, { success: true });
 
+    // ── Festplatten & System (Modul 7) ─────────────────────────────────────────
+    } else if (url === '/disks/smart' && req.method === 'GET') {
+      respond(res, 200, await getSmartData());
+    } else if (url === '/disks/smart/test' && req.method === 'POST') {
+      const raw = await new Promise((resolve) => { const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8'))); });
+      const { disk } = JSON.parse(raw || '{}');
+      if (!disk) return respond(res, 400, { error: 'Keine Festplatte angegeben' });
+      respond(res, 200, await runSmartTest(disk));
+    } else if (url === '/system/cleanup' && req.method === 'POST') {
+      const raw = await new Promise((resolve) => { const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8'))); });
+      const tasks = JSON.parse(raw || '{}');
+      respond(res, 200, await runCleanup(tasks));
+
     // ── SSH & Sicherheit ──────────────────────────────────────────────────────
     } else if (url === '/ssh/keys' && req.method === 'GET') {
       respond(res, 200, await getSshKeys());
@@ -1399,6 +1539,7 @@ async function handler(req, res) {
     } else if (url.startsWith('/docker/stacks/') && req.method === 'POST') {
       const parts = url.split('/');
       if (parts.length === 5) {
+        if (parts[4] === 'deploy') return deployDockerStack(decodeURIComponent(parts[3]), res);
         respond(res, 200, await dockerStackAction(decodeURIComponent(parts[3]), parts[4]));
       } else { respond(res, 404, { error: 'Not found' }); }
       

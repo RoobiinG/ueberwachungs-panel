@@ -12,6 +12,8 @@ import { ActionMenu } from '../components/ui/ActionMenu';
 import { RefreshCw, Play, Square, RotateCcw, Tag, Check, X, ScrollText, ChevronDown, ChevronUp, Zap, Shield, Terminal, Info, Search, CornerDownRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useWSMessage } from '../context/WSContext';
+import { StackEditorModal } from '../components/StackEditorModal';
+import { DeployStreamModal } from '../components/DeployStreamModal';
 // Erst laden, wenn tatsächlich ein Terminal geöffnet wird — xterm steckte bisher
 // (über Docker.jsx → DockerCenter.jsx) in jedem Besuch von /docker, unabhängig davon,
 // ob je ein Terminal geöffnet wurde. Größter Einzelposten im Bundle (~300 KB roh).
@@ -44,10 +46,15 @@ export default function Docker() {
   const canLogs  = isAdmin || hasPermission('docker.logs');
 
   const [selectedServer, setSelectedServer] = useState(null);
+  const [activeTab, setActiveTab]           = useState('containers'); // 'containers', 'stacks'
   const [containers, setContainers]         = useState([]);
+  const [stacks, setStacks]                 = useState([]);
   const [loading, setLoading]               = useState(true);
   const [busy, setBusy]                     = useState({});
   const [error, setError]                   = useState('');
+  
+  const [editorStack, setEditorStack]       = useState(null);
+  const [deployStack, setDeployStack]       = useState(null);
 
   // Live-Stats: { containerId: { cpu, memUsed, memLimit, netRx, netTx } }
   const [statsMap, setStatsMap]   = useState({});
@@ -95,9 +102,12 @@ export default function Docker() {
     setLoading(true);
     setError('');
     try {
-      const url = `/api/agents/${selectedServer}/docker/containers`;
-      const { data } = await axios.get(url);
-      setContainers(data);
+      const [{ data: conts }, { data: stks }] = await Promise.all([
+        axios.get(`/api/agents/${selectedServer}/docker/containers`),
+        axios.get(`/api/agents/${selectedServer}/docker/stacks`).catch(() => ({ data: [] }))
+      ]);
+      setContainers(conts);
+      setStacks(stks);
     } catch (err) {
       setError(err.response?.data?.error || 'Docker nicht erreichbar');
     }
@@ -126,6 +136,7 @@ export default function Docker() {
   useEffect(() => {
     if (!selectedServer) return;
     setContainers([]);
+    setStacks([]);
     setStatsMap({});
     setEditingLabel(null);
     load();
@@ -280,6 +291,18 @@ export default function Docker() {
     setBusy(b => ({ ...b, [cid]: null }));
   };
 
+  const actStack = async (stackId, action) => {
+    if (!selectedServer) return;
+    setBusy(b => ({ ...b, [`stack_${stackId}`]: action }));
+    try {
+      await axios.post(`/api/agents/${selectedServer}/docker/stacks/${encodeURIComponent(stackId)}/${action}`);
+      await load();
+    } catch (err) {
+      setError(err.response?.data?.error || `Fehler beim Stack ${action}`);
+    }
+    setBusy(b => ({ ...b, [`stack_${stackId}`]: null }));
+  };
+
   // ── Serverübergreifende Suche ──────────────────────────────────────────────
 
   const suchbegriff = suche.trim();
@@ -420,7 +443,30 @@ export default function Docker() {
         </div>
       )}
 
-      <Card title={`Docker Container (${containers.length})`}>
+      {/* ── Tabs: Container / Stacks ─────────────────────────────────────────── */}
+      {selectedServer && (
+        <div className="flex items-center gap-4 border-b border-panel-border pb-1">
+          <button
+            onClick={() => setActiveTab('containers')}
+            className={`pb-2 px-1 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'containers' ? 'border-panel-accent text-panel-accent' : 'border-transparent text-panel-muted hover:text-panel-text'
+            }`}
+          >
+            Container ({containers.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('stacks')}
+            className={`pb-2 px-1 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'stacks' ? 'border-panel-accent text-panel-accent' : 'border-transparent text-panel-muted hover:text-panel-text'
+            }`}
+          >
+            Stacks ({stacks.length})
+          </button>
+        </div>
+      )}
+
+      {activeTab === 'containers' && (
+      <Card>
         {loading ? (
           <div className="text-panel-muted text-sm py-4 text-center">Lade…</div>
         ) : containers.length === 0 ? (
@@ -657,6 +703,72 @@ export default function Docker() {
           </div>
         )}
       </Card>
+      )}
+
+      {activeTab === 'stacks' && (
+        <Card>
+          {loading ? (
+            <div className="text-panel-muted text-sm py-4 text-center">Lade…</div>
+          ) : stacks.length === 0 ? (
+            <div className="text-panel-muted text-sm py-4 text-center">Keine Stacks gefunden</div>
+          ) : (
+            <div className="divide-y divide-panel-border -mx-4 -mb-4">
+              {stacks.map(s => (
+                <div key={s.Name} className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-3 gap-3 hover:bg-panel-surface/30 transition-colors">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-panel-text font-medium">{s.Name}</span>
+                    </div>
+                    {s.ConfigFiles && (
+                      <div className="text-xs text-panel-muted mt-0.5 font-mono truncate max-w-sm" title={s.ConfigFiles}>
+                        {s.ConfigFiles}
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {canWrite && (
+                      <>
+                        <Button size="sm" variant="success" onClick={() => actStack(s.Name, 'up')} disabled={!!busy[`stack_${s.Name}`]}>
+                          <Play size={12} className="mr-1" /> Up
+                        </Button>
+                        <Button size="sm" variant="danger" onClick={() => actStack(s.Name, 'down')} disabled={!!busy[`stack_${s.Name}`]}>
+                          <Square size={12} className="mr-1" /> Down
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => actStack(s.Name, 'pull')} disabled={!!busy[`stack_${s.Name}`]}>
+                          <RefreshCw size={12} className={`mr-1 ${busy[`stack_${s.Name}`] === 'pull' ? 'animate-spin' : ''}`} /> Update (Pull)
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => setEditorStack(s.Name)}>
+                          Editor
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {editorStack && (
+        <StackEditorModal
+          serverId={selectedServer}
+          stackId={editorStack}
+          stackName={editorStack}
+          onClose={() => setEditorStack(null)}
+          onDeploy={() => setDeployStack(editorStack)}
+        />
+      )}
+
+      {deployStack && (
+        <DeployStreamModal
+          serverId={selectedServer}
+          stackId={deployStack}
+          stackName={deployStack}
+          onClose={() => setDeployStack(null)}
+        />
+      )}
 
       {/* ── Firewall-Port-Vorschlag nach Container-Start ───────────────────────── */}
       {portSuggestion && (

@@ -168,7 +168,7 @@ export default function Logs() {
                 logs.map((log) => (
                   <tr key={log.id} className="hover:bg-panel-surface/50 transition-colors">
                     <td className="px-4 py-2.5 text-panel-muted">
-                      {new Date(Number(log.timestamp)).toLocaleString('de-DE')}
+                      {new Date(String(log.timestamp).replace(' ', 'T') + 'Z').toLocaleString('de-DE')}
                     </td>
                     <td className="px-4 py-2.5 text-panel-text">
                       {log.agent_name || `ID ${log.agent_id}`}

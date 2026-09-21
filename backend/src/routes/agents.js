@@ -1113,6 +1113,31 @@ router.post('/:id/docker/stacks/:stackId/:action', requirePermission('docker.sta
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   const { stackId, action } = req.params;
   
+  // Modul 10: Live-Deploy Stream (nativ)
+  if (action === 'deploy') {
+    if (!useNative()) return res.status(501).json({ error: 'Live-Deploy nur mit Native Agent unterstützt.' });
+    try {
+      const response = await agentApi(agent).post(`/docker/stacks/${encodeURIComponent(stackId)}/deploy`, null, {
+        responseType: 'stream',
+        timeout: 0 // Stream nicht abbrechen
+      });
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Transfer-Encoding', 'chunked');
+      
+      response.data.on('error', (err) => {
+        if (!res.writableEnded) res.end(`\n[Stream Fehler: ${err.message}]\n`);
+      });
+      req.on('close', () => response.data.destroy());
+      response.data.pipe(res);
+      auditLog(req, 'docker.stack.deploy', 'stack', String(stackId).slice(0, 40), { agentId: agent.id });
+      return;
+    } catch (err) {
+      if (!allowFallback(req, agent, req.originalUrl, err)) {
+        return res.status(502).json({ error: err.response?.data?.error || err.message });
+      }
+    }
+  }
+  
   if (useNative()) {
     const validNativeActions = ['start', 'stop', 'update', 'restart']; // We mapped up, down, pull in agent, but UI might send start, stop, update
     if (!validNativeActions.includes(action)) return res.status(400).json({ error: 'Invalid action' });
@@ -1148,6 +1173,39 @@ router.post('/:id/docker/stacks/:stackId/:action', requirePermission('docker.sta
     auditLog(req, `docker.stack.${action}`, 'stack', String(stackId).slice(0, 40), { agentId: agent.id });
     res.json({ success: true });
   } catch (err) { res.status(502).json({ error: err.message }); }
+});
+
+router.get('/:id/docker/stacks/:stackId/file', requirePermission('docker.stacks.view'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+
+  if (useNative()) {
+    try {
+      const { data } = await agentApi(agent).get(`/docker/stacks/${encodeURIComponent(req.params.stackId)}/file`);
+      return res.json(data);
+    } catch (err) {
+      return res.status(502).json({ error: err.response?.data?.error || err.message });
+    }
+  }
+  res.status(501).json({ error: 'Stack-Editor via Dockhand nicht unterstützt.' });
+});
+
+router.put('/:id/docker/stacks/:stackId/file', requirePermission('docker.stacks.control'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+
+  if (useNative()) {
+    try {
+      const { data } = await agentApi(agent).put(`/docker/stacks/${encodeURIComponent(req.params.stackId)}/file`, req.body);
+      auditLog(req, 'docker.stack.edit', 'stack', String(req.params.stackId).slice(0, 40), { agentId: agent.id });
+      return res.json(data);
+    } catch (err) {
+      return res.status(502).json({ error: err.response?.data?.error || err.message });
+    }
+  }
+  res.status(501).json({ error: 'Stack-Editor via Dockhand nicht unterstützt.' });
 });
 
 // ── Firewall Proxy ──────────────────────────────────────────────────────────
@@ -1440,6 +1498,55 @@ router.post('/:id/uninstall', requirePermission('agents.delete'), async (req, re
 
   auditLog(req, 'agent.uninstall', 'agent', agent.name, { url: agent.url });
   res.json({ success: true, message: 'Agent deinstalliert und aus Panel entfernt' });
+});
+
+// ── System-Aufräumen (Modul 7) ───────────────────────────────────────────────
+router.post('/:id/system/cleanup', requirePermission('disks.manage'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+
+  try {
+    const { data } = await agentApi(agent).post('/system/cleanup', req.body);
+    auditLog(req, 'system.cleanup', 'system', agent.name, { agentId: agent.id, tasks: req.body });
+    return res.json(data);
+  } catch (err) {
+    if (!allowFallback(req, agent, req.originalUrl, err)) {
+      return res.status(502).json({ error: err.response?.data?.error || err.message });
+    }
+  }
+});
+
+// ── Festplatten-Gesundheit (Modul 7) ─────────────────────────────────────────
+router.get('/:id/disks/smart', requirePermission('disks.manage'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+
+  try {
+    const { data } = await agentApi(agent).get('/disks/smart');
+    return res.json(data);
+  } catch (err) {
+    if (!allowFallback(req, agent, req.originalUrl, err)) {
+      return res.status(502).json({ error: err.response?.data?.error || err.message });
+    }
+  }
+});
+
+router.post('/:id/disks/smart/test', requirePermission('disks.manage'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+
+  try {
+    const { data } = await agentApi(agent).post('/disks/smart/test', { disk: req.body.disk });
+    auditLog(req, 'disks.smart.test', 'disk', req.body.disk, { agentId: agent.id });
+    return res.json(data);
+  } catch (err) {
+    if (!allowFallback(req, agent, req.originalUrl, err)) {
+      return res.status(502).json({ error: err.response?.data?.error || err.message });
+    }
+  }
 });
 
 module.exports = router;

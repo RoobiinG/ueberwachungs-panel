@@ -15,7 +15,7 @@ const PERMISSIONS = [
   { key: 'agents.manage_processes', category: 'Remote-Server',  label: 'Prozesse verwalten',              description: 'Top-Prozesse auf Remote-Servern ansehen und hängende Prozesse beenden' },
   { key: 'agents.manage_ssh',   category: 'Remote-Server',      label: 'SSH-Keys verwalten',              description: 'SSH-Schlüssel ansehen und entfernen sowie Security-Audit durchführen' },
   { key: 'cron.manage',         category: 'Remote-Server',      label: 'Cron-Jobs verwalten',             description: 'System-Cron-Jobs auf Remote-Servern ansehen, anlegen und löschen' },
-
+  { key: 'disks.manage',        category: 'Remote-Server',      label: 'Festplatten & System',            description: 'S.M.A.R.T.-Daten einsehen, Selbsttests starten und Speicher freigeben' },
 
   // ─── Docker ───────────────────────────────────────────────────────────────
   { key: 'docker.view',         category: 'Docker',             label: 'Container anzeigen',              description: 'Container-Liste und Stats einsehen' },

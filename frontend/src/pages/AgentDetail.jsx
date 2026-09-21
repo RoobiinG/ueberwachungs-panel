@@ -235,6 +235,42 @@ export default function AgentDetail() {
   const [allowedPorts, setAllowedPorts]   = useState('');
   const [savingPorts, setSavingPorts]     = useState(false);
 
+  // ── Modul 7 (Festplatten & System) ─────────────────────────────────────────
+  const [disks, setDisks] = useState([]);
+  const [loadingDisks, setLoadingDisks] = useState(false);
+  const [cleanupStatus, setCleanupStatus] = useState(null);
+  const [runningCleanup, setRunningCleanup] = useState(false);
+
+  const loadDisks = useCallback(async () => {
+    setLoadingDisks(true);
+    try {
+      const { data } = await axios.get(`/api/agents/${id}/disks/smart`);
+      setDisks(data || []);
+    } catch (e) { }
+    setLoadingDisks(false);
+  }, [id]);
+
+  const runCleanup = async (tasks) => {
+    setRunningCleanup(true);
+    try {
+      const { data } = await axios.post(`/api/agents/${id}/system/cleanup`, tasks);
+      setCleanupStatus(data.results);
+      setTimeout(() => setCleanupStatus(null), 10000);
+    } catch (e) {
+      alert('Fehler beim System-Cleanup: ' + (e.response?.data?.error || e.message));
+    }
+    setRunningCleanup(false);
+  };
+
+  const runSmartTest = async (disk) => {
+    try {
+      await axios.post(`/api/agents/${id}/disks/smart/test`, { disk });
+      alert(`S.M.A.R.T. Test für ${disk} gestartet. Ergebnisse sind in einigen Minuten in den S.M.A.R.T.-Werten sichtbar.`);
+    } catch (e) {
+      alert('Fehler beim Starten des Tests: ' + (e.response?.data?.error || e.message));
+    }
+  };
+
   const loadSshData = useCallback(async () => {
     setLoadingSsh(true);
     try {
@@ -276,9 +312,22 @@ export default function AgentDetail() {
     setSavingPorts(false);
   };
 
+  const loadNotes = useCallback(async () => {
+    try {
+      const { data } = await axios.get(`/api/agents/${id}/notes`);
+      if (data) setServerNotes(data);
+    } catch (e) {}
+  }, [id]);
+
+  const loadTab = useCallback((tab) => {
+    if (tab === 'notes')    loadNotes();
+    if (tab === 'ssh')      loadSshData();
+    if (tab === 'disks')    loadDisks();
+  }, [id, loadNotes, loadSshData, loadDisks]);
+
   useEffect(() => {
-    if (activeTab === 'ssh') loadSshData();
-  }, [activeTab, loadSshData]);
+    loadTab(activeTab);
+  }, [activeTab, loadTab]);
 
   const load = useCallback(async (silent = false) => {
     const requestId = id;
@@ -473,6 +522,7 @@ export default function AgentDetail() {
     { id: 'system',    label: 'System',    icon: Server },
     { id: 'services',  label: 'Services',  icon: Activity },
     { id: 'processes', label: 'Prozesse',  icon: Cpu },
+    ...(hasPermission('disks.manage') ? [{ id: 'disks', label: 'Laufwerke', icon: HardDrive }] : []),
     { id: 'notes',     label: 'Notizbuch', icon: FileText },
     ...(hasPermission('agents.manage_ssh') ? [{ id: 'ssh', label: 'Sicherheit', icon: Shield }] : []),
   ];
@@ -1373,6 +1423,91 @@ export default function AgentDetail() {
                 ))}
               </div>
             )}
+          </Card>
+        </div>
+      )}
+
+      {currentTab === 'disks' && hasPermission('disks.manage') && (
+        <div className="space-y-4">
+          <Card title="S.M.A.R.T. Werte & Festplatten">
+            <div className="flex justify-end mb-3">
+              <Button size="sm" onClick={loadDisks} disabled={loadingDisks}>
+                <RefreshCw size={14} className={`mr-2 ${loadingDisks ? 'animate-spin' : ''}`} /> S.M.A.R.T. aktualisieren
+              </Button>
+            </div>
+            {loadingDisks ? (
+              <p className="text-xs text-panel-muted text-center py-4">Lade Festplattendaten...</p>
+            ) : disks.length === 0 ? (
+              <p className="text-xs text-panel-muted text-center py-4">Keine S.M.A.R.T. kompatiblen Laufwerke gefunden.</p>
+            ) : (
+              <div className="space-y-3">
+                {disks.map((d, i) => (
+                  <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 border border-panel-border rounded-lg bg-panel-surface/50">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <HardDrive size={14} className="text-panel-accent" />
+                        <span className="text-sm font-medium text-panel-text">{d.device}</span>
+                        {d.passed === true && <Badge color="green">PASSED</Badge>}
+                        {d.passed === false && <Badge color="red">FAILED</Badge>}
+                      </div>
+                      <div className="text-xs text-panel-muted font-mono">{d.model} (SN: {d.serial})</div>
+                      <div className="flex gap-4 mt-2 text-[11px] text-panel-muted">
+                        {d.temperature !== null && <span>Temp: <strong className={d.temperature > 50 ? 'text-panel-orange' : 'text-panel-text'}>{d.temperature}°C</strong></span>}
+                        {d.wearout !== null && <span>Wearout: <strong className="text-panel-text">{d.wearout}%</strong></span>}
+                        {d.powerOnHours !== null && <span>Laufzeit: <strong className="text-panel-text">{Math.round(d.powerOnHours / 24)} Tage</strong></span>}
+                      </div>
+                    </div>
+                    {canWrite && (
+                      <Button size="sm" variant="outline" onClick={() => runSmartTest(d.device)}>
+                        Selbsttest (Short) starten
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+
+          <Card title="System-Speicher freigeben">
+            <div className="text-sm text-panel-muted mb-4">
+              <p>Nicht mehr benötigte Dateien entfernen, um Speicherplatz freizugeben.</p>
+              {cleanupStatus && (
+                <div className="mt-3 p-3 rounded-md bg-panel-surface border border-panel-border">
+                  <h4 className="font-medium text-panel-text mb-1">Ergebnis:</h4>
+                  <ul className="text-xs space-y-1">
+                    {Object.entries(cleanupStatus).map(([task, result]) => (
+                      <li key={task} className="flex gap-2">
+                        <span className="text-panel-accent font-mono w-16">{task}:</span>
+                        <span className={result.includes('Fehler') ? 'text-panel-red' : 'text-panel-text'}>{result}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <Button variant="outline" className="flex flex-col items-center p-4 h-auto gap-2" disabled={runningCleanup || !canWrite} 
+                onClick={() => runCleanup({ apt: true })}>
+                <Package size={20} className="text-panel-muted" />
+                <span className="text-sm font-medium">APT Cache leeren</span>
+                <span className="text-[10px] text-panel-muted/70 text-center">Entfernt ungenutzte Pakete (apt autoremove) und den Cache</span>
+              </Button>
+              
+              <Button variant="outline" className="flex flex-col items-center p-4 h-auto gap-2" disabled={runningCleanup || !canWrite}
+                onClick={() => runCleanup({ journal: true })}>
+                <FileText size={20} className="text-panel-muted" />
+                <span className="text-sm font-medium">System-Logs kürzen</span>
+                <span className="text-[10px] text-panel-muted/70 text-center">Löscht alte systemd Journal-Logs (behält nur 3 Tage)</span>
+              </Button>
+              
+              <Button variant="outline" className="flex flex-col items-center p-4 h-auto gap-2" disabled={runningCleanup || !canWrite}
+                onClick={() => runCleanup({ docker: true })}>
+                <Container size={20} className="text-panel-muted" />
+                <span className="text-sm font-medium">Docker Prune</span>
+                <span className="text-[10px] text-panel-muted/70 text-center">Entfernt ungenutzte Images, Container, Volumes (system prune -a)</span>
+              </Button>
+            </div>
           </Card>
         </div>
       )}

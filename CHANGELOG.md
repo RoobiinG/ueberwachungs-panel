@@ -16,6 +16,16 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [7.1.0.0] - 2026-09-21 (Build 376) - *Patch Pilot*
+
+### Features & Verbesserungen
+- **Modul 10 (Docker Compose Stacks UI):** Docker Compose Stacks können nun direkt im Panel verwaltet werden. Ein Editor-Modal ermöglicht das Bearbeiten der Stack-Datei (`docker-compose.yml`), und das Deployment kann gestartet werden. Eine neue Ansicht im Modal streamt die Live-Deployment-Logs direkt vom Zielserver. 
+- **Modul 7 (Festplatten & System):** In der Agent-Ansicht ("Festplatten & System") lassen sich nun S.M.A.R.T. Werte der Laufwerke auslesen, Temperatur und Wearout überwachen sowie Kurztests anstoßen. Ein neues Aufräum-Feature erlaubt die Fernsteuerung zum Leeren des APT Caches, Kürzen von Journal-Logs und Ausführen von Docker System Prune.
+
+### System-Auswirkungen & Nachwirken (Impact Analysis)
+- **Agenten-Kompatibilität:** Ältere Agenten werden bei den neuen Modulen (Stacks, Festplatten-Gesundheit) entweder leere oder fehlerhafte Daten zurückgeben; ein manuelles Update des Agenten ist auf Zielservern erforderlich, um die neuen Endpunkte für `/disks/smart` und `/docker/stacks` anzusprechen.
+- **Berechtigungen:** Eine neue Permission `disks.manage` wurde eingeführt. Nur Accounts mit diesem Recht können auf die System-Speicherverwaltung sowie die S.M.A.R.T.-Daten zugreifen.
+
 ## [7.0.0.3] - 2026-09-21 (Build 375) - *Patch Pilot*
 
 - **Fix (Datenbank):** Fehlende Migration (`ALTER TABLE remote_agents ADD COLUMN version TEXT`) in `backend/src/db.js` nachgetragen. Dadurch schlug der Background-Worker nach Agent-Updates fehl.
