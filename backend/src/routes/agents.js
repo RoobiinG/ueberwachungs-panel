@@ -135,10 +135,20 @@ router.put('/:id', requirePermission('agents.edit'), async (req, res) => {
     try { validatePublicUrl(newUrl); } catch (e) { return res.status(400).json({ error: e.message }); }
   }
 
-  // Neuen Fingerprint holen wenn URL geändert wurde
+  // Neuen Fingerprint holen wenn URL geändert wurde. Schlägt der Abruf fehl (Netzwerk-
+  // Hänger, Agent gerade im Neustart), darf das NICHT den bisher gepinnten Fingerprint
+  // löschen — sonst nimmt der nächste Aufruf jedes beliebige Zertifikat an (TLS-Pinning
+  // stillschweigend aus), ohne dass irgendwo eine Warnung erscheint. Stattdessen bleibt
+  // der alte Pin stehen und die Anfrage schlägt sichtbar fehl.
   let fingerprint = agent.fingerprint;
   if (url && url !== agent.url && newUrl.startsWith('https://')) {
-    try { fingerprint = (await fetchFingerprint(newUrl)) || ''; } catch { fingerprint = ''; }
+    try {
+      const neu = await fetchFingerprint(newUrl);
+      if (!neu) return res.status(502).json({ error: 'Kein Zertifikat von der neuen URL erhalten — Fingerprint (TLS-Pinning) bleibt auf dem alten Stand. Bitte erneut versuchen oder über „Repin" neu abrufen.' });
+      fingerprint = neu;
+    } catch (e) {
+      return res.status(502).json({ error: `Zertifikat der neuen URL konnte nicht abgerufen werden (${e.message}) — Fingerprint (TLS-Pinning) bleibt auf dem alten Stand. Bitte erneut versuchen oder über „Repin" neu abrufen.` });
+    }
   }
 
   // PatchMon-Verknüpfung: nur ändern wenn Feld im Body ist ('' → Verknüpfung entfernen)

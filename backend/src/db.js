@@ -208,9 +208,6 @@ try {
 } catch {}
 // Rollen: Lokalen Server für diese Rolle ausblenden
 try { db.exec('ALTER TABLE roles ADD COLUMN hide_local INTEGER NOT NULL DEFAULT 0'); } catch {}
-// Metrics: Netzwerk-Durchsatz-Spalten (Bytes/Sek)
-try { db.exec('ALTER TABLE metrics ADD COLUMN net_rx_sec INTEGER NOT NULL DEFAULT 0'); } catch {}
-try { db.exec('ALTER TABLE metrics ADD COLUMN net_tx_sec INTEGER NOT NULL DEFAULT 0'); } catch {}
 // Tiered-Metriken: Aggregations-Tabellen für lange Aufbewahrung
 db.exec(`
   CREATE TABLE IF NOT EXISTS metrics_10s (
@@ -304,6 +301,14 @@ try {
 } catch (e) { console.warn('Metrics-Migration fehlgeschlagen:', e.message); }
 // Sicherstellen dass der zusammengesetzte Index existiert — auch auf alten Instanzen
 try { db.exec('CREATE INDEX IF NOT EXISTS idx_metrics_server_ts ON metrics(server_id, ts)'); } catch {}
+// Metrics: Netzwerk-Durchsatz-Spalten (Bytes/Sek). Muss NACH der server_id-Migration
+// laufen: Die baut `metrics` bei einer frischen Installation über eine neue Tabelle
+// ohne net_rx_sec/net_tx_sec neu auf (DROP + RENAME) — stand diese ALTER-Anweisung
+// vorher, verschwanden die beiden Spalten dabei wieder, und der Server crashte beim
+// nächsten Start, weil alertEvaluator/metricsAggregator/remoteMetricsRecorder fest
+// mit ihnen rechnen.
+try { db.exec('ALTER TABLE metrics ADD COLUMN net_rx_sec INTEGER NOT NULL DEFAULT 0'); } catch {}
+try { db.exec('ALTER TABLE metrics ADD COLUMN net_tx_sec INTEGER NOT NULL DEFAULT 0'); } catch {}
 // Container-Spitznamen (panel-seitig, kein Agent nötig)
 db.exec(`
   CREATE TABLE IF NOT EXISTS container_labels (

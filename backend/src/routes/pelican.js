@@ -11,6 +11,7 @@ const db      = require('../db');
 const { requirePermission } = require('../middleware/requirePermission');
 const { auditLog } = require('../utils/audit');
 const pelican = require('../utils/pelicanClient');
+const { validatePublicUrl } = require('../utils/validateUrl');
 
 const setSetting = (k, v) =>
   db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(k, v);
@@ -22,6 +23,7 @@ router.get('/config', requirePermission('settings.view'), (req, res) => {
 
 router.post('/config', requirePermission('settings.manage'), (req, res) => {
   const { url, token } = req.body || {};
+  if (url) { try { validatePublicUrl(url); } catch (e) { return res.status(400).json({ error: e.message }); } }
   if (url   !== undefined) setSetting('pelicanUrl',   String(url).trim().replace(/\/+$/, ''));
   // Leeres Feld bedeutet „unverändert lassen" — so muss der Schlüssel nicht jedes Mal
   // neu eingegeben werden, nur um die Adresse zu ändern.

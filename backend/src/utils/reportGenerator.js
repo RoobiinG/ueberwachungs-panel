@@ -24,35 +24,41 @@ async function generateAndSendReport(toEmail) {
     auth: smtp.user ? { user: smtp.user, pass: smtp.pass } : undefined,
   });
 
-  // Sammle Daten für die letzten 7 Tage
-  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  
+  // Sammle Daten für die letzten 7 Tage. sevenDaysAgoMs für Anzeige (new Date() braucht
+  // Millisekunden), sevenDaysAgoSec für die Metrik-Abfrage — metrics_1hour.ts steht in
+  // Sekunden seit Epoch (siehe metricsAggregator.js), ein Vergleich in Millisekunden
+  // hätte nie eine Zeile getroffen.
+  const sevenDaysAgoMs  = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const sevenDaysAgoSec = Math.floor(sevenDaysAgoMs / 1000);
+
   // 1. Hole alle Server
   const servers = db.prepare('SELECT id, name FROM remote_agents').all();
-  
+
   // 2. Metriken und Alarme pro Server
   const stats = [];
-  
-  for (const s of servers) {
-    // Durchschnittliche/Maximale CPU/RAM
-    const metrics = db.prepare(`
-      SELECT 
-        AVG(cpu) as avg_cpu, MAX(cpu) as max_cpu,
-        AVG(memory) as avg_mem, MAX(memory) as max_mem,
-        COUNT(*) as count
-      FROM metrics_1hour 
-      WHERE server_id = ? AND ts >= ?
-    `).get(s.id.toString(), sevenDaysAgo);
 
-    // Alarme der letzten 7 Tage für diesen Server
-    // Hinweis: in alert_history wird target evtl. gespeichert, oder wir nehmen alle
+  for (const s of servers) {
+    // Durchschnittliche/Maximale CPU/RAM. server_id in metrics_1hour ist "agent:<id>"
+    // (siehe remoteMetricsRecorder.js), nicht die reine Agent-ID — und die Spalte für
+    // den Speicherwert heißt "mem", nicht "memory".
+    const metrics = db.prepare(`
+      SELECT
+        AVG(cpu) as avg_cpu, MAX(cpu) as max_cpu,
+        AVG(mem) as avg_mem, MAX(mem) as max_mem,
+        COUNT(*) as count
+      FROM metrics_1hour
+      WHERE server_id = ? AND ts >= ?
+    `).get(`agent:${s.id}`, sevenDaysAgoSec);
+
+    // Alarme der letzten 7 Tage für diesen Server. alert_history kennt weder
+    // resolved_at/created_at noch verweist alert_rules per agent_id auf einen Server —
+    // der tatsächliche Bezug steht direkt in alert_history.server_key (siehe
+    // alertEvaluator.js writeHistory(), srv.key = String(agent.id)).
     const incidentCount = db.prepare(`
-      SELECT COUNT(*) as c 
+      SELECT COUNT(*) as c
       FROM alert_history h
-      JOIN alert_rules r ON h.rule_id = r.id
-      WHERE h.resolved_at IS NOT NULL AND h.created_at >= ?
-      AND (r.agent_id = ? OR r.agent_id IS NULL)
-    `).get(sevenDaysAgo, s.id)?.c || 0;
+      WHERE h.type = 'fired' AND h.server_key = ? AND h.triggered_at >= datetime(?, 'unixepoch')
+    `).get(s.id.toString(), sevenDaysAgoSec)?.c || 0;
 
     stats.push({
       name: s.name,
@@ -70,7 +76,7 @@ async function generateAndSendReport(toEmail) {
   let html = `
     <div style="font-family: Arial, sans-serif; color: #333; max-width: 800px; margin: 0 auto; background: #f9f9f9; padding: 20px; border-radius: 8px;">
       <h2 style="color: #2c3e50; text-align: center;">📊 Wöchentlicher Auslastungsbericht</h2>
-      <p style="text-align: center; color: #666; font-size: 14px;">Zeitraum: Letzte 7 Tage (${new Date(sevenDaysAgo).toLocaleDateString('de-DE')} - ${new Date().toLocaleDateString('de-DE')})</p>
+      <p style="text-align: center; color: #666; font-size: 14px;">Zeitraum: Letzte 7 Tage (${new Date(sevenDaysAgoMs).toLocaleDateString('de-DE')} - ${new Date().toLocaleDateString('de-DE')})</p>
       
       <table style="width: 100%; border-collapse: collapse; margin-top: 20px; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
         <thead>
