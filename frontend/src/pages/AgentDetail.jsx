@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, lazy, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import {
@@ -17,10 +17,12 @@ import { ActionMenu } from '../components/ui/ActionMenu';
 import { useAuth } from '../context/AuthContext';
 import { Shield, Key } from 'lucide-react';
 import ContainerLogsModal from '../components/Docker/ContainerLogsModal';
-import StackEditorModal from '../components/Docker/StackEditorModal';
 import SystemUpdateModal from '../components/SystemUpdateModal';
 
 import { useLiveInterval } from '../hooks/useLiveInterval';
+
+// Erst laden, wenn der Stack-Editor tatsächlich geöffnet wird (zieht den Monaco-Editor nach).
+const StackEditorModal = lazy(() => import('../components/Docker/StackEditorModal'));
 
 // ── Hilfsfunktionen ────────────────────────────────────────────────────────
 const fmtBytes = (b, d = 1) => {
@@ -1369,11 +1371,13 @@ export default function AgentDetail() {
       )}
       
       {stackEditorModal && (
-        <StackEditorModal 
-          agentId={id} 
-          stackName={stackEditorModal} 
-          onClose={() => setStackEditorModal(null)} 
-        />
+        <Suspense fallback={null}>
+          <StackEditorModal
+            agentId={id}
+            stackName={stackEditorModal}
+            onClose={() => setStackEditorModal(null)}
+          />
+        </Suspense>
       )}
 
       {systemUpdateModal && (

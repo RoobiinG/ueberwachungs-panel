@@ -2,7 +2,7 @@
 // Container-Format ist jetzt einheitlich für alle Server:
 // { id, name, image, state, status, cpu, memUsed, memLimit, netRx, netTx, stack, ports }
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, lazy, Suspense } from 'react';
 import axios from 'axios';
 import { Card } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
@@ -12,7 +12,12 @@ import { ActionMenu } from '../components/ui/ActionMenu';
 import { RefreshCw, Play, Square, RotateCcw, Tag, Check, X, ScrollText, ChevronDown, ChevronUp, Zap, Shield, Terminal, Info, Search, CornerDownRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useWSMessage } from '../context/WSContext';
-import { TerminalModal } from '../components/TerminalModal';
+// Erst laden, wenn tatsächlich ein Terminal geöffnet wird — xterm steckte bisher
+// (über Docker.jsx → DockerCenter.jsx) in jedem Besuch von /docker, unabhängig davon,
+// ob je ein Terminal geöffnet wurde. Größter Einzelposten im Bundle (~300 KB roh).
+const TerminalModal = lazy(() =>
+  import('../components/TerminalModal').then(m => ({ default: m.TerminalModal }))
+);
 
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
@@ -713,12 +718,14 @@ export default function Docker() {
       )}
 
       {terminalState && (
-        <TerminalModal
-          server={terminalState.server}
-          containerId={terminalState.containerId}
-          containerName={terminalState.containerName}
-          onClose={() => setTerminalState(null)}
-        />
+        <Suspense fallback={null}>
+          <TerminalModal
+            server={terminalState.server}
+            containerId={terminalState.containerId}
+            containerName={terminalState.containerName}
+            onClose={() => setTerminalState(null)}
+          />
+        </Suspense>
       )}
     </div>
   );
