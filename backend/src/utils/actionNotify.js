@@ -25,10 +25,11 @@ async function notifyAction(req, action, serverName, platform = 'server') {
   const perms = getPermissions(req.user?.role);
   if (perms.includes('actions.silent')) return;
 
-  const actor = req.user?.username || 'Unbekannt';
-  const payload = { actor, action, serverName, platform, timestamp: Date.now() };
+  const actor   = req.user?.username || 'Unbekannt';
+  const agentId = platform === 'mchost' ? null : (req.body?.agentId ? String(req.body.agentId) : null);
+  const payload = { actor, action, serverName, platform, agentId, timestamp: Date.now() };
 
-  // 1. WebSocket an alle verbundenen Clients
+  // 1. WebSocket an alle verbundenen Clients, die diesen Agent auch sehen dürfen
   broadcast({ type: 'action_notify', payload });
 
   const label   = ACTION_LABELS[action] || action;

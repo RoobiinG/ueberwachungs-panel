@@ -1,15 +1,13 @@
 const jwt    = require('jsonwebtoken');
-const crypto = require('crypto');
 const db     = require('../db');
-
-const hashToken = (t) => crypto.createHash('sha256').update(t).digest('hex');
+const { hashToken } = require('../utils/tokenHash');
 
 module.exports = (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'No token provided' });
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     const user = db.prepare('SELECT id, username, role FROM users WHERE id = ?').get(decoded.id);
     if (!user) return res.status(401).json({ error: 'Benutzer nicht gefunden' });
 
