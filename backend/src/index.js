@@ -63,12 +63,22 @@ app.get('/api/agents/install-script', (req, res) => {
   try {
     const installPath = path.resolve(__dirname, '../../agent/install.sh');
     let content = fs.readFileSync(installPath, 'utf8');
-    // Panel-URL eintragen, damit das Script agent-script von hier lädt
-    const panelUrl = `${req.protocol}://${req.get('host')}`;
-    content = content.replace(
-      /^(PANEL_SOURCE=).*$/m,
-      `$1"${panelUrl}"`,
-    );
+    // Panel-URL eintragen, damit das Script agent-script von hier lädt. Der Host-Header
+    // ist Client-Eingabe (nicht durch req.protocol geschützt) und landet unten in
+    // Anführungszeichen in einem Shell-Skript, das per `curl | bash` ausgeführt wird —
+    // ungeprüft übernommen wäre das eine Befehlsinjektion über einen präparierten
+    // Host-Header. Deshalb strikte Zeichenklasse statt direkter Übernahme.
+    const rawHost  = req.get('host') || '';
+    const safeHost = /^[a-zA-Z0-9.-]+(:\d{1,5})?$/.test(rawHost) ? rawHost : null;
+    if (safeHost) {
+      const panelUrl = `${req.protocol}://${safeHost}`;
+      content = content.replace(
+        /^(PANEL_SOURCE=).*$/m,
+        `$1"${panelUrl}"`,
+      );
+    }
+    // Kein gültiger Host-Header → Zeile unverändert lassen, das Skript fällt auf seinen
+    // eingebauten GitHub-Fallback zurück, statt etwas Unsicheres einzusetzen.
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Content-Disposition', 'inline; filename="install.sh"');
     res.send(content);
