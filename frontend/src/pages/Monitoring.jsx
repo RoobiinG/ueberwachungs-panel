@@ -10,7 +10,6 @@ import {
   ChevronDown, ChevronRight, FolderOpen, ZoomIn, ZoomOut,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { useWSMessage } from '../context/WSContext';
 import { Card } from '../components/ui/Card';
 import { StatCard } from '../components/ui/StatCard';
 
