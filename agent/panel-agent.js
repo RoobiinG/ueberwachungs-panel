@@ -882,7 +882,7 @@ async function getSshSessions() {
     const { stdout: ssOut } = await execAsync(`ss -tn state established sport = :${sshPort} 2>/dev/null || true`, { timeout: 3000 });
     const ssIps = new Set();
     ssOut.split('\n').slice(1).forEach(line => {
-      if (!line.trim()) continue;
+      if (!line.trim()) return;
       const parts = line.trim().split(/\s+/);
       if (parts.length >= 4) {
         const peer = parts[3];
@@ -894,7 +894,7 @@ async function getSshSessions() {
     const { stdout: wOut } = await execAsync('w -h 2>/dev/null || who 2>/dev/null || true', { timeout: 3000 });
     const loggedIn = [];
     wOut.split('\n').forEach(line => {
-      if (!line.trim()) continue;
+      if (!line.trim()) return;
       const parts = line.trim().split(/\s+/);
       if (parts.length >= 3) {
         const user = parts[0];
