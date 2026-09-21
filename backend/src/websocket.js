@@ -1,13 +1,23 @@
 const WebSocket = require('ws');
 const jwt   = require('jsonwebtoken');
+const db    = require('./db');
+const { hashToken } = require('./utils/tokenHash');
+const { canAccessAgent } = require('./utils/agentAccess');
 
 let wss;
 
+// Broadcasts, deren Payload eine agentId trägt, gehen nur an Clients, deren Rolle
+// diesen Agent auch sehen darf (restrict_agents/agent_grants) — sonst bekämen
+// Nutzer mit eingeschränkter Rolle Alarme/Aktionen für Server zu sehen, die ihnen
+// in der übrigen Oberfläche gar nicht angezeigt werden.
 const broadcast = (data) => {
   if (!wss) return;
+  const agentId = data?.payload?.agentId ?? null;
   const payload = JSON.stringify(data);
   wss.clients.forEach(client => {
-    if (client.readyState === WebSocket.OPEN && client.authenticated) client.send(payload);
+    if (client.readyState !== WebSocket.OPEN || !client.authenticated) return;
+    if (agentId !== null && !canAccessAgent(agentId, client.role)) return;
+    client.send(payload);
   });
 };
 
@@ -47,6 +57,7 @@ const setup = (server) => {
   wss.on('connection', (ws) => {
     ws.authenticated = false;
     ws.userId        = null;
+    ws.role          = null;
 
     const authTimeout = setTimeout(() => {
       if (!ws.authenticated) ws.close(1008, 'Auth timeout');
@@ -57,9 +68,18 @@ const setup = (server) => {
         const msg = JSON.parse(data);
         if (!ws.authenticated) {
           if (msg?.type === 'auth' && msg?.token) {
-            const decoded = jwt.verify(msg.token, process.env.JWT_SECRET);
+            const decoded = jwt.verify(msg.token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+
+            const revoked = db.prepare('SELECT 1 FROM revoked_tokens WHERE token_hash = ?')
+              .get(hashToken(msg.token));
+            if (revoked) { ws.close(1008, 'Session widerrufen'); return; }
+
+            const user = db.prepare('SELECT id, role FROM users WHERE id = ?').get(decoded.id);
+            if (!user) { ws.close(1008, 'Invalid token'); return; }
+
             ws.authenticated = true;
-            ws.userId        = decoded.id;
+            ws.userId        = user.id;
+            ws.role          = user.role;
             clearTimeout(authTimeout);
             ws.send(JSON.stringify({ type: 'connected' }));
           } else {

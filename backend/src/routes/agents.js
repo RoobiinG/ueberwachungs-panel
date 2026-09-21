@@ -126,6 +126,7 @@ router.post('/', requirePermission('agents.add'), async (req, res) => {
 router.put('/:id', requirePermission('agents.edit'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
 
   const { name, url, token, patchmon_host_id } = req.body;
   const newUrl = (url ?? agent.url).trim().replace(/\/$/, '');
@@ -166,6 +167,8 @@ router.put('/:id', requirePermission('agents.edit'), async (req, res) => {
 
 router.delete('/:id', requirePermission('agents.delete'), (req, res) => {
   const delAgent = getOne(req.params.id);
+  if (!delAgent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(delAgent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   db.prepare('DELETE FROM remote_agents WHERE id = ?').run(req.params.id);
   
   // Clean up alert_rules agent_ids
@@ -188,6 +191,7 @@ router.delete('/:id', requirePermission('agents.delete'), (req, res) => {
 router.post('/:id/repin', requirePermission('agents.edit'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   if (!agent.url.startsWith('https://')) return res.status(400).json({ error: 'Nur für HTTPS' });
   try {
     const fingerprint = await fetchFingerprint(agent.url);
