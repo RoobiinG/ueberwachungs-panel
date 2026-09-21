@@ -2,6 +2,8 @@ const tls = require('tls');
 const db = require('../db');
 const { sendWebhook } = require('./sendWebhook');
 const { fetchCertificates } = require('./npmApi');
+const { makeStatusTracker } = require('./workerStatus');
+const _status = makeStatusTracker();
 
 async function checkWebhooksAndNotify(monitorId, monitorRecord, domain, name, validTo, daysRemaining, systemWebhooks) {
   let triggerWebhook = false;
@@ -173,14 +175,15 @@ let intervalTimer = null;
 function startMonitor() {
   if (intervalTimer) clearInterval(intervalTimer);
   // Alle 12 Stunden (1000 * 60 * 60 * 12)
-  intervalTimer = setInterval(checkAllMonitors, 43200000);
+  intervalTimer = setInterval(() => _status.wrap(checkAllMonitors), 43200000);
   // Start 15 Sekunden nach App-Start
-  setTimeout(checkAllMonitors, 15000);
+  setTimeout(() => _status.wrap(checkAllMonitors), 15000);
   console.log('[SSL] Zertifikats-Wächter gestartet (12h Intervall)');
 }
 
 module.exports = {
   checkDomain,
   checkAllMonitors,
-  startMonitor
+  startMonitor,
+  getStatus: _status.get,
 };

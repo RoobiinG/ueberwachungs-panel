@@ -1,5 +1,7 @@
 const db = require('./db');
 const { agentClient } = require('./utils/agentTls');
+const { makeStatusTracker } = require('./utils/workerStatus');
+const _status = makeStatusTracker();
 
 const insert = db.prepare(`
   INSERT INTO syslogs (agent_id, timestamp, source, level, message)
@@ -58,10 +60,10 @@ async function collectAll() {
 
 function start() {
   cleanup.run();
-  setInterval(collectAll, 60_000);
+  setInterval(() => _status.wrap(collectAll), 60_000);
   setInterval(() => cleanup.run(), 24 * 60 * 60 * 1000);
-  setTimeout(collectAll, 5000);
+  setTimeout(() => _status.wrap(collectAll), 5000);
   console.log('Log-Collector gestartet (alle 60 Sek, 7 Tage Aufbewahrung)');
 }
 
-module.exports = { start };
+module.exports = { start, getStatus: _status.get };

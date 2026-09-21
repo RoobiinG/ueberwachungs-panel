@@ -97,4 +97,11 @@ const setup = (server) => {
   });
 };
 
-module.exports = { setup, broadcast };
+const getClientCount = () => {
+  if (!wss) return { total: 0, authenticated: 0 };
+  let authenticated = 0;
+  wss.clients.forEach(c => { if (c.authenticated) authenticated++; });
+  return { total: wss.clients.size, authenticated };
+};
+
+module.exports = { setup, broadcast, getClientCount };

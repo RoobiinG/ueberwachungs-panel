@@ -84,11 +84,14 @@ async function recordContainerStats() {
   // Cleanup läuft separat stündlich — nicht bei jeder Aufzeichnung
 }
 
+let _started = false;
+
 function start() {
   if (!Docker) {
     console.warn('Docker-Metriken: dockerode nicht verfügbar');
     return;
   }
+  _started = true;
   recordContainerStats().catch(() => {});
   setInterval(() => recordContainerStats().catch(() => {}), 30_000);
   // Cleanup stündlich
@@ -98,4 +101,8 @@ function start() {
   console.log('Docker-Metriken-Recorder gestartet (alle 30s, 24h Aufbewahrung)');
 }
 
-module.exports = { start, getLatestStats };
+// Wird derzeit nicht gestartet (siehe index.js) — Docker-Stats kommen von der Dockhand-API.
+// Für den Diagnostik-Report klar als "disabled" statt fälschlich als "nicht erreichbar" melden.
+const getStatus = () => ({ disabled: !_started });
+
+module.exports = { start, getLatestStats, getStatus };

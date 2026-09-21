@@ -1,5 +1,7 @@
 const db = require('./db');
 const { generateAndSendReport } = require('./utils/reportGenerator');
+const { makeStatusTracker } = require('./utils/workerStatus');
+const _status = makeStatusTracker();
 
 let intervalId = null;
 
@@ -38,7 +40,7 @@ function checkAndSendReport() {
 function start() {
   if (intervalId) return;
   // Check every minute
-  intervalId = setInterval(checkAndSendReport, 60_000);
+  intervalId = setInterval(() => _status.wrap(checkAndSendReport), 60_000);
   console.log('Report-Scheduler gestartet (prüft minütlich).');
 }
 
@@ -51,5 +53,6 @@ function stop() {
 
 module.exports = {
   start,
-  stop
+  stop,
+  getStatus: _status.get,
 };
