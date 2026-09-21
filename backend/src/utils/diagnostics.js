@@ -14,10 +14,37 @@ const db = require('../db');
 const { agentClient } = require('./agentTls');
 const { smtpConfigured, sendTestMail } = require('./smtpTest');
 
-const SENSITIVE_SETTINGS = [
-  'hetzner_api_token', 'mchost_password', 'mchost_api_token',
-  'smtp_pass', 'github_token', 'npm_password', 'npm_token',
-];
+// SICHERHEIT: Vorfall vom 2026-09-21 — eine Blockliste "bekannter" Secret-Keys hatte
+// mehrere echte Zugangsdaten übersehen (uptimeKumaPassword, uptimeKumaApiKey,
+// dockhandApiToken, gemini_api_key, patchmonTokenSecret, pelicanToken landeten im
+// Klartext im Report). Eine Blockliste kann per Definition nur Keys erfassen, die man
+// beim Schreiben schon kannte — jedes neue Integrations-Setting fällt sonst automatisch
+// durch. Deshalb jetzt umgekehrt: nur explizit als unbedenklich gelistete Keys erscheinen
+// im Klartext, alles andere wird maskiert. Zusätzlich ein Namensmuster als zweites Netz,
+// falls versehentlich doch ein sensibler Key auf die Positivliste gerät.
+const SAFE_CONFIG_KEYS = new Set([
+  'smtp_host', 'smtp_port', 'smtp_secure', 'smtp_from', 'smtp_user',
+  'mchost_username',
+  'npm_host', 'npm_port', 'npm_email',
+  'dockhandUrl', 'dockhandLocalEnvId', 'dockerEngine',
+  'pelicanUrl',
+  'patchmonUrl', 'patchmonLocalHostId',
+  'uptimeKumaUrl', 'uptimeKumaUsername', 'uptimeKumaSlug',
+  'action_notifications', 'action_webhook_id',
+  'liveRefreshInterval',
+  'gemini_model',
+  'patchmonNotifyEnabled', 'patchmonNotifyWebhookId', 'patchmonNotifySecurityOnly',
+  'panel_container',
+  'enabled_modules',
+  'migratedNotifyResolved',
+  'report_email', 'report_weekly_enabled',
+]);
+
+// Zweites Netz: selbst ein versehentlich freigegebener Key wird maskiert, wenn sein
+// Name nach einem Geheimnis aussieht.
+const SECRET_KEY_PATTERN = /token|secret|password|_pass$|api[_-]?key|_key$|auth/i;
+
+const istUnbedenklich = (key) => SAFE_CONFIG_KEYS.has(key) && !SECRET_KEY_PATTERN.test(key);
 
 // ─── Redaction-Helfer ─────────────────────────────────────────────────────────
 
@@ -215,9 +242,13 @@ function configSummary() {
   const rows = db.prepare('SELECT key, value FROM settings').all();
   const out = {};
   for (const r of rows) {
-    out[r.key] = SENSITIVE_SETTINGS.includes(r.key)
-      ? maskSecret(r.value)
-      : (r.key.includes('url') || r.key.includes('host') ? urlOhneZugang(r.value) : r.value);
+    if (!istUnbedenklich(r.key)) {
+      out[r.key] = maskSecret(r.value);
+      continue;
+    }
+    out[r.key] = (r.key.toLowerCase().includes('url') || r.key.toLowerCase().includes('host'))
+      ? urlOhneZugang(r.value)
+      : r.value;
   }
   return {
     settings: out,
