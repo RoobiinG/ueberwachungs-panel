@@ -4,6 +4,8 @@ const db = require('../db');
 const { requirePermission } = require('../middleware/requirePermission');
 const { auditLog } = require('../utils/audit');
 const { checkAllMonitors } = require('../utils/sslMonitor');
+const { sendTestMail } = require('../utils/smtpTest');
+const { validatePublicUrl } = require('../utils/validateUrl');
 
 const SENSITIVE = ['hetzner_api_token', 'mchost_password', 'mchost_api_token', 'smtp_pass', 'github_token', 'npm_password', 'npm_token'];
 
@@ -66,6 +68,7 @@ router.post('/npm/login', requirePermission('settings.manage'), async (req, res)
   try {
     const baseUrl = `${host}:${port || 81}/api/tokens`;
     const url = totp_code ? `${baseUrl}/2fa` : baseUrl;
+    try { validatePublicUrl(url); } catch (e) { return res.status(400).json({ error: e.message }); }
     const payload = totp_code 
       ? { challenge_token, code: totp_code } 
       : { identity: email, secret: password };
@@ -203,23 +206,8 @@ router.post('/smtp/test', requirePermission('settings.manage'), async (req, res)
   const toEmail   = req.body.email || adminUser?.email;
   if (!toEmail) return res.status(400).json({ error: 'Keine Test-E-Mail-Adresse angegeben — E-Mail in Profil hinterlegen oder im Body mitschicken' });
 
-  const nodemailer = require('nodemailer');
-  const smtpHost = get('smtp_host');
-  if (!smtpHost) return res.status(400).json({ error: 'SMTP nicht konfiguriert' });
-
   try {
-    const transporter = nodemailer.createTransport({
-      host:   smtpHost,
-      port:   parseInt(get('smtp_port')) || 587,
-      secure: get('smtp_secure') === 'true',
-      auth:   get('smtp_user') ? { user: get('smtp_user'), pass: get('smtp_pass') } : undefined,
-    });
-    await transporter.sendMail({
-      from:    get('smtp_from') || get('smtp_user'),
-      to:      toEmail,
-      subject: 'Test-E-Mail — Überwachungs-Panel',
-      text:    'SMTP-Konfiguration erfolgreich!',
-    });
+    await sendTestMail(toEmail);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

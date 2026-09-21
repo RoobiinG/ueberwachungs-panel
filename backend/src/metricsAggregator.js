@@ -1,4 +1,6 @@
 const db = require('./db');
+const { makeStatusTracker } = require('./utils/workerStatus');
+const _status = makeStatusTracker();
 
 // ─── Prepared Statements ─────────────────────────────────────────────────────
 
@@ -102,8 +104,8 @@ function runCleanup() {
 // ─── Start ───────────────────────────────────────────────────────────────────
 
 function start() {
-  // 10s-Aggregation: alle 30s
-  setInterval(aggregateAll, 30_000);
+  // 10s-Aggregation: alle 30s (repräsentativ für getStatus(), da am häufigsten)
+  setInterval(() => _status.wrap(aggregateAll), 30_000);
 
   // 1min-Aggregation: alle 5 Minuten
   setInterval(aggregateMinute, 5 * 60_000);
@@ -116,9 +118,9 @@ function start() {
   setInterval(runCleanup, 60 * 60_000);
 
   // Sofortige Erstbefüllung nach kurzem Delay (Raw-Daten müssen erst vorhanden sein)
-  setTimeout(aggregateAll, 35_000);
+  setTimeout(() => _status.wrap(aggregateAll), 35_000);
 
   console.log('Metrics-Aggregator gestartet (10s→1min→1h, 6 Monate Aufbewahrung)');
 }
 
-module.exports = { start };
+module.exports = { start, getStatus: _status.get };

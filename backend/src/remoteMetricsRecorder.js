@@ -1,6 +1,8 @@
 const axios = require('axios');
 const https = require('https');
 const db    = require('./db');
+const { makeStatusTracker } = require('./utils/workerStatus');
+const _status = makeStatusTracker();
 
 const insert  = db.prepare(`
   INSERT OR REPLACE INTO metrics (ts, server_id, cpu, mem_used, mem_total, disk_used, disk_total, net_rx_sec, net_tx_sec)
@@ -75,8 +77,8 @@ async function recordAll() {
 }
 
 function start() {
-  recordAll();
-  setInterval(recordAll, 1_000);
+  _status.wrap(recordAll);
+  setInterval(() => _status.wrap(recordAll), 1_000);
   // Raw-Daten nur 6 Stunden — Langzeit via metricsAggregator
   const runCleanup = () => {
     const cutoff = Math.floor(Date.now() / 1000) - 6 * 3600;
@@ -88,4 +90,4 @@ function start() {
   console.log('Remote-Metrics-Recorder gestartet (alle 1 Sek, 6 Std. Aufbewahrung)');
 }
 
-module.exports = { start };
+module.exports = { start, getStatus: _status.get };

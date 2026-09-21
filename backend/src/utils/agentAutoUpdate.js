@@ -16,6 +16,8 @@ const db     = require('../db');
 const { agentClient }   = require('./agentTls');
 const { auditLog }      = require('./audit');
 const { compareSemver } = require('./updateCheck');
+const { makeStatusTracker } = require('./workerStatus');
+const _status = makeStatusTracker();
 
 const SCRIPT_PATH = path.resolve(__dirname, '../../../agent/panel-agent.js');
 
@@ -181,11 +183,14 @@ async function runOnce() {
 
 function start() {
   setTimeout(() => {
-    runOnce().catch(err => {
-      console.error('[Agent-AutoUpdate] Durchlauf fehlgeschlagen:', err.message);
-      panelLog('error', `Automatisches Agent-Update fehlgeschlagen: ${err.message}`);
+    _status.wrap(runOnce).then(() => {
+      const { lastError } = _status.get();
+      if (lastError) {
+        console.error('[Agent-AutoUpdate] Durchlauf fehlgeschlagen:', lastError);
+        panelLog('error', `Automatisches Agent-Update fehlgeschlagen: ${lastError}`);
+      }
     });
   }, START_DELAY_MS);
 }
 
-module.exports = { start, runOnce };
+module.exports = { start, runOnce, getStatus: _status.get };

@@ -1,4 +1,5 @@
 const db              = require('./db');
+const { makeStatusTracker } = require('./utils/workerStatus');
 const { sendWebhook } = require('./utils/sendWebhook');
 const { fetchAgentStats, fetchAgentPorts } = require('./utils/agentFetch');
 const patchmon        = require('./routes/patchmon');   // .fetchHosts (30s-Cache intern)
@@ -538,10 +539,12 @@ async function evaluate() {
   clearAgentCache();
 }
 
+const _status = makeStatusTracker();
+
 function start() {
-  evaluate().catch(() => {});
-  setInterval(() => evaluate().catch(() => {}), 10_000);
+  _status.wrap(evaluate);
+  setInterval(() => _status.wrap(evaluate), 10_000);
   console.log('Alert-Evaluator gestartet (alle 10s)');
 }
 
-module.exports = { start };
+module.exports = { start, getStatus: _status.get };
