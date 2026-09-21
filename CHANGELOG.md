@@ -16,6 +16,18 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [7.2.0.0] - 2026-09-21 (Build 378) — *Patch Pilot*
+
+### Features & Verbesserungen
+- **Agenten-Sammel-Update (Alle auf einmal aktualisieren):** Auf der Server-Übersicht steht nun ein prominenter Sammel-Update-Button zur Verfügung, wenn neue Agent-Versionen bereitstehen (`Alle auf vX.X.X aktualisieren (N)`).
+- **Interaktives Update-Modal:** Das neue Dialogfenster zeigt alle Zielserver mit Vorher-/Nachher-Versionen, führt die Updates mit Live-Fortschrittsbalken und Statusanzeigen (Ausstehend → Wird aktualisiert… → Aktualisiert) nacheinander durch und startet die Agenten automatisch neu.
+- **Backend Bulk-API:** Neuer Endpunkt `POST /api/agents/update-all` zur zentralen Ausführung von Sammel-Updates inklusive HMAC-Signierung und automatischer Versionseintragung in der Datenbank.
+
+### System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen:** Keine erforderlich.
+- **Agent-Kompatibilität:** Kompatibel mit allen Agenten ab v2.10.0+ (unterstützt HMAC-signierte Updates).
+- **Neustart-/Session-Verhalten:** Keine Unterbrechung bestehender Sessions.
+
 ## [7.1.0.1] - 2026-09-21 (Build 377) — *Patch Pilot*
 
 ### Bugfixes & Agent-Update

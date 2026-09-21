@@ -8,7 +8,8 @@ import { ActionMenu } from '../components/ui/ActionMenu';
 import {
   ServerCog, Plus, Trash2, Wifi, WifiOff, Eye, EyeOff,
   ChevronRight, Terminal, Lock, LockOpen, ShieldAlert, RefreshCw, Pencil, Container,
-  ArrowUpCircle, PackageX, Copy, Check, ChevronDown, ChevronUp, Wrench, Package, RotateCw
+  ArrowUpCircle, PackageX, Copy, Check, ChevronDown, ChevronUp, Wrench, Package, RotateCw,
+  CheckCircle2, AlertCircle, Clock
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -45,6 +46,11 @@ export default function Agents() {
   const [patchmonHosts,      setPatchmonHosts]      = useState([]);
   const [editPatchmonHostId, setEditPatchmonHostId] = useState('');
   const [editDockerEngine, setEditDockerEngine] = useState('agents');
+  const [bulkModalOpen,  setBulkModalOpen]  = useState(false);
+  const [bulkTargets,    setBulkTargets]    = useState([]);
+  const [bulkRunning,    setBulkRunning]    = useState(false);
+  const [bulkFinished,   setBulkFinished]   = useState(false);
+  const [bulkIncludeAll, setBulkIncludeAll] = useState(false);
   const navigate = useNavigate();
 
   const load = useCallback(async () => {
@@ -192,13 +198,97 @@ export default function Agents() {
 
   const isHttps = (u) => u?.startsWith('https://');
 
+  const canUpdate = isAdmin || hasPermission('agents.update');
+
+  const outdatedAgents = agents.filter(agent => {
+    const s = status[agent.id];
+    const online = s?.online;
+    const mitm = s?.mitm;
+    const agentVer = agentVersions[agent.id];
+    return online && !mitm && agentVer && latestVersion && agentVer !== latestVersion;
+  });
+
+  const openBulkModal = (all = false) => {
+    const targets = agents
+      .filter(a => {
+        const s = status[a.id];
+        if (!s?.online || s?.mitm) return false;
+        const ver = agentVersions[a.id];
+        return all ? true : (ver && latestVersion && ver !== latestVersion);
+      })
+      .map(a => ({
+        id: a.id,
+        name: a.name,
+        url: a.url,
+        currentVersion: agentVersions[a.id] || 'unbekannt',
+        targetVersion: latestVersion,
+        status: 'pending',
+        error: null,
+      }));
+
+    setBulkTargets(targets);
+    setBulkRunning(false);
+    setBulkFinished(false);
+    setBulkModalOpen(true);
+  };
+
+  const startBulkUpdate = async () => {
+    setBulkRunning(true);
+    let updatedAny = false;
+
+    for (let i = 0; i < bulkTargets.length; i++) {
+      const target = bulkTargets[i];
+      setBulkTargets(prev => prev.map((t, idx) => idx === i ? { ...t, status: 'updating' } : t));
+
+      try {
+        const { data } = await axios.post(`/api/agents/${target.id}/update`);
+        updatedAny = true;
+        setBulkTargets(prev => prev.map((t, idx) => idx === i ? {
+          ...t,
+          status: 'done',
+          newVersion: data.newVersion || latestVersion
+        } : t));
+        setAgentVersions(v => ({ ...v, [target.id]: data.newVersion || latestVersion }));
+      } catch (err) {
+        setBulkTargets(prev => prev.map((t, idx) => idx === i ? {
+          ...t,
+          status: 'error',
+          error: err.response?.data?.error || err.message || 'Update fehlgeschlagen'
+        } : t));
+      }
+    }
+
+    setBulkRunning(false);
+    setBulkFinished(true);
+
+    if (updatedAny) {
+      setTimeout(() => {
+        load();
+      }, 4000);
+    }
+  };
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-sm font-semibold text-panel-text">Remote Server ({agents.length})</h2>
-        <Button size="sm" onClick={() => setShowForm(v => !v)}>
-          <Plus size={13} className="mr-1" />{showForm ? 'Abbrechen' : 'Server hinzufügen'}
-        </Button>
+        <div className="flex items-center gap-2">
+          {canUpdate && outdatedAgents.length > 0 && (
+            <Button
+              size="sm"
+              variant="warning"
+              onClick={() => { setBulkIncludeAll(false); openBulkModal(false); }}
+              disabled={bulkRunning}
+              title={`Alle ${outdatedAgents.length} veralteten Agenten auf v${latestVersion} aktualisieren`}
+            >
+              <ArrowUpCircle size={13} className={bulkRunning ? 'animate-spin' : ''} />
+              Alle auf v{latestVersion} aktualisieren ({outdatedAgents.length})
+            </Button>
+          )}
+          <Button size="sm" onClick={() => setShowForm(v => !v)}>
+            <Plus size={13} className="mr-1" />{showForm ? 'Abbrechen' : 'Server hinzufügen'}
+          </Button>
+        </div>
       </div>
 
       {showForm && (
@@ -603,6 +693,154 @@ export default function Agents() {
                 </p>
               )}
             </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Sammel-Update Modal */}
+      {bulkModalOpen && (
+        <Modal
+          open
+          onClose={() => { if (!bulkRunning) setBulkModalOpen(false); }}
+          title={
+            <span className="flex items-center gap-2">
+              <ArrowUpCircle size={16} className="text-panel-orange" />
+              Agenten-Sammel-Update auf v{latestVersion}
+            </span>
+          }
+          size="lg"
+          footer={
+            <div className="flex items-center justify-between w-full">
+              <div className="text-xs text-panel-muted">
+                {bulkRunning && (
+                  <span className="flex items-center gap-1.5 text-panel-orange">
+                    <RotateCw size={12} className="animate-spin" />
+                    Aktualisiere Server {bulkTargets.findIndex(t => t.status === 'updating') + 1} von {bulkTargets.length}…
+                  </span>
+                )}
+                {bulkFinished && (
+                  <span className="text-panel-green font-medium">
+                    ✓ Sammel-Update abgeschlossen
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="ghost"
+                  onClick={() => setBulkModalOpen(false)}
+                  disabled={bulkRunning}
+                >
+                  {bulkFinished ? 'Schließen' : 'Abbrechen'}
+                </Button>
+                {!bulkFinished && (
+                  <Button
+                    variant="warning"
+                    onClick={startBulkUpdate}
+                    disabled={bulkRunning || bulkTargets.length === 0}
+                  >
+                    <ArrowUpCircle size={13} className={bulkRunning ? 'animate-spin' : ''} />
+                    {bulkRunning ? 'Wird aktualisiert…' : `Jetzt ${bulkTargets.length} Agenten aktualisieren`}
+                  </Button>
+                )}
+              </div>
+            </div>
+          }
+        >
+          <div className="space-y-4">
+            <p className="text-xs text-panel-muted">
+              Das neueste Agent-Skript (v{latestVersion}) wird nacheinander auf die ausgewählten Server übertragen und der Dienst <code className="text-panel-text font-mono">panel-agent</code> auf dem jeweiligen Server neu gestartet.
+            </p>
+
+            {/* Fortschrittsanzeige */}
+            {(bulkRunning || bulkFinished) && (
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs text-panel-muted">
+                  <span>Fortschritt</span>
+                  <span>
+                    {bulkTargets.filter(t => t.status === 'done' || t.status === 'error').length} von {bulkTargets.length} Servern
+                  </span>
+                </div>
+                <div className="w-full bg-panel-surface rounded-full h-2 overflow-hidden border border-panel-border">
+                  <div
+                    className="bg-panel-accent h-full transition-all duration-300 rounded-full"
+                    style={{
+                      width: `${(bulkTargets.filter(t => t.status === 'done' || t.status === 'error').length / (bulkTargets.length || 1)) * 100}%`
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Server-Liste */}
+            <div className="border border-panel-border rounded-lg divide-y divide-panel-border overflow-hidden max-h-72 overflow-y-auto">
+              {bulkTargets.map((target) => (
+                <div key={target.id} className="p-3 flex items-center justify-between gap-3 bg-panel-card hover:bg-panel-surface/50 transition-colors">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-panel-text truncate">{target.name}</span>
+                      <span className="text-[11px] px-1.5 py-0.5 rounded bg-panel-surface border border-panel-border text-panel-muted font-mono">
+                        v{target.currentVersion} → v{target.targetVersion}
+                      </span>
+                    </div>
+                    <p className="text-xs text-panel-muted truncate font-mono mt-0.5">{target.url}</p>
+                    {target.error && (
+                      <p className="text-xs text-panel-red mt-1 flex items-center gap-1">
+                        <AlertCircle size={11} className="flex-shrink-0" />
+                        {target.error}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Status Badge */}
+                  <div className="flex-shrink-0">
+                    {target.status === 'pending' && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs text-panel-muted bg-panel-surface border border-panel-border rounded">
+                        <Clock size={11} /> Ausstehend
+                      </span>
+                    )}
+                    {target.status === 'updating' && (
+                      <span className="inline-flex items-center gap-1.5 px-2 py-0.5 text-xs text-panel-orange bg-panel-orange/10 border border-panel-orange/30 rounded font-medium">
+                        <RotateCw size={11} className="animate-spin" /> Aktualisiert…
+                      </span>
+                    )}
+                    {target.status === 'done' && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs text-panel-green bg-panel-green/10 border border-panel-green/30 rounded font-medium">
+                        <CheckCircle2 size={11} /> Aktualisiert
+                      </span>
+                    )}
+                    {target.status === 'error' && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs text-panel-red bg-panel-red/10 border border-panel-red/30 rounded font-medium">
+                        <AlertCircle size={11} /> Fehler
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {bulkTargets.length === 0 && (
+                <div className="p-6 text-center text-panel-muted text-xs">
+                  Keine Server zur Aktualisierung ausgewählt.
+                </div>
+              )}
+            </div>
+
+            {/* Option: Auch bereits aktuelle Server einbeziehen */}
+            {!bulkRunning && !bulkFinished && (
+              <div className="flex items-center justify-between text-xs text-panel-muted pt-1">
+                <label className="flex items-center gap-2 cursor-pointer hover:text-panel-text select-none">
+                  <input
+                    type="checkbox"
+                    checked={bulkIncludeAll}
+                    onChange={e => {
+                      const check = e.target.checked;
+                      setBulkIncludeAll(check);
+                      openBulkModal(check);
+                    }}
+                    className="rounded border-panel-border text-panel-accent focus:ring-0 focus:outline-none"
+                  />
+                  <span>Auch bereits aktuelle Server einbeziehen ({agents.length} gesamt)</span>
+                </label>
+              </div>
+            )}
           </div>
         </Modal>
       )}

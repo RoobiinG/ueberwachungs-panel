@@ -448,6 +448,48 @@ router.get('/:id/version', requirePermission('agents.view'), async (req, res) =>
   }
 });
 
+// POST /api/agents/update-all
+router.post('/update-all', requirePermission('agents.update'), async (req, res) => {
+  const scriptPath = path.resolve(__dirname, '../../../agent/panel-agent.js');
+  let script;
+  try {
+    script = fs.readFileSync(scriptPath, 'utf8');
+  } catch {
+    return res.status(500).json({ error: 'Agent-Script nicht gefunden (lokal).' });
+  }
+
+  const scriptVersion = (script.match(/^const VERSION\s*=\s*['"]([^'"]+)['"]/m) || [])[1] || null;
+  const allAgents = db.prepare('SELECT * FROM remote_agents ORDER BY name').all();
+  let accessible = allAgents.filter(a => canAccessAgent(a.id, req.user?.role));
+  if (Array.isArray(req.body?.agentIds) && req.body.agentIds.length > 0) {
+    const idSet = new Set(req.body.agentIds.map(String));
+    accessible = accessible.filter(a => idSet.has(String(a.id)));
+  }
+
+  const results = [];
+  for (const agent of accessible) {
+    try {
+      const hmac = crypto.createHmac('sha256', agent.token).update(script).digest('hex');
+      const { data } = await agentApi(agent).post('/update', { script, hmac }, { timeout: 30000 });
+      try {
+        db.prepare('UPDATE remote_agents SET version = ? WHERE id = ?').run(scriptVersion || data.newVersion, agent.id);
+      } catch {}
+      auditLog(req, 'agent.update', 'agent', agent.name, { from: data.oldVersion, to: data.newVersion, bulk: true });
+      results.push({ id: agent.id, name: agent.name, success: true, oldVersion: data.oldVersion, newVersion: data.newVersion });
+    } catch (err) {
+      results.push({ id: agent.id, name: agent.name, success: false, error: err.response?.data?.error || err.message });
+    }
+  }
+
+  _latestCache.ts = 0;
+  res.json({
+    total: accessible.length,
+    updated: results.filter(r => r.success).length,
+    failed: results.filter(r => !r.success).length,
+    results
+  });
+});
+
 router.post('/:id/update', requirePermission('agents.update'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
