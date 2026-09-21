@@ -15,6 +15,17 @@ angewandt. Die Zählung beginnt beim ersten Release mit `1.0.0.0` und läuft von
 Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahinter auf `0` zurückgesetzt.
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
+## [7.3.0.1] - 2026-09-21 (Build 380) — *Patch Pilot*
+
+### Bugfixes & Agent-Update
+- **Kritisch — Agent-Absturz (Agent-Update v2.15.1):** `getSshSessions()` in `agent/panel-agent.js` nutzte in zwei `forEach()`-Callbacks ein `continue`-Statement, um leere Zeilen zu überspringen. `continue` ist nur innerhalb einer echten Schleife (`for`/`while`) gültig, nicht in einer Callback-Funktion — das führte zu einem `SyntaxError` beim Laden der Datei. Jeder frisch installierte oder automatisch aktualisierte Agent crashte dadurch sofort beim Start (Neustart-Schleife via systemd) und war für das Panel nicht mehr erreichbar. Auf `return` umgestellt.
+- **Sicherheit — Diagnose-Bericht leakte Zugangsdaten:** `configSummary()` in `backend/src/utils/diagnostics.js` maskierte Settings-Werte über eine Blockliste bekannter Secret-Keys. Neuere Integrationen (Uptime Kuma, Dockhand, Gemini, PatchMon-Token-Secret, Pelican) waren dort nicht eingetragen und erschienen dadurch im Klartext im Diagnose-Bericht. Auf eine Positivliste umgestellt: nur explizit freigegebene Einstellungen erscheinen im Klartext, alles andere wird standardmäßig maskiert, zusätzlich abgesichert durch einen Namensmuster-Filter (token/secret/password/key/auth). **Wer den Diagnose-Bericht seit dem letzten Update genutzt hat, sollte die betroffenen Zugangsdaten rotieren.**
+
+### System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen:** Keine erforderlich.
+- **Agent-Kompatibilität:** **Betroffene Agenten müssen manuell neu installiert werden** — ein abgestürzter Agent hört auf keinem Port mehr und kann das automatische Update nicht per Push empfangen. Nach der Neuinstallation muss im Panel je Server auch der neu generierte Token eingetragen werden (`.env` auf dem Server enthält den aktuell gültigen Wert).
+- **Neustart-/Session-Verhalten:** Keine Unterbrechung bestehender Sessions.
+
 ## [7.3.0.0] - 2026-09-21 (Build 379) — *Patch Pilot*
 
 ### Features & Verbesserungen
