@@ -9,6 +9,8 @@ const router            = require('express').Router();
 const db                = require('../db');
 const { requirePermission } = require('../middleware/requirePermission');
 const dockhand          = require('../utils/dockhandClient');
+const { canAccessAgent }    = require('../utils/agentAccess');
+const { validatePublicUrl } = require('../utils/validateUrl');
 
 const getSetting = k =>
   db.prepare('SELECT value FROM settings WHERE key = ?').get(k)?.value ?? null;
@@ -33,6 +35,7 @@ router.get('/config', requirePermission('settings.view'), (req, res) => {
 // ── POST /api/dockhand/config ─────────────────────────────────────────────────
 router.post('/config', requirePermission('settings.manage'), (req, res) => {
   const { url, apiToken, localEnvId, dockerEngine } = req.body;
+  if (url) { try { validatePublicUrl(url); } catch (e) { return res.status(400).json({ error: e.message }); } }
   if (url          !== undefined) setSetting('dockhandUrl',        url.trim());
   if (apiToken     !== undefined) setSetting('dockhandApiToken',   apiToken.trim());
   if (localEnvId   !== undefined) setSetting('dockhandLocalEnvId', String(localEnvId).trim());
@@ -53,6 +56,7 @@ router.get('/environments', requirePermission('settings.view'), async (req, res)
 // ── POST /api/dockhand/test ───────────────────────────────────────────────────
 router.post('/test', requirePermission('settings.manage'), async (req, res) => {
   const { url, apiToken } = req.body;
+  if (url) { try { validatePublicUrl(url); } catch (e) { return res.status(400).json({ error: e.message }); } }
 
   // Alte Werte merken — bei Fehler wird zurückgerollt damit funktionierende
   // Credentials nicht durch fehlerhafte überschrieben werden
@@ -81,6 +85,7 @@ router.put('/agent-env', requirePermission('agents.edit'), (req, res) => {
   if (!agentId) return res.status(400).json({ error: 'agentId fehlt' });
   const agent = db.prepare('SELECT id FROM remote_agents WHERE id = ?').get(agentId);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   db.prepare('UPDATE remote_agents SET dockhand_env_id = ? WHERE id = ?')
     .run(envId ? Number(envId) : null, agentId);
   res.json({ ok: true });

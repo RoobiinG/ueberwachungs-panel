@@ -102,6 +102,17 @@ const filterByAccess = (list, userRole) => {
   return list.filter(s => allowed.has(String(s.id)));
 };
 
+// Einzelprüfung für :id-Routen — dieselbe Regel wie filterByAccess, nur für einen
+// einzelnen VServer statt eine Liste. Ohne diese Prüfung konnte eine auf restrict_mchost
+// beschränkte Rolle jede fremde VServer-ID direkt ansprechen (status/backups/tags/actions),
+// obwohl GET /vserver sie in der Liste gar nicht zeigt.
+const canAccessVserver = (vserverId, userRole) => {
+  const role = db.prepare('SELECT id, is_admin, restrict_mchost FROM roles WHERE name = ?').get(userRole);
+  if (!role || role.is_admin || !role.restrict_mchost) return true;
+  return !!db.prepare('SELECT 1 FROM mchost_vserver_access WHERE role_id = ? AND vserver_id = ?')
+    .get(role.id, String(vserverId));
+};
+
 // Tags für eine Liste von VServer-IDs laden und anhängen
 const attachTags = (list) => {
   if (!list.length) return list;
@@ -141,6 +152,7 @@ router.get('/vserver', requirePermission('mchost.view'), async (req, res) => {
 
 router.get('/vserver/:id/status', requirePermission('mchost.view'), async (req, res) => {
   if (!validId(req.params.id)) return res.status(400).json({ error: 'Ungültige VServer-ID' });
+  if (!canAccessVserver(req.params.id, req.user.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   handle(res, async () => (await api()).get(`/vserver/${req.params.id}/status`));
 });
 
@@ -148,11 +160,13 @@ router.get('/vserver/:id/status', requirePermission('mchost.view'), async (req, 
 // sonst matched Express POST /vserver/:id/backups und /tags als :action
 router.get('/vserver/:id/backups', requirePermission('mchost.view'), async (req, res) => {
   if (!validId(req.params.id)) return res.status(400).json({ error: 'Ungültige VServer-ID' });
+  if (!canAccessVserver(req.params.id, req.user.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   handle(res, async () => (await api()).get(`/vserver/${req.params.id}/backups`));
 });
 
 router.post('/vserver/:id/backups', requirePermission('mchost.backup'), async (req, res) => {
   if (!validId(req.params.id)) return res.status(400).json({ error: 'Ungültige VServer-ID' });
+  if (!canAccessVserver(req.params.id, req.user.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   handle(res, async () => (await api()).post(`/vserver/${req.params.id}/backups`));
 });
 
@@ -161,12 +175,14 @@ router.post('/vserver/:id/backups', requirePermission('mchost.backup'), async (r
 const VALID_COLORS = ['blue', 'green', 'red', 'orange', 'purple', 'gray'];
 
 router.get('/vserver/:id/tags', requirePermission('mchost.view'), (req, res) => {
+  if (!canAccessVserver(req.params.id, req.user.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   const tags = db.prepare('SELECT tag, color FROM mchost_vserver_tags WHERE vserver_id = ?')
     .all(req.params.id);
   res.json(tags);
 });
 
 router.post('/vserver/:id/tags', requirePermission('mchost.view'), (req, res) => {
+  if (!canAccessVserver(req.params.id, req.user.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   const role = db.prepare('SELECT is_admin FROM roles WHERE name = ?').get(req.user.role);
   if (!role?.is_admin) return res.status(403).json({ error: 'Nur Admins können Tags verwalten' });
 
@@ -184,6 +200,7 @@ router.post('/vserver/:id/tags', requirePermission('mchost.view'), (req, res) =>
 });
 
 router.delete('/vserver/:id/tags/:tag', requirePermission('mchost.view'), (req, res) => {
+  if (!canAccessVserver(req.params.id, req.user.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   const role = db.prepare('SELECT is_admin FROM roles WHERE name = ?').get(req.user.role);
   if (!role?.is_admin) return res.status(403).json({ error: 'Nur Admins können Tags verwalten' });
 
@@ -195,6 +212,7 @@ router.delete('/vserver/:id/tags/:tag', requirePermission('mchost.view'), (req, 
 // Generischer Action-Wildcard — muss nach allen spezifischen POST-Routen stehen
 router.post('/vserver/:id/:action', requirePermission('mchost.view'), async (req, res) => {
   if (!validId(req.params.id)) return res.status(400).json({ error: 'Ungültige VServer-ID' });
+  if (!canAccessVserver(req.params.id, req.user.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   const perm = actionPermMap[req.params.action];
   if (!perm) return res.status(400).json({ error: 'Ungültige Aktion' });
   if (!getPermissions(req.user.role).includes(perm)) return res.status(403).json({ error: 'Keine Berechtigung' });

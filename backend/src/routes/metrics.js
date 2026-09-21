@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const db = require('../db');
 const { requirePermission, getPermissions } = require('../middleware/requirePermission');
+const { canAccessAgent, erlaubteAgenten } = require('../utils/agentAccess');
 
 // ─── Tiered-Tabellen-Konfiguration ───────────────────────────────────────────
 // Für jeden Zeitraum: welche Tabelle + Bucketing
@@ -36,6 +37,18 @@ const autoRange = (spanSeconds) => {
   if (spanSeconds <= 7 * 86_400)   return { table: 'metrics_10s',   bucket: passenderBucket(spanSeconds, 10) };
   if (spanSeconds <= 30 * 86_400)  return { table: 'metrics_1min',  bucket: passenderBucket(spanSeconds, 60) };
   return                                  { table: 'metrics_1hour', bucket: passenderBucket(spanSeconds, 3_600) };
+};
+
+// Serverübergreifende Metriken sind serverfeindlich: `server` ist die numerische Agent-ID
+// vor der agent:-Verpackung. Eine auf restrict_agents beschränkte Rolle darf hier nur
+// Zeitreihen für Agenten abfragen, die ihr auch sonst angezeigt werden.
+const agentZugriffVerweigert = (req, res) => {
+  const numId = parseInt(req.query.server, 10);
+  if (!isNaN(numId) && !canAccessAgent(numId, req.user?.role)) {
+    res.status(403).json({ error: 'Kein Zugriff' });
+    return true;
+  }
+  return false;
 };
 
 const resolveServerId = (server) => {
@@ -115,7 +128,7 @@ router.get('/servers', requirePermission('metrics.view'), (req, res) => {
   const userRow = db.prepare('SELECT role FROM users WHERE id = ?').get(req.user?.id);
   const perms   = userRow ? getPermissions(userRow.role) : [];
   if (perms.includes('agents.view')) {
-    const agents = db.prepare('SELECT id, name FROM remote_agents ORDER BY name ASC').all();
+    const agents = erlaubteAgenten(req.user?.role);
     for (const a of agents) servers.push({ id: String(a.id), label: a.name });
   }
   res.json(servers);
@@ -123,6 +136,7 @@ router.get('/servers', requirePermission('metrics.view'), (req, res) => {
 
 // Kalender: Tage mit Daten (für Verlauf-Browser)
 router.get('/calendar', requirePermission('metrics.view'), (req, res) => {
+  if (agentZugriffVerweigert(req, res)) return;
   const serverId = resolveServerId(req.query.server);
   const rows = db.prepare(`
     SELECT DISTINCT
@@ -138,6 +152,7 @@ router.get('/calendar', requirePermission('metrics.view'), (req, res) => {
 
 // Zeitreihen
 router.get('/', requirePermission('metrics.view'), (req, res) => {
+  if (agentZugriffVerweigert(req, res)) return;
   const serverId = resolveServerId(req.query.server);
   const now      = Math.floor(Date.now() / 1000);
 
@@ -161,6 +176,7 @@ router.get('/', requirePermission('metrics.view'), (req, res) => {
 
 // Erster bekannter Messpunkt
 router.get('/first', requirePermission('metrics.view'), (req, res) => {
+  if (agentZugriffVerweigert(req, res)) return;
   const serverId = resolveServerId(req.query.server);
   // Zuerst in 1hour-Tabelle suchen (älteste Daten)
   let row = db.prepare('SELECT ts FROM metrics_1hour WHERE server_id = ? ORDER BY ts ASC LIMIT 1').get(serverId);
