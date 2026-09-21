@@ -26,6 +26,9 @@ let TERMINAL_BEREIT = false;
 
 // Zustand des Nachrüstens: null (nichts läuft) | 'laeuft' | 'fertig' | 'fehlgeschlagen'
 let TERMINAL_SETUP = { zustand: null, meldung: null, seit: null };
+// Verhindert, dass ein zweiter /packages/update-Aufruf einen weiteren apt-get/dnf
+// startet, während schon einer läuft und um dieselbe Paket-Sperre konkurriert.
+let PAKET_UPDATE_LAEUFT = false;
 const REPO_RAW = 'https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master/agent/panel-agent.js';
 const PORT  = parseInt(process.env.PANEL_AGENT_PORT || '7331');
 
@@ -82,7 +85,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const TERMINAL_MODULE = ['ws', 'node-pty'];
 
 const programmVorhanden = async (name) => {
-  try { await execFileAsync('sh', ['-c', 'command -v ' + name + ' >/dev/null 2>&1']); return true; }
+  // execFile statt einer per String zusammengesetzten sh -c-Zeile — bislang war `name`
+  // an jeder Aufrufstelle ein fest im Code stehender Programmname, aber diese Funktion
+  // sollte für sich selbst schon sicher sein, falls sie später mit einem Wert aus einer
+  // Anfrage aufgerufen wird. `command` ist ein Shell-Builtin (kein eigenes Programm),
+  // deshalb `which`, das auf so gut wie jeder Distribution als echtes Programm existiert.
+  try { await execFileAsync('which', [name]); return true; }
   catch { return false; }
 };
 
@@ -338,127 +346,6 @@ async function killProcess(pid, signal = 'SIGTERM') {
     : '-15';
   await execAsync(`kill ${sig} ${targetPid}`, { timeout: 5000 });
   return `Prozess ${targetPid} beendet (${sig === '-9' ? 'SIGKILL' : 'SIGTERM'})`;
-}
-
-
-// ─── Cron-Jobs ────────────────────────────────────────────────────────────────
-async function getCronUsers() {
-  try {
-    const { stdout } = await execAsync('cat /etc/passwd', { timeout: 3000 });
-    return stdout.trim().split('\n')
-      .map(line => {
-        const parts = line.split(':');
-        return parts[0] ? parts[0].trim() : null;
-      })
-      .filter(u => u && /^[a-zA-Z0-9_-]+$/.test(u))
-      .sort((a, b) => {
-        if (a === 'root') return -1;
-        if (b === 'root') return 1;
-        return a.localeCompare(b);
-      });
-  } catch { return []; }
-}
-
-async function getCronJobs(user) {
-  if (!/^[a-zA-Z0-9_-]+$/.test(user)) throw new Error('Ungültiger Benutzer');
-  try {
-    const { stdout } = await execAsync(`crontab -u ${user} -l`, { timeout: 3000 });
-    return stdout.trim().split('\n')
-      .map(line => line.trim())
-      .filter(line => line && !line.startsWith('#'))
-      .map(line => {
-        const parts = line.split(/\s+/);
-        if (parts.length >= 6) {
-          return { schedule: parts.slice(0, 5).join(' '), command: parts.slice(5).join(' ') };
-        }
-        return { schedule: '?', command: line };
-      });
-  } catch (err) {
-    if (err.message.includes('no crontab')) return [];
-    throw err;
-  }
-}
-
-async function addCronJob(user, schedule, command) {
-  if (!/^[a-zA-Z0-9_-]+$/.test(user)) throw new Error('Ungültiger Benutzer');
-  if (!schedule || !command) throw new Error('Fehlende Felder');
-  if (schedule.includes('\n') || command.includes('\n')) throw new Error('Zeilenumbrüche sind nicht erlaubt');
-  
-  let currentCrontab = '';
-  try {
-    const { stdout } = await execAsync(`crontab -u ${user} -l`, { timeout: 3000 });
-    currentCrontab = stdout.trim();
-  } catch (err) {
-    if (!err.message.includes('no crontab')) throw err;
-  }
-  
-  const newJob = `${schedule} ${command}`;
-  const updatedCrontab = currentCrontab ? `${currentCrontab}\n${newJob}\n` : `${newJob}\n`;
-  
-  const cp = require('child_process');
-  await new Promise((resolve, reject) => {
-    const child = cp.spawn('crontab', ['-u', user, '-']);
-    let errData = '';
-    child.stderr.on('data', d => errData += d.toString());
-    child.on('close', code => {
-      if (code === 0) resolve();
-      else reject(new Error(`crontab beendet mit ${code}: ${errData}`));
-    });
-    child.on('error', reject);
-    child.stdin.write(updatedCrontab);
-    child.stdin.end();
-  });
-}
-
-async function deleteCronJob(user, index) {
-  if (!/^[a-zA-Z0-9_-]+$/.test(user)) throw new Error('Ungültiger Benutzer');
-  const idx = parseInt(index, 10);
-  if (isNaN(idx) || idx < 0) throw new Error('Ungültiger Index');
-  
-  let currentCrontab = '';
-  try {
-    const { stdout } = await execAsync(`crontab -u ${user} -l`, { timeout: 3000 });
-    currentCrontab = stdout.trim();
-  } catch (err) {
-    if (err.message.includes('no crontab')) throw new Error('Keine Crontab gefunden');
-    throw err;
-  }
-  
-  const lines = currentCrontab.split('\n');
-  const validLines = [];
-  let jobCounter = 0;
-  let deletedJob = null;
-  
-  for (const line of lines) {
-    const tLine = line.trim();
-    if (!tLine || tLine.startsWith('#')) {
-      validLines.push(line);
-    } else {
-      if (jobCounter === idx) {
-        deletedJob = tLine;
-      } else {
-        validLines.push(line);
-      }
-      jobCounter++;
-    }
-  }
-  
-  if (!deletedJob) throw new Error('Job nicht gefunden');
-  const updatedCrontab = validLines.join('\n') + '\n';
-  
-  const cp = require('child_process');
-  await new Promise((resolve, reject) => {
-    const child = cp.spawn('crontab', ['-u', user, '-']);
-    let errData = '';
-    child.stderr.on('data', d => errData += d.toString());
-    child.on('close', code => {
-      if (code === 0) resolve();
-      else reject(new Error(`crontab beendet mit ${code}: ${errData}`));
-    });
-    child.on('error', reject);
-    child.stdin.write(updatedCrontab);
-    child.stdin.end();
-  });
 }
 
 
@@ -1047,6 +934,10 @@ async function getCronJobs(user) {
 async function addCronJob(user, schedule, command) {
   if (!/^[a-z_][a-z0-9_-]*[$]?$/.test(user)) throw new Error('Ungültiger Benutzername');
   if (!schedule || !command) throw new Error('Zeitplan und Befehl sind erforderlich');
+  // Ohne diese Prüfung schmuggelt ein command/schedule mit eingebettetem \n eine
+  // zweite, unsichtbare Crontab-Zeile ein — der Aufruf fügt scheinbar nur den einen
+  // sichtbaren Job hinzu, tatsächlich landet ein zweiter, unauditierter Job daneben.
+  if (/[\r\n]/.test(schedule) || /[\r\n]/.test(command)) throw new Error('Zeilenumbrüche sind nicht erlaubt');
   try {
     let crontab = '';
     try {
@@ -1168,9 +1059,12 @@ async function removeSshKey(identifier) {
          if (parts.length >= 2) {
            const keyData = Buffer.from(parts[1], 'base64');
            const fingerprint = 'SHA256:' + crypto.createHash('sha256').update(keyData).digest('base64').replace(/=$/, '');
-           const comment = parts.slice(2).join(' ');
-           
-           if (fingerprint === identifier || comment === identifier) {
+
+           // Nur nach Fingerprint löschen (das Panel schickt ohnehin immer den
+           // Fingerprint, nie einen Kommentar). Kommentare sind Freitext und oft
+           // nicht eindeutig (z.B. mehrere Keys mit demselben "deploy@ci") — ein
+           // Vergleich darauf könnte einen falschen, fremden Key mitlöschen.
+           if (fingerprint === identifier) {
              changed = true;
              removed++;
              continue; // Skip this line (remove)
@@ -1267,14 +1161,30 @@ async function handler(req, res) {
         req.on('end', () => { try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')); } catch { resolve({}); } });
       });
       if (body.panelUrl !== undefined) {
+        // SICHERHEIT: .env ist zugleich die EnvironmentFile= des systemd-Diensts und
+        // enthält PANEL_AGENT_TOKEN. Ein panelUrl mit eingebettetem Zeilenumbruch
+        // würde beim Schreiben eine zusätzliche, frei wählbare Zeile einschleusen —
+        // z.B. eine zweite PANEL_AGENT_TOKEN=... (systemd nimmt bei doppeltem Key die
+        // letzte Zeile) oder NODE_OPTIONS=--require=... beim nächsten Neustart. Deshalb
+        // strikt auf eine gültige http(s)-URL ohne Kontrollzeichen prüfen.
+        let parsed;
+        try { parsed = new URL(String(body.panelUrl)); } catch { parsed = null; }
+        const gueltig = parsed
+          && (parsed.protocol === 'http:' || parsed.protocol === 'https:')
+          && !/[\r\n\0]/.test(body.panelUrl);
+        if (!gueltig) {
+          respond(res, 400, { error: 'panelUrl muss eine gültige http(s)-URL ohne Zeilenumbrüche sein' });
+          return;
+        }
+
         const envPath = path.join(DIR, '.env');
         let envContent = '';
         try { envContent = fs.readFileSync(envPath, 'utf8'); } catch {}
-        
+
         const lines = envContent.split('\n').filter(l => l.trim() && !l.startsWith('PANEL_URL='));
         lines.push(`PANEL_URL=${body.panelUrl}`);
         fs.writeFileSync(envPath, lines.join('\n') + '\n', 'utf8');
-        
+
         respond(res, 200, { success: true, message: 'PANEL_URL aktualisiert' });
       } else {
         respond(res, 400, { error: 'panelUrl fehlt im Body' });
@@ -1556,6 +1466,10 @@ async function handler(req, res) {
 
     // ── Packages ────────────────────────────────────────────────────────────────
     } else if (url === '/packages/update' && req.method === 'POST') {
+      if (PAKET_UPDATE_LAEUFT) {
+        respond(res, 409, { error: 'Es läuft bereits ein Paket-Update auf diesem Server.' });
+        return;
+      }
       res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Transfer-Encoding': 'chunked' });
       const mgr = await programmVorhanden('apt-get') ? 'apt-get' : (await programmVorhanden('dnf') ? 'dnf' : null);
       if (!mgr) {
@@ -1579,28 +1493,17 @@ async function handler(req, res) {
       const args = mgr === 'apt-get'
         ? ['-c', aptCmd]
         : ['-c', 'dnf upgrade -y'];
+      PAKET_UPDATE_LAEUFT = true;
       const child = require('child_process').spawn('sh', args, { env: { ...process.env, DEBIAN_FRONTEND: 'noninteractive' } });
+      // apt-get/dnf können bei einer Sperren-Kollision (z.B. unattended-upgrades) oder
+      // einem hängenden Postinst-Skript unbegrenzt blockieren. Nach 30 Minuten hart
+      // abbrechen, statt den Prozess und die offene Antwort auf ewig hängen zu lassen.
+      const killTimer = setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, 30 * 60 * 1000);
+      const fertig = () => { clearTimeout(killTimer); PAKET_UPDATE_LAEUFT = false; };
       child.stdout.on('data', d => res.write(d));
       child.stderr.on('data', d => res.write(d));
-      child.on('close', code => res.end(`\n[Vorgang beendet mit Code ${code}]\n`));
-      child.on('error', err => res.end(`\n[Fehler: ${err.message}]\n`));
-
-    // ── Cron ──────────────────────────────────────────────────────────────────
-    } else if (url === '/cron/users' && req.method === 'GET') {
-      respond(res, 200, getCronUsers());
-    } else if (url.startsWith('/cron/jobs/') && req.method === 'GET') {
-      const user = decodeURIComponent(url.split('/')[3] || '');
-      respond(res, 200, await getCronJobs(user));
-    } else if (url.startsWith('/cron/jobs/') && req.method === 'POST') {
-      const user = decodeURIComponent(url.split('/')[3] || '');
-      const raw = await new Promise((resolve) => { const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8'))); });
-      const { schedule, command } = JSON.parse(raw || '{}');
-      respond(res, 200, await addCronJob(user, schedule, command));
-    } else if (url.startsWith('/cron/jobs/') && req.method === 'DELETE') {
-      const parts = url.split('/');
-      const user = decodeURIComponent(parts[3] || '');
-      const index = decodeURIComponent(parts[4] || '');
-      respond(res, 200, await deleteCronJob(user, index));
+      child.on('close', code => { fertig(); res.end(`\n[Vorgang beendet mit Code ${code}]\n`); });
+      child.on('error', err => { fertig(); res.end(`\n[Fehler: ${err.message}]\n`); });
 
     // ── Deinstallation ────────────────────────────────────────────────────────
     } else if (url === '/uninstall' && req.method === 'POST') {
