@@ -616,16 +616,18 @@ router.get('/:id/docker', requirePermission('docker.view'), async (req, res) => 
       // Bewusst ohne .catch()-Unterdrückung: Sonst meldete die Übersicht auch bei
       // totem Agenten "online" mit 0 Containern, statt den Fehler zu zeigen bzw. im
       // Mixed-Modus auf Dockhand auszuweichen.
-      const [{ data: containers }, { data: images }] = await Promise.all([
+      const [{ data: containers }, { data: images }, { data: volumes }, { data: networks }] = await Promise.all([
         agentApi(agent).get('/docker/containers'),
         agentApi(agent).get('/docker/images'),
+        agentApi(agent).get('/docker/volumes').catch(() => ({ data: [] })),
+        agentApi(agent).get('/docker/networks').catch(() => ({ data: [] })),
       ]);
       const running = containers.filter(c => c.state === 'running').length;
       const stopped = containers.filter(c => c.state !== 'running').length;
       return res.json({
-        images: images.length,
-        volumes: null,
-        networks: null,
+        images: Array.isArray(images) ? images.length : 0,
+        volumes: Array.isArray(volumes) ? volumes.length : (volumes?.Volumes?.length ?? 0),
+        networks: Array.isArray(networks) ? networks.length : 0,
         serverVersion: 'Agent Nativ',
         envName: agent.name,
         envStatus: 'online',
@@ -642,18 +644,22 @@ router.get('/:id/docker', requirePermission('docker.view'), async (req, res) => 
   if (!requireDockhandEnv(agent, res)) return;
   try {
     const envId = agent.dockhand_env_id;
-    // Environments + Images parallel laden
-    const [envRes, imagesRes] = await Promise.allSettled([
+    // Environments + Images + Volumes + Netzwerke parallel laden
+    const [envRes, imagesRes, volumesRes, networksRes] = await Promise.allSettled([
       dockhand.getEnvironments(),
       dockhand.getImages(envId),
+      dockhand.getVolumes(envId),
+      dockhand.getNetworks(envId),
     ]);
-    const envList = envRes.status === 'fulfilled' ? (Array.isArray(envRes.value.data) ? envRes.value.data : []) : [];
-    const env     = envList.find(e => String(e.id) === String(envId)) ?? {};
-    const images  = imagesRes.status === 'fulfilled' ? (Array.isArray(imagesRes.value.data) ? imagesRes.value.data : []) : [];
+    const envList  = envRes.status === 'fulfilled' ? (Array.isArray(envRes.value.data) ? envRes.value.data : []) : [];
+    const env      = envList.find(e => String(e.id) === String(envId)) ?? {};
+    const images   = imagesRes.status === 'fulfilled' ? (Array.isArray(imagesRes.value.data) ? imagesRes.value.data : []) : [];
+    const volumes  = volumesRes.status === 'fulfilled' ? (Array.isArray(volumesRes.value.data) ? volumesRes.value.data : (volumesRes.value?.data?.Volumes || [])) : [];
+    const networks = networksRes.status === 'fulfilled' ? (Array.isArray(networksRes.value.data) ? networksRes.value.data : []) : [];
     res.json({
       images:        images.length,
-      volumes:       null,   // Dockhand liefert keine Volume-Statistik pro Environment
-      networks:      null,
+      volumes:       volumes.length,
+      networks:      networks.length,
       serverVersion: env.dockerVersion || env.version || null,
       envName:       env.name || null,
       envStatus:     env.status || null,
@@ -1492,16 +1498,32 @@ router.get('/:id/ssh/audit', requirePermission('agents.manage_ssh'), async (req,
   }
 });
 
+router.post('/:id/ssh/keys', requirePermission('agents.manage_ssh'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  try {
+    const { data } = await agentApi(agent).post('/ssh/keys', req.body);
+    auditLog(req, 'agent.ssh.add_key', 'agent', agent.name, { user: req.body?.user || 'root' });
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: err.response?.data?.error || err.message });
+  }
+});
+
 router.get('/:id/ssh/sessions', requirePermission('agents.manage_ssh'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   try {
-    const { data: ips } = await agentApi(agent).get('/network/ssh-sessions');
-    const sessions = (ips || []).map(ip => {
+    const { data: rawSessions } = await agentApi(agent).get('/network/ssh-sessions');
+    const sessions = (rawSessions || []).map(item => {
+      const ip = typeof item === 'string' ? item : item.ip;
       const geo = geoip.lookup(ip);
       return {
         ip,
+        user: typeof item === 'object' ? item.user : null,
+        terminal: typeof item === 'object' ? item.terminal : null,
         country: geo ? geo.country : 'Unknown',
         city: geo ? geo.city : ''
       };
@@ -1549,7 +1571,7 @@ router.post('/:id/system/cleanup', requirePermission('disks.manage'), async (req
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
 
   try {
-    const { data } = await agentApi(agent).post('/system/cleanup', req.body);
+    const { data } = await agentClient(agent, 180000).post('/system/cleanup', req.body);
     auditLog(req, 'system.cleanup', 'system', agent.name, { agentId: agent.id, tasks: req.body });
     return res.json(data);
   } catch (err) {

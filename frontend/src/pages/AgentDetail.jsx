@@ -15,7 +15,7 @@ import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
 import { ActionMenu } from '../components/ui/ActionMenu';
 import { useAuth } from '../context/AuthContext';
-import { Shield, Key } from 'lucide-react';
+import { Shield, Key, ShieldCheck, Lock, Unlock, Radio, Globe } from 'lucide-react';
 import ContainerLogsModal from '../components/Docker/ContainerLogsModal';
 import SystemUpdateModal from '../components/SystemUpdateModal';
 
@@ -230,6 +230,9 @@ export default function AgentDetail() {
   const [sshConfig, setSshConfig]         = useState(null);
   const [sshSessions, setSshSessions]     = useState([]);
   const [loadingSsh, setLoadingSsh]       = useState(false);
+  const [addKeyModal, setAddKeyModal]     = useState(false);
+  const [newKeyForm, setNewKeyForm]       = useState({ user: 'root', key: '' });
+  const [addingKey, setAddingKey]         = useState(false);
 
   // ── Modul 13 (Port-Wächter) ──
   const [allowedPorts, setAllowedPorts]   = useState('');
@@ -240,6 +243,8 @@ export default function AgentDetail() {
   const [loadingDisks, setLoadingDisks] = useState(false);
   const [cleanupStatus, setCleanupStatus] = useState(null);
   const [runningCleanup, setRunningCleanup] = useState(false);
+  const [activeCleanupTask, setActiveCleanupTask] = useState(null);
+  const [cleanupError, setCleanupError]   = useState(null);
 
   const loadDisks = useCallback(async () => {
     setLoadingDisks(true);
@@ -250,16 +255,21 @@ export default function AgentDetail() {
     setLoadingDisks(false);
   }, [id]);
 
-  const runCleanup = async (tasks) => {
+  const runCleanup = async (tasks, taskName = null) => {
     setRunningCleanup(true);
+    setActiveCleanupTask(taskName);
+    setCleanupError(null);
     try {
-      const { data } = await axios.post(`/api/agents/${id}/system/cleanup`, tasks);
+      const { data } = await axios.post(`/api/agents/${id}/system/cleanup`, tasks, { timeout: 180000 });
       setCleanupStatus(data.results);
       setTimeout(() => setCleanupStatus(null), 10000);
     } catch (e) {
-      alert('Fehler beim System-Cleanup: ' + (e.response?.data?.error || e.message));
+      const errMsg = e.response?.data?.error || e.message || 'Timeout oder Verbindungsfehler';
+      setCleanupError('Fehler beim System-Cleanup: ' + errMsg);
+    } finally {
+      setRunningCleanup(false);
+      setActiveCleanupTask(null);
     }
-    setRunningCleanup(false);
   };
 
   const runSmartTest = async (disk) => {
@@ -311,6 +321,149 @@ export default function AgentDetail() {
     }
     setSavingPorts(false);
   };
+
+  const handleAddSshKey = async (e) => {
+    e?.preventDefault();
+    if (!newKeyForm.key.trim()) return;
+    setAddingKey(true);
+    try {
+      await axios.post(`/api/agents/${id}/ssh/keys`, {
+        user: newKeyForm.user || 'root',
+        key: newKeyForm.key.trim()
+      });
+      setAddKeyModal(false);
+      setNewKeyForm({ user: 'root', key: '' });
+      loadSshData();
+    } catch (err) {
+      alert('Fehler beim Hinzufügen des Schlüssels: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setAddingKey(false);
+    }
+  };
+
+  const applyListeningPortsToWhitelist = () => {
+    if (!sshConfig?.listeningPorts || sshConfig.listeningPorts.length === 0) return;
+    const detected = [...new Set(sshConfig.listeningPorts.map(p => p.port))].sort((a, b) => a - b);
+    setAllowedPorts(detected.join(', '));
+  };
+
+  const securityAudit = useMemo(() => {
+    if (!sshConfig) return null;
+    let score = 100;
+    const checks = [];
+
+    // Root Login
+    if (sshConfig.PermitRootLogin === 'yes') {
+      score -= 30;
+      checks.push({
+        id: 'root',
+        status: 'danger',
+        label: 'Root-Login erlaubt',
+        detail: 'Direkter SSH-Login als root erhöht das Risiko von Credential-Stuffing. Empfohlen: "prohibit-password" oder "no".'
+      });
+    } else {
+      checks.push({
+        id: 'root',
+        status: 'ok',
+        label: 'Root-Login abgesichert',
+        detail: sshConfig.PermitRootLogin === 'no' ? 'Root-Login komplett deaktiviert.' : 'Nur Key-basierter Root-Login erlaubt.'
+      });
+    }
+
+    // Passwort-Authentifizierung
+    if (sshConfig.PasswordAuthentication === 'yes') {
+      score -= 25;
+      checks.push({
+        id: 'pw',
+        status: 'warn',
+        label: 'Passwort-Authentifizierung aktiv',
+        detail: 'Passwörter können per Brute-Force erraten werden. Es wird empfohlen, ausschließlich SSH-Keys zuzulassen.'
+      });
+    } else {
+      checks.push({
+        id: 'pw',
+        status: 'ok',
+        label: 'Passwort-Authentifizierung deaktiviert',
+        detail: 'Nur kryptografische SSH-Schlüssel erlaubt.'
+      });
+    }
+
+    // Port 22
+    const portNum = parseInt(sshConfig.Port, 10) || 22;
+    if (portNum === 22) {
+      score -= 10;
+      checks.push({
+        id: 'port',
+        status: 'info',
+        label: 'Standard SSH-Port (22)',
+        detail: 'Port 22 zieht automatisierte Internet-Scans an. Ein alternativer Port reduziert Log-Spam.'
+      });
+    } else {
+      checks.push({
+        id: 'port',
+        status: 'ok',
+        label: `Alternativer SSH-Port (${portNum})`,
+        detail: 'Reduziert automatisiertes Scan-Rauschen im Internet.'
+      });
+    }
+
+    // Fail2ban
+    if (sshConfig.fail2banInstalled) {
+      if (sshConfig.fail2banActive) {
+        checks.push({
+          id: 'fail2ban',
+          status: 'ok',
+          label: 'Fail2ban aktiv',
+          detail: `Schutz vor Brute-Force aktiv (${sshConfig.fail2banJails?.length || 0} Jails: ${(sshConfig.fail2banJails || []).join(', ') || 'sshd'}).`
+        });
+      } else {
+        score -= 15;
+        checks.push({
+          id: 'fail2ban',
+          status: 'warn',
+          label: 'Fail2ban installiert aber inaktiv',
+          detail: 'Der Fail2ban-Dienst läuft momentan nicht.'
+        });
+      }
+    } else {
+      score -= 15;
+      checks.push({
+        id: 'fail2ban',
+        status: 'warn',
+        label: 'Fail2ban nicht installiert',
+        detail: 'Keine automatische IP-Sperre bei fehlgeschlagenen Login-Versuchen.'
+      });
+    }
+
+    // Port-Wächter Drift Check
+    const allowed = (allowedPorts || '')
+      .split(',')
+      .map(p => parseInt(p.trim(), 10))
+      .filter(p => !isNaN(p) && p > 0);
+    
+    let unallowedPorts = [];
+    if (allowed.length > 0 && sshConfig.listeningPorts) {
+      unallowedPorts = sshConfig.listeningPorts.filter(lp => !allowed.includes(lp.port));
+      if (unallowedPorts.length > 0) {
+        score -= 20;
+        checks.push({
+          id: 'drift',
+          status: 'danger',
+          label: `Port-Drift: ${unallowedPorts.length} unerlaubte offene Ports`,
+          detail: `Gefundene offene Ports außerhalb der Whitelist: ${unallowedPorts.map(p => p.port).join(', ')}.`
+        });
+      }
+    }
+
+    score = Math.max(0, Math.min(100, score));
+
+    return {
+      score,
+      checks,
+      unallowedPorts,
+      rating: score >= 90 ? 'Hervorragend' : score >= 70 ? 'Gut' : score >= 50 ? 'Verbesserungsbedürftig' : 'Kritisch'
+    };
+  }, [sshConfig, allowedPorts]);
 
   const loadNotes = useCallback(async () => {
     try {
@@ -1327,52 +1480,200 @@ export default function AgentDetail() {
       ═══════════════════════════════════════════════════════════════════ */}
       {currentTab === 'ssh' && hasPermission('agents.manage_ssh') && (
         <div className="space-y-4">
-          <Card title="SSH Sicherheits-Audit">
+          {/* Sicherheits-Audit Übersicht */}
+          <Card title="Sicherheits-Audit & Bewertung">
             {loadingSsh ? (
-              <p className="text-xs text-panel-muted">Lade Daten...</p>
+              <p className="text-xs text-panel-muted py-2">Lade Sicherheitsdaten...</p>
             ) : sshConfig ? (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className={`p-3 rounded-lg border ${sshConfig.PermitRootLogin === 'yes' ? 'bg-panel-red/10 border-panel-red/30' : 'bg-panel-green/10 border-panel-green/30'}`}>
-                   <p className="text-xs text-panel-muted mb-1">Root Login</p>
-                   <p className="text-sm font-semibold text-panel-text">{sshConfig.PermitRootLogin}</p>
-                   {sshConfig.PermitRootLogin === 'yes' && <p className="text-[10px] text-panel-red mt-1">Sicherheitsrisiko!</p>}
+              <div className="space-y-4">
+                {securityAudit && (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-lg bg-panel-surface/60 border border-panel-border">
+                    <div className="flex items-center gap-3">
+                      <div className={`p-3 rounded-full ${
+                        securityAudit.score >= 80 ? 'bg-panel-green/20 text-panel-green' :
+                        securityAudit.score >= 50 ? 'bg-panel-orange/20 text-panel-orange' : 'bg-panel-red/20 text-panel-red'
+                      }`}>
+                        {securityAudit.score >= 80 ? <ShieldCheck size={24} /> : <ShieldAlert size={24} />}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-lg font-bold text-panel-text">Sicherheits-Score: {securityAudit.score} / 100</span>
+                          <Badge color={securityAudit.score >= 80 ? 'green' : securityAudit.score >= 50 ? 'orange' : 'red'}>
+                            {securityAudit.rating}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-panel-muted mt-0.5">
+                          Basierend auf SSH-Konfiguration, Authentifizierungsmethoden, Fail2ban und Port-Wächter.
+                        </p>
+                      </div>
+                    </div>
+                    <Button size="sm" variant="ghost" onClick={loadSshData} disabled={loadingSsh}>
+                      <RefreshCw size={14} className={`mr-1.5 ${loadingSsh ? 'animate-spin' : ''}`} /> Neu prüfen
+                    </Button>
+                  </div>
+                )}
+
+                {/* Status-Kacheln */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className={`p-3 rounded-lg border ${
+                    sshConfig.PermitRootLogin === 'yes' 
+                      ? 'bg-panel-red/10 border-panel-red/30' 
+                      : sshConfig.PermitRootLogin === 'no' 
+                        ? 'bg-panel-green/10 border-panel-green/30' 
+                        : 'bg-panel-blue/10 border-panel-blue/30'
+                  }`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs text-panel-muted">Root-Login</span>
+                      {sshConfig.PermitRootLogin === 'yes' ? <Unlock size={14} className="text-panel-red" /> : <Lock size={14} className="text-panel-green" />}
+                    </div>
+                    <p className="text-sm font-semibold text-panel-text">{sshConfig.PermitRootLogin}</p>
+                    <p className={`text-[10px] mt-1 ${sshConfig.PermitRootLogin === 'yes' ? 'text-panel-red font-medium' : 'text-panel-muted'}`}>
+                      {sshConfig.PermitRootLogin === 'yes' ? 'Sicherheitsrisiko (Brute-Force Ziel)' : 'Abgesichert'}
+                    </p>
+                  </div>
+
+                  <div className={`p-3 rounded-lg border ${sshConfig.PasswordAuthentication === 'yes' ? 'bg-panel-orange/10 border-panel-orange/30' : 'bg-panel-green/10 border-panel-green/30'}`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs text-panel-muted">Passwort Auth</span>
+                      <Key size={14} className={sshConfig.PasswordAuthentication === 'yes' ? 'text-panel-orange' : 'text-panel-green'} />
+                    </div>
+                    <p className="text-sm font-semibold text-panel-text">{sshConfig.PasswordAuthentication}</p>
+                    <p className="text-[10px] text-panel-muted mt-1">
+                      {sshConfig.PasswordAuthentication === 'yes' ? 'Nur Schlüssel empfohlen' : 'Nur SSH-Keys zulässig'}
+                    </p>
+                  </div>
+
+                  <div className="p-3 rounded-lg border bg-panel-surface border-panel-border">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs text-panel-muted">SSH Port</span>
+                      <Radio size={14} className="text-panel-accent" />
+                    </div>
+                    <p className="text-sm font-semibold text-panel-text">{sshConfig.Port}</p>
+                    <p className="text-[10px] text-panel-muted mt-1">
+                      {parseInt(sshConfig.Port, 10) === 22 ? 'Standard-Port' : 'Benutzerdefinierter Port'}
+                    </p>
+                  </div>
+
+                  <div className={`p-3 rounded-lg border ${
+                    sshConfig.fail2banActive ? 'bg-panel-green/10 border-panel-green/30' : 
+                    sshConfig.fail2banInstalled ? 'bg-panel-orange/10 border-panel-orange/30' : 'bg-panel-surface border-panel-border'
+                  }`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs text-panel-muted">Fail2ban Schutz</span>
+                      <Shield size={14} className={sshConfig.fail2banActive ? 'text-panel-green' : 'text-panel-muted'} />
+                    </div>
+                    <p className="text-sm font-semibold text-panel-text">
+                      {sshConfig.fail2banActive ? 'Aktiv' : sshConfig.fail2banInstalled ? 'Inaktiv' : 'Nicht installiert'}
+                    </p>
+                    <p className="text-[10px] text-panel-muted mt-1 truncate">
+                      {sshConfig.fail2banActive 
+                        ? `${sshConfig.fail2banJails?.length || 0} Jails (${(sshConfig.fail2banJails || []).join(', ') || 'sshd'})` 
+                        : 'Kein automatischer IP-Bann'}
+                    </p>
+                  </div>
                 </div>
-                <div className={`p-3 rounded-lg border ${sshConfig.PasswordAuthentication === 'yes' ? 'bg-panel-orange/10 border-panel-orange/30' : 'bg-panel-green/10 border-panel-green/30'}`}>
-                   <p className="text-xs text-panel-muted mb-1">Passwort Auth</p>
-                   <p className="text-sm font-semibold text-panel-text">{sshConfig.PasswordAuthentication}</p>
-                </div>
-                <div className="p-3 rounded-lg border bg-panel-surface border-panel-border">
-                   <p className="text-xs text-panel-muted mb-1">SSH Port</p>
-                   <p className="text-sm font-semibold text-panel-text">{sshConfig.Port}</p>
-                </div>
+
+                {/* Audit Empfehlungen & Checkliste */}
+                {securityAudit && securityAudit.checks.length > 0 && (
+                  <div className="space-y-1.5 pt-2">
+                    <p className="text-xs font-semibold text-panel-muted uppercase tracking-wider mb-2">Sicherheits-Empfehlungen & Audit-Checkliste</p>
+                    {securityAudit.checks.map((chk) => (
+                      <div key={chk.id} className="flex items-start gap-2.5 p-2.5 rounded bg-panel-bg/60 border border-panel-border/50 text-xs">
+                        {chk.status === 'ok' ? (
+                          <CheckCircle2 size={16} className="text-panel-green shrink-0 mt-0.5" />
+                        ) : chk.status === 'danger' ? (
+                          <ShieldAlert size={16} className="text-panel-red shrink-0 mt-0.5" />
+                        ) : (
+                          <AlertTriangle size={16} className="text-panel-orange shrink-0 mt-0.5" />
+                        )}
+                        <div className="min-w-0">
+                          <span className={`font-semibold ${chk.status === 'ok' ? 'text-panel-text' : chk.status === 'danger' ? 'text-panel-red' : 'text-panel-orange'}`}>
+                            {chk.label}
+                          </span>
+                          <p className="text-[11px] text-panel-muted mt-0.5">{chk.detail}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : (
               <p className="text-xs text-panel-muted">Keine SSH-Konfiguration gefunden.</p>
             )}
           </Card>
           
-          <Card title="Port-Wächter (Modul 13)">
+          {/* Port-Wächter & Erkannte Ports */}
+          <Card title="Port-Wächter & Lauschende Dienste (Modul 13)">
             <p className="text-xs text-panel-muted mb-3">
               Definiere hier, welche Ports (für 0.0.0.0 oder ::) auf dem Server offen sein dürfen.
               Trage die Ports kommagetrennt ein (z. B. 22, 80, 443).
-              Über die Alert-Regeln kannst du bei Port-Drift (unerlaubte offene Ports) benachrichtigt werden.
+              Über die Alert-Regeln kannst du bei Port-Drift (unerlaubte offene Ports) alarmiert werden.
             </p>
-            <div className="flex gap-2">
+            
+            <div className="flex flex-col sm:flex-row gap-2 mb-4">
               <input
                 type="text"
-                className="bg-panel-bg text-panel-text text-sm rounded-lg border border-panel-border px-3 py-1.5 focus:border-panel-accent focus:ring-1 focus:ring-panel-accent outline-none w-full"
+                className="bg-panel-bg text-panel-text text-sm rounded-lg border border-panel-border px-3 py-1.5 focus:border-panel-accent focus:ring-1 focus:ring-panel-accent outline-none w-full font-mono"
                 placeholder="22, 80, 443"
                 value={allowedPorts}
                 onChange={(e) => setAllowedPorts(e.target.value)}
               />
-              {canWrite && (
-                <Button size="sm" onClick={saveAllowedPorts} disabled={savingPorts}>
-                  {savingPorts ? 'Speichere...' : 'Speichern'}
-                </Button>
-              )}
+              <div className="flex gap-2 shrink-0">
+                {canWrite && (
+                  <Button size="sm" onClick={saveAllowedPorts} disabled={savingPorts}>
+                    {savingPorts ? 'Speichere...' : 'Speichern'}
+                  </Button>
+                )}
+                {canWrite && sshConfig?.listeningPorts && sshConfig.listeningPorts.length > 0 && (
+                  <Button size="sm" variant="outline" onClick={applyListeningPortsToWhitelist} title="Übernimmt alle aktuell erkannten Ports in die Whitelist">
+                    Ports übernehmen
+                  </Button>
+                )}
+              </div>
             </div>
+
+            {/* Live Lauschende Ports auf dem Server */}
+            {sshConfig?.listeningPorts && sshConfig.listeningPorts.length > 0 && (
+              <div className="pt-2 border-t border-panel-border/50">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-semibold text-panel-muted uppercase tracking-wider">
+                    Aktuell lauschende Netzwerk-Ports ({sshConfig.listeningPorts.length})
+                  </span>
+                  {securityAudit?.unallowedPorts?.length > 0 && (
+                    <Badge color="red">{securityAudit.unallowedPorts.length} Unerlaubt (Drift)</Badge>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {sshConfig.listeningPorts.map((lp, idx) => {
+                    const allowedList = (allowedPorts || '').split(',').map(p => parseInt(p.trim(), 10)).filter(p => !isNaN(p));
+                    const isWhitelisted = allowedList.includes(lp.port);
+                    return (
+                      <div key={idx} className={`p-2.5 rounded border text-xs flex items-center justify-between gap-2 ${
+                        isWhitelisted ? 'bg-panel-surface/60 border-panel-border' : 'bg-panel-red/10 border-panel-red/30'
+                      }`}>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono font-bold text-panel-text">Port {lp.port}</span>
+                            <span className="text-[10px] text-panel-muted uppercase font-mono">{lp.proto}</span>
+                          </div>
+                          <p className="text-[11px] text-panel-muted truncate">
+                            {lp.process || 'Unbekannter Dienst'} <span className="text-panel-muted/60 font-mono">({lp.bind})</span>
+                          </p>
+                        </div>
+                        {isWhitelisted ? (
+                          <Badge color="green">Erlaubt</Badge>
+                        ) : (
+                          <Badge color="red">Drift</Badge>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </Card>
 
+          {/* Aktive SSH Sitzungen */}
           <Card title="Aktive SSH Sitzungen">
             {loadingSsh ? (
               <p className="text-xs text-panel-muted">Lade aktive Sitzungen...</p>
@@ -1381,14 +1682,30 @@ export default function AgentDetail() {
             ) : (
               <div className="space-y-2">
                 {sshSessions.map((s, i) => (
-                  <div key={i} className="flex items-center justify-between p-3 border border-panel-border rounded-lg bg-panel-surface/50">
-                    <div>
-                      <h4 className="text-sm font-semibold text-panel-text">{s.ip}</h4>
-                      {s.country && s.country !== 'Unknown' && (
-                         <p className="text-xs text-panel-muted">
-                           {(s.country || '').toUpperCase()} {s.city ? `— ${s.city}` : ''}
-                         </p>
-                      )}
+                  <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 border border-panel-border rounded-lg bg-panel-surface/50">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded bg-panel-bg border border-panel-border">
+                        <Terminal size={16} className="text-panel-accent" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-panel-text">{s.ip}</span>
+                          {s.user && <Badge color="blue">{s.user}</Badge>}
+                          {s.tty && <span className="text-xs font-mono text-panel-muted">{s.tty}</span>}
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-panel-muted mt-0.5">
+                          {s.country && s.country !== 'Unknown' && (
+                            <span className="flex items-center gap-1">
+                              <Globe size={12} /> {(s.country || '').toUpperCase()} {s.city ? `— ${s.city}` : ''}
+                            </span>
+                          )}
+                          {s.loginTime && (
+                            <span className="flex items-center gap-1">
+                              <Clock size={12} /> Login: {s.loginTime}
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
                     <Badge color="green">Aktiv</Badge>
                   </div>
@@ -1397,7 +1714,18 @@ export default function AgentDetail() {
             )}
           </Card>
 
+          {/* Autorisierte SSH-Schlüssel */}
           <Card title="Autorisierte SSH-Schlüssel">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs text-panel-muted">
+                {sshKeys.length} {sshKeys.length === 1 ? 'Schlüssel hinterlegt' : 'Schlüssel hinterlegt'}
+              </span>
+              {canWrite && (
+                <Button size="sm" onClick={() => setAddKeyModal(true)}>
+                  <Plus size={14} className="mr-1" /> Schlüssel hinterlegen
+                </Button>
+              )}
+            </div>
             {loadingSsh ? (
               <p className="text-xs text-panel-muted">Lade Schlüssel...</p>
             ) : sshKeys.length === 0 ? (
@@ -1407,17 +1735,17 @@ export default function AgentDetail() {
                 {sshKeys.map((k, i) => (
                   <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 border border-panel-border rounded-lg bg-panel-surface/50">
                     <div className="min-w-0">
-                       <div className="flex items-center gap-2 mb-1">
-                         <Badge color="blue">{k.user}</Badge>
-                         <span className="text-sm font-medium text-panel-text truncate">{k.comment || 'Unbenannt'}</span>
-                       </div>
-                       <p className="text-xs text-panel-muted font-mono">{k.fingerprint}</p>
-                       <p className="text-[10px] text-panel-muted mt-1 truncate max-w-xl">{k.type} ...{k.key.slice(-20)}</p>
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge color="blue">{k.user}</Badge>
+                        <span className="text-sm font-medium text-panel-text truncate">{k.comment || 'Unbenannt'}</span>
+                      </div>
+                      <p className="text-xs text-panel-muted font-mono">{k.fingerprint}</p>
+                      <p className="text-[10px] text-panel-muted mt-1 truncate max-w-xl font-mono">{k.type} ...{k.key.slice(-20)}</p>
                     </div>
                     {canWrite && (
-                       <Button size="sm" variant="danger" onClick={() => removeSshKey(k.fingerprint)}>
-                         <Trash2 size={14} className="mr-1" /> Entfernen
-                       </Button>
+                      <Button size="sm" variant="danger" onClick={() => removeSshKey(k.fingerprint)}>
+                        <Trash2 size={14} className="mr-1" /> Entfernen
+                      </Button>
                     )}
                   </div>
                 ))}
@@ -1432,37 +1760,92 @@ export default function AgentDetail() {
           <Card title="S.M.A.R.T. Werte & Festplatten">
             <div className="flex justify-end mb-3">
               <Button size="sm" onClick={loadDisks} disabled={loadingDisks}>
-                <RefreshCw size={14} className={`mr-2 ${loadingDisks ? 'animate-spin' : ''}`} /> S.M.A.R.T. aktualisieren
+                <RefreshCw size={14} className={`mr-2 ${loadingDisks ? 'animate-spin' : ''}`} /> S.M.A.R.T. & Laufwerke aktualisieren
               </Button>
             </div>
             {loadingDisks ? (
               <p className="text-xs text-panel-muted text-center py-4">Lade Festplattendaten...</p>
             ) : disks.length === 0 ? (
-              <p className="text-xs text-panel-muted text-center py-4">Keine S.M.A.R.T. kompatiblen Laufwerke gefunden.</p>
+              <p className="text-xs text-panel-muted text-center py-4">Keine Laufwerke gefunden.</p>
             ) : (
               <div className="space-y-3">
                 {disks.map((d, i) => (
-                  <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 border border-panel-border rounded-lg bg-panel-surface/50">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <HardDrive size={14} className="text-panel-accent" />
-                        <span className="text-sm font-medium text-panel-text">{d.device}</span>
-                        {d.passed === true && <Badge color="green">PASSED</Badge>}
-                        {d.passed === false && <Badge color="red">FAILED</Badge>}
+                  d.isVirtual ? (
+                    <div key={i} className="p-4 border border-panel-border rounded-lg bg-panel-surface/50 space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-panel-border/50">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <HardDrive size={16} className="text-panel-accent" />
+                          <span className="text-sm font-bold text-panel-text">{d.device}</span>
+                          <Badge color="blue">KVM / Cloud Disk</Badge>
+                          {d.readOnly ? (
+                            <Badge color="red">Schreibgeschützt (RO)</Badge>
+                          ) : (
+                            <Badge color="green">Dateisystem OK (RW)</Badge>
+                          )}
+                          <span className="text-xs text-panel-muted font-mono">
+                            {d.rotational ? 'Virtuelle HDD' : 'Virtuelle SSD'}
+                          </span>
+                        </div>
+                        {d.sizeBytes && (
+                          <div className="text-xs text-panel-muted">
+                            Gesamtgröße: <strong className="text-panel-text">{fmtBytes(d.sizeBytes)}</strong>
+                          </div>
+                        )}
                       </div>
-                      <div className="text-xs text-panel-muted font-mono">{d.model} (SN: {d.serial})</div>
-                      <div className="flex gap-4 mt-2 text-[11px] text-panel-muted">
-                        {d.temperature !== null && <span>Temp: <strong className={d.temperature > 50 ? 'text-panel-orange' : 'text-panel-text'}>{d.temperature}°C</strong></span>}
-                        {d.wearout !== null && <span>Wearout: <strong className="text-panel-text">{d.wearout}%</strong></span>}
-                        {d.powerOnHours !== null && <span>Laufzeit: <strong className="text-panel-text">{Math.round(d.powerOnHours / 24)} Tage</strong></span>}
+
+                      {/* Partitionen & Mounts */}
+                      {d.partitions && d.partitions.length > 0 ? (
+                        <div className="space-y-2">
+                          <p className="text-[11px] font-semibold text-panel-muted uppercase tracking-wider">Partitionen & Mount-Punkte</p>
+                          {d.partitions.map((p, pIdx) => (
+                            <div key={pIdx} className="bg-panel-bg/60 p-2.5 rounded border border-panel-border/40 text-xs">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 mb-1.5">
+                                <span className="font-mono text-panel-accent font-semibold">{p.path} {p.mountpoint ? `→ ${p.mountpoint}` : ''}</span>
+                                <div className="flex items-center gap-2 text-panel-muted text-[11px]">
+                                  <span>Dateisystem: <strong className="text-panel-text font-mono">{p.fstype}</strong></span>
+                                  {p.usedBytes != null && (
+                                    <span>{fmtBytes(p.usedBytes)} von {fmtBytes(p.sizeBytes)} ({p.usedPercent}%)</span>
+                                  )}
+                                </div>
+                              </div>
+                              {p.usedPercent != null && (
+                                <PctBar value={p.usedPercent} color={p.usedPercent > 90 ? 'bg-panel-red' : p.usedPercent > 75 ? 'bg-panel-orange' : 'bg-panel-accent'} />
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-panel-muted font-mono">Modell: {d.model}</p>
+                      )}
+
+                      <div className="flex items-center gap-2 pt-1 text-[11px] text-panel-muted/80">
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-panel-accent" />
+                        <span>KVM-Virtualisierung: Der Hypervisor abstrahiert S.M.A.R.T.-Hardware-Register. Dateisystem-Integrität, Partitionen & Mounts werden aktiv überwacht.</span>
                       </div>
                     </div>
-                    {canWrite && (
-                      <Button size="sm" variant="outline" onClick={() => runSmartTest(d.device)}>
-                        Selbsttest (Short) starten
-                      </Button>
-                    )}
-                  </div>
+                  ) : (
+                    <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 border border-panel-border rounded-lg bg-panel-surface/50">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <HardDrive size={14} className="text-panel-accent" />
+                          <span className="text-sm font-medium text-panel-text">{d.device}</span>
+                          {d.passed === true && <Badge color="green">PASSED</Badge>}
+                          {d.passed === false && <Badge color="red">FAILED</Badge>}
+                        </div>
+                        <div className="text-xs text-panel-muted font-mono">{d.model} (SN: {d.serial})</div>
+                        <div className="flex gap-4 mt-2 text-[11px] text-panel-muted">
+                          {d.temperature !== null && <span>Temp: <strong className={d.temperature > 50 ? 'text-panel-orange' : 'text-panel-text'}>{d.temperature}°C</strong></span>}
+                          {d.wearout !== null && <span>Wearout: <strong className="text-panel-text">{d.wearout}%</strong></span>}
+                          {d.powerOnHours !== null && <span>Laufzeit: <strong className="text-panel-text">{Math.round(d.powerOnHours / 24)} Tage</strong></span>}
+                        </div>
+                      </div>
+                      {canWrite && (
+                        <Button size="sm" variant="outline" onClick={() => runSmartTest(d.device)}>
+                          Selbsttest (Short) starten
+                        </Button>
+                      )}
+                    </div>
+                  )
                 ))}
               </div>
             )}
@@ -1471,14 +1854,20 @@ export default function AgentDetail() {
           <Card title="System-Speicher freigeben">
             <div className="text-sm text-panel-muted mb-4">
               <p>Nicht mehr benötigte Dateien entfernen, um Speicherplatz freizugeben.</p>
+              {cleanupError && (
+                <div className="mt-3 p-3 rounded-md bg-panel-red/10 border border-panel-red/30 text-panel-red text-xs flex items-center justify-between">
+                  <span>{cleanupError}</span>
+                  <button onClick={() => setCleanupError(null)} className="text-panel-muted hover:text-panel-text text-xs">✕</button>
+                </div>
+              )}
               {cleanupStatus && (
                 <div className="mt-3 p-3 rounded-md bg-panel-surface border border-panel-border">
-                  <h4 className="font-medium text-panel-text mb-1">Ergebnis:</h4>
+                  <h4 className="font-medium text-panel-text mb-1">Ergebnis der Bereinigung:</h4>
                   <ul className="text-xs space-y-1">
                     {Object.entries(cleanupStatus).map(([task, result]) => (
                       <li key={task} className="flex gap-2">
                         <span className="text-panel-accent font-mono w-16">{task}:</span>
-                        <span className={result.includes('Fehler') ? 'text-panel-red' : 'text-panel-text'}>{result}</span>
+                        <span className={result.includes('Fehler') ? 'text-panel-red' : 'text-panel-green'}>{result}</span>
                       </li>
                     ))}
                   </ul>
@@ -1488,23 +1877,35 @@ export default function AgentDetail() {
             
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <Button variant="outline" className="flex flex-col items-center p-4 h-auto gap-2" disabled={runningCleanup || !canWrite} 
-                onClick={() => runCleanup({ apt: true })}>
-                <Package size={20} className="text-panel-muted" />
-                <span className="text-sm font-medium">APT Cache leeren</span>
+                onClick={() => runCleanup({ apt: true }, 'apt')}>
+                {activeCleanupTask === 'apt' ? (
+                  <RefreshCw size={20} className="animate-spin text-panel-accent" />
+                ) : (
+                  <Package size={20} className="text-panel-muted" />
+                )}
+                <span className="text-sm font-medium">{activeCleanupTask === 'apt' ? 'Bereinige APT...' : 'APT Cache leeren'}</span>
                 <span className="text-[10px] text-panel-muted/70 text-center">Entfernt ungenutzte Pakete (apt autoremove) und den Cache</span>
               </Button>
               
               <Button variant="outline" className="flex flex-col items-center p-4 h-auto gap-2" disabled={runningCleanup || !canWrite}
-                onClick={() => runCleanup({ journal: true })}>
-                <FileText size={20} className="text-panel-muted" />
-                <span className="text-sm font-medium">System-Logs kürzen</span>
+                onClick={() => runCleanup({ journal: true }, 'journal')}>
+                {activeCleanupTask === 'journal' ? (
+                  <RefreshCw size={20} className="animate-spin text-panel-blue" />
+                ) : (
+                  <FileText size={20} className="text-panel-muted" />
+                )}
+                <span className="text-sm font-medium">{activeCleanupTask === 'journal' ? 'Kürze Logs...' : 'System-Logs kürzen'}</span>
                 <span className="text-[10px] text-panel-muted/70 text-center">Löscht alte systemd Journal-Logs (behält nur 3 Tage)</span>
               </Button>
               
               <Button variant="outline" className="flex flex-col items-center p-4 h-auto gap-2" disabled={runningCleanup || !canWrite}
-                onClick={() => runCleanup({ docker: true })}>
-                <Container size={20} className="text-panel-muted" />
-                <span className="text-sm font-medium">Docker Prune</span>
+                onClick={() => runCleanup({ docker: true }, 'docker')}>
+                {activeCleanupTask === 'docker' ? (
+                  <RefreshCw size={20} className="animate-spin text-panel-purple" />
+                ) : (
+                  <Container size={20} className="text-panel-muted" />
+                )}
+                <span className="text-sm font-medium">{activeCleanupTask === 'docker' ? 'Führe Prune aus...' : 'Docker Prune'}</span>
                 <span className="text-[10px] text-panel-muted/70 text-center">Entfernt ungenutzte Images, Container, Volumes (system prune -a)</span>
               </Button>
             </div>
@@ -1537,6 +1938,47 @@ export default function AgentDetail() {
           onClose={() => setSystemUpdateModal(false)} 
         />
       )}
+
+      {/* ── Add SSH Key Modal ─────────────────────────────────────────── */}
+      <Modal
+        open={addKeyModal}
+        onClose={() => setAddKeyModal(false)}
+        title="Autorisierten SSH-Schlüssel hinterlegen"
+        footer={
+          <>
+            <Button variant="ghost" size="sm" onClick={() => setAddKeyModal(false)}>Abbrechen</Button>
+            <Button size="sm" onClick={handleAddSshKey} disabled={addingKey || !newKeyForm.key.trim()}>
+              {addingKey ? 'Hinterlege...' : 'Schlüssel speichern'}
+            </Button>
+          </>
+        }
+      >
+        <form onSubmit={handleAddSshKey} className="space-y-4 text-xs">
+          <div>
+            <label className="block text-panel-muted font-medium mb-1">Benutzerkonto auf dem Server</label>
+            <input
+              type="text"
+              value={newKeyForm.user}
+              onChange={(e) => setNewKeyForm(f => ({ ...f, user: e.target.value }))}
+              placeholder="root"
+              className="w-full bg-panel-bg text-panel-text px-3 py-1.5 rounded-lg border border-panel-border focus:border-panel-accent focus:ring-1 focus:ring-panel-accent outline-none font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-panel-muted font-medium mb-1">Öffentlicher SSH-Schlüssel (Public Key)</label>
+            <textarea
+              rows={4}
+              value={newKeyForm.key}
+              onChange={(e) => setNewKeyForm(f => ({ ...f, key: e.target.value }))}
+              placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5... user@domain"
+              className="w-full bg-panel-bg text-panel-text px-3 py-2 rounded-lg border border-panel-border focus:border-panel-accent focus:ring-1 focus:ring-panel-accent outline-none font-mono text-[11px] resize-none"
+            />
+            <p className="text-[11px] text-panel-muted mt-1">
+              Füge den Einzeiler des öffentlichen Schlüssels ein. Er wird sicher in <code className="text-panel-accent font-mono">~/.ssh/authorized_keys</code> angehängt.
+            </p>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

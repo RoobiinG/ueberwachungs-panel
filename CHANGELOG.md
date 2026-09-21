@@ -15,6 +15,24 @@ angewandt. Die Zählung beginnt beim ersten Release mit `1.0.0.0` und läuft von
 Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahinter auf `0` zurückgesetzt.
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
+## [7.3.0.0] - 2026-09-21 (Build 379) — *Patch Pilot*
+
+### Features & Verbesserungen
+- **Docker Volumes & Netzwerke Datenanzeige:** In der Detailansicht von Servern (`Docker`-Tab) wurden die Zähler für Volumes und Netzwerke bisher mit `—` dargestellt, wenn der Server als nativer Agent angebunden war. Das Backend ruft nun die nativen Agent-Endpunkte `/docker/volumes` und `/docker/networks` parallel ab und berechnet die exakten Anzahlen.
+- **KVM- & V-Server Laufwerkserkennung:** Da KVM-Hypervisoren (z. B. bei Hetzner Cloud oder Proxmox) direkte S.M.A.R.T.-Hardware-Register abstrahieren, meldete die S.M.A.R.T.-Karte bisher fälschlicherweise „Keine kompatiblen Laufwerke gefunden". Der Agent (v2.15.0) erkennt nun virtuelle Block-Devices (`lsblk`, `df -kP`), Dateisystem-Integrität (RW/RO), Typ (SSD/HDD) sowie sämtliche Partitionen, Mountpoints und Speicherbelegungen mit visuellen Balken.
+- **Umfassender Sicherheits-Bereich & Audit:**
+  - **Sicherheits-Score (0–100):** Berechnet automatisch ein transparentes Sicherheits-Rating mit Audit-Checkliste und konkreten Empfehlungen (Root-Login, Passwort-Authentifizierung, alternativer SSH-Port, Fail2ban).
+  - **Status-Kacheln:** Direkte Visualisierung von Root-Login (mit Risiko-Hinweis), Passwort-Auth, SSH-Port und aktivem Fail2ban-Schutz (inkl. aktiver Jails).
+  - **Port-Wächter Drift-Inspektor:** Liest alle aktuell lauschenden Netzwerk-Ports (`ss -tulnp`) inklusive Prozessname und Bind-Adresse aus. Unerlaubte Ports außerhalb der Whitelist werden als Live-Port-Drift markiert. Per Klick auf „Ports übernehmen" lassen sich alle erkannten Ports direkt in die Whitelist übertragen.
+  - **Aktive SSH-Sitzungen:** Zeigt nun neben der Remote-IP auch den angemeldeten System-Benutzer (`user`), das Terminal (`tty`), Herkunftsland/Stadt und die Login-Uhrzeit an.
+  - **SSH-Schlüssel-Verwaltung:** Neues Modal zum direkten Hinterlegen öffentlicher SSH-Schlüssel auf dem Server ohne Konsolenzugriff (`POST /api/agents/:id/ssh/keys`).
+- **System-Cleanup Timeout-Verlängerung:** Bereinigungs-Aktionen (`apt-get autoremove`, `journalctl --vacuum-time`, `docker system prune -a`) führten auf ausgelasteten Servern bisher zu einem Axios-Timeout nach 8 Sekunden (`timeout of 8000ms exceeded`). Das Timeout im Panel wurde auf 180 Sekunden (3 Minuten) angehoben, ergänzt durch spinner-gestützte Button-Zustände und saubere Fehlermeldungen.
+- **Agent-Update v2.15.0:** KVM/VPS Block-Device-Inspektor, runtime `sshd -T` Konfigurations-Parser (unterstützt `sshd_config.d/*.conf`), Fail2ban-Erkennung, offene Port-Ermittlung sowie Remote-Schlüssel-Hinterlegung.
+
+### System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen:** Keine erforderlich.
+- **Agent-Kompatibilität:** **Der Agent muss auf v2.15.0 aktualisiert werden**, um KVM-Laufwerksinformationen, detaillierte Port-Wächter-Daten und die Remote-Schlüssel-Hinterlegung vollumfänglich zu nutzen. Dies kann über den Sammel-Update-Button („Alle auf v2.15.0 aktualisieren") direkt im Panel erfolgen.
+- **Neustart-/Session-Verhalten:** Keine Unterbrechung bestehender Sessions.
 
 ## [7.2.0.0] - 2026-09-21 (Build 378) — *Patch Pilot*
 

@@ -17,7 +17,7 @@ const execAsync = promisify(exec);
 // sondern ein Argument-Array. Sonderzeichen in Volume-/Netzwerk-/Image-Namen können
 // so nicht als Shell-Syntax gedeutet werden.
 const execFileAsync = promisify(execFile);
-const VERSION = '2.14.0';
+const VERSION = '2.15.0';
 
 // Ob die Container-Konsole angeboten werden kann. Steht erst nach dem Laden von
 // ws/node-pty am Ende dieser Datei fest und wird über /ping und /version gemeldet,
@@ -868,23 +868,62 @@ async function getOpenPorts() {
 }
 
 async function getSshSessions() {
+  const sessions = [];
   try {
-    const { stdout } = await execAsync("ss -tn state established sport = :22 || true");
-    const lines = stdout.split('\n').slice(1);
-    const ips = new Set();
-    for (const line of lines) {
+    let sshPort = 22;
+    try {
+      if (fs.existsSync('/etc/ssh/sshd_config')) {
+        const c = fs.readFileSync('/etc/ssh/sshd_config', 'utf8');
+        const m = c.match(/^Port\s+(\d+)/m);
+        if (m) sshPort = parseInt(m[1], 10) || 22;
+      }
+    } catch {}
+
+    const { stdout: ssOut } = await execAsync(`ss -tn state established sport = :${sshPort} 2>/dev/null || true`, { timeout: 3000 });
+    const ssIps = new Set();
+    ssOut.split('\n').slice(1).forEach(line => {
       if (!line.trim()) continue;
       const parts = line.trim().split(/\s+/);
       if (parts.length >= 4) {
-        const peerAddrStr = parts[3]; // z.B. 31.18.56.53:65144
-        const ipMatch = peerAddrStr.match(/^(.+):\d+$/);
-        if (ipMatch) ips.add(ipMatch[1]);
+        const peer = parts[3];
+        const match = peer.match(/^(.+):\d+$/);
+        if (match) ssIps.add(match[1]);
+      }
+    });
+
+    const { stdout: wOut } = await execAsync('w -h 2>/dev/null || who 2>/dev/null || true', { timeout: 3000 });
+    const loggedIn = [];
+    wOut.split('\n').forEach(line => {
+      if (!line.trim()) continue;
+      const parts = line.trim().split(/\s+/);
+      if (parts.length >= 3) {
+        const user = parts[0];
+        const tty = parts[1];
+        const from = parts[2].replace(/[()]/g, '');
+        loggedIn.push({ user, tty, from });
+      }
+    });
+
+    for (const ip of ssIps) {
+      const matchLogin = loggedIn.find(l => l.from === ip);
+      sessions.push({
+        ip,
+        user: matchLogin?.user || 'ssh-session',
+        terminal: matchLogin?.tty || null
+      });
+    }
+
+    for (const l of loggedIn) {
+      if (l.from && !sessions.some(s => s.ip === l.from) && !l.from.startsWith(':')) {
+        sessions.push({
+          ip: l.from,
+          user: l.user,
+          terminal: l.tty
+        });
       }
     }
-    return Array.from(ips);
-  } catch (err) {
-    return [];
-  }
+  } catch {}
+  return sessions;
 }
 
 // Netzwerk-Traffic — Live-Messung (für /network/stats, 1s Messfenster)
@@ -1069,6 +1108,33 @@ async function getSshKeys() {
   return keys;
 }
 
+async function addSshKey(user, keyLine) {
+  if (!user || typeof user !== 'string' || !/^[a-z_][a-z0-9_-]*[$]?$/.test(user)) {
+    throw new Error('Ungültiger Benutzername');
+  }
+  const cleanLine = (keyLine || '').trim();
+  if (!cleanLine || !/^(ssh-(ed25519|rsa|dss)|ecdsa-sha2-[a-z0-9-]+)\s+[A-Za-z0-9+/=]+(\s+.*)?$/.test(cleanLine)) {
+    throw new Error('Ungültiges SSH-Public-Key Format');
+  }
+  const sshDir = user === 'root' ? '/root/.ssh' : `/home/${user}/.ssh`;
+  const keyPath = path.join(sshDir, 'authorized_keys');
+  if (!fs.existsSync(sshDir)) {
+    fs.mkdirSync(sshDir, { mode: 0o700, recursive: true });
+  }
+  let existing = '';
+  if (fs.existsSync(keyPath)) {
+    existing = fs.readFileSync(keyPath, 'utf8');
+  }
+  const keyParts = cleanLine.split(' ');
+  const keyBody = keyParts[1];
+  if (existing.includes(keyBody)) {
+    return { success: true, message: 'Schlüssel ist bereits vorhanden' };
+  }
+  const updated = existing.trim() ? existing.trim() + '\n' + cleanLine + '\n' : cleanLine + '\n';
+  fs.writeFileSync(keyPath, updated, { mode: 0o600, encoding: 'utf8' });
+  return { success: true, message: 'Schlüssel erfolgreich hinterlegt' };
+}
+
 async function removeSshKey(identifier) {
   let removed = 0;
   try {
@@ -1121,24 +1187,100 @@ async function getSshConfig() {
   const config = {
     PermitRootLogin: 'yes', // Default Annahme falls nicht gefunden (Worst case)
     PasswordAuthentication: 'yes',
-    Port: '22'
+    PubkeyAuthentication: 'yes',
+    Port: '22',
+    fail2ban: { installed: false, active: false, jails: [] },
+    firewall: { tool: 'none', active: false },
+    listeningPorts: []
   };
   try {
-    if (fs.existsSync('/etc/ssh/sshd_config')) {
+    const { stdout: sshdOut } = await execAsync('sshd -T 2>/dev/null', { timeout: 4000 }).catch(() => ({ stdout: '' }));
+    if (sshdOut) {
+      sshdOut.split('\n').forEach(line => {
+        const l = line.trim();
+        if (!l) return;
+        const parts = l.split(/\s+/);
+        const k = parts[0].toLowerCase();
+        if (k === 'permitrootlogin') config.PermitRootLogin = parts[1];
+        if (k === 'passwordauthentication') config.PasswordAuthentication = parts[1];
+        if (k === 'pubkeyauthentication') config.PubkeyAuthentication = parts[1];
+        if (k === 'port') config.Port = parts[1];
+      });
+    } else if (fs.existsSync('/etc/ssh/sshd_config')) {
       const content = fs.readFileSync('/etc/ssh/sshd_config', 'utf8');
       content.split('\n').forEach(line => {
         const l = line.trim();
-        if (l && !l.startsWith('#')) {
-          const parts = l.split(/\s+/);
-          if (parts[0] === 'PermitRootLogin') config.PermitRootLogin = parts[1];
-          if (parts[0] === 'PasswordAuthentication') config.PasswordAuthentication = parts[1];
-          if (parts[0] === 'Port') config.Port = parts[1];
-        }
+        if (!l || l.startsWith('#')) return;
+        const parts = l.split(/\s+/);
+        if (parts[0] === 'PermitRootLogin') config.PermitRootLogin = parts[1];
+        if (parts[0] === 'PasswordAuthentication') config.PasswordAuthentication = parts[1];
+        if (parts[0] === 'PubkeyAuthentication') config.PubkeyAuthentication = parts[1];
+        if (parts[0] === 'Port') config.Port = parts[1];
       });
     }
-  } catch (e) {
-    // Ignorieren
-  }
+  } catch (e) {}
+
+  try {
+    const { stdout: f2bActive } = await execAsync('systemctl is-active fail2ban 2>/dev/null', { timeout: 2500 }).catch(() => ({ stdout: '' }));
+    if (f2bActive.trim() === 'active') {
+      config.fail2ban.installed = true;
+      config.fail2ban.active = true;
+      const { stdout: f2bStatus } = await execAsync('fail2ban-client status 2>/dev/null', { timeout: 2500 }).catch(() => ({ stdout: '' }));
+      const jailMatch = f2bStatus.match(/Jail list:\s*(.+)/);
+      if (jailMatch) {
+        config.fail2ban.jails = jailMatch[1].split(',').map(s => s.trim()).filter(Boolean);
+      }
+    } else {
+      const hasF2b = await programmVorhanden('fail2ban-client');
+      config.fail2ban.installed = !!hasF2b;
+      config.fail2ban.active = false;
+    }
+  } catch {}
+
+  try {
+    const fw = await detectAgentFirewall();
+    config.firewall.tool = fw.tool;
+    if (fw.tool !== 'none') {
+      const st = await agentFilterZustand(fw.tool);
+      config.firewall.active = !!st.filtert;
+    }
+  } catch {}
+
+  try {
+    const { stdout: ssOut } = await execAsync('ss -tulnp 2>/dev/null', { timeout: 4000 }).catch(() => ({ stdout: '' }));
+    const lines = ssOut.split('\n').slice(1);
+    const seen = new Set();
+    const ports = [];
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      const parts = line.trim().split(/\s+/);
+      const proto = parts[0]?.toLowerCase()?.includes('udp') ? 'udp' : 'tcp';
+      const local = parts.find((p, idx) => idx >= 3 && p.includes(':'));
+      if (!local) continue;
+      const portMatch = local.match(/:(\d+)$/);
+      if (!portMatch) continue;
+      const portNum = parseInt(portMatch[1], 10);
+      const isPublic = !local.startsWith('127.') && !local.startsWith('::1') && (local.startsWith('0.0.0.0') || local.startsWith('[::]') || local.startsWith('*'));
+      
+      let procName = null;
+      const procMatch = line.match(/users:\(\("([^"]+)"/);
+      if (procMatch) procName = procMatch[1];
+
+      const key = `${proto}:${portNum}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        ports.push({
+          port: portNum,
+          proto,
+          isPublic,
+          local,
+          process: procName || 'Unbekannt'
+        });
+      }
+    }
+    config.listeningPorts = ports.sort((a, b) => a.port - b.port);
+  } catch {}
+
   return config;
 }
 
@@ -1146,11 +1288,10 @@ async function getSshConfig() {
 // ── Modul 7: Festplatten-Gesundheit & System-Aufräumen ───────────────────────
 
 async function getSmartData() {
+  const disks = [];
   try {
-    const { stdout: scanOut } = await execAsync('smartctl --scan', { timeout: 10000 }).catch(() => ({ stdout: '' }));
+    const { stdout: scanOut } = await execAsync('smartctl --scan', { timeout: 8000 }).catch(() => ({ stdout: '' }));
     const lines = scanOut.trim().split('\n');
-    const disks = [];
-    
     for (const line of lines) {
       if (!line) continue;
       const match = line.match(/^(\/dev\/\S+)/);
@@ -1158,7 +1299,7 @@ async function getSmartData() {
       const dev = match[1];
       
       try {
-        const { stdout: smartOut } = await execAsync(`smartctl -j -a ${dev}`, { timeout: 10000 });
+        const { stdout: smartOut } = await execAsync(`smartctl -j -a ${dev}`, { timeout: 8000 });
         const data = JSON.parse(smartOut);
         
         let passed = data.smart_status?.passed;
@@ -1188,16 +1329,109 @@ async function getSmartData() {
           passed,
           temperature: temp,
           wearout,
-          powerOnHours: pOH
+          powerOnHours: pOH,
+          isVirtual: false
         });
       } catch (err) {
         // smartctl fails on virtual disks or if smart not supported
       }
     }
-    return disks;
-  } catch (e) {
-    return [];
-  }
+  } catch (e) {}
+
+  // Fallback & Ergänzung für KVM / V-Server & Block-Devices (lsblk + df)
+  try {
+    const [{ stdout: lsblkOut }, { stdout: dfOut }] = await Promise.all([
+      execAsync('lsblk -J -b -o NAME,SIZE,TYPE,MOUNTPOINT,FSTYPE,MODEL,ROTA,RO 2>/dev/null', { timeout: 8000 }).catch(() => ({ stdout: '' })),
+      execAsync('df -kP 2>/dev/null', { timeout: 8000 }).catch(() => ({ stdout: '' }))
+    ]);
+
+    const dfMap = {};
+    if (dfOut) {
+      dfOut.trim().split('\n').slice(1).forEach(l => {
+        const parts = l.trim().split(/\s+/);
+        if (parts.length >= 6) {
+          const mount = parts[5];
+          const dev = parts[0];
+          const totalKb = parseInt(parts[1], 10) || 0;
+          const usedKb = parseInt(parts[2], 10) || 0;
+          const availKb = parseInt(parts[3], 10) || 0;
+          const cap = parts[4];
+          const info = {
+            totalBytes: totalKb * 1024,
+            usedBytes: usedKb * 1024,
+            availBytes: availKb * 1024,
+            usedPercent: parseInt(cap.replace('%', ''), 10) || 0,
+            mountpoint: mount
+          };
+          dfMap[mount] = info;
+          dfMap[dev] = info;
+        }
+      });
+    }
+
+    if (lsblkOut) {
+      const parsed = JSON.parse(lsblkOut);
+      const devices = parsed.blockdevices || [];
+      for (const bdev of devices) {
+        if (bdev.type !== 'disk') continue;
+        const devPath = `/dev/${bdev.name}`;
+        const existing = disks.find(d => d.device === devPath);
+        
+        const isKvmOrVirtual = !existing && (
+          (bdev.model && /qemu|virtio|vmware|virtual|vbox|xen/i.test(bdev.model)) ||
+          /^vd[a-z]/.test(bdev.name) ||
+          /^xvd[a-z]/.test(bdev.name) ||
+          disks.length === 0
+        );
+
+        const partitions = [];
+        const scanParts = (children) => {
+          if (!children || !Array.isArray(children)) return;
+          for (const ch of children) {
+            const chPath = `/dev/${ch.name}`;
+            const dfInfo = (ch.mountpoint && dfMap[ch.mountpoint]) || dfMap[chPath];
+            partitions.push({
+              name: ch.name,
+              path: chPath,
+              sizeBytes: ch.size || bdev.size,
+              mountpoint: ch.mountpoint || null,
+              fstype: ch.fstype || 'Unbekannt',
+              readOnly: ch.ro === true,
+              usedBytes: dfInfo ? dfInfo.usedBytes : null,
+              availBytes: dfInfo ? dfInfo.availBytes : null,
+              usedPercent: dfInfo ? dfInfo.usedPercent : null
+            });
+            if (ch.children) scanParts(ch.children);
+          }
+        };
+        scanParts(bdev.children);
+
+        if (existing) {
+          existing.sizeBytes = bdev.size;
+          existing.rotational = bdev.rota;
+          existing.readOnly = bdev.ro === true;
+          existing.partitions = partitions;
+        } else {
+          disks.push({
+            device: devPath,
+            model: bdev.model || (isKvmOrVirtual ? 'KVM / Virtuelle Festplatte' : 'Standard Block-Device'),
+            serial: 'Virtuell (Hypervisor)',
+            passed: bdev.ro === true ? false : true,
+            temperature: null,
+            wearout: null,
+            powerOnHours: null,
+            sizeBytes: bdev.size,
+            rotational: bdev.rota,
+            readOnly: bdev.ro === true,
+            isVirtual: true,
+            partitions
+          });
+        }
+      }
+    }
+  } catch (err) {}
+
+  return disks;
 }
 
 async function runSmartTest(disk) {
@@ -1501,6 +1735,17 @@ async function handler(req, res) {
     // ── SSH & Sicherheit ──────────────────────────────────────────────────────
     } else if (url === '/ssh/keys' && req.method === 'GET') {
       respond(res, 200, await getSshKeys());
+    } else if (url === '/ssh/keys' && req.method === 'POST') {
+      const body = await new Promise((resolve) => {
+        const chunks = []; req.on('data', c => chunks.push(c));
+        req.on('end', () => { try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')); } catch { resolve({}); } });
+      });
+      try {
+        const result = await addSshKey(body.user || 'root', body.key);
+        respond(res, 200, result);
+      } catch (err) {
+        respond(res, 400, { error: err.message });
+      }
     } else if (url.startsWith('/ssh/keys/') && req.method === 'DELETE') {
       const identifier = decodeURIComponent(url.split('/')[3] || '');
       respond(res, 200, await removeSshKey(identifier));
