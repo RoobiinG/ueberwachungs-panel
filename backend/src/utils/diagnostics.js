@@ -130,7 +130,7 @@ function databaseInfo() {
 }
 
 async function agentsReachability() {
-  const agents = db.prepare('SELECT id, name, url, fingerprint FROM remote_agents ORDER BY name').all();
+  const agents = db.prepare('SELECT id, name, url, token, fingerprint FROM remote_agents ORDER BY name').all();
   const checks = agents.map(async (a) => {
     const start = Date.now();
     try {

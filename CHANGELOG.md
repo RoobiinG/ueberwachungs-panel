@@ -16,6 +16,17 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [7.1.0.1] - 2026-09-21 (Build 377) — *Patch Pilot*
+
+### Bugfixes & Agent-Update
+- **Bugfix (Diagnose-Bericht):** In `backend/src/utils/diagnostics.js` fehlte das Feld `token` in der SQL-Abfrage der Agenten. Dadurch wurde beim Ping-Check kein `x-agent-token`-Header an die Zielserver gesendet und alle erreichbaren Agenten wurden fälschlicherweise mit `ok: false` und dem Grund `Unauthorized` im Diagnose-Bericht ausgewiesen.
+- **Agent-Update (v2.14.0):** Die Agenten-Version in `agent/panel-agent.js` wurde auf `2.14.0` angehoben. Dies behebt die `HTTP 502: Not found` Fehler bei SMART-Festplatten-Checks (`/disks/smart`), System-Bereinigung (`/system/cleanup`) und Docker Compose Live-Deployment (`/docker/stacks/:name/deploy`), da die in v7.1.0.0 eingeführten Endpunkte nun über das Update-System für alle Server bereitstehen.
+
+### System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen:** Keine erforderlich.
+- **Agent-Kompatibilität:** **Der Agent muss auf v2.14.0 aktualisiert werden**, damit SMART-Daten, System-Bereinigung und Docker Compose Streaming auf den Zielservern funktionieren. Das Panel rollt das Update automatisch beim Container-Start aus oder manuell über „Server → Agent aktualisieren".
+- **Neustart-/Session-Verhalten:** Keine Unterbrechung bestehender Sessions.
+
 ## [7.1.0.0] - 2026-09-21 (Build 376) - *Patch Pilot*
 
 ### Features & Verbesserungen
