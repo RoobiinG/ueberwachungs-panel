@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Container, Wrench, Shield,
   Webhook, Users, Cloud, Gamepad2, ChevronLeft, ChevronRight,
   Server, Settings, ServerCog, MonitorCheck, Bell, ShieldCheck, ClipboardList, Lock,
-  BarChart2, AlertCircle, Trash2, ScrollText, PackageCheck, Clock, Terminal
+  BarChart2, AlertCircle, Trash2, ScrollText, PackageCheck, Clock, Terminal, Stethoscope
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
@@ -38,6 +38,7 @@ export const navItems = [
   { to: '/roles',      icon: ShieldCheck,   label: 'Rollen & Rechte', adminOnly: true },
   { to: '/audit',      icon: ClipboardList, label: 'Audit-Log',       permission: 'audit.view' },
   { to: '/panel-logs', icon: ScrollText,    label: 'Panel-Logs',      adminOnly: true },
+  { to: '/diagnose',   icon: Stethoscope,   label: 'Diagnose',        permission: 'settings.manage' },
   { to: '/settings',   icon: Settings,      label: 'Einstellungen' },
 ];
 

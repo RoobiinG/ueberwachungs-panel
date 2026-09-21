@@ -37,6 +37,7 @@ const AuditLog      = lazy(() => import('./pages/AuditLog'));
 const Monitoring    = lazy(() => import('./pages/Monitoring'));
 const PanelLogs     = lazy(() => import('./pages/PanelLogs'));
 const PanelLogsShare = lazy(() => import('./pages/PanelLogsShare'));
+const Diagnose       = lazy(() => import('./pages/Diagnose'));
 
 function PageLoader() {
   return (
@@ -114,6 +115,7 @@ const AppRoutes = () => {
             <Route path="/roles"     element={<ProtectedRoute adminOnly><Roles /></ProtectedRoute>} />
             <Route path="/audit"     element={<ProtectedRoute permission="audit.view"><AuditLog /></ProtectedRoute>} />
             <Route path="/panel-logs" element={<ProtectedRoute adminOnly><PanelLogs /></ProtectedRoute>} />
+            <Route path="/diagnose"  element={<ProtectedRoute permission="settings.manage"><Diagnose /></ProtectedRoute>} />
             <Route path="/settings"  element={<Settings />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
