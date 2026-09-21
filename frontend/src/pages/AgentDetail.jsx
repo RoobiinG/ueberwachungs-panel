@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, lazy, Suspense } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import {
@@ -165,6 +165,12 @@ export default function AgentDetail() {
   const { canWrite, token, hasPermission } = useAuth();
   const liveInterval = useLiveInterval();
 
+  // Hält immer die zuletzt angeforderte Agent-ID — load() prüft nach jedem await
+  // dagegen, damit eine spät zurückkommende Antwort für einen vorherigen Agenten
+  // (z.B. schneller Wechsel /agents/1 → /agents/2) nicht dessen Daten überschreibt.
+  const idRef = useRef(id);
+  useEffect(() => { idRef.current = id; }, [id]);
+
   const [agentData, setAgentData]         = useState(null);
   const [agentName, setAgentName]         = useState('');
   const [stats,     setStats]             = useState(null);
@@ -190,6 +196,20 @@ export default function AgentDetail() {
   const [processes,       setProcesses]       = useState([]);
   const [processFilter,   setProcessFilter]   = useState('');
   const [processSort,     setProcessSort]     = useState('cpu'); // 'cpu' oder 'mem'
+
+  // Ein echter Server liefert hier schnell 150-400+ Prozesse — Filtern/Sortieren nur
+  // neu berechnen, wenn sich Liste, Filtertext oder Sortierung tatsächlich ändern,
+  // statt bei jedem Render (jeder Live-Refresh-Tick und jeder Tastendruck im Filter).
+  const gefilterteProzesse = useMemo(() => {
+    const q = processFilter.trim().toLowerCase();
+    const gefiltert = q
+      ? processes.filter(p =>
+          String(p.pid).includes(q) ||
+          String(p.user).toLowerCase().includes(q) ||
+          String(p.command).toLowerCase().includes(q))
+      : processes;
+    return [...gefiltert].sort((a, b) => processSort === 'cpu' ? (b.cpu - a.cpu) : (b.mem - a.mem));
+  }, [processes, processFilter, processSort]);
   const [killModal,       setKillModal]       = useState(null);  // { pid, command }
   const [killingPid,      setKillingPid]      = useState(false);
   const [serverNotes,     setServerNotes]     = useState({ title: '', content_md: '' });
@@ -261,6 +281,8 @@ export default function AgentDetail() {
   }, [activeTab, loadSshData]);
 
   const load = useCallback(async (silent = false) => {
+    const requestId = id;
+    const veraltet = () => requestId !== idRef.current;
 
     if (!silent) setLoading(true);
     else setRefreshing(true);
@@ -271,6 +293,7 @@ export default function AgentDetail() {
         axios.get(`/api/agents/${id}/stats`),
         axios.get(`/api/agents/${id}/services`).catch(() => ({ data: [] })),
       ]);
+      if (veraltet()) return; // Nutzer ist inzwischen auf einen anderen Agenten gewechselt
       const agent = agentsRes.data.find(a => String(a.id) === String(id));
       if (agent) {
         setAgentData(agent);
@@ -292,16 +315,19 @@ export default function AgentDetail() {
         axios.get(`/api/agents/${id}/notes`).catch(() => null),
         axios.get(`/api/agents/${id}/maintenance`).catch(() => null),
       ]);
+      if (veraltet()) return;
       setDocker(dockerRes?.data || null);
       setContainers(containersRes?.data || null);
       if (procRes?.data) setProcesses(Array.isArray(procRes.data) ? procRes.data : []);
       if (notesRes?.data) setServerNotes(notesRes.data);
       if (maintRes?.data) setMaintenance(maintRes.data);
     } catch (err) {
-      setError(err.response?.data?.error || 'Agent nicht erreichbar');
+      if (!veraltet()) setError(err.response?.data?.error || 'Agent nicht erreichbar');
     }
-    setLoading(false);
-    setRefreshing(false);
+    if (!veraltet()) {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, [id]);
 
   const killProcess = async (pid, signal = 'SIGTERM') => {
@@ -1066,17 +1092,7 @@ export default function AgentDetail() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-panel-border/40 font-mono">
-                  {processes
-                    .filter(p => {
-                      if (!processFilter.trim()) return true;
-                      const q = processFilter.toLowerCase();
-                      return (
-                        String(p.pid).includes(q) ||
-                        String(p.user).toLowerCase().includes(q) ||
-                        String(p.command).toLowerCase().includes(q)
-                      );
-                    })
-                    .sort((a, b) => processSort === 'cpu' ? (b.cpu - a.cpu) : (b.mem - a.mem))
+                  {gefilterteProzesse
                     .map(p => (
                       <tr key={p.pid} className="hover:bg-panel-surface/60 transition-colors">
                         <td className="py-2 px-2 text-panel-text">{p.pid}</td>
