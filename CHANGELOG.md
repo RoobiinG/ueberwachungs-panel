@@ -15,6 +15,16 @@ angewandt. Die Zählung beginnt beim ersten Release mit `1.0.0.0` und läuft von
 Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahinter auf `0` zurückgesetzt.
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
+## [7.4.1.0] - 2026-09-23 (Build 382) — *Patch Pilot*
+
+### Verbesserungen & Anpassungen
+- **Diagnose-Abfragesperre (Cooldown) ausgebaut:** Die künstliche 15-Sekunden-Wartezeit (`COOLDOWN_MS`) am Diagnose-Endpunkt (`/api/diagnose`) wurde vollständig entfernt. Das Umschalten der Log-Option oder das erneute Klicken auf „Neu erstellen“ wird nun sofort ohne blockierende Fehlermeldung („Bitte 10s warten, bevor ein neuer Bericht erstellt wird“) ausgeführt.
+
+### System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen:** Keine erforderlich.
+- **Agent-Kompatibilität:** Vollständig abwärtskompatibel.
+- **Neustart-/Session-Verhalten:** Keine Unterbrechung bestehender Sessions.
+
 ## [7.4.0.0] - 2026-09-23 (Build 381) — *Patch Pilot*
 
 ### Features & Verbesserungen
