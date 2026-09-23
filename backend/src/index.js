@@ -125,9 +125,10 @@ app.use('/api/dockhand',    auth, require('./routes/dockhand'));
 app.use('/api/patchmon',    auth, require('./routes/patchmon'));
 app.use('/api/pelican',     auth, require('./routes/pelican'));
 app.use('/api/audit',       auth, require('./routes/audit'));
-app.use('/api/diagnose',    auth, require('./routes/diagnose'));
-// Öffentlicher Share-Endpunkt (kein Login nötig) — muss VOR auth stehen
+// Öffentliche Share-Endpunkte (kein Login nötig) — müssen VOR auth stehen
 app.get('/api/logs/share/:token', require('./routes/panelLogsPublic'));
+app.get('/api/diagnose/share/:token', require('./routes/diagnosePublic'));
+app.use('/api/diagnose',    auth, require('./routes/diagnose'));
 app.use('/api/logs',        auth, require('./routes/panelLogs'));
 app.use('/api/version',          require('./routes/version'));
 app.use('/api/update',      auth, require('./routes/update'));

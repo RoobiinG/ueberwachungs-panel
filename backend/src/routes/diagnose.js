@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const crypto = require('crypto');
 const db = require('../db');
 const diagnostics = require('../utils/diagnostics');
 const { requirePermission } = require('../middleware/requirePermission');
@@ -31,6 +32,29 @@ router.get('/', requirePermission('settings.manage'), async (req, res) => {
     });
     auditLog(req, 'diagnose.generate', 'system', 'diagnose', { smtpTest });
     res.json({ bericht, text: diagnostics.alsText(bericht) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/diagnose/share — Erstellt einen 7 Tage gültigen Freigabelink
+router.post('/share', requirePermission('settings.manage'), (req, res) => {
+  const { bericht } = req.body;
+  if (!bericht || typeof bericht !== 'object') {
+    return res.status(400).json({ error: 'Bericht-Objekt erforderlich' });
+  }
+
+  const token = crypto.randomBytes(24).toString('hex');
+  const expiresAt = new Date(Date.now() + 7 * 86_400_000).toISOString().replace('T', ' ').slice(0, 19);
+
+  try {
+    db.prepare(`
+      INSERT INTO diagnose_shares (token, data, expires_at)
+      VALUES (?, ?, ?)
+    `).run(token, JSON.stringify(bericht), expiresAt);
+
+    auditLog(req, 'diagnose.share.create', 'system', token, { expiresAt });
+    res.json({ token, expiresAt });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

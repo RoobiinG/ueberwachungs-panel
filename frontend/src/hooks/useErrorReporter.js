@@ -72,14 +72,19 @@ export function useErrorReporter() {
       response => response,
       error => {
         const status = error.response?.status;
-        // Auth-Flows (401/403) und fehlende Ressourcen (404) sind erwartet → ignorieren
-        if (status !== 401 && status !== 403 && status !== 404) {
-          const method  = (error.config?.method || 'GET').toUpperCase();
-          const url     = error.config?.url || '';
-          const errMsg  = error.response?.data?.error
-                       ?? error.response?.data?.message
-                       ?? error.message;
+        const method  = (error.config?.method || 'GET').toUpperCase();
+        const url     = error.config?.url || '';
+        const errMsg  = error.response?.data?.error
+                     ?? error.response?.data?.message
+                     ?? error.message;
 
+        // Upstream-Agent-Verbindungsfehler (502/504) sind normale Monitoring-Zustände (z. B. Server offline/Neustart),
+        // keine Software-Fehler des Panels.
+        const isUpstreamAgentError = (status === 502 || status === 504) && url.includes('/api/agents/');
+        const isCanceled = error.code === 'ERR_CANCELED';
+
+        // Auth-Flows (401/403) und fehlende Ressourcen (404) sind erwartet → ignorieren
+        if (status !== 401 && status !== 403 && status !== 404 && !isUpstreamAgentError && !isCanceled) {
           // Absichtlich fehlende Konfiguration (z. B. ungenutzte Module) nicht global als "Panel-Fehler" loggen
           const isConfigError = /nicht konfiguriert/i.test(errMsg);
           

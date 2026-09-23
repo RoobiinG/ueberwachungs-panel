@@ -233,9 +233,22 @@ async function smtpSummary(opt) {
   return info;
 }
 
+function sanitizeLogMessage(msg) {
+  if (!msg) return '';
+  let s = String(msg);
+  // E-Mail-Adressen durch <adresse> ersetzen
+  s = s.replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, '<adresse>');
+  // Bearer-Tokens, API-Keys in Text maskieren
+  s = s.replace(/(bearer\s+|token[=:]\s*|api[_-]?key[=:]\s*)[a-zA-Z0-9_\-\.]{12,}/gi, '$1<token>');
+  // Passwörter und Secrets maskieren
+  s = s.replace(/(password|secret|pass)[=:]\s*[^\s&]+/gi, '$1=<geheimnis>');
+  return s;
+}
+
 function panelLogsRecent(anzahl) {
-  return db.prepare('SELECT id, level, source, message, created_at FROM panel_logs ORDER BY id DESC LIMIT ?')
+  const rows = db.prepare('SELECT id, level, source, message, created_at FROM panel_logs ORDER BY id DESC LIMIT ?')
     .all(anzahl);
+  return rows.map(r => ({ ...r, message: sanitizeLogMessage(r.message) }));
 }
 
 function configSummary() {

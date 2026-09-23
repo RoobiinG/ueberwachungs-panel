@@ -37,6 +37,7 @@ const AuditLog      = lazy(() => import('./pages/AuditLog'));
 const Monitoring    = lazy(() => import('./pages/Monitoring'));
 const PanelLogs     = lazy(() => import('./pages/PanelLogs'));
 const PanelLogsShare = lazy(() => import('./pages/PanelLogsShare'));
+const DiagnoseShare  = lazy(() => import('./pages/DiagnoseShare'));
 const Diagnose       = lazy(() => import('./pages/Diagnose'));
 
 function PageLoader() {
@@ -63,12 +64,13 @@ const AppRoutes = () => {
   // Globaler Frontend-Fehler-Reporter (aktiviert sich nur wenn eingeloggt)
   useErrorReporter();
 
-  // Öffentliche Share-Seite — kein Login nötig
+  // Öffentliche Share-Seiten — kein Login nötig
   if (location.pathname.startsWith('/s/')) {
     return (
       <Suspense fallback={<PageLoader />}>
         <Routes>
-          <Route path="/s/:token" element={<PanelLogsShare />} />
+          <Route path="/s/diagnose/:token" element={<DiagnoseShare />} />
+          <Route path="/s/:token"          element={<PanelLogsShare />} />
         </Routes>
       </Suspense>
     );

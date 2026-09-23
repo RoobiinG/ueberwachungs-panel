@@ -15,6 +15,28 @@ angewandt. Die Zählung beginnt beim ersten Release mit `1.0.0.0` und läuft von
 Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahinter auf `0` zurückgesetzt.
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
+## [7.4.0.0] - 2026-09-23 (Build 381) — *Patch Pilot*
+
+### Features & Verbesserungen
+- **Diagnose-Bericht nach Mail-Panel-Vorbild:** Die Diagnose-Seite wurde optisch und funktional an das Schwesterprojekt „Mail-Panel“ angepasst:
+  - Neuer Kopfbereich mit Stethoskop-Icon, kompakter Einleitung und blauem primärem „Neu erstellen“-Button mit Lade-Spinner.
+  - Dunkelblaue Sicherheits-Infobox zum Ausschluss sensibler Geheimnisse (Passwörter, API-Keys, Tokens).
+  - Optionale Checkbox *„Ausführliche Logs mitschicken (100 statt 50 Zeilen)“*.
+  - Toolbar mit *„Als Text kopieren“*, *„Verschlüsselten Link erstellen“* sowie Größenangabe (in kB) und Erstellungszeitstempel.
+  - Accordion-Karten im aufgeräumten Design ohne Badge-Farbcodierung: links Chevron-Pfeil, fetter Haupttitel und dezenter Untertitel, standardmäßig sind *Panel* und *Maschine* ausgeklappt.
+  - Automatisches Laden des Berichts direkt beim Öffnen der Seite.
+- **Verschlüsselte Diagnose-Freigabelinks (Public Share):** Neue Funktion *„Verschlüsselten Link erstellen“* generiert einen 7 Tage gültigen Freigabetoken (`/s/diagnose/:token`), der ohne Login aufgerufen werden kann (`diagnose_shares`-Tabelle mit automatischem Ablauf).
+- **Log-Anonymisierung im Diagnose-Bericht:** In `backend/src/utils/diagnostics.js` werden E-Mail-Adressen in den Logzeilen durch `<adresse>` ersetzt und Tokens/Passwörter automatisch maskiert.
+
+### Bugfixes
+- **NGINX Proxy Manager URL/Port-Bug (HTTP 400):** Endete `npm_host` mit einem Trailing-Slash (z. B. `http://45.81.232.194/`), generierte der String-Zusammenbau `http://host/:81/...`, was vom NGINX Proxy Manager mit HTTP 400 beantwortet wurde und das Container-Log im Minutentakt mit Fehlern flutete. Host und Port werden nun robust normalisiert (`getNpmBaseUrl()`).
+- **Fehlalarm-Flutung in `panel_logs` behoben:** `frontend/src/hooks/useErrorReporter.js` protokollierte HTTP 502/504-Fehler von Remote-Agenten (`/api/agents/`) fälschlicherweise als interne Software-Fehler des Panels. Upstream-Ausfälle oder Reboots überwachter Zielserver werden nun von der automatischen Frontend-Fehlermeldung ausgenommen.
+
+### System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen:** Neue Tabelle `diagnose_shares` wird beim Start automatisch angelegt.
+- **Agent-Kompatibilität:** Vollständig abwärtskompatibel, kein Agent-Update erforderlich.
+- **Neustart-/Session-Verhalten:** Keine Unterbrechung bestehender Sessions.
+
 ## [7.3.0.1] - 2026-09-21 (Build 380) — *Patch Pilot*
 
 ### Bugfixes & Agent-Update

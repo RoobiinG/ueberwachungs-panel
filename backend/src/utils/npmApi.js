@@ -9,20 +9,30 @@ const getSetting = (key) => {
   return row ? row.value : null;
 };
 
+function getNpmBaseUrl() {
+  const host = (getSetting('npm_host') || '').trim();
+  if (!host) return null;
+  const port = parseInt(getSetting('npm_port')) || 81;
+  const noSlash = host.replace(/\/+$/, '');
+  if (/:\d+$/.test(noSlash)) {
+    return noSlash;
+  }
+  return `${noSlash}:${port}`;
+}
+
 /**
  * Aktualisiert das Token, falls es abgelaufen sein sollte.
  * (NPM Tokens laufen standardmäßig ab, wir müssen uns dann neu einloggen)
  */
 async function refreshTokenIfNeeded() {
-  const host = getSetting('npm_host');
-  const port = getSetting('npm_port') || 81;
+  const baseUrl = getNpmBaseUrl();
   const email = getSetting('npm_email');
   const password = getSetting('npm_password');
   
-  if (!host || !email || !password) return null;
+  if (!baseUrl || !email || !password) return null;
 
   try {
-    const url = `${host}:${port}/api/tokens`;
+    const url = `${baseUrl}/api/tokens`;
     const { data } = await axios.post(url, {
       identity: email,
       secret: password
@@ -45,17 +55,16 @@ async function refreshTokenIfNeeded() {
  */
 async function fetchCertificates(isRetry = false) {
   let token = getSetting('npm_token');
-  const host = getSetting('npm_host');
-  const port = getSetting('npm_port') || 81;
+  const baseUrl = getNpmBaseUrl();
 
-  if (!host || (!token && !isRetry)) {
+  if (!baseUrl || (!token && !isRetry)) {
     // Falls noch kein Token da ist, aber Host existiert, versuchen wir einzuloggen
-    if (host && !token) token = await refreshTokenIfNeeded();
+    if (baseUrl && !token) token = await refreshTokenIfNeeded();
     if (!token) return [];
   }
 
   try {
-    const url = `${host}:${port}/api/nginx/certificates`;
+    const url = `${baseUrl}/api/nginx/certificates`;
     const { data } = await axios.get(url, {
       headers: { 'Authorization': `Bearer ${token}` },
       timeout: 10000

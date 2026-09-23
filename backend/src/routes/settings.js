@@ -66,7 +66,10 @@ router.post('/npm/login', requirePermission('settings.manage'), async (req, res)
   }
 
   try {
-    const baseUrl = `${host}:${port || 81}/api/tokens`;
+    const cleanHost = host.trim().replace(/\/+$/, '');
+    const cleanPort = parseInt(port) || 81;
+    const baseHostUrl = /:\d+$/.test(cleanHost) ? cleanHost : `${cleanHost}:${cleanPort}`;
+    const baseUrl = `${baseHostUrl}/api/tokens`;
     const url = totp_code ? `${baseUrl}/2fa` : baseUrl;
     try { validatePublicUrl(url); } catch (e) { return res.status(400).json({ error: e.message }); }
     const payload = totp_code 
@@ -83,9 +86,9 @@ router.post('/npm/login', requirePermission('settings.manage'), async (req, res)
     }
 
     if (data && data.token) {
-      set('npm_host', host);
-      set('npm_port', port || 81);
-      set('npm_email', email);
+      set('npm_host', cleanHost);
+      set('npm_port', cleanPort);
+      set('npm_email', email.trim());
       if (password) set('npm_password', password);
       set('npm_token', data.token);
       

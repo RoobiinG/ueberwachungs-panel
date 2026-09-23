@@ -365,6 +365,17 @@ db.exec(`
     access_count INTEGER NOT NULL DEFAULT 0
   );
 
+  CREATE TABLE IF NOT EXISTS diagnose_shares (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    token        TEXT NOT NULL UNIQUE,
+    data         TEXT NOT NULL,
+    created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+    expires_at   DATETIME,
+    accessed_at  DATETIME,
+    access_count INTEGER NOT NULL DEFAULT 0
+  );
+  CREATE INDEX IF NOT EXISTS idx_diagnose_shares_token ON diagnose_shares(token);
+
   CREATE TABLE IF NOT EXISTS syslogs (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     agent_id   INTEGER NOT NULL,
