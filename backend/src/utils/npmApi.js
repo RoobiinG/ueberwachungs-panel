@@ -71,14 +71,23 @@ async function fetchCertificates(isRetry = false) {
     });
     return data;
   } catch (err) {
-    if (err.response?.status === 401 && !isRetry) {
-      // Token vermutlich abgelaufen, wir versuchen ein Refresh
+    const errMsg = err.response?.data?.error?.message || err.response?.data?.message || err.message || '';
+    const isExpired = err.response?.status === 401 ||
+                      err.response?.status === 400 && /token.*expired|jwt expired/i.test(errMsg);
+
+    if (isExpired && !isRetry) {
+      // Token abgelaufen, wir versuchen ein Refresh
       const newToken = await refreshTokenIfNeeded();
       if (newToken) {
         return fetchCertificates(true);
       }
+      // Wenn kein Refresh möglich ist (z. B. kein Passwort hinterlegt), abgelaufenes Token löschen,
+      // um Dauer-400 im Hintergrund-Log zu verhindern.
+      db.prepare("DELETE FROM settings WHERE key = 'npm_token'").run();
+      console.warn('[NPM] Token ist abgelaufen und konnte nicht automatisch erneuert werden. Bitte in den Einstellungen neu anmelden.');
+      return [];
     }
-    console.error('[NPM] Fehler beim Abrufen der Zertifikate:', err.message);
+    console.error('[NPM] Fehler beim Abrufen der Zertifikate:', errMsg);
     throw err;
   }
 }

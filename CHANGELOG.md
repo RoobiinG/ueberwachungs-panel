@@ -29,7 +29,7 @@ Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweis
 - **Log-Anonymisierung im Diagnose-Bericht:** In `backend/src/utils/diagnostics.js` werden E-Mail-Adressen in den Logzeilen durch `<adresse>` ersetzt und Tokens/Passwörter automatisch maskiert.
 
 ### Bugfixes
-- **NGINX Proxy Manager URL/Port-Bug (HTTP 400):** Endete `npm_host` mit einem Trailing-Slash (z. B. `http://45.81.232.194/`), generierte der String-Zusammenbau `http://host/:81/...`, was vom NGINX Proxy Manager mit HTTP 400 beantwortet wurde und das Container-Log im Minutentakt mit Fehlern flutete. Host und Port werden nun robust normalisiert (`getNpmBaseUrl()`).
+- **NGINX Proxy Manager URL/Port-Bug & Token-Ablauf (HTTP 400):** Endete `npm_host` mit einem Trailing-Slash (z. B. `http://45.81.232.194/`), generierte der String-Zusammenbau `http://host/:81/...`, was vom NGINX Proxy Manager mit HTTP 400 beantwortet wurde. Zudem antwortet NPM bei abgelaufenem JWT-Token mit HTTP 400 (`'Token has expired'`) statt 401. `npmApi.js` normalisiert nun URLs (`getNpmBaseUrl()`), fängt abgelaufene Tokens auch bei Status 400 ab und entfernt ungültige Tokens automatisch, falls mangels Passwort kein Auto-Refresh möglich ist, um Fehlerschleifen im Log zu verhindern.
 - **Fehlalarm-Flutung in `panel_logs` behoben:** `frontend/src/hooks/useErrorReporter.js` protokollierte HTTP 502/504-Fehler von Remote-Agenten (`/api/agents/`) fälschlicherweise als interne Software-Fehler des Panels. Upstream-Ausfälle oder Reboots überwachter Zielserver werden nun von der automatischen Frontend-Fehlermeldung ausgenommen.
 
 ### System-Auswirkungen & Nachwirken (Impact Analysis)
