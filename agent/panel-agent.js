@@ -472,6 +472,41 @@ async function getFirewallStatus() {
   return { tool, active, rawOutput, status: rawOutput };
 }
 
+// Eine Zeile aus `ufw status numbered` zerlegen. Versteht auch Weiterleitungsregeln
+// (ALLOW FWD), wie ufw-docker sie für veröffentlichte Container-Ports anlegt: dort steht
+// im Ziel-Feld zusätzlich die Container-IP ("172.20.0.2 10080/tcp"), und die Richtung ist
+// FWD statt IN. Die alte Fassung las daraus "172" als Port und hängte den Kommentartext
+// an die Quelle. Rückgabe zusätzlich mit `to` (Ziel) und `direction` (in|out|fwd) —
+// bestehende Felder bleiben unverändert.
+function _parseUfwRuleLine(line) {
+  const m = line.match(/^\[\s*(\d+)\]\s+(.*)$/);
+  if (!m) return null;
+  const id = m[1];
+  let rest = m[2];
+  // Kommentar (" # …") abtrennen, sonst landet er in der Quelle.
+  const hash = rest.indexOf('#');
+  if (hash >= 0) rest = rest.slice(0, hash);
+  const cols = rest.trim().split(/\s{2,}/);
+  if (cols.length < 2) return { id, port: '?', proto: 'any', action: '?', from: 'any', to: null, direction: 'in', raw: line.trim() };
+  // "(v6)"-Zusätze entfernen; die Adressfamilie fasst das Panel ohnehin zusammen.
+  const stripV6 = (s) => s.replace(/\s*\(v6\)\s*/i, ' ').trim();
+  const toCol   = stripV6(cols[0]);
+  const actCol  = (cols[1] || '').toUpperCase();
+  const fromCol = stripV6(cols[2] || '');
+  const action    = actCol.includes('ALLOW') ? 'allow' : 'deny';
+  const direction = actCol.includes('FWD') ? 'fwd' : actCol.includes('OUT') ? 'out' : 'in';
+  // Ziel-Feld: bei Weiterleitung "<Ziel-IP> <port>/<proto>", sonst nur "<port>/<proto>".
+  const toks    = toCol.split(/\s+/).filter(Boolean);
+  const portTok = toks[toks.length - 1] || '';
+  const dest    = toks.length > 1 ? toks.slice(0, -1).join(' ') : null;
+  let port = portTok, proto = 'any';
+  const pm = portTok.match(/^(\d[\d:]*)(?:\/(tcp|udp))?$/i);
+  if (pm) { port = pm[1]; proto = pm[2] ? pm[2].toLowerCase() : 'any'; }
+  else if (/^anywhere$/i.test(portTok)) { port = 'any'; }
+  const from = (/^anywhere$/i.test(fromCol) || fromCol === '') ? 'any' : fromCol;
+  return { id, port, proto, action, from, to: dest, direction, raw: line.trim() };
+}
+
 // Regeln abrufen (einheitliches Format)
 async function getFirewallRules() {
   const { tool } = await detectAgentFirewall();
@@ -479,12 +514,7 @@ async function getFirewallRules() {
   try {
     if (tool === 'ufw') {
       const { stdout } = await execAsync('ufw status numbered', { timeout: 5000 });
-      return stdout.split('\n').filter(l => /^\[\s*\d+\]/.test(l)).map(line => {
-        const m = line.match(/^\[\s*(\d+)\]\s+(.+?)\s{2,}(.+?)\s{2,}(.+)$/);
-        if (!m) return { id: null, port: '?', proto: 'any', action: '?', from: 'any', raw: line.trim() };
-        const to = m[2].trim(); const pm = to.match(/^(\d[\d:]*)(?:\/(tcp|udp))?/i);
-        return { id: m[1].trim(), port: pm ? pm[1] : to, proto: pm?.[2]?.toLowerCase() ?? 'any', action: m[3].trim().toLowerCase().includes('allow') ? 'allow' : 'deny', from: m[4].trim() === 'Anywhere' ? 'any' : m[4].trim(), raw: line.trim() };
-      });
+      return stdout.split('\n').filter(l => /^\[\s*\d+\]/.test(l)).map(_parseUfwRuleLine).filter(Boolean);
     } else if (tool === 'firewalld') {
       const { stdout: p } = await execAsync('firewall-cmd --list-ports 2>/dev/null', { timeout: 5000 });
       const { stdout: s } = await execAsync('firewall-cmd --list-services 2>/dev/null', { timeout: 5000 });
@@ -744,7 +774,7 @@ async function _ensureNftChain() {
 // Die Quelle wurde früher nur bei UFW-allow und iptables-allow beachtet und sonst
 // stillschweigend verworfen — die Regel galt dann für alle Absender. Sämtliche Befehle
 // laufen jetzt über execFile mit Argument-Array statt über die Shell.
-async function firewallAllow(port, proto, from, action) {
+async function firewallAllow(port, proto, from, action, route = false) {
   const { tool } = await detectAgentFirewall();
   const p   = _validPort(port);
   const pr  = _validProto(proto);
@@ -752,9 +782,17 @@ async function firewallAllow(port, proto, from, action) {
   const opt = { timeout: 10000 };
 
   if (tool === 'ufw') {
-    const args = fr
-      ? [action, 'from', fr, 'to', 'any', 'port', p, ...(pr ? ['proto', pr] : [])]
-      : [action, pr ? `${p}/${pr}` : p];
+    let args;
+    if (route) {
+      // Weiterleitungsregel (FWD) — für veröffentlichte Docker-Container-Ports, analog zu
+      // `ufw route allow`. Ohne diesen Zweig würde das Bearbeiten einer Container-Regel sie
+      // in eine wirkungslose INPUT-Regel verwandeln (Docker umgeht die INPUT-Kette).
+      args = ['route', action, ...(pr ? ['proto', pr] : []), ...(fr ? ['from', fr] : []), 'to', 'any', 'port', p];
+    } else {
+      args = fr
+        ? [action, 'from', fr, 'to', 'any', 'port', p, ...(pr ? ['proto', pr] : [])]
+        : [action, pr ? `${p}/${pr}` : p];
+    }
     await execFileAsync('ufw', args, opt);
 
   } else if (tool === 'firewalld') {
@@ -1697,21 +1735,21 @@ async function handler(req, res) {
 
     } else if ((url === '/firewall/allow' || url === '/firewall/deny') && req.method === 'POST') {
       const raw = await new Promise((resolve) => { const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8'))); });
-      const { port, proto, from } = JSON.parse(raw || '{}');
+      const { port, proto, from, route } = JSON.parse(raw || '{}');
       const action = url.endsWith('/allow') ? 'allow' : 'deny';
-      await firewallAllow(port, proto, from, action);
+      await firewallAllow(port, proto, from, action, !!route);
       respond(res, 200, { success: true });
 
     // Bearbeiten = löschen + neu anlegen, wie es die lokale Panel-Route vormacht.
     // Fehlte hier bislang ganz, weshalb „Bearbeiten" bei Remote-Servern ins Leere lief.
     } else if (url.startsWith('/firewall/rules/') && req.method === 'PUT') {
       const raw = await new Promise((resolve) => { const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8'))); });
-      const { port, proto, from, action } = JSON.parse(raw || '{}');
+      const { port, proto, from, action, route } = JSON.parse(raw || '{}');
       if (!port || !action) return respond(res, 400, { error: 'Port und Aktion erforderlich' });
       if (action !== 'allow' && action !== 'deny') return respond(res, 400, { error: 'Ungültige Aktion' });
       const id = decodeURIComponent(url.split('/').slice(3).join('/'));
       await firewallDeleteRule(id);
-      await firewallAllow(port, proto, from, action);
+      await firewallAllow(port, proto, from, action, !!route);
       respond(res, 200, { success: true });
 
     } else if (url.startsWith('/firewall/rules/') && req.method === 'DELETE') {

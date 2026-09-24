@@ -36,7 +36,7 @@ const mergeFamilies = (rules) => {
   const byKey = new Map();
   for (const r of rules) {
     const isV6 = /\(v6\)/i.test(r.raw || '') || /\(v6\)/i.test(String(r.from || ''));
-    const key  = `${r.port}|${r.proto}|${r.action}|${normFrom(r.from)}`;
+    const key  = `${r.port}|${r.proto}|${r.action}|${normFrom(r.from)}|${r.direction || 'in'}|${r.to || ''}`;
     const seen = byKey.get(key);
     if (seen) {
       seen.ids.push(r.id);
@@ -115,7 +115,7 @@ export default function Firewall() {
   // Regel-Modal
   const [showRuleModal, setShowRuleModal] = useState(false);
   const [editingRule,   setEditingRule]   = useState(null);
-  const [form, setForm] = useState({ port: '', proto: 'tcp', from: '', action: 'allow' });
+  const [form, setForm] = useState({ port: '', proto: 'tcp', from: '', action: 'allow', route: false });
 
   const apiBase = selectedServer ? `/api/agents/${selectedServer}` : '/api';
 
@@ -213,7 +213,7 @@ export default function Firewall() {
   // ── Modal öffnen ───────────────────────────────────────────────────────────
   const openNew = () => {
     setEditingRule(null);
-    setForm({ port: '', proto: 'tcp', from: '', action: 'allow' });
+    setForm({ port: '', proto: 'tcp', from: '', action: 'allow', route: false });
     setShowRuleModal(true);
   };
 
@@ -224,6 +224,9 @@ export default function Firewall() {
       proto:  r.proto && r.proto !== 'any' ? r.proto : 'tcp',
       from:   r.from !== 'any' ? (r.from || '') : '',
       action: (r.action === 'allow' || r.action?.toUpperCase?.().includes('ALLOW')) ? 'allow' : 'deny',
+      // Weiterleitungsregeln (Docker-Container-Ports) müssen beim Bearbeiten FWD bleiben,
+      // sonst werden sie zu wirkungslosen INPUT-Regeln.
+      route:  r.direction === 'fwd',
     });
     setShowRuleModal(true);
   };
@@ -235,7 +238,7 @@ export default function Firewall() {
   // ── Regel speichern ────────────────────────────────────────────────────────
   const saveRule = async () => {
     if (form.action === 'deny' && !confirmLockout(form.port, 'Diese Regel würde ihn sperren.')) return;
-    const body = { port: form.port, proto: form.proto, from: form.from || undefined, action: form.action };
+    const body = { port: form.port, proto: form.proto, from: form.from || undefined, action: form.action, route: form.route || undefined };
     try {
       if (editingRule) {
         const ids = [...editingRule.ids].sort(byNumberDesc);
@@ -578,6 +581,14 @@ export default function Firewall() {
                           IPv4+IPv6
                         </span>
                       )}
+                      {/* Weiterleitungsregel (ufw route / ufw-docker) — z. B. veröffentlichte
+                          Docker-Container-Ports, die die INPUT-Kette umgehen. */}
+                      {r.direction === 'fwd' && (
+                        <span className="text-[9px] px-1 py-0.5 rounded bg-panel-accent/10 border border-panel-accent/30 text-panel-accent font-sans flex-shrink-0"
+                          title={r.to ? `Weiterleitung an ${r.to} (Docker-Container-Port)` : 'Weiterleitungsregel (Docker-Container-Port)'}>
+                          FWD
+                        </span>
+                      )}
                     </span>
                   </span>
 
@@ -714,6 +725,11 @@ export default function Firewall() {
             <input value={form.from} onChange={e => setF('from', e.target.value)}
               placeholder="leer = alle · z.B. 192.168.1.0/24" className={inputCls} />
           </div>
+          {form.route && (
+            <p className="text-[11px] text-panel-accent bg-panel-accent/10 border border-panel-accent/20 rounded px-3 py-2">
+              Weiterleitungsregel für einen Docker-Container-Port — wird als <code className="font-mono">ufw route</code> gespeichert, damit sie wirksam bleibt.
+            </p>
+          )}
           {detectedTool?.tool && detectedTool.tool !== 'none' && (
             <p className="text-xs text-panel-muted bg-panel-surface rounded px-3 py-2">
               🛡 Wird auf <strong className="text-panel-text">{TOOL_LABELS[detectedTool.tool]?.label}</strong> angewendet

@@ -41,6 +41,38 @@ const validFrom = (f) => {
 
 const isIPv6 = (addr) => addr.includes(':');
 
+// Eine Zeile aus `ufw status numbered` zerlegen. Versteht auch Weiterleitungsregeln
+// (ALLOW FWD), wie ufw-docker sie für veröffentlichte Container-Ports anlegt: dort steht
+// im Ziel-Feld zusätzlich die Container-IP ("172.20.0.2 10080/tcp") und die Richtung ist
+// FWD statt IN. Die alte Fassung las daraus "172" als Port und hängte den Kommentartext
+// an die Quelle. `to` (Ziel) und `direction` (in|out|fwd) kommen dazu; die bisherigen
+// Felder bleiben unverändert.
+function parseUfwRuleLine(line) {
+  const m = line.match(/^\[\s*(\d+)\]\s+(.*)$/);
+  if (!m) return { id: null, port: '?', proto: 'any', action: '?', from: 'any', to: null, direction: 'in', raw: line.trim() };
+  const id = m[1].trim();
+  let rest = m[2];
+  const hash = rest.indexOf('#');          // Kommentar abtrennen
+  if (hash >= 0) rest = rest.slice(0, hash);
+  const cols = rest.trim().split(/\s{2,}/);
+  if (cols.length < 2) return { id, port: '?', proto: 'any', action: '?', from: 'any', to: null, direction: 'in', raw: line.trim() };
+  const stripV6 = (s) => s.replace(/\s*\(v6\)\s*/i, ' ').trim();
+  const toCol   = stripV6(cols[0]);
+  const actCol  = (cols[1] || '').toUpperCase();
+  const fromCol = stripV6(cols[2] || '');
+  const action    = actCol.includes('ALLOW') ? 'allow' : 'deny';
+  const direction = actCol.includes('FWD') ? 'fwd' : actCol.includes('OUT') ? 'out' : 'in';
+  const toks    = toCol.split(/\s+/).filter(Boolean);
+  const portTok = toks[toks.length - 1] || '';
+  const dest    = toks.length > 1 ? toks.slice(0, -1).join(' ') : null;
+  let port = portTok, proto = 'any';
+  const pm = portTok.match(/^(\d[\d:]*)(?:\/(tcp|udp))?$/i);
+  if (pm) { port = pm[1]; proto = pm[2] ? pm[2].toLowerCase() : 'any'; }
+  else if (/^anywhere$/i.test(portTok)) { port = 'any'; }
+  const from = (/^anywhere$/i.test(fromCol) || fromCol === '') ? 'any' : fromCol;
+  return { id, port, proto, action, from, to: dest, direction, raw: line.trim() };
+}
+
 // ─── Erkennung ────────────────────────────────────────────────────────────────
 /**
  * @param {Function} exec  - async (cmd) => { stdout, stderr }
@@ -195,42 +227,30 @@ class UfwAdapter {
     const { stdout } = await this.exec('ufw status numbered');
     return stdout.split('\n')
       .filter(l => l.match(/^\[\s*\d+\]/))
-      .map(line => {
-        const m = line.match(/^\[\s*(\d+)\]\s+(.+?)\s{2,}(.+?)\s{2,}(.+)$/);
-        if (!m) return { id: null, port: '?', proto: 'any', action: '?', from: 'any', raw: line.trim() };
-        const to = m[2].trim();
-        const portMatch = to.match(/^(\d[\d:]*)(?:\/(tcp|udp))?/i);
-        return {
-          id:     m[1].trim(),
-          port:   portMatch ? portMatch[1] : to,
-          proto:  portMatch?.[2]?.toLowerCase() ?? 'any',
-          action: m[3].trim().toLowerCase().startsWith('allow') ? 'allow' : 'deny',
-          from:   m[4].trim() === 'Anywhere' ? 'any' : m[4].trim(),
-          raw:    line.trim(),
-        };
-      });
+      .map(parseUfwRuleLine);
   }
 
-  async allow(port, proto, from) {
-    const p = validPort(port); if (!p) throw new Error('Ungültiger Port');
-    const pr = validProto(proto);
-    const fr = validFrom(from);
-    const cmd = fr
-      ? `ufw allow from ${fr} to any port ${p}${pr ? ' proto ' + pr : ''}`
-      : `ufw allow ${p}${pr ? '/' + pr : ''}`;
-    const { stdout } = await this.exec(cmd);
-    return stdout;
-  }
+  // `route` legt eine Weiterleitungsregel an (`ufw route allow/deny`) statt einer
+  // INPUT-Regel — nötig für veröffentlichte Docker-Container-Ports, die die INPUT-Kette
+  // umgehen. Ohne das würde ein Bearbeiten solcher Regeln sie wirkungslos machen.
+  async allow(port, proto, from, route = false) { return this._rule(port, proto, from, 'allow', route); }
 
   // `from` wurde hier früher gar nicht entgegengenommen: Wer „Port 80 für 1.2.3.4
   // sperren" wollte, sperrte ihn in Wahrheit für alle.
-  async deny(port, proto, from) {
+  async deny(port, proto, from, route = false)  { return this._rule(port, proto, from, 'deny', route); }
+
+  async _rule(port, proto, from, action, route) {
     const p = validPort(port); if (!p) throw new Error('Ungültiger Port');
     const pr = validProto(proto);
     const fr = validFrom(from);
-    const cmd = fr
-      ? `ufw deny from ${fr} to any port ${p}${pr ? ' proto ' + pr : ''}`
-      : `ufw deny ${p}${pr ? '/' + pr : ''}`;
+    let cmd;
+    if (route) {
+      cmd = `ufw route ${action}${pr ? ' proto ' + pr : ''}${fr ? ' from ' + fr : ''} to any port ${p}`;
+    } else {
+      cmd = fr
+        ? `ufw ${action} from ${fr} to any port ${p}${pr ? ' proto ' + pr : ''}`
+        : `ufw ${action} ${p}${pr ? '/' + pr : ''}`;
+    }
     const { stdout } = await this.exec(cmd);
     return stdout;
   }
