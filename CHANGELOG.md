@@ -16,6 +16,21 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [7.5.1.0] - 2026-09-24 (Build 384) — *Host Shield*
+
+### Verbesserungen & Anpassungen
+- **DeinServerHost (DSH) — Ausgelaufene & gekündigte Server ausblenden:**
+  - Alte, gekündigte oder beendete Server (`Cancelled`, `Terminated`, `Fraud` oder lange überfällige Verträge) werden nun standardmäßig in der Übersicht ausgeblendet, damit nur noch aktive Produkte im Fokus stehen.
+  - Neuer Filter-Umschalter *„Ausgelaufene ausblenden (N)“* in der Kopfzeile mit Speicherung in `localStorage`.
+  - Infobanner oberhalb der Serverliste mit Direktlink *„Alle anzeigen“*, wenn ausgelaufene Server vorhanden sind.
+  - Sind ausgelaufene Server eingeblendet, werden deren Steuerungsbuttons (Start, Stop, Reset, Konsole) deaktiviert und der Status wird mit dezentem grauem Badge dargestellt.
+  - Im Backend werden Live-Status-Abfragen für gekündigte Services übersprungen, was die Ladezeiten der DSH-Seite spürbar verkürzt.
+
+### System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen:** Keine erforderlich.
+- **Agent-Kompatibilität:** Vollständig abwärtskompatibel.
+- **Neustart-/Session-Verhalten:** Keine Unterbrechung bestehender Sessions.
+
 ## [7.5.0.0] - 2026-09-24 (Build 383) — *Host Shield*
 
 ### Features & Neuerungen

@@ -38,6 +38,17 @@ function formatDue(dateStr) {
   return { text: `${fmtDate} (in ${diffDays} Tagen)`, urgent: false, days: diffDays };
 }
 
+// ─── Prüfung auf ausgelaufene / gekündigte Server ────────────────────────────
+function isExpired(srv) {
+  const status = (srv.status || '').toLowerCase();
+  if (['cancelled', 'terminated', 'fraud', 'abgelaufen', 'gekündigt'].includes(status)) return true;
+  if (status !== 'active' && srv.nextduedate) {
+    const due = new Date(srv.nextduedate);
+    if (!isNaN(due.getTime()) && due.getTime() < Date.now()) return true;
+  }
+  return false;
+}
+
 // ─── Status-Farbe & Text ──────────────────────────────────────────────────────
 function getPowerState(srv) {
   const p = srv.powerStatus;
@@ -59,6 +70,7 @@ function getPowerState(srv) {
   if (rawStatus === 'active') return { label: 'Aktiv', color: 'green', running: true };
   if (rawStatus === 'suspended') return { label: 'Gesperrt', color: 'red', running: false };
   if (rawStatus === 'cancelled') return { label: 'Gekündigt', color: 'gray', running: false };
+  if (rawStatus === 'terminated') return { label: 'Beendet', color: 'gray', running: false };
   return { label: srv.status || 'Unbekannt', color: 'orange', running: false };
 }
 
@@ -79,6 +91,10 @@ export default function DSH() {
   const [actSuccess, setActSuccess] = useState('');
   const [busy, setBusy]           = useState({});
   const [copied, setCopied]       = useState({});
+  const [hideExpired, setHideExpired] = useState(() => localStorage.getItem('dsh_hide_expired') !== 'false');
+
+  const expiredCount = services.filter(isExpired).length;
+  const visibleServices = hideExpired ? services.filter(s => !isExpired(s)) : services;
 
   // Ausklappbare Tabs pro Service: 'incidents' | 'rdns' | null
   const [activeTab, setActiveTab] = useState({});
@@ -284,7 +300,22 @@ export default function DSH() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {expiredCount > 0 && (
+            <label className="inline-flex items-center gap-1.5 cursor-pointer text-xs text-panel-muted hover:text-panel-text transition-colors select-none bg-panel-card px-2.5 py-1.5 rounded-lg border border-panel-border">
+              <input
+                type="checkbox"
+                checked={hideExpired}
+                onChange={e => {
+                  const val = e.target.checked;
+                  setHideExpired(val);
+                  localStorage.setItem('dsh_hide_expired', String(val));
+                }}
+                className="accent-panel-accent rounded w-3.5 h-3.5"
+              />
+              <span>Ausgelaufene ausblenden ({expiredCount})</span>
+            </label>
+          )}
           <a
             href="https://deinserverhost.de/clientarea.php"
             target="_blank"
@@ -357,21 +388,56 @@ export default function DSH() {
         </div>
       )}
 
+      {/* ── Hinweis bei ausgeblendeten Servern ── */}
+      {hideExpired && expiredCount > 0 && visibleServices.length > 0 && (
+        <div className="flex items-center justify-between text-xs bg-panel-card/60 border border-panel-border/70 rounded-lg px-3 py-2 text-panel-muted">
+          <span>
+            ℹ️ <strong>{expiredCount}</strong> ausgelaufene(r) bzw. gekündigte(r) Server ausgeblendet.
+          </span>
+          <button
+            onClick={() => {
+              setHideExpired(false);
+              localStorage.setItem('dsh_hide_expired', 'false');
+            }}
+            className="text-panel-accent hover:underline font-medium text-xs ml-2"
+          >
+            Alle anzeigen ({services.length})
+          </button>
+        </div>
+      )}
+
       {/* ── Server-Liste ── */}
       {loading ? (
         <div className="text-center py-12 text-panel-muted text-sm flex flex-col items-center justify-center gap-2">
           <RefreshCw size={24} className="animate-spin text-panel-accent opacity-60" />
           <span>Lade DeinServerHost Services...</span>
         </div>
-      ) : services.length === 0 && !error ? (
-        <div className="bg-panel-surface border border-panel-border rounded-xl p-8 text-center text-panel-muted text-sm">
-          Keine Produkte oder Services im DSH-Konto gefunden.
+      ) : visibleServices.length === 0 && !error ? (
+        <div className="bg-panel-surface border border-panel-border rounded-xl p-8 text-center text-panel-muted text-sm space-y-2">
+          <p>
+            {expiredCount > 0
+              ? `Alle ${expiredCount} gefundenen Server sind ausgelaufen/gekündigt und wurden ausgeblendet.`
+              : 'Keine Produkte oder Services im DSH-Konto gefunden.'}
+          </p>
+          {expiredCount > 0 && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setHideExpired(false);
+                localStorage.setItem('dsh_hide_expired', 'false');
+              }}
+            >
+              Ausgelaufene Server anzeigen ({expiredCount})
+            </Button>
+          )}
         </div>
       ) : (
         <div className="space-y-4">
-          {services.map(s => {
+          {visibleServices.map(s => {
             const pState = getPowerState(s);
             const dueInfo = formatDue(s.nextduedate);
+            const expired = isExpired(s);
             const isBusy = Object.keys(busy).some(k => k.startsWith(`${s.serviceid}_`) && busy[k]);
 
             // Customfields extrahieren (CPU, Cores, Disk, RAM)
@@ -386,7 +452,9 @@ export default function DSH() {
             return (
               <div
                 key={s.serviceid}
-                className="bg-panel-surface border border-panel-border rounded-xl shadow-sm overflow-hidden transition-all hover:border-panel-border/80"
+                className={`bg-panel-surface border rounded-xl shadow-sm overflow-hidden transition-all ${
+                  expired ? 'border-panel-border/50 opacity-75' : 'border-panel-border hover:border-panel-border/80'
+                }`}
               >
                 {/* ── Hauptzeile des Servers ── */}
                 <div className="p-4 sm:p-5">
@@ -399,11 +467,14 @@ export default function DSH() {
                             ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                             : pState.color === 'red'
                               ? 'bg-rose-500/10 text-rose-400 border-rose-500/30'
-                              : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                              : pState.color === 'gray'
+                                ? 'bg-panel-card text-panel-muted border-panel-border'
+                                : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
                         }`}>
                           <span className={`w-1.5 h-1.5 rounded-full ${
                             pState.color === 'green' ? 'bg-emerald-400 animate-pulse' :
-                            pState.color === 'red' ? 'bg-rose-400' : 'bg-amber-400'
+                            pState.color === 'red' ? 'bg-rose-400' :
+                            pState.color === 'gray' ? 'bg-panel-muted' : 'bg-amber-400'
                           }`} />
                           {pState.label}
                         </span>
@@ -500,8 +571,8 @@ export default function DSH() {
                           size="sm"
                           variant="success"
                           onClick={() => act(s, 'start')}
-                          disabled={busy[`${s.serviceid}_start`] || isBusy}
-                          title="Server einschalten"
+                          disabled={expired || busy[`${s.serviceid}_start`] || isBusy}
+                          title={expired ? 'Server ist gekündigt/ausgelaufen' : 'Server einschalten'}
                         >
                           <Play size={12} className="mr-1" />
                           {busy[`${s.serviceid}_start`] ? 'Startet…' : 'Start'}
@@ -514,8 +585,8 @@ export default function DSH() {
                           size="sm"
                           variant="warning"
                           onClick={() => act(s, 'stop')}
-                          disabled={busy[`${s.serviceid}_stop`] || isBusy}
-                          title="Server stoppen / ausschalten"
+                          disabled={expired || busy[`${s.serviceid}_stop`] || isBusy}
+                          title={expired ? 'Server ist gekündigt/ausgelaufen' : 'Server stoppen / ausschalten'}
                         >
                           <PowerOff size={12} className="mr-1" />
                           {busy[`${s.serviceid}_stop`] ? 'Stoppt…' : 'Stop'}
@@ -528,8 +599,8 @@ export default function DSH() {
                           size="sm"
                           variant="ghost"
                           onClick={() => act(s, 'reset')}
-                          disabled={busy[`${s.serviceid}_reset`] || isBusy}
-                          title="Kaltstart / Reset durchführen"
+                          disabled={expired || busy[`${s.serviceid}_reset`] || isBusy}
+                          title={expired ? 'Server ist gekündigt/ausgelaufen' : 'Kaltstart / Reset durchführen'}
                         >
                           <RotateCcw size={12} className="mr-1" />
                           {busy[`${s.serviceid}_reset`] ? 'Reboot…' : 'Reset'}
@@ -542,8 +613,8 @@ export default function DSH() {
                           size="sm"
                           variant="ghost"
                           onClick={() => openConsole(s)}
-                          disabled={busy[`${s.serviceid}_console`] || isBusy}
-                          title="NoVNC Notfall-Konsole in neuem Fenster öffnen"
+                          disabled={expired || busy[`${s.serviceid}_console`] || isBusy}
+                          title={expired ? 'Server ist gekündigt/ausgelaufen' : 'NoVNC Notfall-Konsole in neuem Fenster öffnen'}
                           className="text-panel-accent hover:border-panel-accent/50"
                         >
                           <Terminal size={12} className="mr-1" />

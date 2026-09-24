@@ -56,8 +56,10 @@ router.get('/services', requirePermission('dsh.view'), async (req, res) => {
     const items = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : []);
 
     // Live-Power-Status parallel für jeden Service abrufen (fail-soft)
+    // Bei gekündigten oder beendeten Services keinen unnötigen Status-Call machen
     const statusPromises = items.map(srv => {
-      if (!srv.serviceid) return Promise.resolve(null);
+      const rawStatus = (srv.status || '').toLowerCase();
+      if (!srv.serviceid || rawStatus === 'cancelled' || rawStatus === 'terminated') return Promise.resolve(null);
       return client.get(`/service/${srv.serviceid}/status`, { timeout: 5000 })
         .then(r => r.data)
         .catch(() => null);
