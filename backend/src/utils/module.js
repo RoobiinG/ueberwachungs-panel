@@ -13,6 +13,7 @@ const defaultModules = {
   uptimekuma: true,
   hetzner: true,
   mchost: true,
+  dsh: true,
   passkeys: true,
 };
 

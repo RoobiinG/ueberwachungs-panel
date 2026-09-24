@@ -7,7 +7,7 @@ const { checkAllMonitors } = require('../utils/sslMonitor');
 const { sendTestMail } = require('../utils/smtpTest');
 const { validatePublicUrl } = require('../utils/validateUrl');
 
-const SENSITIVE = ['hetzner_api_token', 'mchost_password', 'mchost_api_token', 'smtp_pass', 'github_token', 'npm_password', 'npm_token'];
+const SENSITIVE = ['hetzner_api_token', 'mchost_password', 'mchost_api_token', 'dsh_api_token', 'smtp_pass', 'github_token', 'npm_password', 'npm_token'];
 
 const get = (key) => db.prepare('SELECT value FROM settings WHERE key = ?').get(key)?.value || '';
 const set = (key, value) => db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)').run(key, value);
@@ -20,6 +20,8 @@ router.get('/', requirePermission('settings.view'), (req, res) => {
     mchost_username:   get('mchost_username'),
     mchost_password:   get('mchost_password') ? '***gesetzt***' : '',
     mchost_token_set:  !!get('mchost_api_token'),
+    dsh_api_token:     get('dsh_api_token') ? '***gesetzt***' : '',
+    dsh_token_set:     !!get('dsh_api_token'),
     smtp_host:         get('smtp_host'),
     smtp_port:         get('smtp_port') || '587',
     smtp_user:         get('smtp_user'),
@@ -52,6 +54,40 @@ router.put('/hetzner', requirePermission('settings.manage'), (req, res) => {
 router.delete('/hetzner', requirePermission('settings.manage'), (req, res) => {
   del('hetzner_api_token');
   res.json({ success: true });
+});
+
+// DeinServerHost (DSH) Token speichern
+router.put('/dsh', requirePermission('settings.manage'), (req, res) => {
+  const { token } = req.body;
+  if (!token) return res.status(400).json({ error: 'Token erforderlich' });
+  set('dsh_api_token', token.trim());
+  auditLog(req, 'settings.dsh_token_save', 'settings', 'dsh_api_token');
+  res.json({ success: true, message: 'DSH API-Token erfolgreich gespeichert' });
+});
+
+// DeinServerHost (DSH) Token löschen
+router.delete('/dsh', requirePermission('settings.manage'), (req, res) => {
+  del('dsh_api_token');
+  auditLog(req, 'settings.dsh_token_delete', 'settings', 'dsh_api_token');
+  res.json({ success: true, message: 'DSH API-Token gelöscht' });
+});
+
+// DeinServerHost (DSH) Verbindung testen
+router.post('/dsh/test', requirePermission('settings.manage'), async (req, res) => {
+  const token = req.body.token ? req.body.token.trim() : get('dsh_api_token');
+  if (!token) return res.status(400).json({ error: 'Kein DSH API-Token angegeben oder gespeichert' });
+  try {
+    const { data } = await axios.get('https://api.dsh.gg/api/v2/service', {
+      headers: { 'X-TOKEN': token },
+      timeout: 8000,
+    });
+    const items = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : []);
+    const count = items.length;
+    res.json({ success: true, count, message: `Verbindung erfolgreich! ${count} Service(s) bei DSH gefunden.` });
+  } catch (err) {
+    const msg = err.response?.data?.message || err.response?.data?.error || err.message;
+    res.status(err.response?.status || 500).json({ error: `DSH API Fehler (${err.response?.status || 500}): ${msg}` });
+  }
 });
 
 // NGINX Proxy Manager

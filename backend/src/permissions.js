@@ -84,6 +84,15 @@ const PERMISSIONS = [
   { key: 'mchost.restart',      category: 'MC-Host24',          label: 'VServer neustarten',              description: 'VServer neu starten' },
   { key: 'mchost.backup',       category: 'MC-Host24',          label: 'Backups erstellen',               description: 'VServer-Backups manuell erstellen' },
 
+  // ─── DeinServerHost (DSH) ──────────────────────────────────────────────────
+  { key: 'dsh.view',            category: 'DeinServerHost',     label: 'Server anzeigen',                 description: 'DSH-Server, Status, Spezifikationen und DDoS-Schutz einsehen' },
+  { key: 'dsh.start',           category: 'DeinServerHost',     label: 'Server starten',                  description: 'DSH-Server einschalten (Power on)' },
+  { key: 'dsh.stop',            category: 'DeinServerHost',     label: 'Server stoppen',                  description: 'DSH-Server ausschalten / herunterfahren (Power off)' },
+  { key: 'dsh.reset',           category: 'DeinServerHost',     label: 'Server neustarten',               description: 'DSH-Server Kaltstart / Reset durchführen' },
+  { key: 'dsh.rescue',          category: 'DeinServerHost',     label: 'Rescue-Modus starten',            description: 'DSH-Server in das Notfall-Rettungssystem booten' },
+  { key: 'dsh.console',         category: 'DeinServerHost',     label: 'Web-Konsole öffnen',              description: 'NoVNC-Notfallkonsole für den DSH-Server aufrufen' },
+  { key: 'dsh.rdns',            category: 'DeinServerHost',     label: 'Reverse DNS verwalten',           description: 'Reverse DNS PTR-Records für die Server-IP setzen oder löschen' },
+
   // ─── Einstellungen ────────────────────────────────────────────────────────
   { key: 'settings.view',       category: 'Einstellungen',      label: 'Einstellungen anzeigen',          description: 'System-Einstellungen einsehen' },
   { key: 'settings.manage',     category: 'Einstellungen',      label: 'Einstellungen ändern',            description: 'SMTP, Integrationen und Systemparameter konfigurieren' },
@@ -116,6 +125,7 @@ const OPERATOR_PERMISSIONS = [
   'uptimekuma.view',
   'hetzner.view', 'hetzner.start', 'hetzner.stop', 'hetzner.restart', 'hetzner.backup',
   'mchost.view', 'mchost.start', 'mchost.stop', 'mchost.restart', 'mchost.backup',
+  'dsh.view', 'dsh.start', 'dsh.stop', 'dsh.reset', 'dsh.rescue', 'dsh.console', 'dsh.rdns',
   'users.view',
   'audit.view', 'audit.view_ip', 'audit.view_geo',
   'settings.view',

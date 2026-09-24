@@ -31,7 +31,7 @@ export const navItems = [
   { to: '/alerts',      icon: Bell,         label: 'Benachrichtigungen' },
   { to: '/logs',        icon: Terminal,     label: 'Zentrale Logs',    permission: 'alerts.manage' },
   { to: '/ssl',         icon: Lock,         label: 'Zertifikate',       permission: 'alerts.manage' },
-  { to: '/hosting',     icon: Cloud,        label: 'Hosting-Provider',  permission: ['hetzner.view', 'mchost.view'], moduleKey: ['hetzner', 'mchost'] },
+  { to: '/hosting',     icon: Cloud,        label: 'Hosting-Provider',  permission: ['hetzner.view', 'mchost.view', 'dsh.view'], moduleKey: ['hetzner', 'mchost', 'dsh'] },
 
   { section: 'Verwaltung' },
   { to: '/users',      icon: Users,         label: 'Benutzer',        adminOnly: true },

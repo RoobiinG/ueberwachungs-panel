@@ -111,6 +111,7 @@ app.use('/api/roles', auth, require('./routes/roles'));
 app.use('/api/webhooks', auth, require('./routes/webhooks'));
 app.use('/api/hetzner', auth, require('./routes/hetzner'));
 app.use('/api/mchost', auth, require('./routes/mchost'));
+app.use('/api/dsh',    auth, require('./routes/dsh'));
 app.use('/api/settings', auth, require('./routes/settings'));
 app.use('/api/backups',  auth, require('./routes/backups'));
 app.use('/api/agents',  auth, require('./routes/agents'));

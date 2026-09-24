@@ -15,6 +15,31 @@ angewandt. Die Zählung beginnt beim ersten Release mit `1.0.0.0` und läuft von
 Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahinter auf `0` zurückgesetzt.
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
+
+## [7.5.0.0] - 2026-09-24 (Build 383) — *Host Shield*
+
+### Features & Neuerungen
+- **Neues Hoster-Modul: DeinServerHost (DSH) Integration:**
+  - Direkte Anbindung an die offizielle DSH API v2 (`https://api.dsh.gg/api/v2`) unter dem Menüpunkt **Cloud- & Hosting-Provider** (`/hosting`) neben Hetzner Cloud und MC-Host24.
+  - **Server- & Vertragsübersicht:** Anzeige aller gebuchten Produkte (z. B. *Storage VPS 2TB* / *Web01-DSH*), Live-Status (`power on` / `power off` bzw. VM-Status), dedizierte & zugewiesene IPv4-Adressen mit Schnellkopier-Funktion, Hardware-Spezifikationen (CPU, vCores, Speicher, RAM) und Abrechnungs- / Fälligkeitsanzeige mit dynamischem Restlaufzeit-Countdown.
+  - **Granulare Einzelberechtigungen pro Aktion:** Wie gewünscht verfügt jeder Steuerungs-Button über ein eigenständiges Berechtigungsrecht in `backend/src/permissions.js`:
+    - `dsh.view`: DSH-Bereich, Server, Status und Details anzeigen
+    - `dsh.start`: Server starten (Power on)
+    - `dsh.stop`: Server stoppen / herunterfahren (Power off)
+    - `dsh.reset`: Kaltstart / Reset durchführen
+    - `dsh.rescue`: Notfall-Rettungssystem booten (inkl. Passwort-Dialog und Schlüsselanzeige)
+    - `dsh.console`: NoVNC-Notfall-Webkonsole direkt in einem neuen Browserfenster öffnen
+    - `dsh.rdns`: Reverse DNS (PTR-Record) für die Server-IP verwalten
+  - **Combahton / Path.net DDoS-Schutz:** Ausklappbare Detail-Übersicht für jeden Server zur Anzeige von erkannten DDoS-Angriffen (Zeitpunkt, Peak Bandbreite in Mbit/s, Pakete/s, Methode und Mitigations-Modus).
+  - **Reverse DNS (rDNS):** PTR-Records direkt aus dem Panel für die jeweilige Server-IP setzen oder löschen.
+  - **Einstellungen & Verbindungs-Test:** API-Token-Verwaltung (`dsh_api_token`) in den Panel-Einstellungen unter „Hosting & Cloud APIs“ mit Verbindungstest-Knopf und automatischer Geheimhaltung/Maskierung im Diagnose-Bericht.
+  - **Modul-Steuerung:** DSH lässt sich in den Panel-Einstellungen unter *Aktive Module* nach Bedarf aktivieren oder deaktivieren.
+
+### System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen:** Keine Schema-Änderung; neue Berechtigungen für Systemrollen (`admin`, `operator`) werden beim Start automatisch synchronisiert.
+- **Agent-Kompatibilität:** Vollständig abwärtskompatibel, kein Agent-Update erforderlich.
+- **Neustart-/Session-Verhalten:** Keine Unterbrechung bestehender Sessions.
+
 ## [7.4.1.0] - 2026-09-23 (Build 382) — *Patch Pilot*
 
 ### Verbesserungen & Anpassungen

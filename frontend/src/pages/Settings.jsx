@@ -5,7 +5,7 @@ import { Button } from '../components/ui/Button';
 import { useAuth } from '../context/AuthContext';
 import {
   Cloud, Server, Eye, EyeOff, CheckCircle, XCircle,
-  RefreshCw, Trash2, Lock, Mail, Key, ShieldCheck, Send,
+  RefreshCw, Trash2, Lock, Mail, Key, Shield, ShieldCheck, Send,
   User, Settings2, Layers, Timer, Bell, Monitor, Smartphone,
   Globe, LogOut, Laptop, PackageCheck,
   Download, Upload, Database, QrCode, Copy, Check, ShieldAlert, Gamepad2,
@@ -442,6 +442,7 @@ function ModulesToggleCard() {
     { key: 'uptimekuma', label: 'Uptime Kuma',                desc: 'Web-Monitoring & Ping-Status' },
     { key: 'hetzner',    label: 'Hetzner',                    desc: 'Cloud-Server und Storage Boxes' },
     { key: 'mchost',     label: 'MC-Host24',                  desc: 'vServer / Rootserver Management' },
+    { key: 'dsh',        label: 'DeinServerHost (DSH)',       desc: 'Storage VPS & Cloud-Server, DDoS-Schutz, rDNS' },
     { key: 'passkeys',   label: 'Passkeys (WebAuthn)',        desc: 'Anmeldung ohne Passwort. Abgeschaltet verschwinden Knopf und Verwaltung — bereits angelegte Passkeys bleiben gespeichert' },
   ];
 
@@ -828,6 +829,10 @@ export default function Settings() {
   const [mcPassword, setMcPassword] = useState('');
   const [showMcPw,   setShowMcPw]   = useState(false);
 
+  // DeinServerHost (DSH)
+  const [dshToken, setDshToken] = useState('');
+  const [showDsh,  setShowDsh]  = useState(false);
+
   // SMTP
   const [smtp, setSmtp] = useState({ host: '', port: 587, user: '', pass: '', from: '', secure: false });
   const [showSmtpPw, setShowSmtpPw] = useState(false);
@@ -1187,6 +1192,44 @@ export default function Settings() {
       feedback('mchost', 'ok', 'Zugangsdaten gelöscht');
     } catch { feedback('mchost', 'err', 'Fehler beim Löschen'); }
     busy('mchost_del', false);
+  };
+
+  const saveDsh = async () => {
+    if (!dshToken.trim()) return;
+    busy('dsh', true);
+    try {
+      await axios.put('/api/settings/dsh', { token: dshToken });
+      setDshToken('');
+      await loadAdmin();
+      feedback('dsh', 'ok', 'DSH API-Token gespeichert');
+    } catch (err) {
+      feedback('dsh', 'err', err.response?.data?.error || 'Fehler beim Speichern');
+    }
+    busy('dsh', false);
+  };
+
+  const testDsh = async () => {
+    busy('dsh_test', true);
+    try {
+      const { data } = await axios.post('/api/settings/dsh/test', { token: dshToken.trim() || undefined });
+      feedback('dsh', 'ok', data.message || 'Verbindung erfolgreich!');
+    } catch (err) {
+      feedback('dsh', 'err', err.response?.data?.error || 'Verbindung fehlgeschlagen');
+    }
+    busy('dsh_test', false);
+  };
+
+  const deleteDsh = async () => {
+    busy('dsh_del', true);
+    try {
+      await axios.delete('/api/settings/dsh');
+      setDshToken('');
+      await loadAdmin();
+      feedback('dsh', 'ok', 'DSH API-Token gelöscht');
+    } catch {
+      feedback('dsh', 'err', 'Fehler beim Löschen');
+    }
+    busy('dsh_del', false);
   };
 
   const loginNpm = async () => {
@@ -1980,6 +2023,58 @@ export default function Settings() {
                   {status.mchost_token_set ? 'Neu einloggen' : 'Einloggen & Token holen'}
                 </Button>
                 <Msg msg={msgs.mchost} />
+              </div>
+
+              {/* Trennlinie */}
+              <div className="border-t border-panel-border/60" />
+
+              {/* DeinServerHost (DSH) API */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-panel-text flex items-center gap-1.5">
+                    <Shield size={13} className="text-panel-accent" /> DeinServerHost (DSH) API
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <StatusBadge set={status.dsh_token_set} />
+                    {status.dsh_token_set && (
+                      <Button size="sm" variant="danger" onClick={deleteDsh} disabled={loading.dsh_del}>
+                        <Trash2 size={12} className="mr-1" />Entfernen
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-panel-muted mb-1">
+                    {status.dsh_token_set ? 'Neuen API-Token eintragen (überschreibt)' : 'API-Token (X-TOKEN)'}
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showDsh ? 'text' : 'password'}
+                      value={dshToken}
+                      onChange={e => setDshToken(e.target.value)}
+                      placeholder={status.dsh_token_set ? '(Gesetzt — leer lassen zum Behalten)' : 'dsh_...'}
+                      className={inputCls + ' pr-9'}
+                      onKeyDown={e => e.key === 'Enter' && saveDsh()}
+                    />
+                    <button type="button" onClick={() => setShowDsh(v => !v)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
+                      {showDsh ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-panel-muted mt-1">
+                    Den API-Token findest du im DSH-Kundenbereich unter <span className="text-panel-text font-medium">Einstellungen → API</span>.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Button onClick={saveDsh} disabled={!dshToken.trim() || loading.dsh} size="sm">
+                    Speichern
+                  </Button>
+                  <Button onClick={testDsh} disabled={(!dshToken.trim() && !status.dsh_token_set) || loading.dsh_test} size="sm" variant="ghost">
+                    <RefreshCw size={12} className={`mr-1 ${loading.dsh_test ? 'animate-spin' : ''}`} />
+                    {loading.dsh_test ? 'Prüfe…' : 'Verbindung testen'}
+                  </Button>
+                </div>
+                <Msg msg={msgs.dsh} />
               </div>
             </div>
           </Card>
