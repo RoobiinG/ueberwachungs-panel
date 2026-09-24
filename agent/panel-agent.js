@@ -1275,6 +1275,14 @@ async function getSshConfig() {
     }
   } catch {}
 
+  // Das Frontend (Sicherheits-Audit) liest die flachen Felder fail2banInstalled/
+  // Active/Jails. Bisher gab es nur die verschachtelte Form `fail2ban.{…}`, weshalb
+  // fail2ban dort IMMER als „nicht installiert" galt und pauschal −15 im Score kostete
+  // (aus 90 wurde 75), obwohl der Dienst lief. Beide Formen bereitstellen.
+  config.fail2banInstalled = config.fail2ban.installed;
+  config.fail2banActive    = config.fail2ban.active;
+  config.fail2banJails     = config.fail2ban.jails;
+
   try {
     const fw = await detectAgentFirewall();
     config.firewall.tool = fw.tool;
