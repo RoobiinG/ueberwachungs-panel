@@ -8,6 +8,7 @@ const https  = require('https');
 const os     = require('os');
 const path   = require('path');
 const crypto = require('crypto');
+const net    = require('net');
 const { exec, execFile } = require('child_process');
 const { promisify } = require('util');
 const fs = require('fs');
@@ -17,7 +18,7 @@ const execAsync = promisify(exec);
 // sondern ein Argument-Array. Sonderzeichen in Volume-/Netzwerk-/Image-Namen können
 // so nicht als Shell-Syntax gedeutet werden.
 const execFileAsync = promisify(execFile);
-const VERSION = '2.16.1';
+const VERSION = '2.17.0';
 
 // Ob die Container-Konsole angeboten werden kann. Steht erst nach dem Laden von
 // ws/node-pty am Ende dieser Datei fest und wird über /ping und /version gemeldet,
@@ -1450,6 +1451,87 @@ async function getSshConfig() {
   return config;
 }
 
+// ── Fail2Ban: gesperrte IPs mit Jail und Restzeit ────────────────────────────
+// Rein lesend. fail2ban-client läuft über execFile (spawn ohne Shell, Argument-Array);
+// der Binärpfad kommt aus einer festen Liste, Jail-Namen aus der fail2ban-Ausgabe werden
+// vor der Weitergabe geprüft, aus der Anfrage wird nichts übernommen.
+// Der Agent läuft als root, deshalb reicht der direkte Aufruf — kein sudo, keine
+// Freigabe des fail2ban-Sockets (Zugriff darauf wäre gleichbedeutend mit root).
+const F2B_KANDIDATEN = ['/usr/bin/fail2ban-client', '/usr/local/bin/fail2ban-client', '/usr/sbin/fail2ban-client'];
+const F2B_JAIL_RE    = /^[\w.@:-]{1,64}$/;
+// Zeilenformat von `get <jail> banip --with-time` (fail2ban ≥ 0.11), Zeiten in Ortszeit des Hosts:
+// "203.0.113.7 \t2026-09-25 13:05:12 + 600 = 2026-09-25 13:15:12"; dauerhaft: Sperrdauer -1.
+const F2B_BAN_RE     = /^(\S+)\s+(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2}) \+ (-?\d+) = /;
+const F2B_CACHE_MS   = 10000;
+let _f2bCache = null;   // { at, daten } — Restzeiten werden bei jeder Antwort neu berechnet
+
+function _f2b(bin, args) {
+  return execFileAsync(bin, args, { timeout: 4000, maxBuffer: 1024 * 1024, env: { ...process.env, LANG: 'C', LC_ALL: 'C' } });
+}
+
+async function _f2bSammeln() {
+  const leer = (state, message) => ({ available: false, state, message, jails: [], bans: [] });
+  const bin = F2B_KANDIDATEN.find(p => fs.existsSync(p));
+  if (!bin) return leer('not_installed', 'fail2ban ist auf diesem Server nicht installiert.');
+
+  try { await _f2b(bin, ['ping']); }
+  catch {
+    const { stdout } = await execFileAsync('systemctl', ['is-active', 'fail2ban'], { timeout: 3000 }).catch(e => ({ stdout: e.stdout || '' }));
+    const unit = String(stdout).trim() || 'unbekannt';
+    return leer('offline', `fail2ban ist installiert, der Dienst läuft aber nicht (systemd: ${unit}).`);
+  }
+
+  let status;
+  try { ({ stdout: status } = await _f2b(bin, ['status'])); }
+  catch (e) { return leer('error', `fail2ban antwortet, die Jail-Liste ließ sich aber nicht lesen: ${String(e.stderr || e.message).trim().slice(0, 200)}`); }
+  const liste = (status.match(/Jail list:\s*(.*)/) || [])[1] || '';
+  const namen = liste.split(',').map(s => s.trim()).filter(n => F2B_JAIL_RE.test(n));
+
+  // Jails parallel abfragen; scheitert eines, bekommt nur dieses einen Fehler.
+  const ergebnisse = await Promise.allSettled(namen.map(j => _f2b(bin, ['get', j, 'banip', '--with-time'])));
+  const jails = [], bans = [];
+  ergebnisse.forEach((r, i) => {
+    const jail = namen[i];
+    if (r.status === 'rejected') {
+      jails.push({ name: jail, bannedCount: 0, error: String(r.reason?.stderr || r.reason?.message || 'Abfrage fehlgeschlagen').trim().slice(0, 200) });
+      return;
+    }
+    let anzahl = 0;
+    for (const zeile of r.value.stdout.split('\n')) {
+      const m = zeile.trim().match(F2B_BAN_RE);
+      if (!m || !net.isIP(m[1])) continue;
+      const beginn = new Date(+m[2], +m[3] - 1, +m[4], +m[5], +m[6], +m[7]).getTime();
+      const dauer  = parseInt(m[8], 10);
+      const permanent = dauer < 0;
+      bans.push({ ip: m[1], jail, bannedAtMs: beginn, banTime: dauer, expiresAtMs: permanent ? null : beginn + dauer * 1000, permanent });
+      anzahl++;
+    }
+    jails.push({ name: jail, bannedCount: anzahl, error: null });
+  });
+  return { available: true, state: 'running', message: null, jails, bans };
+}
+
+async function getFail2banBans() {
+  if (!_f2bCache || Date.now() - _f2bCache.at > F2B_CACHE_MS) {
+    _f2bCache = { at: Date.now(), daten: await _f2bSammeln() };
+  }
+  const { daten } = _f2bCache;
+  const jetzt = Date.now();
+  const bans = daten.bans.map(b => ({
+    ip: b.ip,
+    jail: b.jail,
+    bannedAt: new Date(b.bannedAtMs).toISOString(),
+    banTime: b.banTime,
+    expiresAt: b.permanent ? null : new Date(b.expiresAtMs).toISOString(),
+    remainingSeconds: b.permanent ? null : Math.max(0, Math.round((b.expiresAtMs - jetzt) / 1000)),
+    permanent: b.permanent,
+  }))
+  // Kürzeste Restzeit zuerst, dauerhafte Sperren ans Ende.
+  .sort((a, b) => (a.permanent - b.permanent) || ((a.remainingSeconds ?? 0) - (b.remainingSeconds ?? 0)));
+  return { available: daten.available, state: daten.state, message: daten.message,
+           checkedAt: new Date(_f2bCache.at).toISOString(), jails: daten.jails, bans };
+}
+
 // ─── HTTP Handler ─────────────────────────────────────────────────────────────
 // ── Modul 7: Festplatten-Gesundheit & System-Aufräumen ───────────────────────
 
@@ -1917,6 +1999,11 @@ async function handler(req, res) {
       respond(res, 200, await removeSshKey(identifier));
     } else if (url === '/ssh/audit' && req.method === 'GET') {
       respond(res, 200, await getSshConfig());
+
+    // Gesperrte IPs aus fail2ban. Liefert auch bei gestopptem oder fehlendem fail2ban
+    // eine 200 mit `state`, damit das Panel einen Hinweis statt eines Fehlers zeigt.
+    } else if (url === '/fail2ban/bans' && req.method === 'GET') {
+      respond(res, 200, await getFail2banBans());
 
     // ── Docker ────────────────────────────────────────────────────────────────
     } else if (url === '/docker/containers' && req.method === 'GET') {

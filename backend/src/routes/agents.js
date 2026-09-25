@@ -1498,6 +1498,23 @@ router.get('/:id/ssh/audit', requirePermission('agents.manage_ssh'), async (req,
   }
 });
 
+// Gesperrte IPs aus fail2ban (IP, Jail, Restzeit). Statt 502 gibt es bei altem oder
+// unerreichbarem Agent eine 200 mit `state`, damit der Sicherheits-Tab einen Hinweis zeigt.
+router.get('/:id/fail2ban/bans', requirePermission('agents.manage_ssh'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const leer = (state, message) => ({ available: false, state, message, checkedAt: new Date().toISOString(), jails: [], bans: [] });
+  try {
+    const { data } = await agentApi(agent).get('/fail2ban/bans');
+    res.json(data);
+  } catch (err) {
+    if (err.response?.status === 404) return res.json(leer('agent_outdated', 'Der Agent kennt diese Abfrage noch nicht — bitte auf v2.17.0 oder neuer aktualisieren.'));
+    if (err.response) return res.json(leer('error', err.response.data?.error || `Agent antwortete mit HTTP ${err.response.status}.`));
+    res.json(leer('agent_unreachable', `Agent nicht erreichbar: ${err.message}`));
+  }
+});
+
 router.post('/:id/ssh/keys', requirePermission('agents.manage_ssh'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });

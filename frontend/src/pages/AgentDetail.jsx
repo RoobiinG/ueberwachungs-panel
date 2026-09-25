@@ -18,6 +18,7 @@ import { useAuth } from '../context/AuthContext';
 import { Shield, Key, ShieldCheck, Lock, Unlock, Radio, Globe } from 'lucide-react';
 import ContainerLogsModal from '../components/Docker/ContainerLogsModal';
 import SystemUpdateModal from '../components/SystemUpdateModal';
+import Fail2banBansCard from '../components/Security/Fail2banBansCard';
 
 import { useLiveInterval } from '../hooks/useLiveInterval';
 
@@ -1601,7 +1602,10 @@ export default function AgentDetail() {
               <p className="text-xs text-panel-muted">Keine SSH-Konfiguration gefunden.</p>
             )}
           </Card>
-          
+
+          {/* Gesperrte IPs aus fail2ban — lädt, aktualisiert und zählt selbst herunter */}
+          <Fail2banBansCard agentId={id} />
+
           {/* Port-Wächter & Erkannte Ports */}
           <Card title="Port-Wächter & Lauschende Dienste (Modul 13)">
             <p className="text-xs text-panel-muted mb-3">

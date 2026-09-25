@@ -16,6 +16,22 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [7.7.0.0] - 2026-09-25 (Build 387) — *Jail Watch*
+
+### Neue Funktionen
+- **Sicherheit — Gesperrte IPs aus fail2ban (Agent v2.17.0):**
+  - Neue Karte **„Gesperrte IPs (Fail2ban)"** im Sicherheits-Tab der Server-Detailseite: IP-Adresse, Jail, Sperrbeginn und **Restzeit bis zur Entsperrung**, die live herunterzählt; dauerhafte Sperren sind als solche markiert. Aktualisiert sich alle 30 Sekunden und auf Knopfdruck.
+  - Neuer Agent-Endpunkt `GET /fail2ban/bans` und Panel-Route `GET /api/agents/:id/fail2ban/bans` (Recht *SSH-Keys verwalten*, wie der Sicherheits-Tab). Die Daten kommen aus `fail2ban-client get <jail> banip --with-time`; Jails werden parallel abgefragt, das Ergebnis im Agent 10 Sekunden zwischengespeichert.
+  - **Fehlertolerant:** Ist fail2ban gestoppt oder nicht installiert, der Agent zu alt oder nicht erreichbar, zeigt die Karte einen Hinweis mit Ursache (z. B. „systemd: failed") statt eines Fehlers. Scheitert ein einzelnes Jail, bleiben die übrigen sichtbar.
+  - **Sicherheit:** Rein lesend, kein Entsperren. `fail2ban-client` wird ohne Shell mit festem Binärpfad und Argument-Array aufgerufen; Jail-Namen und IPs aus der Ausgabe werden vor der Verwendung geprüft, aus der Anfrage fließt nichts in den Befehl.
+
+### System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen:** Keine erforderlich.
+- **Agent-Kompatibilität:** **Agent auf v2.17.0 aktualisieren**, damit die Sperrliste erscheint. Ältere Agents führen zu einem Hinweis in der Karte, nicht zu einem Fehler.
+- **Rechte auf dem Zielserver:** Keine Änderung — der Agent läuft wie bisher als root und ruft `fail2ban-client` direkt auf. Es wird weder sudo noch eine Freigabe des fail2ban-Sockets eingerichtet.
+- **Voraussetzung:** fail2ban ab 0.11 (für `--with-time`); Debian 11/12 und Ubuntu ab 20.04 erfüllen das.
+- **Neustart/Session:** Kein Session-Verlust.
+
 ## [7.6.0.1] - 2026-09-25 (Build 386) — *Dock Guard*
 
 ### Bugfixes
