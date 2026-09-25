@@ -17,7 +17,7 @@ const execAsync = promisify(exec);
 // sondern ein Argument-Array. Sonderzeichen in Volume-/Netzwerk-/Image-Namen können
 // so nicht als Shell-Syntax gedeutet werden.
 const execFileAsync = promisify(execFile);
-const VERSION = '2.16.0';
+const VERSION = '2.16.1';
 
 // Ob die Container-Konsole angeboten werden kann. Steht erst nach dem Laden von
 // ws/node-pty am Ende dieser Datei fest und wird über /ping und /version gemeldet,
@@ -507,6 +507,24 @@ function _parseUfwRuleLine(line) {
   return { id, port, proto, action, from, to: dest, direction, raw: line.trim() };
 }
 
+// Eine Zeile aus `iptables -S DOCKER-USER` zerlegen. Versteht den ursprünglichen Zielport
+// (--ctorigdstport, so legt der Agent Regeln an) und das ältere --dport. Regeln ohne Port
+// (RELATED,ESTABLISHED usw.) liefern null.
+function _parseDockerUserLine(line) {
+  const t = line.split(/\s+/);
+  const val = (flag) => { const i = t.indexOf(flag); return i >= 0 ? t[i + 1] : null; };
+  const port = val('--ctorigdstport') || val('--dport');
+  const target = val('-j');
+  if (!port || !target) return null;
+  const src = val('-s');
+  return {
+    port,
+    proto:  val('-p') || 'any',
+    action: (target === 'DROP' || target === 'REJECT') ? 'deny' : 'allow',
+    from:   src ? src.replace(/\/32$/, '') : 'any',
+  };
+}
+
 // Regeln abrufen (einheitliches Format)
 async function getFirewallRules() {
   const { tool } = await detectAgentFirewall();
@@ -578,10 +596,23 @@ async function getFirewallRules() {
         // Docker-veröffentlichte Ports: DOCKER-USER-Regeln (ip filter, hängen an FORWARD und
         // umgehen INPUT) mit Ziel-Port zeigen — bisher im Panel unsichtbar. direction:'fwd',
         // ID mit 'd'-Präfix, damit Löschen die richtige Tabelle (ip filter) trifft.
-        for (const item of items) {
-          if (!item.rule) continue;
-          const r = item.rule;
-          if (r.family !== 'ip' || r.table !== 'filter' || r.chain !== 'DOCKER-USER') continue;
+        // Die Panel-Regeln prüfen den ursprünglichen Zielport per conntrack; das zeigt nft im
+        // JSON nur als undurchsichtiges `xt conntrack`. Deshalb die Handles aus dem JSON mit den
+        // gleich sortierten Zeilen aus `iptables -S DOCKER-USER` zusammenführen, dort steht der
+        // Port lesbar. Passt die Anzahl nicht, bleibt nur die JSON-Auswertung.
+        const dockerRules = items.map(i => i.rule).filter(r => r && r.family === 'ip' && r.table === 'filter' && r.chain === 'DOCKER-USER');
+        let ipt = [];
+        try {
+          const { stdout: s } = await execFileAsync('iptables', ['-S', 'DOCKER-USER'], { timeout: 5000 });
+          ipt = s.split('\n').filter(l => l.startsWith('-A DOCKER-USER '));
+        } catch {}
+        const paired = ipt.length === dockerRules.length;
+        for (const [idx, r] of dockerRules.entries()) {
+          if (paired) {
+            const d = _parseDockerUserLine(ipt[idx]);
+            if (d) rules.push({ id: 'd' + String(r.handle ?? ''), ...d, to: null, direction: 'fwd', raw: ipt[idx] });
+            continue;
+          }
           const expr = r.expr || [];
           const v = expr.find(e => e.return !== undefined || e.accept !== undefined || e.drop !== undefined || e.reject !== undefined);
           if (!v) continue;
@@ -870,15 +901,19 @@ async function firewallAllow(port, proto, from, action, route = false) {
       // (allow) bzw. per-Port DROP (deny). Idempotent via -C||-I/-A. KEIN Catch-all → Mailcow bleibt heil.
       if (fr && _isIPv6(fr)) throw new Error('IPv6-Quellen für Docker-Regeln werden nicht unterstützt.');
       const prr = pr || 'tcp';
+      // Docker schreibt das Ziel per DNAT schon vor FORWARD um (Host-Port → Container-IP:Port).
+      // In DOCKER-USER trägt das Paket also den Container-Port — `--dport <Host-Port>` griffe
+      // nur, wenn beide zufällig gleich sind. Deshalb den ursprünglichen Zielport prüfen.
+      const dp = ['-p', prr, '-m', 'conntrack', '--ctorigdstport', p, '--ctdir', 'ORIGINAL'];
       const ensure = async (probe, add) => { try { await execFileAsync('iptables', ['-C', 'DOCKER-USER', ...probe], opt); } catch { await execFileAsync('iptables', add, opt); } };
       await ensure(['-m','conntrack','--ctstate','RELATED,ESTABLISHED','-j','RETURN'],
                    ['-I','DOCKER-USER','1','-m','conntrack','--ctstate','RELATED,ESTABLISHED','-j','RETURN']);
       if (action === 'allow') {
         if (!fr) throw new Error('Docker-Freigabe braucht eine Quell-IP (from).');
-        await ensure(['-s',fr,'-p',prr,'--dport',p,'-j','RETURN'], ['-I','DOCKER-USER','-s',fr,'-p',prr,'--dport',p,'-j','RETURN']);
+        await ensure(['-s',fr,...dp,'-j','RETURN'], ['-I','DOCKER-USER','-s',fr,...dp,'-j','RETURN']);
       } else {
         const src = fr ? ['-s',fr] : [];
-        await ensure([...src,'-p',prr,'--dport',p,'-j','DROP'], ['-A','DOCKER-USER',...src,'-p',prr,'--dport',p,'-j','DROP']);
+        await ensure([...src,...dp,'-j','DROP'], ['-A','DOCKER-USER',...src,...dp,'-j','DROP']);
       }
       await _ensureDockerFwPersistence();
       await _persistDockerFw();

@@ -16,6 +16,17 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [7.6.0.1] - 2026-09-25 (Build 386) — *Dock Guard*
+
+### Bugfixes
+- **Firewall — Docker-Regeln griffen nur bei gleichem Host- und Container-Port (Agent v2.16.1):** Docker schreibt das Ziel per DNAT schon *vor* der FORWARD-Kette um (z. B. Host-Port `8080` → Container `172.17.0.2:80`). In `DOCKER-USER` trägt das Paket deshalb den Container-Port — eine Regel auf `--dport 8080` traf nie. Sichtbar wurde das nur bei abweichenden Ports; bei `3001:3001` fiel es nicht auf. Der Agent prüft jetzt den **ursprünglichen** Zielport per conntrack (`--ctorigdstport`), sodass Sperren und Freigaben unabhängig vom Container-Port wirken.
+- Die Anzeige liest die Ports dieser Regeln über `iptables -S DOCKER-USER` (nftables zeigt conntrack-Matches nur als undurchsichtiges `xt`), ältere `--dport`-Regeln bleiben lesbar und löschbar.
+
+### System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen:** Keine erforderlich.
+- **Agent-Kompatibilität:** **Agent auf v2.16.1 aktualisieren.** Mit v2.16.0 angelegte Docker-Regeln bleiben bestehen und werden weiter angezeigt; wirken sie nicht (Host-Port ≠ Container-Port), im Panel löschen und neu anlegen.
+- **Neustart/Session:** Kein Session-Verlust.
+
 ## [7.6.0.0] - 2026-09-25 (Build 385) — *Dock Guard*
 
 ### Neue Funktionen
