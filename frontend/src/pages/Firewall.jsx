@@ -235,6 +235,10 @@ export default function Firewall() {
   // Löschen rutscht alles darunter eine Position hoch.
   const byNumberDesc = (a, b) => Number(b) - Number(a);
 
+  // nftables-Hosts schreiben Docker-Regeln in DOCKER-USER; dort braucht „erlauben" eine Quelle.
+  const dockerAllowNeedsSource = form.route && form.action === 'allow' && !form.from.trim()
+    && detectedTool?.tool === 'nftables';
+
   // ── Regel speichern ────────────────────────────────────────────────────────
   const saveRule = async () => {
     if (form.action === 'deny' && !confirmLockout(form.port, 'Diese Regel würde ihn sperren.')) return;
@@ -673,7 +677,7 @@ export default function Firewall() {
         title={editingRule ? `Regel ${editingRule.id} bearbeiten` : 'Neue Firewall-Regel'}
         footer={<>
           <Button variant="ghost" size="sm" onClick={() => setShowRuleModal(false)}>Abbrechen</Button>
-          <Button size="sm" onClick={saveRule} disabled={!form.port}>{editingRule ? 'Speichern' : 'Hinzufügen'}</Button>
+          <Button size="sm" onClick={saveRule} disabled={!form.port || dockerAllowNeedsSource}>{editingRule ? 'Speichern' : 'Hinzufügen'}</Button>
         </>}
       >
         <div className="space-y-3">
@@ -738,6 +742,14 @@ export default function Firewall() {
           {form.route && (
             <p className="text-[11px] text-panel-accent bg-panel-accent/10 border border-panel-accent/20 rounded px-3 py-2">
               Weiterleitungsregel für einen Docker-Container-Port — wird als Forward-Regel (ufw route bzw. DOCKER-USER) gespeichert, damit sie wirksam bleibt.
+            </p>
+          )}
+          {/* In DOCKER-USER heißt „erlauben" nur: diese Quelle darf durch. Ohne Quelle gäbe es
+              nichts einzugrenzen — der Agent lehnt das ab, also hier gleich darauf hinweisen. */}
+          {dockerAllowNeedsSource && (
+            <p className="text-[11px] text-panel-orange flex items-start gap-1.5">
+              <AlertTriangle size={11} className="flex-shrink-0 mt-0.5" />
+              Eine Docker-Freigabe braucht eine Quell-IP. Zum Sperren des Ports für alle „Sperren" wählen.
             </p>
           )}
           {detectedTool?.tool && detectedTool.tool !== 'none' && (

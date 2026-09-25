@@ -16,6 +16,29 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [7.6.0.0] - 2026-09-25 (Build 385) — *Dock Guard*
+
+### Neue Funktionen
+- **Firewall — Docker-Container-Ports steuerbar (Agent v2.16.0):**
+  - Von Docker veröffentlichte Ports laufen über `FORWARD`/`DOCKER-USER` und umgehen die `INPUT`-Kette. Der Agent konnte sie deshalb bisher weder anzeigen noch beschränken — im Panel waren nur Host-Ports verwaltbar.
+  - Auf nftables-Systemen liest der Agent jetzt zusätzlich die Kette `DOCKER-USER` und zeigt deren Port-Regeln mit **FWD-Badge** an (Host-Regeln = INPUT, Docker-Regeln = Weiterleitung).
+  - Neue Checkbox **„Docker-Container-Port (Weiterleitung)"** im Regel-Dialog. Damit angelegte Regeln landen in `DOCKER-USER`: *Erlauben* = diese Quell-IP darf durch (`RETURN`), *Sperren* = Port wird verworfen (`DROP`). Eine vorangestellte `RELATED,ESTABLISHED`-Regel hält bestehende Verbindungen offen; das Anlegen ist idempotent.
+  - Bewusst **kein Catch-all** und **kein ufw** — so bleibt z. B. der eigene netfilter von Mailcow oder die Plesk-Firewall unangetastet.
+  - Docker-Regeln lassen sich im Panel löschen und bearbeiten; beim Bearbeiten bleibt eine Weiterleitungsregel eine Weiterleitungsregel.
+  - **Persistenz:** Docker leert `DOCKER-USER` bei jedem Neustart. Der Agent sichert die Regeln deshalb nach `/etc/panel-agent/docker-fw.rules` und setzt sie über den systemd-Dienst `panel-agent-docker-fw.service` nach Docker-Neustart oder Reboot automatisch neu.
+  - Der Dialog weist darauf hin, dass eine Docker-**Freigabe** eine Quell-IP braucht, und sperrt das Speichern bis dahin.
+
+### Bugfixes
+- **Firewall — ufw-Weiterleitungsregeln falsch dargestellt:** Regeln wie `ALLOW FWD` (z. B. von ufw-docker für Container-Ports) wurden falsch zerlegt — aus der Container-IP im Ziel-Feld wurde „172" als Port gelesen und der Kommentar an die Quelle gehängt. Agent und lokale Firewall-Verwaltung verstehen jetzt Ziel, Richtung (IN/OUT/FWD) und Kommentare; beim Bearbeiten wird aus einer FWD-Regel wieder eine `ufw route`-Regel statt einer wirkungslosen INPUT-Regel.
+- **Sicherheits-Score — fail2ban immer als „nicht installiert" gewertet:** Der Agent lieferte fail2ban nur verschachtelt, der Sicherheits-Audit las flache Felder. Dadurch kostete fail2ban selbst bei laufendem Dienst pauschal 15 Punkte. Der Agent liefert jetzt beide Formen.
+
+### System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen:** Keine erforderlich.
+- **Agent-Kompatibilität:** **Der Agent muss auf v2.16.0 aktualisiert werden**, um Docker-Regeln zu sehen und anzulegen sowie fail2ban korrekt gewertet zu bekommen (Sammel-Update-Button im Panel). Ältere Agents ignorieren die Weiterleitungs-Option und legen eine normale INPUT-Regel an.
+- **Geltungsbereich:** Die `DOCKER-USER`-Verwaltung greift auf nftables-Hosts (iptables-nft) und nur für IPv4-Quellen. Auf ufw-Hosts wird stattdessen `ufw route` verwendet.
+- **Änderungen am Zielserver:** Beim ersten Anlegen einer Docker-Regel legt der Agent `/usr/local/sbin/panel-agent-docker-fw.sh` und `panel-agent-docker-fw.service` an und aktiviert den Dienst. Ohne Docker-Regeln bleibt alles unverändert.
+- **Neustart/Session:** Kein Session-Verlust; Panel-Update wie gewohnt per Pull + Recreate.
+
 ## [7.5.1.0] - 2026-09-24 (Build 384) — *Host Shield*
 
 ### Verbesserungen & Anpassungen
