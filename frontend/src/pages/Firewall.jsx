@@ -725,9 +725,19 @@ export default function Firewall() {
             <input value={form.from} onChange={e => setF('from', e.target.value)}
               placeholder="leer = alle · z.B. 192.168.1.0/24" className={inputCls} />
           </div>
+          {/* Docker-veröffentlichte Ports umgehen die INPUT-Kette; sie brauchen eine
+              Weiterleitungsregel (ufw route bzw. DOCKER-USER), sonst bliebe die Regel wirkungslos. */}
+          <div>
+            <label className="flex items-start gap-2 text-xs text-panel-muted cursor-pointer">
+              <input type="checkbox" className="mt-0.5" checked={!!form.route} onChange={e => setF('route', e.target.checked)} />
+              <span>Docker-Container-Port (Weiterleitung)<br />
+                <span className="text-[11px] text-panel-muted/70">Aktivieren, wenn der Port von einem Docker-Container veröffentlicht wird (z.B. 3001, 5678).</span>
+              </span>
+            </label>
+          </div>
           {form.route && (
             <p className="text-[11px] text-panel-accent bg-panel-accent/10 border border-panel-accent/20 rounded px-3 py-2">
-              Weiterleitungsregel für einen Docker-Container-Port — wird als <code className="font-mono">ufw route</code> gespeichert, damit sie wirksam bleibt.
+              Weiterleitungsregel für einen Docker-Container-Port — wird als Forward-Regel (ufw route bzw. DOCKER-USER) gespeichert, damit sie wirksam bleibt.
             </p>
           )}
           {detectedTool?.tool && detectedTool.tool !== 'none' && (

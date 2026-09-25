@@ -574,6 +574,33 @@ async function getFirewallRules() {
           }
           rules.push({ id: String(r.handle ?? ''), port, proto, action, from, raw: JSON.stringify(r) });
         }
+
+        // Docker-veröffentlichte Ports: DOCKER-USER-Regeln (ip filter, hängen an FORWARD und
+        // umgehen INPUT) mit Ziel-Port zeigen — bisher im Panel unsichtbar. direction:'fwd',
+        // ID mit 'd'-Präfix, damit Löschen die richtige Tabelle (ip filter) trifft.
+        for (const item of items) {
+          if (!item.rule) continue;
+          const r = item.rule;
+          if (r.family !== 'ip' || r.table !== 'filter' || r.chain !== 'DOCKER-USER') continue;
+          const expr = r.expr || [];
+          const v = expr.find(e => e.return !== undefined || e.accept !== undefined || e.drop !== undefined || e.reject !== undefined);
+          if (!v) continue;
+          const action = (v.drop !== undefined || v.reject !== undefined) ? 'deny' : 'allow';
+          let port = null, proto = 'any', from = 'any';
+          for (const e of expr) {
+            const left = e.match?.left, right = e.match?.right;
+            if (left?.payload?.field === 'dport') {
+              port = right?.set ? right.set.map(String).join(', ')
+                   : right?.range ? `${right.range[0]}:${right.range[1]}` : String(right ?? '');
+              if (left.payload.protocol) proto = String(left.payload.protocol);
+            }
+            if (left?.payload?.field === 'saddr') {
+              from = right?.prefix ? `${right.prefix.addr}/${right.prefix.len}` : String(right ?? 'any');
+            }
+          }
+          if (!port) continue;   // nur portbezogene Regeln (Established/Private-Range überspringen)
+          rules.push({ id: 'd' + String(r.handle ?? ''), port, proto, action, from, to: null, direction: 'fwd', raw: JSON.stringify(r) });
+        }
       } catch {
         const { stdout } = await execAsync('nft list ruleset 2>/dev/null', { timeout: 5000 });
         for (const line of stdout.split('\n')) { const m = line.match(/(\w+)\s+dport\s+(\S+)\s+(accept|drop).*#\s*handle\s+(\d+)/i); if (m) rules.push({ id: m[4], port: m[2], proto: m[1].toLowerCase(), action: m[3] === 'accept' ? 'allow' : 'deny', from: 'any', raw: line.trim() }); }
@@ -774,6 +801,38 @@ async function _ensureNftChain() {
 // Die Quelle wurde früher nur bei UFW-allow und iptables-allow beachtet und sonst
 // stillschweigend verworfen — die Regel galt dann für alle Absender. Sämtliche Befehle
 // laufen jetzt über execFile mit Argument-Array statt über die Shell.
+// Docker-Port-Firewall (DOCKER-USER) über Neustarts hinweg persistent halten:
+// aktuelle DOCKER-USER-Regeln in eine Datei sichern; ein systemd-oneshot re-applied sie
+// nach Docker-Neustart/Boot (Docker leert DOCKER-USER sonst).
+async function _persistDockerFw() {
+  try { await execAsync("sh -c \"mkdir -p /etc/panel-agent && iptables-save -t filter 2>/dev/null | grep '^-A DOCKER-USER' > /etc/panel-agent/docker-fw.rules || true\"", { timeout: 8000 }); } catch {}
+}
+async function _ensureDockerFwPersistence() {
+  const script = '/usr/local/sbin/panel-agent-docker-fw.sh';
+  const unit   = '/etc/systemd/system/panel-agent-docker-fw.service';
+  try {
+    if (!fs.existsSync(script)) {
+      fs.writeFileSync(script,
+        '#!/bin/bash\n' +
+        '# Vom panel-agent verwaltet: Docker-Port-Regeln (DOCKER-USER) nach Docker-Neustart/Boot neu setzen.\n' +
+        'F=/etc/panel-agent/docker-fw.rules; [ -f "$F" ] || exit 0\n' +
+        'for i in $(seq 1 15); do iptables -L DOCKER-USER -n >/dev/null 2>&1 && break; sleep 2; done\n' +
+        'while IFS= read -r line; do\n' +
+        '  [ -z "$line" ] && continue\n' +
+        '  chk=${line/-A/-C}\n' +
+        '  iptables $chk 2>/dev/null || iptables $line\n' +
+        'done < "$F"\n', { mode: 0o755 });
+    }
+    if (!fs.existsSync(unit)) {
+      fs.writeFileSync(unit,
+        '[Unit]\nDescription=panel-agent Docker-Port Firewall (DOCKER-USER reapply)\nAfter=docker.service\nRequires=docker.service\n\n' +
+        '[Service]\nType=oneshot\nExecStart=/usr/local/sbin/panel-agent-docker-fw.sh\nRemainAfterExit=yes\n\n' +
+        '[Install]\nWantedBy=multi-user.target\n');
+      await execAsync('systemctl daemon-reload && systemctl enable panel-agent-docker-fw.service', { timeout: 8000 }).catch(() => {});
+    }
+  } catch {}
+}
+
 async function firewallAllow(port, proto, from, action, route = false) {
   const { tool } = await detectAgentFirewall();
   const p   = _validPort(port);
@@ -805,11 +864,31 @@ async function firewallAllow(port, proto, from, action, route = false) {
     await execFileAsync('firewall-cmd', ['--reload'], opt);
 
   } else if (tool === 'nftables') {
-    await _ensureNftChain();
-    const saddr   = fr ? [_isIPv6(fr) ? 'ip6' : 'ip', 'saddr', fr] : [];
-    const dport   = p.includes(':') ? `{ ${p.replace(':', '-')} }` : p;
-    const verdict = action === 'allow' ? 'accept' : 'drop';
-    await execFileAsync('nft', ['add', 'rule', 'inet', 'filter', 'input', ...saddr, pr || 'tcp', 'dport', dport, verdict], opt);
+    if (route) {
+      // Docker-veröffentlichter Port: Regel in DOCKER-USER (hängt an FORWARD, umgeht INPUT).
+      // Muster wie hawser-firewall.sh: RELATED,ESTABLISHED-RETURN an Pos.1, per-IP RETURN
+      // (allow) bzw. per-Port DROP (deny). Idempotent via -C||-I/-A. KEIN Catch-all → Mailcow bleibt heil.
+      if (fr && _isIPv6(fr)) throw new Error('IPv6-Quellen für Docker-Regeln werden nicht unterstützt.');
+      const prr = pr || 'tcp';
+      const ensure = async (probe, add) => { try { await execFileAsync('iptables', ['-C', 'DOCKER-USER', ...probe], opt); } catch { await execFileAsync('iptables', add, opt); } };
+      await ensure(['-m','conntrack','--ctstate','RELATED,ESTABLISHED','-j','RETURN'],
+                   ['-I','DOCKER-USER','1','-m','conntrack','--ctstate','RELATED,ESTABLISHED','-j','RETURN']);
+      if (action === 'allow') {
+        if (!fr) throw new Error('Docker-Freigabe braucht eine Quell-IP (from).');
+        await ensure(['-s',fr,'-p',prr,'--dport',p,'-j','RETURN'], ['-I','DOCKER-USER','-s',fr,'-p',prr,'--dport',p,'-j','RETURN']);
+      } else {
+        const src = fr ? ['-s',fr] : [];
+        await ensure([...src,'-p',prr,'--dport',p,'-j','DROP'], ['-A','DOCKER-USER',...src,'-p',prr,'--dport',p,'-j','DROP']);
+      }
+      await _ensureDockerFwPersistence();
+      await _persistDockerFw();
+    } else {
+      await _ensureNftChain();
+      const saddr   = fr ? [_isIPv6(fr) ? 'ip6' : 'ip', 'saddr', fr] : [];
+      const dport   = p.includes(':') ? `{ ${p.replace(':', '-')} }` : p;
+      const verdict = action === 'allow' ? 'accept' : 'drop';
+      await execFileAsync('nft', ['add', 'rule', 'inet', 'filter', 'input', ...saddr, pr || 'tcp', 'dport', dport, verdict], opt);
+    }
 
   } else if (tool === 'iptables') {
     // Nur die IPv4-Tabelle wird verwaltet; eine IPv6-Quelle bräuchte ip6tables und
@@ -854,8 +933,14 @@ async function firewallDeleteRule(id) {
     await execFileAsync('firewall-cmd', ['--reload'], opt);
 
   } else if (tool === 'nftables') {
-    if (!/^\d+$/.test(s)) throw new Error('Ungültiger Handle');
-    await execFileAsync('nft', ['delete', 'rule', 'inet', 'filter', 'input', 'handle', s], opt);
+    if (/^d\d+$/.test(s)) {
+      // Docker-Regel (DOCKER-USER, ip-Tabelle) per Handle löschen; danach Persistenz-Datei aktualisieren.
+      await execFileAsync('nft', ['delete', 'rule', 'ip', 'filter', 'DOCKER-USER', 'handle', s.slice(1)], opt);
+      await _persistDockerFw();
+    } else {
+      if (!/^\d+$/.test(s)) throw new Error('Ungültiger Handle');
+      await execFileAsync('nft', ['delete', 'rule', 'inet', 'filter', 'input', 'handle', s], opt);
+    }
 
   } else if (tool === 'iptables') {
     if (!/^\d+$/.test(s)) throw new Error('Ungültige Regel-Nummer');
