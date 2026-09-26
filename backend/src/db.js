@@ -507,6 +507,31 @@ const syncRolePermissions = db.transaction((name, permissions) => {
 syncRolePermissions('operator', OPERATOR_PERMISSIONS);
 syncRolePermissions('guest', GUEST_PERMISSIONS);
 
+// ─── Einmalig (v7.8.0.0): neue Rechte für Security Center und Logs & Diagnose ─
+// Bisher hingen Sicherheits-Audit/fail2ban an `agents.manage_ssh` und Panel-Logs/Diagnose
+// an `settings.*`. Jede Rolle bekommt die neuen Keys genau dort, wo sie den Bereich schon
+// nutzen durfte — niemand verliert oder gewinnt Zugriff. Der Marker verhindert, dass
+// später in der Oberfläche entzogene Rechte beim nächsten Start zurückkommen.
+try {
+  const MARKER = 'migration.rbac_hubs_v1';
+  if (!db.prepare('SELECT 1 FROM settings WHERE key = ?').get(MARKER)) {
+    const ZUORDNUNG = {
+      'agents.manage_ssh': ['security.view', 'fail2ban.manage'],
+      'settings.view':     ['panel_logs.view'],
+      'settings.manage':   ['panel_logs.manage', 'diagnose.run'],
+    };
+    db.transaction(() => {
+      const ins = db.prepare('INSERT OR IGNORE INTO role_permissions (role_id, permission_key) VALUES (?, ?)');
+      for (const [alt, neu] of Object.entries(ZUORDNUNG)) {
+        const rollen = db.prepare('SELECT role_id FROM role_permissions WHERE permission_key = ?').all(alt);
+        for (const { role_id } of rollen) for (const key of neu) ins.run(role_id, key);
+      }
+      db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)').run(MARKER, new Date().toISOString());
+    })();
+    console.log('[DB] Rechte für Security Center und Logs & Diagnose übernommen');
+  }
+} catch (e) { console.warn('[DB] Rechte-Migration (rbac_hubs_v1) fehlgeschlagen:', e.message); }
+
 // Frisch-Installation: Admin-Benutzer anlegen (Suche case-insensitiv)
 const adminExists = db.prepare("SELECT id FROM users WHERE LOWER(username) = 'admin'").get();
 if (!adminExists) {

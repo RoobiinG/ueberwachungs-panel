@@ -106,6 +106,12 @@ app.use('/api/docker/labels', auth, require('./routes/dockerLabels'));
 // Die serverübergreifende Suche ebenso: Sie betrifft alle Server, nicht den lokalen.
 app.use('/api/docker/search', auth, require('./routes/dockerSuche'));
 
+// Öffentliche Share-Endpunkte (kein Login nötig). Sie müssen vor jeder app.use(…, auth, …)
+// mit überlappendem Pfad stehen — früher hing die Log-Freigabe unter /api/logs hinter der
+// Syslog-Einbindung mit auth und lieferte deshalb ohne Login immer 401.
+app.get('/api/panel-logs/share/:token', require('./routes/panelLogsPublic'));
+app.get('/api/diagnose/share/:token',   require('./routes/diagnosePublic'));
+
 app.use('/api/users', auth, require('./routes/users'));
 app.use('/api/roles', auth, require('./routes/roles'));
 app.use('/api/webhooks', auth, require('./routes/webhooks'));
@@ -126,11 +132,10 @@ app.use('/api/dockhand',    auth, require('./routes/dockhand'));
 app.use('/api/patchmon',    auth, require('./routes/patchmon'));
 app.use('/api/pelican',     auth, require('./routes/pelican'));
 app.use('/api/audit',       auth, require('./routes/audit'));
-// Öffentliche Share-Endpunkte (kein Login nötig) — müssen VOR auth stehen
-app.get('/api/logs/share/:token', require('./routes/panelLogsPublic'));
-app.get('/api/diagnose/share/:token', require('./routes/diagnosePublic'));
 app.use('/api/diagnose',    auth, require('./routes/diagnose'));
-app.use('/api/logs',        auth, require('./routes/panelLogs'));
+// Eigener Pfad: Unter /api/logs beantwortete die Syslog-Route jedes GET zuerst, die Seite
+// „Panel-Logs" zeigte deshalb Syslogs.
+app.use('/api/panel-logs',  auth, require('./routes/panelLogs'));
 app.use('/api/version',          require('./routes/version'));
 app.use('/api/update',      auth, require('./routes/update'));
 app.use('/api/reports',     auth, require('./routes/reports'));

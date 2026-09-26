@@ -46,7 +46,7 @@ export default class ErrorBoundary extends Component {
 
     // Ans Backend loggen
     try {
-      fetch('/api/logs', {
+      fetch('/api/panel-logs', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

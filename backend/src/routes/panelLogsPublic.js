@@ -1,5 +1,5 @@
 // Öffentlicher Share-Endpunkt — kein Login nötig
-// GET /api/logs/share/:token
+// GET /api/panel-logs/share/:token
 
 const db = require('../db');
 

@@ -6,6 +6,7 @@ import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
+import { useAuth } from '../context/AuthContext';
 import {
   RefreshCw, Trash2, ChevronDown, ChevronUp,
   AlertCircle, Info, TriangleAlert,
@@ -58,7 +59,7 @@ function IconAction({ icon: Icon, doneIcon: DoneIcon, title, onClick, doneColor 
 
 // ─── Log-Eintrag-Karte ────────────────────────────────────────────────────────
 
-function LogEntry({ log, highlighted, selected, onToggle }) {
+function LogEntry({ log, highlighted, selected, onToggle, darfTeilen }) {
   const [expanded, setExpanded] = useState(false);
   const ref     = useRef(null);
   const style   = LEVEL_STYLE[log.level] ?? LEVEL_STYLE.error;
@@ -84,7 +85,7 @@ function LogEntry({ log, highlighted, selected, onToggle }) {
 
   const copyLink = async () => {
     try {
-      const { data } = await axios.post('/api/logs/share', { ids: [log.id] });
+      const { data } = await axios.post('/api/panel-logs/share', { ids: [log.id] });
       await navigator.clipboard.writeText(`${window.location.origin}/s/${data.token}`);
     } catch {}
   };
@@ -135,11 +136,13 @@ function LogEntry({ log, highlighted, selected, onToggle }) {
                 title="Fehlertext kopieren"
                 onClick={copyText}
               />
-              <IconAction
-                icon={Link2} doneIcon={Check}
-                title="Direktlink kopieren"
-                onClick={copyLink}
-              />
+              {darfTeilen && (
+                <IconAction
+                  icon={Link2} doneIcon={Check}
+                  title="Direktlink kopieren"
+                  onClick={copyLink}
+                />
+              )}
             </div>
           </div>
 
@@ -170,6 +173,9 @@ function LogEntry({ log, highlighted, selected, onToggle }) {
 // ─── Haupt-Seite ──────────────────────────────────────────────────────────────
 
 export default function PanelLogs() {
+  const { hasPermission } = useAuth();
+  // Lesen: panel_logs.view (Tab-Voraussetzung). Löschen und öffentliche Links: panel_logs.manage.
+  const darfVerwalten = hasPermission('panel_logs.manage');
   const [searchParams] = useSearchParams();
   const highlightId  = searchParams.get('id')  ? Number(searchParams.get('id')) : null;
   const highlightIds = searchParams.get('ids')
@@ -197,7 +203,7 @@ export default function PanelLogs() {
       const params = { limit: PAGE_SIZE, offset: page * PAGE_SIZE };
       if (filterLevel)  params.level  = filterLevel;
       if (filterSource) params.source = filterSource;
-      const { data } = await axios.get('/api/logs', { params });
+      const { data } = await axios.get('/api/panel-logs', { params });
       setLogs(data.logs);
       setTotal(data.total);
     } catch {}
@@ -206,7 +212,7 @@ export default function PanelLogs() {
 
   const loadSources = async () => {
     try {
-      const { data } = await axios.get('/api/logs/sources');
+      const { data } = await axios.get('/api/panel-logs/sources');
       setSources(data);
     } catch {}
   };
@@ -239,7 +245,7 @@ export default function PanelLogs() {
   const deleteSelected = async () => {
     if (!selected.size) return;
     if (!confirm(`${selected.size} Eintrag(e) wirklich löschen?`)) return;
-    await axios.delete('/api/logs/bulk', { data: { ids: [...selected] } }).catch(() => {});
+    await axios.delete('/api/panel-logs/bulk', { data: { ids: [...selected] } }).catch(() => {});
     await load();
     loadSources();
   };
@@ -267,18 +273,19 @@ export default function PanelLogs() {
   const [shares,     setShares]     = useState([]);
 
   const loadShares = useCallback(async () => {
+    if (!darfVerwalten) return;
     try {
-      const { data } = await axios.get('/api/logs/shares');
+      const { data } = await axios.get('/api/panel-logs/shares');
       setShares(data);
     } catch {}
-  }, []);
+  }, [darfVerwalten]);
 
   useEffect(() => { loadShares(); }, [loadShares]);
 
   const createShare = async () => {
     if (!selected.size) return;
     try {
-      const { data } = await axios.post('/api/logs/share', { ids: [...selected] });
+      const { data } = await axios.post('/api/panel-logs/share', { ids: [...selected] });
       const link = `${window.location.origin}/s/${data.token}`;
       await navigator.clipboard.writeText(link);
       setBulkCopied('link');
@@ -290,7 +297,7 @@ export default function PanelLogs() {
   };
 
   const revokeShare = async (id) => {
-    await axios.delete(`/api/logs/shares/${id}`).catch(() => {});
+    await axios.delete(`/api/panel-logs/shares/${id}`).catch(() => {});
     setShares(s => s.filter(x => x.id !== id));
   };
 
@@ -298,7 +305,7 @@ export default function PanelLogs() {
 
   const clearAll = async () => {
     if (!confirm('Alle Panel-Logs wirklich löschen?')) return;
-    await axios.delete('/api/logs').catch(() => {});
+    await axios.delete('/api/panel-logs').catch(() => {});
     setLogs([]);
     setTotal(0);
     setSources([]);
@@ -336,7 +343,7 @@ export default function PanelLogs() {
             <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
             {loading ? 'Lädt…' : 'Aktualisieren'}
           </Button>
-          {total > 0 && (
+          {darfVerwalten && total > 0 && (
             <Button variant="danger" size="sm" onClick={clearAll}>
               <Trash2 size={13} className="mr-1" />Alle löschen
             </Button>
@@ -371,20 +378,24 @@ export default function PanelLogs() {
                 : <><Copy  size={11} /><span>Kopieren</span></>
               }
             </button>
-            {/* Sicheren Share-Link erstellen */}
-            <button
-              onClick={createShare}
-              title="Verschlüsselten Link erstellen & kopieren (kein Login nötig)"
-              className="flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-panel-accent/30 hover:bg-panel-accent/20 transition-colors"
-            >
-              {bulkCopied === 'link'
-                ? <><Check size={11} className="text-panel-green" /><span className="text-panel-green">Link kopiert!</span></>
-                : <><Shield size={11} /><span>Link erstellen</span></>
-              }
-            </button>
-            <Button variant="danger" size="sm" onClick={deleteSelected}>
-              <Trash2 size={12} className="mr-1" />Auswahl löschen
-            </Button>
+            {darfVerwalten && (
+              <>
+                {/* Sicheren Share-Link erstellen */}
+                <button
+                  onClick={createShare}
+                  title="Verschlüsselten Link erstellen & kopieren (kein Login nötig)"
+                  className="flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-panel-accent/30 hover:bg-panel-accent/20 transition-colors"
+                >
+                  {bulkCopied === 'link'
+                    ? <><Check size={11} className="text-panel-green" /><span className="text-panel-green">Link kopiert!</span></>
+                    : <><Shield size={11} /><span>Link erstellen</span></>
+                  }
+                </button>
+                <Button variant="danger" size="sm" onClick={deleteSelected}>
+                  <Trash2 size={12} className="mr-1" />Auswahl löschen
+                </Button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -417,6 +428,7 @@ export default function PanelLogs() {
                 highlighted={log.id === highlightId || (highlightIds?.has(log.id) ?? false)}
                 selected={selected.has(log.id)}
                 onToggle={() => toggleOne(log.id)}
+                darfTeilen={darfVerwalten}
               />
             ))}
           </div>

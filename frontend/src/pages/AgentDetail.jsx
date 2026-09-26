@@ -18,7 +18,7 @@ import { useAuth } from '../context/AuthContext';
 import { Shield, Key, ShieldCheck, Lock, Unlock, Radio, Globe } from 'lucide-react';
 import ContainerLogsModal from '../components/Docker/ContainerLogsModal';
 import SystemUpdateModal from '../components/SystemUpdateModal';
-import Fail2banBansCard from '../components/Security/Fail2banBansCard';
+import { HUB_RECHTE } from '../utils/hubRechte';
 
 import { useLiveInterval } from '../hooks/useLiveInterval';
 
@@ -226,19 +226,6 @@ export default function AgentDetail() {
   // ── Modul 15 (System Updates) ──────────────────────────────────────────────
   const [systemUpdateModal, setSystemUpdateModal] = useState(false);
 
-  // ── Modul 9 (SSH & Sicherheit) ──────────────────────────────────────────────
-  const [sshKeys, setSshKeys]             = useState([]);
-  const [sshConfig, setSshConfig]         = useState(null);
-  const [sshSessions, setSshSessions]     = useState([]);
-  const [loadingSsh, setLoadingSsh]       = useState(false);
-  const [addKeyModal, setAddKeyModal]     = useState(false);
-  const [newKeyForm, setNewKeyForm]       = useState({ user: 'root', key: '' });
-  const [addingKey, setAddingKey]         = useState(false);
-
-  // ── Modul 13 (Port-Wächter) ──
-  const [allowedPorts, setAllowedPorts]   = useState('');
-  const [savingPorts, setSavingPorts]     = useState(false);
-
   // ── Modul 7 (Festplatten & System) ─────────────────────────────────────────
   const [disks, setDisks] = useState([]);
   const [loadingDisks, setLoadingDisks] = useState(false);
@@ -282,190 +269,6 @@ export default function AgentDetail() {
     }
   };
 
-  const loadSshData = useCallback(async () => {
-    setLoadingSsh(true);
-    try {
-      const [keysRes, confRes, sessRes] = await Promise.all([
-        axios.get(`/api/agents/${id}/ssh/keys`).catch(() => ({ data: [] })),
-        axios.get(`/api/agents/${id}/ssh/audit`).catch(() => ({ data: null })),
-        axios.get(`/api/agents/${id}/ssh/sessions`).catch(() => ({ data: [] }))
-      ]);
-      setSshKeys(keysRes.data || []);
-      setSshConfig(confRes.data || null);
-      setSshSessions(sessRes.data || []);
-    } catch (e) { }
-    setLoadingSsh(false);
-  }, [id]);
-
-  const removeSshKey = async (identifier) => {
-    if (!confirm('SSH-Key wirklich entfernen?')) return;
-    try {
-      await axios.delete(`/api/agents/${id}/ssh/keys/${encodeURIComponent(identifier)}`);
-      loadSshData();
-    } catch (e) {
-      alert('Fehler beim Entfernen des Schlüssels');
-    }
-  };
-
-  const saveAllowedPorts = async () => {
-    setSavingPorts(true);
-    try {
-      const portList = allowedPorts.split(',')
-        .map(p => parseInt(p.trim(), 10))
-        .filter(p => !isNaN(p) && p > 0 && p <= 65535);
-      
-      await axios.put(`/api/agents/${id}`, { allowed_ports: portList });
-      load(true); // AgentData neu laden
-      alert('Erlaubte Ports gespeichert.');
-    } catch (err) {
-      alert('Fehler beim Speichern der Ports.');
-    }
-    setSavingPorts(false);
-  };
-
-  const handleAddSshKey = async (e) => {
-    e?.preventDefault();
-    if (!newKeyForm.key.trim()) return;
-    setAddingKey(true);
-    try {
-      await axios.post(`/api/agents/${id}/ssh/keys`, {
-        user: newKeyForm.user || 'root',
-        key: newKeyForm.key.trim()
-      });
-      setAddKeyModal(false);
-      setNewKeyForm({ user: 'root', key: '' });
-      loadSshData();
-    } catch (err) {
-      alert('Fehler beim Hinzufügen des Schlüssels: ' + (err.response?.data?.error || err.message));
-    } finally {
-      setAddingKey(false);
-    }
-  };
-
-  const applyListeningPortsToWhitelist = () => {
-    if (!sshConfig?.listeningPorts || sshConfig.listeningPorts.length === 0) return;
-    const detected = [...new Set(sshConfig.listeningPorts.map(p => p.port))].sort((a, b) => a - b);
-    setAllowedPorts(detected.join(', '));
-  };
-
-  const securityAudit = useMemo(() => {
-    if (!sshConfig) return null;
-    let score = 100;
-    const checks = [];
-
-    // Root Login
-    if (sshConfig.PermitRootLogin === 'yes') {
-      score -= 30;
-      checks.push({
-        id: 'root',
-        status: 'danger',
-        label: 'Root-Login erlaubt',
-        detail: 'Direkter SSH-Login als root erhöht das Risiko von Credential-Stuffing. Empfohlen: "prohibit-password" oder "no".'
-      });
-    } else {
-      checks.push({
-        id: 'root',
-        status: 'ok',
-        label: 'Root-Login abgesichert',
-        detail: sshConfig.PermitRootLogin === 'no' ? 'Root-Login komplett deaktiviert.' : 'Nur Key-basierter Root-Login erlaubt.'
-      });
-    }
-
-    // Passwort-Authentifizierung
-    if (sshConfig.PasswordAuthentication === 'yes') {
-      score -= 25;
-      checks.push({
-        id: 'pw',
-        status: 'warn',
-        label: 'Passwort-Authentifizierung aktiv',
-        detail: 'Passwörter können per Brute-Force erraten werden. Es wird empfohlen, ausschließlich SSH-Keys zuzulassen.'
-      });
-    } else {
-      checks.push({
-        id: 'pw',
-        status: 'ok',
-        label: 'Passwort-Authentifizierung deaktiviert',
-        detail: 'Nur kryptografische SSH-Schlüssel erlaubt.'
-      });
-    }
-
-    // Port 22
-    const portNum = parseInt(sshConfig.Port, 10) || 22;
-    if (portNum === 22) {
-      score -= 10;
-      checks.push({
-        id: 'port',
-        status: 'info',
-        label: 'Standard SSH-Port (22)',
-        detail: 'Port 22 zieht automatisierte Internet-Scans an. Ein alternativer Port reduziert Log-Spam.'
-      });
-    } else {
-      checks.push({
-        id: 'port',
-        status: 'ok',
-        label: `Alternativer SSH-Port (${portNum})`,
-        detail: 'Reduziert automatisiertes Scan-Rauschen im Internet.'
-      });
-    }
-
-    // Fail2ban
-    if (sshConfig.fail2banInstalled) {
-      if (sshConfig.fail2banActive) {
-        checks.push({
-          id: 'fail2ban',
-          status: 'ok',
-          label: 'Fail2ban aktiv',
-          detail: `Schutz vor Brute-Force aktiv (${sshConfig.fail2banJails?.length || 0} Jails: ${(sshConfig.fail2banJails || []).join(', ') || 'sshd'}).`
-        });
-      } else {
-        score -= 15;
-        checks.push({
-          id: 'fail2ban',
-          status: 'warn',
-          label: 'Fail2ban installiert aber inaktiv',
-          detail: 'Der Fail2ban-Dienst läuft momentan nicht.'
-        });
-      }
-    } else {
-      score -= 15;
-      checks.push({
-        id: 'fail2ban',
-        status: 'warn',
-        label: 'Fail2ban nicht installiert',
-        detail: 'Keine automatische IP-Sperre bei fehlgeschlagenen Login-Versuchen.'
-      });
-    }
-
-    // Port-Wächter Drift Check
-    const allowed = (allowedPorts || '')
-      .split(',')
-      .map(p => parseInt(p.trim(), 10))
-      .filter(p => !isNaN(p) && p > 0);
-    
-    let unallowedPorts = [];
-    if (allowed.length > 0 && sshConfig.listeningPorts) {
-      unallowedPorts = sshConfig.listeningPorts.filter(lp => !allowed.includes(lp.port));
-      if (unallowedPorts.length > 0) {
-        score -= 20;
-        checks.push({
-          id: 'drift',
-          status: 'danger',
-          label: `Port-Drift: ${unallowedPorts.length} unerlaubte offene Ports`,
-          detail: `Gefundene offene Ports außerhalb der Whitelist: ${unallowedPorts.map(p => p.port).join(', ')}.`
-        });
-      }
-    }
-
-    score = Math.max(0, Math.min(100, score));
-
-    return {
-      score,
-      checks,
-      unallowedPorts,
-      rating: score >= 90 ? 'Hervorragend' : score >= 70 ? 'Gut' : score >= 50 ? 'Verbesserungsbedürftig' : 'Kritisch'
-    };
-  }, [sshConfig, allowedPorts]);
-
   const loadNotes = useCallback(async () => {
     try {
       const { data } = await axios.get(`/api/agents/${id}/notes`);
@@ -475,9 +278,8 @@ export default function AgentDetail() {
 
   const loadTab = useCallback((tab) => {
     if (tab === 'notes')    loadNotes();
-    if (tab === 'ssh')      loadSshData();
     if (tab === 'disks')    loadDisks();
-  }, [id, loadNotes, loadSshData, loadDisks]);
+  }, [id, loadNotes, loadDisks]);
 
   useEffect(() => {
     loadTab(activeTab);
@@ -501,10 +303,6 @@ export default function AgentDetail() {
       if (agent) {
         setAgentData(agent);
         setAgentName(agent.name);
-        try {
-          const portsArr = JSON.parse(agent.allowed_ports || '[]');
-          setAllowedPorts(portsArr.join(', '));
-        } catch { setAllowedPorts(''); }
       }
       setAgentPmId(agent?.patchmon_host_id || null);
       setStats(statsRes.data);
@@ -678,7 +476,11 @@ export default function AgentDetail() {
     { id: 'processes', label: 'Prozesse',  icon: Cpu },
     ...(hasPermission('disks.manage') ? [{ id: 'disks', label: 'Laufwerke', icon: HardDrive }] : []),
     { id: 'notes',     label: 'Notizbuch', icon: FileText },
-    ...(hasPermission('agents.manage_ssh') ? [{ id: 'ssh', label: 'Sicherheit', icon: Shield }] : []),
+    // Der frühere Tab „Sicherheit" lebt jetzt im Security Center — dieser Eintrag springt
+    // direkt dorthin, mit diesem Server vorausgewählt.
+    ...(hasPermission(HUB_RECHTE.security)
+      ? [{ id: 'security', label: 'Security Center', icon: Shield, link: `/security?server=${id}` }]
+      : []),
   ];
 
   // Initialen Tab setzen wenn Docker nicht verfügbar
@@ -819,7 +621,7 @@ export default function AgentDetail() {
       {/* ── Tabs ───────────────────────────────────────────────────────── */}
       <div className="flex gap-1 border-b border-panel-border">
         {tabs.map(t => (
-          <button key={t.id} onClick={() => setActiveTab(t.id)}
+          <button key={t.id} onClick={() => (t.link ? navigate(t.link) : setActiveTab(t.id))}
             className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium border-b-2 transition-colors -mb-px ${
               currentTab === t.id
                 ? 'border-panel-accent text-panel-accent'
@@ -1476,289 +1278,6 @@ export default function AgentDetail() {
         )}
       </Modal>
 
-      {/* ══════════════════════════════════════════════════════════════════
-          TAB: SSH & SICHERHEIT
-      ═══════════════════════════════════════════════════════════════════ */}
-      {currentTab === 'ssh' && hasPermission('agents.manage_ssh') && (
-        <div className="space-y-4">
-          {/* Sicherheits-Audit Übersicht */}
-          <Card title="Sicherheits-Audit & Bewertung">
-            {loadingSsh ? (
-              <p className="text-xs text-panel-muted py-2">Lade Sicherheitsdaten...</p>
-            ) : sshConfig ? (
-              <div className="space-y-4">
-                {securityAudit && (
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-lg bg-panel-surface/60 border border-panel-border">
-                    <div className="flex items-center gap-3">
-                      <div className={`p-3 rounded-full ${
-                        securityAudit.score >= 80 ? 'bg-panel-green/20 text-panel-green' :
-                        securityAudit.score >= 50 ? 'bg-panel-orange/20 text-panel-orange' : 'bg-panel-red/20 text-panel-red'
-                      }`}>
-                        {securityAudit.score >= 80 ? <ShieldCheck size={24} /> : <ShieldAlert size={24} />}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-lg font-bold text-panel-text">Sicherheits-Score: {securityAudit.score} / 100</span>
-                          <Badge color={securityAudit.score >= 80 ? 'green' : securityAudit.score >= 50 ? 'orange' : 'red'}>
-                            {securityAudit.rating}
-                          </Badge>
-                        </div>
-                        <p className="text-xs text-panel-muted mt-0.5">
-                          Basierend auf SSH-Konfiguration, Authentifizierungsmethoden, Fail2ban und Port-Wächter.
-                        </p>
-                      </div>
-                    </div>
-                    <Button size="sm" variant="ghost" onClick={loadSshData} disabled={loadingSsh}>
-                      <RefreshCw size={14} className={`mr-1.5 ${loadingSsh ? 'animate-spin' : ''}`} /> Neu prüfen
-                    </Button>
-                  </div>
-                )}
-
-                {/* Status-Kacheln */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                  <div className={`p-3 rounded-lg border ${
-                    sshConfig.PermitRootLogin === 'yes' 
-                      ? 'bg-panel-red/10 border-panel-red/30' 
-                      : sshConfig.PermitRootLogin === 'no' 
-                        ? 'bg-panel-green/10 border-panel-green/30' 
-                        : 'bg-panel-blue/10 border-panel-blue/30'
-                  }`}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs text-panel-muted">Root-Login</span>
-                      {sshConfig.PermitRootLogin === 'yes' ? <Unlock size={14} className="text-panel-red" /> : <Lock size={14} className="text-panel-green" />}
-                    </div>
-                    <p className="text-sm font-semibold text-panel-text">{sshConfig.PermitRootLogin}</p>
-                    <p className={`text-[10px] mt-1 ${sshConfig.PermitRootLogin === 'yes' ? 'text-panel-red font-medium' : 'text-panel-muted'}`}>
-                      {sshConfig.PermitRootLogin === 'yes' ? 'Sicherheitsrisiko (Brute-Force Ziel)' : 'Abgesichert'}
-                    </p>
-                  </div>
-
-                  <div className={`p-3 rounded-lg border ${sshConfig.PasswordAuthentication === 'yes' ? 'bg-panel-orange/10 border-panel-orange/30' : 'bg-panel-green/10 border-panel-green/30'}`}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs text-panel-muted">Passwort Auth</span>
-                      <Key size={14} className={sshConfig.PasswordAuthentication === 'yes' ? 'text-panel-orange' : 'text-panel-green'} />
-                    </div>
-                    <p className="text-sm font-semibold text-panel-text">{sshConfig.PasswordAuthentication}</p>
-                    <p className="text-[10px] text-panel-muted mt-1">
-                      {sshConfig.PasswordAuthentication === 'yes' ? 'Nur Schlüssel empfohlen' : 'Nur SSH-Keys zulässig'}
-                    </p>
-                  </div>
-
-                  <div className="p-3 rounded-lg border bg-panel-surface border-panel-border">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs text-panel-muted">SSH Port</span>
-                      <Radio size={14} className="text-panel-accent" />
-                    </div>
-                    <p className="text-sm font-semibold text-panel-text">{sshConfig.Port}</p>
-                    <p className="text-[10px] text-panel-muted mt-1">
-                      {parseInt(sshConfig.Port, 10) === 22 ? 'Standard-Port' : 'Benutzerdefinierter Port'}
-                    </p>
-                  </div>
-
-                  <div className={`p-3 rounded-lg border ${
-                    sshConfig.fail2banActive ? 'bg-panel-green/10 border-panel-green/30' : 
-                    sshConfig.fail2banInstalled ? 'bg-panel-orange/10 border-panel-orange/30' : 'bg-panel-surface border-panel-border'
-                  }`}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs text-panel-muted">Fail2ban Schutz</span>
-                      <Shield size={14} className={sshConfig.fail2banActive ? 'text-panel-green' : 'text-panel-muted'} />
-                    </div>
-                    <p className="text-sm font-semibold text-panel-text">
-                      {sshConfig.fail2banActive ? 'Aktiv' : sshConfig.fail2banInstalled ? 'Inaktiv' : 'Nicht installiert'}
-                    </p>
-                    <p className="text-[10px] text-panel-muted mt-1 truncate">
-                      {sshConfig.fail2banActive 
-                        ? `${sshConfig.fail2banJails?.length || 0} Jails (${(sshConfig.fail2banJails || []).join(', ') || 'sshd'})` 
-                        : 'Kein automatischer IP-Bann'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Audit Empfehlungen & Checkliste */}
-                {securityAudit && securityAudit.checks.length > 0 && (
-                  <div className="space-y-1.5 pt-2">
-                    <p className="text-xs font-semibold text-panel-muted uppercase tracking-wider mb-2">Sicherheits-Empfehlungen & Audit-Checkliste</p>
-                    {securityAudit.checks.map((chk) => (
-                      <div key={chk.id} className="flex items-start gap-2.5 p-2.5 rounded bg-panel-bg/60 border border-panel-border/50 text-xs">
-                        {chk.status === 'ok' ? (
-                          <CheckCircle2 size={16} className="text-panel-green shrink-0 mt-0.5" />
-                        ) : chk.status === 'danger' ? (
-                          <ShieldAlert size={16} className="text-panel-red shrink-0 mt-0.5" />
-                        ) : (
-                          <AlertTriangle size={16} className="text-panel-orange shrink-0 mt-0.5" />
-                        )}
-                        <div className="min-w-0">
-                          <span className={`font-semibold ${chk.status === 'ok' ? 'text-panel-text' : chk.status === 'danger' ? 'text-panel-red' : 'text-panel-orange'}`}>
-                            {chk.label}
-                          </span>
-                          <p className="text-[11px] text-panel-muted mt-0.5">{chk.detail}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <p className="text-xs text-panel-muted">Keine SSH-Konfiguration gefunden.</p>
-            )}
-          </Card>
-
-          {/* Gesperrte IPs aus fail2ban — lädt, aktualisiert und zählt selbst herunter */}
-          <Fail2banBansCard agentId={id} />
-
-          {/* Port-Wächter & Erkannte Ports */}
-          <Card title="Port-Wächter & Lauschende Dienste (Modul 13)">
-            <p className="text-xs text-panel-muted mb-3">
-              Definiere hier, welche Ports (für 0.0.0.0 oder ::) auf dem Server offen sein dürfen.
-              Trage die Ports kommagetrennt ein (z. B. 22, 80, 443).
-              Über die Alert-Regeln kannst du bei Port-Drift (unerlaubte offene Ports) alarmiert werden.
-            </p>
-            
-            <div className="flex flex-col sm:flex-row gap-2 mb-4">
-              <input
-                type="text"
-                className="bg-panel-bg text-panel-text text-sm rounded-lg border border-panel-border px-3 py-1.5 focus:border-panel-accent focus:ring-1 focus:ring-panel-accent outline-none w-full font-mono"
-                placeholder="22, 80, 443"
-                value={allowedPorts}
-                onChange={(e) => setAllowedPorts(e.target.value)}
-              />
-              <div className="flex gap-2 shrink-0">
-                {canWrite && (
-                  <Button size="sm" onClick={saveAllowedPorts} disabled={savingPorts}>
-                    {savingPorts ? 'Speichere...' : 'Speichern'}
-                  </Button>
-                )}
-                {canWrite && sshConfig?.listeningPorts && sshConfig.listeningPorts.length > 0 && (
-                  <Button size="sm" variant="outline" onClick={applyListeningPortsToWhitelist} title="Übernimmt alle aktuell erkannten Ports in die Whitelist">
-                    Ports übernehmen
-                  </Button>
-                )}
-              </div>
-            </div>
-
-            {/* Live Lauschende Ports auf dem Server */}
-            {sshConfig?.listeningPorts && sshConfig.listeningPorts.length > 0 && (
-              <div className="pt-2 border-t border-panel-border/50">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-semibold text-panel-muted uppercase tracking-wider">
-                    Aktuell lauschende Netzwerk-Ports ({sshConfig.listeningPorts.length})
-                  </span>
-                  {securityAudit?.unallowedPorts?.length > 0 && (
-                    <Badge color="red">{securityAudit.unallowedPorts.length} Unerlaubt (Drift)</Badge>
-                  )}
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                  {sshConfig.listeningPorts.map((lp, idx) => {
-                    const allowedList = (allowedPorts || '').split(',').map(p => parseInt(p.trim(), 10)).filter(p => !isNaN(p));
-                    const isWhitelisted = allowedList.includes(lp.port);
-                    return (
-                      <div key={idx} className={`p-2.5 rounded border text-xs flex items-center justify-between gap-2 ${
-                        isWhitelisted ? 'bg-panel-surface/60 border-panel-border' : 'bg-panel-red/10 border-panel-red/30'
-                      }`}>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-mono font-bold text-panel-text">Port {lp.port}</span>
-                            <span className="text-[10px] text-panel-muted uppercase font-mono">{lp.proto}</span>
-                          </div>
-                          <p className="text-[11px] text-panel-muted truncate">
-                            {lp.process || 'Unbekannter Dienst'} <span className="text-panel-muted/60 font-mono">({lp.bind})</span>
-                          </p>
-                        </div>
-                        {isWhitelisted ? (
-                          <Badge color="green">Erlaubt</Badge>
-                        ) : (
-                          <Badge color="red">Drift</Badge>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </Card>
-
-          {/* Aktive SSH Sitzungen */}
-          <Card title="Aktive SSH Sitzungen">
-            {loadingSsh ? (
-              <p className="text-xs text-panel-muted">Lade aktive Sitzungen...</p>
-            ) : sshSessions.length === 0 ? (
-              <p className="text-xs text-panel-muted">Keine aktiven SSH-Verbindungen gefunden.</p>
-            ) : (
-              <div className="space-y-2">
-                {sshSessions.map((s, i) => (
-                  <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 border border-panel-border rounded-lg bg-panel-surface/50">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded bg-panel-bg border border-panel-border">
-                        <Terminal size={16} className="text-panel-accent" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-semibold text-panel-text">{s.ip}</span>
-                          {s.user && <Badge color="blue">{s.user}</Badge>}
-                          {s.tty && <span className="text-xs font-mono text-panel-muted">{s.tty}</span>}
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-panel-muted mt-0.5">
-                          {s.country && s.country !== 'Unknown' && (
-                            <span className="flex items-center gap-1">
-                              <Globe size={12} /> {(s.country || '').toUpperCase()} {s.city ? `— ${s.city}` : ''}
-                            </span>
-                          )}
-                          {s.loginTime && (
-                            <span className="flex items-center gap-1">
-                              <Clock size={12} /> Login: {s.loginTime}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <Badge color="green">Aktiv</Badge>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-
-          {/* Autorisierte SSH-Schlüssel */}
-          <Card title="Autorisierte SSH-Schlüssel">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs text-panel-muted">
-                {sshKeys.length} {sshKeys.length === 1 ? 'Schlüssel hinterlegt' : 'Schlüssel hinterlegt'}
-              </span>
-              {canWrite && (
-                <Button size="sm" onClick={() => setAddKeyModal(true)}>
-                  <Plus size={14} className="mr-1" /> Schlüssel hinterlegen
-                </Button>
-              )}
-            </div>
-            {loadingSsh ? (
-              <p className="text-xs text-panel-muted">Lade Schlüssel...</p>
-            ) : sshKeys.length === 0 ? (
-              <p className="text-xs text-panel-muted">Keine autorisierten Schlüssel gefunden.</p>
-            ) : (
-              <div className="space-y-2">
-                {sshKeys.map((k, i) => (
-                  <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 border border-panel-border rounded-lg bg-panel-surface/50">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Badge color="blue">{k.user}</Badge>
-                        <span className="text-sm font-medium text-panel-text truncate">{k.comment || 'Unbenannt'}</span>
-                      </div>
-                      <p className="text-xs text-panel-muted font-mono">{k.fingerprint}</p>
-                      <p className="text-[10px] text-panel-muted mt-1 truncate max-w-xl font-mono">{k.type} ...{k.key.slice(-20)}</p>
-                    </div>
-                    {canWrite && (
-                      <Button size="sm" variant="danger" onClick={() => removeSshKey(k.fingerprint)}>
-                        <Trash2 size={14} className="mr-1" /> Entfernen
-                      </Button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-        </div>
-      )}
-
       {currentTab === 'disks' && hasPermission('disks.manage') && (
         <div className="space-y-4">
           <Card title="S.M.A.R.T. Werte & Festplatten">
@@ -1942,47 +1461,6 @@ export default function AgentDetail() {
           onClose={() => setSystemUpdateModal(false)} 
         />
       )}
-
-      {/* ── Add SSH Key Modal ─────────────────────────────────────────── */}
-      <Modal
-        open={addKeyModal}
-        onClose={() => setAddKeyModal(false)}
-        title="Autorisierten SSH-Schlüssel hinterlegen"
-        footer={
-          <>
-            <Button variant="ghost" size="sm" onClick={() => setAddKeyModal(false)}>Abbrechen</Button>
-            <Button size="sm" onClick={handleAddSshKey} disabled={addingKey || !newKeyForm.key.trim()}>
-              {addingKey ? 'Hinterlege...' : 'Schlüssel speichern'}
-            </Button>
-          </>
-        }
-      >
-        <form onSubmit={handleAddSshKey} className="space-y-4 text-xs">
-          <div>
-            <label className="block text-panel-muted font-medium mb-1">Benutzerkonto auf dem Server</label>
-            <input
-              type="text"
-              value={newKeyForm.user}
-              onChange={(e) => setNewKeyForm(f => ({ ...f, user: e.target.value }))}
-              placeholder="root"
-              className="w-full bg-panel-bg text-panel-text px-3 py-1.5 rounded-lg border border-panel-border focus:border-panel-accent focus:ring-1 focus:ring-panel-accent outline-none font-mono"
-            />
-          </div>
-          <div>
-            <label className="block text-panel-muted font-medium mb-1">Öffentlicher SSH-Schlüssel (Public Key)</label>
-            <textarea
-              rows={4}
-              value={newKeyForm.key}
-              onChange={(e) => setNewKeyForm(f => ({ ...f, key: e.target.value }))}
-              placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5... user@domain"
-              className="w-full bg-panel-bg text-panel-text px-3 py-2 rounded-lg border border-panel-border focus:border-panel-accent focus:ring-1 focus:ring-panel-accent outline-none font-mono text-[11px] resize-none"
-            />
-            <p className="text-[11px] text-panel-muted mt-1">
-              Füge den Einzeiler des öffentlichen Schlüssels ein. Er wird sicher in <code className="text-panel-accent font-mono">~/.ssh/authorized_keys</code> angehängt.
-            </p>
-          </div>
-        </form>
-      </Modal>
     </div>
   );
 }

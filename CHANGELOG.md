@@ -16,6 +16,37 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [7.8.0.0] - 2026-09-26 (Build 389) — *Control Hub*
+
+### Neue Funktionen
+- **Neue Navigation mit drei Sammelseiten:** Zusammengehöriges liegt jetzt an einem Ort, unterteilt in Tabs. Der aktive Tab steht in der Adresse (`?tab=`), lässt sich also verlinken, und die Zurück-Taste funktioniert.
+  - **Security Center** (`/security`, unter *Infrastruktur*, ersetzt „Firewall"): Tabs **Audit & Score**, **Firewall** und **Fail2Ban & Sperren**. Die Server-Auswahl oben gilt für alle drei Tabs. *Audit & Score* enthält den bisherigen Tab „Sicherheit" der Server-Detailseite: Sicherheits-Score, Checkliste, Port-Wächter, aktive SSH-Sitzungen und SSH-Schlüssel. Die Server-Detailseite verlinkt stattdessen direkt ins Security Center.
+  - **Identität & Zugriff** (`/access`): Tabs **Benutzer-Liste** und **Rollen & Berechtigungen**.
+  - **Logs & Diagnose** (`/diagnostics`): Tabs **System-Logs** (Panel-Logs), **Audit-Trail** und **Diagnose-Tools**.
+  - Alte Adressen (`/firewall`, `/users`, `/roles`, `/audit`, `/panel-logs`, `/diagnose`) leiten auf den passenden Tab weiter.
+- **Fail2Ban — IP entsperren (Agent v2.18.0):** Gesperrte IPs lassen sich im Security Center entsperren. Der Agent entsperrt nur Paare aus Jail und IP, die tatsächlich gerade gesperrt sind; jede Entsperrung steht im Audit-Log.
+- **Rechte klar getrennt nach Lesen, Schreiben und Admin:**
+  - Neu: **Sicherheitslage anzeigen** (`security.view`) für Score, Checkliste, SSH-Sitzungen und Sperrliste. Bisher brauchte das dasselbe Recht wie das Hinterlegen von SSH-Schlüsseln, also Root-Zugang.
+  - Neu: **IP-Sperren aufheben** (`fail2ban.manage`).
+  - Neu in der Kategorie *Logs & Diagnose*: **System-Logs anzeigen** / **verwalten** (`panel_logs.view` / `panel_logs.manage`) und **Diagnose ausführen** (`diagnose.run`). Bisher hingen diese Bereiche an den allgemeinen Einstellungs-Rechten.
+  - Menüpunkte, Tabs und einzelne Knöpfe richten sich nach diesen Rechten. Wer einen Tab nicht sehen darf, landet auch über einen eingetippten Link auf dem ersten erlaubten Tab. Geschützt wird jede Aktion zusätzlich im Backend.
+  - Die Firewall-Knöpfe hängen jetzt am Recht **Regeln verwalten** statt an der allgemeinen Schreib-Erkennung, die schon mit Docker-Steuerung griff.
+  - Admin wird im Frontend an der Admin-Eigenschaft der Rolle erkannt statt am Rollennamen „admin".
+
+### Bugfixes
+- **Panel-Logs zeigten Syslogs:** Panel-Logs und Zentrale Logs teilten sich den Pfad `/api/logs`, und die Syslog-Route antwortete zuerst. Panel-Logs haben jetzt den eigenen Pfad `/api/panel-logs`.
+- **Öffentliche Log-Links verlangten eine Anmeldung:** Die Freigabe-Route lag hinter der Anmelde-Prüfung und lieferte ohne Login immer 401. Sie ist jetzt wieder öffentlich erreichbar.
+- **Zentrale Logs ohne Obergrenze:** `limit` war unbegrenzt (`-1` lieferte alle Syslogs aller Server). Jetzt gilt: höchstens 500 Zeilen je Abruf, Suchtext als Text statt Platzhalter, schnellere Zählung ohne JOIN.
+- **Diagnose-Freigabe:** Veröffentlicht wurde der Bericht, den der Browser schickte. Damit ließ sich die Schwärzung der Secrets umgehen. Jetzt erzeugt der Server den Bericht selbst neu. Die SMTP-Testmail geht nur noch an die eigene Adresse statt an eine frei wählbare, und das Audit-Log enthält nur noch den Anfang des Freigabe-Tokens.
+- **Freigabe-Tokens der Panel-Logs** sind nur noch mit dem Verwalten-Recht einsehbar, weil ein Token der Zugang selbst ist.
+- **Port-Wächter:** Bei lauschenden Ports stand die Bindungsadresse als „undefined" da.
+
+### System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migration (einmalig, automatisch):** Jede Rolle bekommt die neuen Rechte genau dort, wo sie den Bereich bisher schon nutzen durfte. Aus *SSH-Keys verwalten* werden zusätzlich *Sicherheitslage anzeigen* und *IP-Sperren aufheben*, aus *Einstellungen anzeigen* wird zusätzlich *System-Logs anzeigen*, aus *Einstellungen ändern* werden zusätzlich *System-Logs verwalten* und *Diagnose ausführen*. Niemand verliert oder gewinnt dadurch Zugriff. Ein Marker verhindert, dass später entzogene Rechte beim Neustart zurückkommen.
+- **Agent-Kompatibilität:** Für „Entsperren" ist **Agent v2.18.0** nötig. Ältere Agents zeigen die Sperrliste weiter an; beim Entsperren erscheint ein Hinweis auf das Update.
+- **Lesezeichen:** Alte Adressen leiten weiter, geteilte Log- und Diagnose-Links (`/s/…`) bleiben gültig.
+- **Neustart/Session:** Kein Session-Verlust. Nach dem Update einmal neu laden, damit Menü und Rechte aktuell sind.
+
 ## [7.7.0.1] - 2026-09-26 (Build 388) — *Jail Watch*
 
 ### Bugfixes (Sicherheit)

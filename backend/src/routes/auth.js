@@ -6,6 +6,7 @@ const rateLimit = require('express-rate-limit');
 const db        = require('../db');
 const authMiddleware = require('../middleware/auth');
 const { getPermissions } = require('../middleware/requirePermission');
+const { isAdminRole }    = require('../utils/rbacGuard');
 const { auditLog, resolveLocation } = require('../utils/audit');
 
 const hashToken   = (t) => crypto.createHash('sha256').update(t).digest('hex');
@@ -225,7 +226,7 @@ router.post('/login', loginLimiter, async (req, res) => {
   const permissions = getPermissions(user.role);
   storeSession(token, user.id, req);
   auditLog(req, 'login', 'user', user.username);
-  res.json({ token, user: { id: user.id, username: user.username, role: user.role }, permissions });
+  res.json({ token, user: { id: user.id, username: user.username, role: user.role, isAdmin: isAdminRole(user.role) }, permissions });
 });
 
 // ─── 2FA Verify (Login Schritt 2) ─────────────────────────────────────────────
@@ -272,7 +273,7 @@ router.post('/2fa/verify', loginLimiter, (req, res) => {
   const permissions = getPermissions(user.role);
   storeSession(token, user.id, req);
   auditLog(req, 'login.2fa', 'user', user.username);
-  res.json({ token, user: { id: user.id, username: user.username, role: user.role }, permissions });
+  res.json({ token, user: { id: user.id, username: user.username, role: user.role, isAdmin: isAdminRole(user.role) }, permissions });
 });
 
 // ─── Was die Anmeldeseite anbieten darf (öffentlich) ─────────────────────────
@@ -349,7 +350,7 @@ router.get('/me', authMiddleware, (req, res) => {
   const permissions = getPermissions(user.role);
   // Rollenbezeichnung aus der roles-Tabelle holen
   const roleRow = db.prepare('SELECT label FROM roles WHERE name = ?').get(user.role);
-  res.json({ ...user, roleLabel: roleRow?.label || user.role, permissions });
+  res.json({ ...user, roleLabel: roleRow?.label || user.role, isAdmin: isAdminRole(user.role), permissions });
 });
 
 router.put('/password', authMiddleware, (req, res) => {

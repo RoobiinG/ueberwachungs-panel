@@ -74,7 +74,7 @@ export default function PanelLogsShare() {
   const [error,   setError]   = useState('');
 
   useEffect(() => {
-    axios.get(`/api/logs/share/${token}`)
+    axios.get(`/api/panel-logs/share/${token}`)
       .then(r => { setData(r.data); setLoading(false); })
       .catch(e => {
         setError(e.response?.data?.error || 'Link nicht gefunden oder widerrufen');

@@ -1486,7 +1486,7 @@ router.delete('/:id/ssh/keys/:identifier', requirePermission('agents.manage_ssh'
   }
 });
 
-router.get('/:id/ssh/audit', requirePermission('agents.manage_ssh'), async (req, res) => {
+router.get('/:id/ssh/audit', requirePermission('security.view'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
@@ -1500,7 +1500,7 @@ router.get('/:id/ssh/audit', requirePermission('agents.manage_ssh'), async (req,
 
 // Gesperrte IPs aus fail2ban (IP, Jail, Restzeit). Statt 502 gibt es bei altem oder
 // unerreichbarem Agent eine 200 mit `state`, damit der Sicherheits-Tab einen Hinweis zeigt.
-router.get('/:id/fail2ban/bans', requirePermission('agents.manage_ssh'), async (req, res) => {
+router.get('/:id/fail2ban/bans', requirePermission('security.view'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
@@ -1512,6 +1512,28 @@ router.get('/:id/fail2ban/bans', requirePermission('agents.manage_ssh'), async (
     if (err.response?.status === 404) return res.json(leer('agent_outdated', 'Der Agent kennt diese Abfrage noch nicht — bitte auf v2.17.0 oder neuer aktualisieren.'));
     if (err.response) return res.json(leer('error', err.response.data?.error || `Agent antwortete mit HTTP ${err.response.status}.`));
     res.json(leer('agent_unreachable', `Agent nicht erreichbar: ${err.message}`));
+  }
+});
+
+// Eine fail2ban-Sperre aufheben. Schreibende Aktion → eigenes Recht `fail2ban.manage`,
+// nicht das Lese-Recht `security.view`. Der Agent entsperrt zusätzlich nur Paare, die
+// in seiner aktuellen Sperrliste stehen.
+router.post('/:id/fail2ban/unban', requirePermission('fail2ban.manage'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const { jail, ip } = req.body || {};
+  if (typeof jail !== 'string' || !/^[\w.@:-]{1,64}$/.test(jail)) return res.status(400).json({ error: 'Ungültiger Jail-Name' });
+  if (typeof ip !== 'string' || !require('net').isIP(ip)) return res.status(400).json({ error: 'Ungültige IP-Adresse' });
+  try {
+    const { data } = await agentApi(agent).post('/fail2ban/unban', { jail, ip });
+    auditLog(req, 'agent.fail2ban.unban', 'agent', agent.name, { jail, ip });
+    res.json(data);
+  } catch (err) {
+    // Ältere Agents kennen den Endpunkt nicht (404); „nicht gesperrt" meldet der Agent als 409.
+    if (err.response?.status === 404) return res.status(409).json({ error: 'Der Agent kann noch nicht entsperren — bitte auf v2.18.0 oder neuer aktualisieren.' });
+    if (err.response?.status === 409 || err.response?.status === 400) return res.status(err.response.status).json({ error: err.response.data?.error });
+    res.status(502).json({ error: err.response?.data?.error || err.message });
   }
 });
 
@@ -1528,7 +1550,7 @@ router.post('/:id/ssh/keys', requirePermission('agents.manage_ssh'), async (req,
   }
 });
 
-router.get('/:id/ssh/sessions', requirePermission('agents.manage_ssh'), async (req, res) => {
+router.get('/:id/ssh/sessions', requirePermission('security.view'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });

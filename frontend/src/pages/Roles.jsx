@@ -254,7 +254,12 @@ export default function Roles() {
   const deleteRole = async () => {
     if (!selected || selected.is_system) return;
     if (!confirm(`Rolle "${selected.label}" wirklich löschen?\nBenutzer mit dieser Rolle werden auf "Gast" zurückgesetzt.`)) return;
-    await axios.delete(`/api/roles/${selected.id}`);
+    try {
+      await axios.delete(`/api/roles/${selected.id}`);
+    } catch (err) {
+      // z. B. Rolle mit Rechten, die man selbst nicht hat — Grund vom Backend anzeigen
+      return alert(err.response?.data?.error || 'Fehler beim Löschen');
+    }
     setSelected(null);
     setSelPerms(new Set());
     loadRoles();
@@ -277,8 +282,9 @@ export default function Roles() {
 
   const categories = groupByCategory(permDefs);
 
+  // Höhe abzüglich Seitenkopf, Hub-Kopfzeile und Tab-Leiste (eingebettet in „Identität & Zugriff")
   return (
-    <div className="flex gap-4 h-[calc(100vh-76px)]">
+    <div className="flex gap-4 h-[calc(100vh-240px)] min-h-[420px]">
 
       {/* ── Linke Spalte: Rollenliste ─────────────────────────────────── */}
       <div className="w-56 flex-shrink-0 flex flex-col gap-2">

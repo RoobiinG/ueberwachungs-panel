@@ -2,7 +2,7 @@
  * Globaler Frontend-Error-Reporter
  *
  * Fängt window.onerror + unhandledrejection ab und speichert sie
- * persistent via POST /api/logs im Backend.
+ * persistent via POST /api/panel-logs im Backend.
  *
  * Aktiviert sich nur wenn ein User eingeloggt ist.
  * Doppelte Fehler innerhalb von 10 Sekunden werden lokal unterdrückt.
@@ -30,7 +30,7 @@ function canSend(key) {
 function report(source, message, stack, url) {
   const key = `${source}::${message.slice(0, 120)}`;
   if (!canSend(key)) return;
-  axios.post('/api/logs', {
+  axios.post('/api/panel-logs', {
     level:   'error',
     source,
     message: message.slice(0, 2000),

@@ -13,7 +13,7 @@ const PERMISSIONS = [
   { key: 'agents.delete',       category: 'Remote-Server',      label: 'Server löschen',                  description: 'Remote-Server entfernen' },
   { key: 'agents.update',       category: 'Remote-Server',      label: 'Agent aktualisieren',             description: 'Agent-Software auf Servern aktualisieren' },
   { key: 'agents.manage_processes', category: 'Remote-Server',  label: 'Prozesse verwalten',              description: 'Top-Prozesse auf Remote-Servern ansehen und hängende Prozesse beenden' },
-  { key: 'agents.manage_ssh',   category: 'Remote-Server',      label: 'SSH-Keys verwalten',              description: 'SSH-Schlüssel ansehen und entfernen sowie Security-Audit durchführen' },
+  { key: 'agents.manage_ssh',   category: 'Remote-Server',      label: 'SSH-Keys verwalten',              description: 'SSH-Schlüssel ansehen, hinterlegen und entfernen — entspricht Root-Zugang auf den Servern' },
   { key: 'cron.manage',         category: 'Remote-Server',      label: 'Cron-Jobs verwalten',             description: 'System-Cron-Jobs auf Remote-Servern ansehen, anlegen und löschen' },
   { key: 'disks.manage',        category: 'Remote-Server',      label: 'Festplatten & System',            description: 'S.M.A.R.T.-Daten einsehen, Selbsttests starten und Speicher freigeben' },
 
@@ -38,6 +38,12 @@ const PERMISSIONS = [
   // ─── Firewall ─────────────────────────────────────────────────────────────
   { key: 'firewall.view',       category: 'Firewall',           label: 'Regeln anzeigen',                 description: 'Firewall-Regeln einsehen' },
   { key: 'firewall.manage',     category: 'Firewall',           label: 'Regeln verwalten',                description: 'Firewall-Regeln hinzufügen und löschen' },
+
+  // ─── Sicherheit (Security Center) ─────────────────────────────────────────
+  // Lesen und Schreiben getrennt: Den Sicherheits-Score ansehen darf nicht dasselbe Recht
+  // verlangen wie SSH-Schlüssel hinterlegen (das ist Root-Zugang).
+  { key: 'security.view',       category: 'Sicherheit',         label: 'Sicherheitslage anzeigen',        description: 'Sicherheits-Score, Audit-Checkliste, Port-Wächter, SSH-Sitzungen und gesperrte IPs einsehen' },
+  { key: 'fail2ban.manage',     category: 'Sicherheit',         label: 'IP-Sperren aufheben',             description: 'Von fail2ban gesperrte IP-Adressen entsperren' },
 
   // ─── Webhooks ────────────────────────────────────────────────────────────
   { key: 'webhooks.view',       category: 'Webhooks',           label: 'Webhooks anzeigen',               description: 'Webhook-Liste einsehen' },
@@ -69,6 +75,11 @@ const PERMISSIONS = [
   { key: 'audit.view_ip',       category: 'Audit-Protokoll',    label: 'IP-Adressen sehen',               description: 'IP-Adressen der Einträge im Audit-Log anzeigen' },
   { key: 'audit.view_geo',      category: 'Audit-Protokoll',    label: 'Geo-Standort sehen',              description: 'Geografischen Standort (Stadt, Land) im Audit-Log anzeigen' },
   { key: 'audit.clear',         category: 'Audit-Protokoll',    label: 'Protokoll leeren',                description: 'Audit-Log-Einträge löschen' },
+
+  // ─── Logs & Diagnose ──────────────────────────────────────────────────────
+  { key: 'panel_logs.view',     category: 'Logs & Diagnose',    label: 'System-Logs anzeigen',            description: 'Fehler- und Ereignis-Logs des Panels einsehen' },
+  { key: 'panel_logs.manage',   category: 'Logs & Diagnose',    label: 'System-Logs verwalten',           description: 'Panel-Logs löschen und öffentliche Freigabe-Links erstellen oder widerrufen' },
+  { key: 'diagnose.run',        category: 'Logs & Diagnose',    label: 'Diagnose ausführen',              description: 'Diagnose-Bericht erstellen, SMTP-Test senden und Berichte öffentlich freigeben' },
 
   // ─── Hetzner Cloud ───────────────────────────────────────────────────────────
   { key: 'hetzner.view',        category: 'Hetzner Cloud',      label: 'Server anzeigen',                 description: 'Hetzner-Server und Backups einsehen' },
@@ -129,6 +140,7 @@ const OPERATOR_PERMISSIONS = [
   'users.view',
   'audit.view', 'audit.view_ip', 'audit.view_geo',
   'settings.view',
+  'panel_logs.view',
 ];
 
 const GUEST_PERMISSIONS = [

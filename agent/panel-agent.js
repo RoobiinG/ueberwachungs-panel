@@ -18,7 +18,7 @@ const execAsync = promisify(exec);
 // sondern ein Argument-Array. Sonderzeichen in Volume-/Netzwerk-/Image-Namen können
 // so nicht als Shell-Syntax gedeutet werden.
 const execFileAsync = promisify(execFile);
-const VERSION = '2.17.0';
+const VERSION = '2.18.0';
 
 // Ob die Container-Konsole angeboten werden kann. Steht erst nach dem Laden von
 // ws/node-pty am Ende dieser Datei fest und wird über /ping und /version gemeldet,
@@ -1532,6 +1532,29 @@ async function getFail2banBans() {
            checkedAt: new Date(_f2bCache.at).toISOString(), jails: daten.jails, bans };
 }
 
+async function fail2banUnban(jail, ip) {
+  if (typeof jail !== 'string' || !F2B_JAIL_RE.test(jail)) return { status: 400, body: { error: 'Ungültiger Jail-Name' } };
+  if (typeof ip !== 'string' || !net.isIP(ip))            return { status: 400, body: { error: 'Ungültige IP-Adresse' } };
+  const bin = F2B_KANDIDATEN.find(p => fs.existsSync(p));
+  if (!bin) return { status: 409, body: { error: 'fail2ban ist nicht installiert' } };
+
+  // Gegen die frische Sperrliste prüfen, nicht gegen den Cache.
+  _f2bCache = null;
+  const aktuell = await getFail2banBans();
+  if (!aktuell.available) return { status: 409, body: { error: aktuell.message || 'fail2ban ist nicht erreichbar' } };
+  if (!aktuell.bans.some(b => b.jail === jail && b.ip === ip)) {
+    return { status: 409, body: { error: `${ip} ist im Jail ${jail} nicht gesperrt (mehr)` } };
+  }
+  try {
+    await _f2b(bin, ['set', jail, 'unbanip', ip]);
+  } catch (e) {
+    return { status: 500, body: { error: `Entsperren fehlgeschlagen: ${String(e.stderr || e.message).trim().slice(0, 200)}` } };
+  } finally {
+    _f2bCache = null;   // nächste Abfrage zeigt den neuen Stand
+  }
+  return { status: 200, body: { success: true, jail, ip } };
+}
+
 // ─── HTTP Handler ─────────────────────────────────────────────────────────────
 // ── Modul 7: Festplatten-Gesundheit & System-Aufräumen ───────────────────────
 
@@ -2004,6 +2027,14 @@ async function handler(req, res) {
     // eine 200 mit `state`, damit das Panel einen Hinweis statt eines Fehlers zeigt.
     } else if (url === '/fail2ban/bans' && req.method === 'GET') {
       respond(res, 200, await getFail2banBans());
+
+    // Eine Sperre aufheben — nur für ein Paar aus Jail und IP, das gerade tatsächlich
+    // gesperrt ist. So lässt sich darüber nichts anderes an fail2ban verändern.
+    } else if (url === '/fail2ban/unban' && req.method === 'POST') {
+      const raw = await new Promise((resolve) => { const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8'))); });
+      const { jail, ip } = JSON.parse(raw || '{}');
+      const r = await fail2banUnban(jail, ip);
+      respond(res, r.status, r.body);
 
     // ── Docker ────────────────────────────────────────────────────────────────
     } else if (url === '/docker/containers' && req.method === 'GET') {

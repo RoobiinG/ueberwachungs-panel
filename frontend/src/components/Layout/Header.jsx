@@ -9,7 +9,7 @@ const pageTitles = {
   '/docker': 'Docker Container',
   '/docker-resources': 'Docker-Ressourcen',
   '/services': 'Services',
-  '/firewall': 'Firewall & Ports',
+  '/security': 'Security Center',
   '/network': 'Netzwerk',
   '/webhooks': 'Webhooks',
   '/alerts': 'Alert-Regeln',
@@ -17,9 +17,8 @@ const pageTitles = {
   '/mchost': 'MC-Host24',
   '/agents': 'Agenten',
   '/uptime-kuma': 'Uptime Kuma',
-  '/users': 'Benutzerverwaltung',
-  '/roles': 'Rollen & Rechte',
-  '/audit': 'Audit-Protokoll',
+  '/access': 'Identität & Zugriff',
+  '/diagnostics': 'Logs & Diagnose',
   '/settings': 'Einstellungen',
 };
 

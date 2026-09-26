@@ -2,13 +2,14 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Container, Wrench, Shield,
   Webhook, Users, Cloud, Gamepad2, ChevronLeft, ChevronRight,
-  Server, Settings, ServerCog, MonitorCheck, Bell, ShieldCheck, ClipboardList, Lock,
-  BarChart2, AlertCircle, Trash2, ScrollText, PackageCheck, Clock, Terminal, Stethoscope
+  Server, Settings, ServerCog, MonitorCheck, Bell, Lock,
+  BarChart2, AlertCircle, Trash2, PackageCheck, Clock, Terminal, Stethoscope
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../../context/AuthContext';
 import { useErrors } from '../../context/ErrorContext';
+import { HUB_RECHTE } from '../../utils/hubRechte';
 
 export const navItems = [
   { section: 'Übersicht' },
@@ -20,7 +21,8 @@ export const navItems = [
   { to: '/docker', icon: Container, label: 'Docker', moduleKey: 'docker',
     permission: ['docker.view', 'docker.images.view', 'docker.volumes.view', 'docker.networks.view', 'docker.stacks.view'] },
   { to: '/services',    icon: Wrench,       label: 'Services' },
-  { to: '/firewall',    icon: Shield,       label: 'Firewall' },
+  // Firewall, Sicherheits-Audit und Fail2Ban gebündelt; Rechte = die der Tabs (eines genügt).
+  { to: '/security',    icon: Shield,       label: 'Security Center', permission: HUB_RECHTE.security },
   { to: '/cron',        icon: Clock,        label: 'Cron Jobs', permission: 'cron.manage' },
   { to: '/monitoring',  icon: BarChart2,    label: 'Monitoring' },
   { to: '/agents',      icon: ServerCog,    label: 'Server' },
@@ -34,12 +36,9 @@ export const navItems = [
   { to: '/hosting',     icon: Cloud,        label: 'Hosting-Provider',  permission: ['hetzner.view', 'mchost.view', 'dsh.view'], moduleKey: ['hetzner', 'mchost', 'dsh'] },
 
   { section: 'Verwaltung' },
-  { to: '/users',      icon: Users,         label: 'Benutzer',        adminOnly: true },
-  { to: '/roles',      icon: ShieldCheck,   label: 'Rollen & Rechte', adminOnly: true },
-  { to: '/audit',      icon: ClipboardList, label: 'Audit-Log',       permission: 'audit.view' },
-  { to: '/panel-logs', icon: ScrollText,    label: 'Panel-Logs',      adminOnly: true },
-  { to: '/diagnose',   icon: Stethoscope,   label: 'Diagnose',        permission: 'settings.manage' },
-  { to: '/settings',   icon: Settings,      label: 'Einstellungen' },
+  { to: '/access',      icon: Users,        label: 'Identität & Zugriff', permission: HUB_RECHTE.access },
+  { to: '/diagnostics', icon: Stethoscope,  label: 'Logs & Diagnose',     permission: HUB_RECHTE.diagnostics },
+  { to: '/settings',    icon: Settings,     label: 'Einstellungen' },
 ];
 
 export const Sidebar = () => {

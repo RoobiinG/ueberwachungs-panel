@@ -31,6 +31,7 @@ export const AuthProvider = ({ children }) => {
         username: r.data.username,
         role: r.data.role,
         roleLabel: r.data.roleLabel,
+        isAdmin: !!r.data.isAdmin,
         email: r.data.email,
         created_at: r.data.created_at,
         last_login: r.data.last_login,
@@ -55,6 +56,7 @@ export const AuthProvider = ({ children }) => {
       username: userData.username,
       role: userData.role,
       roleLabel: userData.roleLabel,
+      isAdmin: !!userData.isAdmin,
       email: userData.email,
       created_at: userData.created_at,
       last_login: userData.last_login,
@@ -95,11 +97,22 @@ export const AuthProvider = ({ children }) => {
     delete axios.defaults.headers.common['Authorization'];
   }, []);
 
-  /** Gibt true zurück wenn der Nutzer die angegebene Berechtigung hat */
-  const hasPermission = useCallback((key) => permissions.includes(key), [permissions]);
+  /**
+   * true, wenn der Nutzer die Berechtigung hat. Ein Array bedeutet „eines davon genügt" —
+   * dieselbe Logik wie requirePermission([...]) im Backend. Das Ausblenden hier ist nur
+   * Bedienhilfe; geschützt wird jede Aktion im Backend.
+   */
+  const hasPermission = useCallback(
+    (keys) => Array.isArray(keys) ? keys.some(k => permissions.includes(k)) : permissions.includes(keys),
+    [permissions]
+  );
+  /** true, wenn der Nutzer alle angegebenen Berechtigungen hat */
+  const hasAll = useCallback((keys) => keys.every(k => permissions.includes(k)), [permissions]);
 
   const role       = user?.role;
-  const isAdmin    = role === 'admin';
+  // Admin ist eine Eigenschaft der Rolle (is_admin), nicht der Name „admin". Der Fallback
+  // gilt nur für eine noch zwischengespeicherte Sitzung, bis /api/auth/me geantwortet hat.
+  const isAdmin    = user?.isAdmin ?? role === 'admin';
   const isOperator = role === 'operator';
   const canWrite   = isAdmin || isOperator || hasPermission('docker.control') || hasPermission('services.control');
 
@@ -108,7 +121,7 @@ export const AuthProvider = ({ children }) => {
       user, token, permissions, modules, loadModules,
       login, verify2FA, logout, saveSession,
       isAdmin, isOperator, canWrite,
-      hasPermission,
+      hasPermission, hasAll,
     }}>
       {children}
     </AuthContext.Provider>

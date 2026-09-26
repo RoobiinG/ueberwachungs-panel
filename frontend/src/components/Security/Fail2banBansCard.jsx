@@ -1,9 +1,10 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import axios from 'axios';
-import { RefreshCw, AlertTriangle, Ban } from 'lucide-react';
+import { RefreshCw, AlertTriangle, Ban, Unlock } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
+import { useAuth } from '../../context/AuthContext';
 
 const POLL_MS = 30_000;
 
@@ -29,28 +30,51 @@ function formatRemaining(sec) {
 }
 
 export default function Fail2banBansCard({ agentId }) {
+  const { hasPermission } = useAuth();
+  // Entsperren ist eine Schreibaktion mit eigenem Recht; ohne es gibt es den Knopf gar nicht.
+  const darfEntsperren = hasPermission('fail2ban.manage');
   const [data, setData]         = useState(null);
   const [fetchedAt, setFetched] = useState(0);
   const [loading, setLoading]   = useState(false);
   const [now, setNow]           = useState(Date.now());
+  const [entsperrt, setEntsperrt] = useState(null);   // `${jail}|${ip}` während der Anfrage
+
+  // Antworten eines inzwischen abgewählten Servers verwerfen.
+  const anfrage = useRef(0);
 
   const load = useCallback(async () => {
+    const nr = ++anfrage.current;
     setLoading(true);
+    let d;
     try {
-      const { data: d } = await axios.get(`/api/agents/${agentId}/fail2ban/bans`);
-      setData(d);
+      ({ data: d } = await axios.get(`/api/agents/${agentId}/fail2ban/bans`));
     } catch (e) {
-      setData({ available: false, state: 'error', message: e.response?.data?.error || e.message, jails: [], bans: [] });
+      d = { available: false, state: 'error', message: e.response?.data?.error || e.message, jails: [], bans: [] };
     }
+    if (nr !== anfrage.current) return;
+    setData(d);
     setFetched(Date.now());
     setLoading(false);
   }, [agentId]);
 
   useEffect(() => {
+    setData(null);
     load();
     const t = setInterval(load, POLL_MS);
     return () => clearInterval(t);
   }, [load]);
+
+  const unban = async (b) => {
+    if (!confirm(`${b.ip} im Jail „${b.jail}" entsperren?`)) return;
+    setEntsperrt(`${b.jail}|${b.ip}`);
+    try {
+      await axios.post(`/api/agents/${agentId}/fail2ban/unban`, { jail: b.jail, ip: b.ip });
+      await load();
+    } catch (e) {
+      alert(e.response?.data?.error || e.message);
+    }
+    setEntsperrt(null);
+  };
 
   // Sekundentakt nur, solange es etwas herunterzuzählen gibt.
   const hasCountdown = !!data?.bans?.some(b => !b.permanent);
@@ -116,6 +140,7 @@ export default function Fail2banBansCard({ agentId }) {
                     <th className="py-1.5 pr-3 font-medium">Jail</th>
                     <th className="py-1.5 pr-3 font-medium">Gesperrt seit</th>
                     <th className="py-1.5 font-medium text-right">Restzeit</th>
+                    {darfEntsperren && <th className="py-1.5 pl-3 font-medium text-right sr-only sm:not-sr-only">Aktion</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -133,6 +158,13 @@ export default function Fail2banBansCard({ agentId }) {
                           ? <span className="text-panel-red">dauerhaft</span>
                           : <span className="text-panel-text">{formatRemaining(b.remainingSeconds - elapsed)}</span>}
                       </td>
+                      {darfEntsperren && (
+                        <td className="py-1.5 pl-3 text-right">
+                          <Button size="sm" variant="ghost" onClick={() => unban(b)} disabled={entsperrt === `${b.jail}|${b.ip}`}>
+                            <Unlock size={12} className="mr-1" /> Entsperren
+                          </Button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

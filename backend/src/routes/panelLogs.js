@@ -2,9 +2,9 @@
 // Speichert Frontend-Fehler (JS-Errors, unhandled rejections, API-Fehler)
 // persistiert in SQLite damit sie nach Seitenreload erhalten bleiben.
 //
-// POST /api/logs          → Frontend schreibt Fehler (jeder eingeloggte User)
-// GET  /api/logs          → Admin liest alle Logs (paginiert)
-// DELETE /api/logs        → Admin löscht alle Logs
+// POST /api/panel-logs          → Frontend schreibt Fehler (jeder eingeloggte User)
+// GET  /api/panel-logs          → Admin liest alle Logs (paginiert)
+// DELETE /api/panel-logs        → Admin löscht alle Logs
 
 const router            = require('express').Router();
 const crypto            = require('crypto');
@@ -16,7 +16,7 @@ const MAX_LOGS = 500;   // Max. gespeicherte Einträge
 const MAX_MSG  = 2000;  // Max. Länge einer Nachricht
 const MAX_STK  = 5000;  // Max. Länge eines Stack-Trace
 
-// ── POST /api/logs  (Frontend → speichern) ────────────────────────────────────
+// ── POST /api/panel-logs  (Frontend → speichern) ────────────────────────────────────
 router.post('/', (req, res) => {
   const { level = 'error', source, message, stack, url } = req.body;
   if (!source || !message) return res.status(400).json({ error: 'source und message erforderlich' });
@@ -48,10 +48,10 @@ router.post('/', (req, res) => {
   res.json({ ok: true });
 });
 
-// ── GET /api/logs  (Admin → lesen) ───────────────────────────────────────────
-router.get('/', requirePermission('settings.view'), (req, res) => {
-  const limit  = Math.min(parseInt(req.query.limit)  || 100, 500);
-  const offset = parseInt(req.query.offset) || 0;
+// ── GET /api/panel-logs  (Admin → lesen) ───────────────────────────────────────────
+router.get('/', requirePermission('panel_logs.view'), (req, res) => {
+  const limit  = Math.min(Math.max(parseInt(req.query.limit) || 100, 1), 500);
+  const offset = Math.max(parseInt(req.query.offset) || 0, 0);
   const level  = req.query.level;
   const source = req.query.source;
 
@@ -74,14 +74,14 @@ router.get('/', requirePermission('settings.view'), (req, res) => {
   res.json({ logs, total });
 });
 
-// ── DELETE /api/logs  (Admin → alle löschen) ─────────────────────────────────
-router.delete('/', requirePermission('settings.manage'), (req, res) => {
+// ── DELETE /api/panel-logs  (Admin → alle löschen) ─────────────────────────────────
+router.delete('/', requirePermission('panel_logs.manage'), (req, res) => {
   db.prepare('DELETE FROM panel_logs').run();
   res.json({ ok: true });
 });
 
-// ── DELETE /api/logs/bulk  (Admin → ausgewählte löschen) ──────────────────────
-router.delete('/bulk', requirePermission('settings.manage'), (req, res) => {
+// ── DELETE /api/panel-logs/bulk  (Admin → ausgewählte löschen) ──────────────────────
+router.delete('/bulk', requirePermission('panel_logs.manage'), (req, res) => {
   const { ids } = req.body;
   if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids fehlt' });
   const safeIds = ids.map(Number).filter(n => Number.isFinite(n) && n > 0);
@@ -91,14 +91,14 @@ router.delete('/bulk', requirePermission('settings.manage'), (req, res) => {
   res.json({ ok: true, deleted: safeIds.length });
 });
 
-// ── GET /api/logs/sources  (Admin → distincte Quellen für Filter) ─────────────
-router.get('/sources', requirePermission('settings.view'), (req, res) => {
+// ── GET /api/panel-logs/sources  (Admin → distincte Quellen für Filter) ─────────────
+router.get('/sources', requirePermission('panel_logs.view'), (req, res) => {
   const rows = db.prepare('SELECT DISTINCT source FROM panel_logs ORDER BY source').all();
   res.json(rows.map(r => r.source));
 });
 
-// ── POST /api/logs/share  (Admin → Share-Token erstellen) ─────────────────────
-router.post('/share', requirePermission('settings.manage'), (req, res) => {
+// ── POST /api/panel-logs/share  (Admin → Share-Token erstellen) ─────────────────────
+router.post('/share', requirePermission('panel_logs.manage'), (req, res) => {
   const { ids, label } = req.body;
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'ids fehlt' });
   const safeIds = ids.map(Number).filter(n => Number.isFinite(n) && n > 0);
@@ -117,16 +117,17 @@ router.post('/share', requirePermission('settings.manage'), (req, res) => {
   res.json({ token, gueltigTage: tage });
 });
 
-// ── GET /api/logs/shares  (Admin → alle Share-Links) ─────────────────────────
-router.get('/shares', requirePermission('settings.view'), (req, res) => {
+// ── GET /api/panel-logs/shares  (Admin → alle Share-Links) ─────────────────────────
+// Liefert die Freigabe-Tokens im Klartext — ein Token ist der Zugang selbst, daher Verwalten-Recht.
+router.get('/shares', requirePermission('panel_logs.manage'), (req, res) => {
   const shares = db.prepare(
     'SELECT id, token, log_ids, label, created_at, accessed_at, access_count, expires_at FROM panel_log_shares ORDER BY created_at DESC'
   ).all();
   res.json(shares);
 });
 
-// ── DELETE /api/logs/shares/:id  (Admin → Link widerrufen) ───────────────────
-router.delete('/shares/:id', requirePermission('settings.manage'), (req, res) => {
+// ── DELETE /api/panel-logs/shares/:id  (Admin → Link widerrufen) ───────────────────
+router.delete('/shares/:id', requirePermission('panel_logs.manage'), (req, res) => {
   db.prepare('DELETE FROM panel_log_shares WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });

@@ -7,6 +7,7 @@ const {
   verifyAuthenticationResponse,
 } = require('@simplewebauthn/server');
 const jwt = require('jsonwebtoken');
+const { isAdminRole } = require('../utils/rbacGuard');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -223,7 +224,7 @@ const loginFinish = async (req, res) => {
     if (!user) return res.status(401).json({ error: 'Benutzer nicht gefunden' });
 
     const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_IN || '24h' });
-    res.json({ token, user: { id: user.id, username: user.username, role: user.role } });
+    res.json({ token, user: { id: user.id, username: user.username, role: user.role, isAdmin: isAdminRole(user.role) } });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }

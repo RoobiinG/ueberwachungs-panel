@@ -3,7 +3,6 @@ import axios from 'axios';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
-import { ServerSelector } from '../components/ui/ServerSelector';
 import { useAuth } from '../context/AuthContext';
 import {
   Plus, Trash2, RefreshCw, Shield, Power, ScanSearch,
@@ -94,11 +93,16 @@ const humanError = (msg, isLocal) => {
   return m;
 };
 
-export default function Firewall() {
-  const { canWrite } = useAuth();
+// Tab „Firewall" im Security Center. Der Server kommt von dort (gemeinsame Auswahl für alle
+// Tabs); eine lokale Firewall des Panels gibt es seit der Agent-Only-Umstellung nicht mehr.
+export default function Firewall({ serverId }) {
+  const { hasPermission } = useAuth();
+  // Schreibaktionen hängen am Firewall-Recht — nicht mehr an canWrite, das schon mit
+  // Docker- oder Service-Steuerung wahr war. Das Backend prüft dasselbe (firewall.manage).
+  const darfSchreiben = hasPermission('firewall.manage');
 
-  const [selectedServer, setSelectedServer] = useState(null);
-  const [agents,         setAgents]         = useState([]);
+  const selectedServer = serverId || null;
+  const [agents,        setAgents]         = useState([]);
   const [detectedTool,   setDetectedTool]   = useState(null);
   const [detecting,  setDetecting]  = useState(false);
   const [toggling,   setToggling]   = useState(false);
@@ -117,7 +121,7 @@ export default function Firewall() {
   const [editingRule,   setEditingRule]   = useState(null);
   const [form, setForm] = useState({ port: '', proto: 'tcp', from: '', action: 'allow', route: false });
 
-  const apiBase = selectedServer ? `/api/agents/${selectedServer}` : '/api';
+  const apiBase = `/api/agents/${selectedServer}`;
 
   // ── Erkennung ──────────────────────────────────────────────────────────────
   const detect = async () => {
@@ -136,6 +140,7 @@ export default function Firewall() {
 
   // ── Laden ──────────────────────────────────────────────────────────────────
   const load = async () => {
+    if (!selectedServer) { setLoading(false); return; }
     setLoading(true);
     setError('');
     try {
@@ -356,8 +361,6 @@ export default function Firewall() {
       {/* Kopfzeile */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
-          <ServerSelector selected={selectedServer} onChange={setSelectedServer} />
-
           {toolInfo && (
             <span
               title={detectedTool?.grund || ''}
@@ -376,7 +379,7 @@ export default function Firewall() {
             {detecting ? 'Erkenne…' : 'Erkennen'}
           </button>
 
-          {canWrite && detectedTool && detectedTool.tool !== 'none' && (
+          {darfSchreiben && detectedTool && detectedTool.tool !== 'none' && (
             <button onClick={toggleFirewall} disabled={toggling}
               className={`flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded border transition-colors disabled:opacity-50
                 ${schuetzt
@@ -391,7 +394,7 @@ export default function Firewall() {
 
         <div className="flex gap-2">
           <Button variant="ghost" size="sm" onClick={load}><RefreshCw size={14} className="mr-1" />Aktualisieren</Button>
-          {canWrite && <Button size="sm" onClick={openNew}><Plus size={14} className="mr-1" />Regel hinzufügen</Button>}
+          {darfSchreiben && <Button size="sm" onClick={openNew}><Plus size={14} className="mr-1" />Regel hinzufügen</Button>}
         </div>
       </div>
 
@@ -529,13 +532,13 @@ export default function Firewall() {
           <>
             {/* Spalten-Header */}
             <div className={`hidden sm:grid gap-3 px-4 py-2 border-b border-panel-border text-[10px] font-semibold text-panel-muted uppercase tracking-wide
-              ${canWrite ? 'sm:grid-cols-[3rem_1fr_5rem_5rem_1fr_5rem]' : 'sm:grid-cols-[3rem_1fr_5rem_5rem_1fr]'}`}>
+              ${darfSchreiben ? 'sm:grid-cols-[3rem_1fr_5rem_5rem_1fr_5rem]' : 'sm:grid-cols-[3rem_1fr_5rem_5rem_1fr]'}`}>
               <span>#</span>
               <span>Port / Ziel</span>
               <span>Protokoll</span>
               <span>Aktion</span>
               <span>Quelle</span>
-              {canWrite && <span />}
+              {darfSchreiben && <span />}
             </div>
 
             {paginated.map((r, i) => {
@@ -550,7 +553,7 @@ export default function Firewall() {
                   key={i}
                   className={`flex flex-col sm:grid gap-2 sm:gap-3 sm:items-center px-4 py-3 sm:py-2.5 border-b border-panel-border/30 last:border-0
                     hover:bg-panel-surface/50 transition-colors
-                    ${canWrite ? 'sm:grid-cols-[3rem_1fr_5rem_5rem_1fr_5rem]' : 'sm:grid-cols-[3rem_1fr_5rem_5rem_1fr]'}`}
+                    ${darfSchreiben ? 'sm:grid-cols-[3rem_1fr_5rem_5rem_1fr_5rem]' : 'sm:grid-cols-[3rem_1fr_5rem_5rem_1fr]'}`}
                 >
                   {/* Obere Reihe Mobil / ID */}
                   <div className="flex items-center justify-between sm:contents">
@@ -558,7 +561,7 @@ export default function Firewall() {
                       <span className="sm:hidden mr-1 font-sans text-[10px] uppercase">ID:</span>{displayId}
                     </span>
                     {/* Aktionen auf Mobil oben rechts, auf Desktop am Ende */}
-                    {canWrite && (
+                    {darfSchreiben && (
                       <div className="flex sm:hidden items-center gap-1">
                         <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>
                           <Pencil size={11} />Bearbeiten
@@ -621,7 +624,7 @@ export default function Firewall() {
                   </span>
 
                   {/* Aktionen Desktop */}
-                  {canWrite && (
+                  {darfSchreiben && (
                     <div className="hidden sm:flex items-center gap-1 justify-end">
                       <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>
                         <Pencil size={11} />Bearbeiten

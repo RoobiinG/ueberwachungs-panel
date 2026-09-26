@@ -104,7 +104,8 @@ export default function Diagnose() {
   const verschluesseltenLinkErstellen = async () => {
     if (!bericht) return;
     try {
-      const { data } = await axios.post('/api/diagnose/share', { bericht });
+      // Das Backend erzeugt den freigegebenen Bericht selbst neu (gleicher Umfang wie angezeigt).
+      const { data } = await axios.post('/api/diagnose/share', { logs: ausfuehrlich ? 100 : 50 });
       const link = `${window.location.origin}/s/diagnose/${data.token}`;
       await navigator.clipboard.writeText(link);
       setLinkKopiert(true);

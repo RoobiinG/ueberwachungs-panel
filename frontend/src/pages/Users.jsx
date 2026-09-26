@@ -17,7 +17,12 @@ export default function Users() {
   const [form,       setForm]       = useState({ username: '', password: '', role: 'guest' });
   const [editUser,   setEditUser]   = useState(null);
   const [editForm,   setEditForm]   = useState({ username: '', email: '', password: '', role: '' });
-  const { user: me } = useAuth();
+  const { user: me, hasPermission, isAdmin } = useAuth();
+  // Lesen reicht für die Liste; Anlegen, Bearbeiten und Löschen nur mit users.manage.
+  // Was darüber hinausgeht (mächtigere Rollen, Admin-Konten), lehnt das Backend mit Begründung ab.
+  const darfVerwalten = hasPermission('users.manage');
+  const [adminRollen, setAdminRollen] = useState(new Set());
+  const istAdminKonto = (u) => adminRollen.has(u.role);
 
   const load = async () => {
     const [usersRes, rolesRes] = await Promise.all([
@@ -27,6 +32,7 @@ export default function Users() {
     setUsers(usersRes.data);
     // Rollen ohne Admin zur Auswahl (Admin wird nicht vergeben)
     setRoles(rolesRes.data.filter(r => !r.is_admin));
+    setAdminRollen(new Set(rolesRes.data.filter(r => r.is_admin).map(r => r.name)));
   };
 
   useEffect(() => { load(); }, []);
@@ -69,19 +75,25 @@ export default function Users() {
 
   const remove = async (id) => {
     if (!confirm('Benutzer löschen?')) return;
-    await axios.delete(`/api/users/${id}`);
-    load();
+    try {
+      await axios.delete(`/api/users/${id}`);
+      load();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Fehler');
+    }
   };
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   return (
     <div className="space-y-3">
-      <div className="flex justify-end">
-        <Button size="sm" onClick={() => setShowAdd(true)}>
-          <Plus size={14} className="mr-1" />Benutzer anlegen
-        </Button>
-      </div>
+      {darfVerwalten && (
+        <div className="flex justify-end">
+          <Button size="sm" onClick={() => setShowAdd(true)}>
+            <Plus size={14} className="mr-1" />Benutzer anlegen
+          </Button>
+        </div>
+      )}
 
       <Card title={`Benutzer (${users.length})`}>
         <div className="-mx-4 -mb-4">
@@ -95,7 +107,7 @@ export default function Users() {
                   <div className="text-sm text-panel-text flex items-center gap-1.5">
                     {u.username}
                     {u.id === me?.id && <span className="text-panel-muted text-xs">(Du)</span>}
-                    {u.role === 'admin' && <Lock size={11} className="text-panel-orange" />}
+                    {istAdminKonto(u) && <Lock size={11} className="text-panel-orange" />}
                   </div>
                   <div className="text-xs text-panel-muted flex flex-wrap items-center gap-2 mt-0.5">
                     <span>Erstellt: {new Date(u.created_at).toLocaleDateString('de-DE')}</span>
@@ -118,10 +130,10 @@ export default function Users() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <Badge color={u.role === 'admin' ? 'orange' : 'blue'}>
+                <Badge color={istAdminKonto(u) ? 'orange' : 'blue'}>
                   {u.roleLabel || u.role}
                 </Badge>
-                {u.id !== me?.id && u.role !== 'admin' && (
+                {darfVerwalten && u.id !== me?.id && !istAdminKonto(u) && (
                   <Button size="sm" variant="ghost" onClick={() => {
                     setEditUser(u);
                     setEditForm({ username: u.username, email: u.email || '', password: '', role: u.role });
@@ -131,13 +143,13 @@ export default function Users() {
                 )}
                 <ActionMenu
                   items={[
-                    me?.role === 'admin' && u.twofa_type && u.twofa_type !== 'none' && u.id !== me?.id && {
+                    isAdmin && u.twofa_type && u.twofa_type !== 'none' && u.id !== me?.id && {
                       icon: ShieldOff,
                       label: '2FA deaktivieren',
                       onClick: () => disable2FA(u.id),
                       title: 'Zwei-Faktor-Anmeldung dieses Benutzers zurücksetzen',
                     },
-                    u.id !== me?.id && u.role !== 'admin' && {
+                    darfVerwalten && u.id !== me?.id && !istAdminKonto(u) && {
                       icon: Trash2,
                       label: 'Benutzer löschen',
                       danger: true,
