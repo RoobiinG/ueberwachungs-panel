@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const crypto = require('crypto');
 const db     = require('../db');
+const { isAdminRole } = require('../utils/rbacGuard');
 
 const hashToken = (t) => crypto.createHash('sha256').update(t).digest('hex');
 
@@ -25,7 +26,7 @@ setInterval(cleanup, 3_600_000);
 // User: eigene Sitzungen | Admin: alle Sitzungen
 router.get('/', (req, res) => {
   const currentHash = req.tokenHash || '';
-  const isAdmin = req.user.role === 'admin';
+  const isAdmin = isAdminRole(req.user.role);
 
   const rows = isAdmin
     ? db.prepare(`
@@ -67,7 +68,7 @@ router.delete('/others', (req, res) => {
 // Einzelne Sitzung widerrufen — User: nur eigene | Admin: beliebige
 router.delete('/:id', (req, res) => {
   const id      = parseInt(req.params.id);
-  const isAdmin = req.user.role === 'admin';
+  const isAdmin = isAdminRole(req.user.role);
 
   const session = isAdmin
     ? db.prepare('SELECT id, token_hash, user_id FROM sessions WHERE id = ?').get(id)

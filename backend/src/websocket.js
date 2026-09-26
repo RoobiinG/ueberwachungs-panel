@@ -69,6 +69,8 @@ const setup = (server) => {
         if (!ws.authenticated) {
           if (msg?.type === 'auth' && msg?.token) {
             const decoded = jwt.verify(msg.token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+            // 2FA-Zwischen-Token ist kein Login (siehe middleware/auth.js).
+            if (decoded.is2fa) { ws.close(1008, 'Anmeldung nicht abgeschlossen'); return; }
 
             const revoked = db.prepare('SELECT 1 FROM revoked_tokens WHERE token_hash = ?')
               .get(hashToken(msg.token));

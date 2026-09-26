@@ -16,6 +16,22 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [7.7.0.1] - 2026-09-26 (Build 388) — *Jail Watch*
+
+### Bugfixes (Sicherheit)
+- **Kritisch — Zwei-Faktor-Anmeldung ließ sich überspringen:** Nach der Passworteingabe stellt das Panel ein kurzlebiges Zwischen-Token aus, das nur für die Code-Prüfung gedacht ist. Die Anmelde-Prüfung der API und der WebSocket-Verbindung akzeptierte dieses Token aber als vollwertiges Login — wer nur das Passwort kannte, hatte 10 Minuten vollen Zugriff, ohne den zweiten Faktor. Beide Stellen weisen es jetzt ab.
+- **2FA-Codes:** E-Mail-Codes werden kryptografisch sicher erzeugt (`crypto.randomInt` statt `Math.random`) und nicht mehr im Klartext ins Container-Log geschrieben.
+- **Kritisch — Admin-Übernahme über die Benutzerverwaltung:** Wer das Recht *Benutzer verwalten* hatte, konnte das Passwort des Admins setzen, ihn herabstufen oder löschen. Nicht-Admins dürfen jetzt nur noch Konten verwalten und Rollen vergeben, deren Rolle höchstens so viel darf wie die eigene — geprüft werden Berechtigungen, Server-Freigaben und MC-Host-Freigaben.
+- **Rechte-Eskalation über die Rollenverwaltung:** Mit *Rollen verwalten* ließ sich der eigenen Rolle jedes Recht geben. Nicht-Admins können die eigene Rolle nicht mehr ändern und nur Rechte bzw. Server-Freigaben vergeben, die sie selbst haben — auch beim Anlegen, Umbenennen und Löschen von Rollen (Löschen stuft alle Mitglieder auf *Gast* herab).
+- **Admin-Prüfungen** beim Abschalten fremder 2FA und in der Sitzungsverwaltung orientieren sich an der Admin-Eigenschaft der Rolle statt am Rollennamen „admin".
+- **Audit-Log:** Löschen einzelner Einträge und Leeren des Logs hinterlassen jetzt selbst einen Eintrag. Server-/MC-Host-Freigaben und Umbenennungen von Rollen werden protokolliert.
+
+### System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen:** Keine erforderlich.
+- **Agent-Kompatibilität:** Keine Änderung, kein Agent-Update nötig.
+- **Sessions:** Bestehende Anmeldungen bleiben gültig. Laufende 2FA-Zwischen-Tokens (max. 10 Minuten alt) funktionieren nur noch für die Code-Eingabe.
+- **Verhalten:** Nicht-Admins mit *Benutzer verwalten* oder *Rollen verwalten* sehen bei Aktionen oberhalb ihrer eigenen Rechte jetzt eine Ablehnung mit Begründung. Für Admins ändert sich nichts.
+
 ## [7.7.0.0] - 2026-09-25 (Build 387) — *Jail Watch*
 
 ### Neue Funktionen

@@ -3,8 +3,19 @@ const db         = require('../db');
 const { requirePermission } = require('../middleware/requirePermission');
 const { PERMISSIONS, ALL_KEYS } = require('../permissions');
 const { auditLog } = require('../utils/audit');
+const { isAdminRole, eskalationsGrund, rollenStand } = require('../utils/rbacGuard');
 
 const getRole  = (id) => db.prepare('SELECT * FROM roles WHERE id = ?').get(id);
+
+// Nicht-Admins dürfen die eigene Rolle nicht anfassen und nur Rollen verwalten, die vor
+// und nach der Änderung höchstens so viel dürfen wie die eigene. Sonst gäbe `roles.manage`
+// der eigenen Rolle einfach alle Rechte. Liefert null oder den Ablehnungsgrund.
+function rollenAenderungGrund(req, role, aenderung = {}) {
+  if (isAdminRole(req.user.role)) return null;
+  if (role.name === req.user.role) return 'Die eigene Rolle kann nur ein Administrator ändern';
+  return eskalationsGrund(req.user.role, role.name)
+      || eskalationsGrund(req.user.role, { ...rollenStand(role.id), ...aenderung });
+}
 const allRoles = ()   => db.prepare('SELECT id, name, label, is_system, is_admin, restrict_agents, restrict_mchost, created_at FROM roles ORDER BY is_admin DESC, is_system DESC, label').all();
 
 // ─── Alle Rollen listen (für Dropdown in Benutzerverwaltung) ──────────────────
@@ -38,6 +49,8 @@ router.put('/:id/permissions', requirePermission('roles.manage'), (req, res) => 
 
   // Nur gültige Keys akzeptieren
   const valid = permissions.filter(k => ALL_KEYS.includes(k));
+  const grund = rollenAenderungGrund(req, role, { permissions: valid });
+  if (grund) return res.status(403).json({ error: grund });
 
   db.transaction(() => {
     db.prepare('DELETE FROM role_permissions WHERE role_id = ?').run(role.id);
@@ -65,6 +78,12 @@ router.put('/:id/agents', requirePermission('roles.manage'), (req, res) => {
   if (role.is_admin) return res.status(403).json({ error: 'Admin-Rolle kann nicht eingeschränkt werden' });
 
   const { restrictAgents, agentIds = [] } = req.body;
+  if (!Array.isArray(agentIds)) return res.status(400).json({ error: 'agentIds muss ein Array sein' });
+  const grund = rollenAenderungGrund(req, role, {
+    restrict_agents: restrictAgents !== undefined ? !!restrictAgents : !!role.restrict_agents,
+    agentIds,
+  });
+  if (grund) return res.status(403).json({ error: grund });
 
   db.transaction(() => {
     if (restrictAgents !== undefined) {
@@ -76,6 +95,7 @@ router.put('/:id/agents', requirePermission('roles.manage'), (req, res) => {
     for (const agentId of agentIds) ins.run(role.id, parseInt(agentId));
   })();
 
+  auditLog(req, 'role.agents_changed', 'role', role.label || role.name, { restrictAgents, count: agentIds.length });
   res.json({ success: true });
 });
 
@@ -94,6 +114,12 @@ router.put('/:id/mchost', requirePermission('roles.manage'), (req, res) => {
   if (role.is_admin) return res.status(403).json({ error: 'Admin-Rolle kann nicht eingeschränkt werden' });
 
   const { restrictMchost, vserverIds = [] } = req.body;
+  if (!Array.isArray(vserverIds)) return res.status(400).json({ error: 'vserverIds muss ein Array sein' });
+  const grund = rollenAenderungGrund(req, role, {
+    restrict_mchost: restrictMchost !== undefined ? !!restrictMchost : !!role.restrict_mchost,
+    vserverIds,
+  });
+  if (grund) return res.status(403).json({ error: grund });
 
   db.transaction(() => {
     if (restrictMchost !== undefined) {
@@ -104,6 +130,7 @@ router.put('/:id/mchost', requirePermission('roles.manage'), (req, res) => {
     for (const vsId of vserverIds) ins.run(role.id, String(vsId));
   })();
 
+  auditLog(req, 'role.mchost_changed', 'role', role.label || role.name, { restrictMchost, count: vserverIds.length });
   res.json({ success: true });
 });
 
@@ -124,12 +151,16 @@ router.post('/', requirePermission('roles.manage'), (req, res) => {
   const exists = db.prepare('SELECT id FROM roles WHERE name = ?').get(name);
   const finalName = exists ? `${name}_${Date.now()}` : name;
 
+  // Eine neue Rolle startet ohne Server-Beschränkung — auch das muss zur eigenen Rolle passen.
+  const valid = Array.isArray(permissions) ? permissions.filter(k => ALL_KEYS.includes(k)) : [];
+  const grund = eskalationsGrund(req.user.role, { permissions: valid, restrict_agents: false, restrict_mchost: false });
+  if (grund) return res.status(403).json({ error: grund });
+
   try {
     const result = db.prepare(
       'INSERT INTO roles (name, label, is_system, is_admin) VALUES (?, ?, 0, 0)'
     ).run(finalName, label.trim());
 
-    const valid = Array.isArray(permissions) ? permissions.filter(k => ALL_KEYS.includes(k)) : [];
     const ins = db.prepare('INSERT INTO role_permissions (role_id, permission_key) VALUES (?, ?)');
     for (const key of valid) ins.run(result.lastInsertRowid, key);
 
@@ -148,8 +179,11 @@ router.put('/:id', requirePermission('roles.manage'), (req, res) => {
 
   const { label } = req.body;
   if (!label?.trim()) return res.status(400).json({ error: 'Label erforderlich' });
+  const grund = rollenAenderungGrund(req, role);
+  if (grund) return res.status(403).json({ error: grund });
 
   db.prepare('UPDATE roles SET label = ? WHERE id = ?').run(label.trim(), role.id);
+  auditLog(req, 'role.rename', 'role', role.name, { oldLabel: role.label, newLabel: label.trim() });
   res.json({ success: true });
 });
 
@@ -158,6 +192,9 @@ router.delete('/:id', requirePermission('roles.manage'), (req, res) => {
   const role = getRole(req.params.id);
   if (!role) return res.status(404).json({ error: 'Rolle nicht gefunden' });
   if (role.is_system) return res.status(403).json({ error: 'System-Rollen können nicht gelöscht werden' });
+  // Löschen setzt alle Mitglieder auf „guest" — ohne Prüfung ließen sich so mächtigere Benutzer herabstufen.
+  const grund = rollenAenderungGrund(req, role);
+  if (grund) return res.status(403).json({ error: grund });
 
   // Benutzer mit dieser Rolle auf 'guest' zurücksetzen
   db.prepare("UPDATE users SET role = 'guest' WHERE role = ?").run(role.name);

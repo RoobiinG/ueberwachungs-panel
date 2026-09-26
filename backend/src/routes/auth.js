@@ -198,10 +198,10 @@ router.post('/login', loginLimiter, async (req, res) => {
       if (!user.email) {
         return res.status(400).json({ error: 'E-Mail-2FA ist aktiviert, aber im Profil ist keine E-Mail hinterlegt.' });
       }
-      const code = String(Math.floor(100000 + Math.random() * 900000));
+      const code = String(crypto.randomInt(100000, 1000000));
       const expires = Date.now() + 20 * 60_000;
       db.prepare('UPDATE users SET twofa_code = ?, twofa_expires = ? WHERE id = ?').run(code, expires, user.id);
-      console.log(`[2FA Login] Neuer E-Mail-Code für User ${user.username}: ${code}`);
+      console.log(`[2FA Login] E-Mail-Code für User ${user.username} erzeugt`);
       try {
         await send2faMail(user.email, code);
       } catch (err) {
@@ -401,10 +401,10 @@ router.post('/2fa/setup', authMiddleware, async (req, res) => {
     if (!user.email) {
       return res.status(400).json({ error: 'Bitte zuerst eine E-Mail-Adresse im Profil hinterlegen' });
     }
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    const code = String(crypto.randomInt(100000, 1000000));
     const expires = Date.now() + 20 * 60_000;
     db.prepare('UPDATE users SET twofa_code = ?, twofa_expires = ? WHERE id = ?').run(code, expires, user.id);
-    console.log(`[2FA Setup] Neuer E-Mail-Code für User ${user.username}: ${code}`);
+    console.log(`[2FA Setup] E-Mail-Code für User ${user.username} erzeugt`);
     try {
       await send2faMail(user.email, code);
       return res.json({ ok: true, type: 'email', message: 'Bestätigungscode an deine E-Mail-Adresse gesendet.' });

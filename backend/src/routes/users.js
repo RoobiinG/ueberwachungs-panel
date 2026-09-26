@@ -3,6 +3,14 @@ const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { requirePermission } = require('../middleware/requirePermission');
 const { auditLog } = require('../utils/audit');
+const { isAdminRole, eskalationsGrund, requireAdmin } = require('../utils/rbacGuard');
+
+// Fremde Konten nur verwalten, wenn deren Rolle höchstens so viel darf wie die eigene —
+// sonst könnte `users.manage` das Admin-Passwort setzen oder den Admin herabstufen.
+function darfKontoVerwalten(req, target) {
+  if (target.id === req.user.id) return null;
+  return eskalationsGrund(req.user.role, target.role);
+}
 
 router.get('/', requirePermission('users.view'), (req, res) => {
   const users = db.prepare('SELECT id, username, email, role, twofa_type, created_at, last_login, last_login_ip, last_login_from FROM users').all();
@@ -17,7 +25,9 @@ router.post('/', requirePermission('users.manage'), (req, res) => {
   // Rolle muss in der roles-Tabelle existieren (außer admin — schreibgeschützt)
   const validRole = db.prepare('SELECT name FROM roles WHERE name = ?').get(role);
   if (!validRole) return res.status(400).json({ error: 'Ungültige Rolle' });
-  if (role === 'admin') return res.status(403).json({ error: 'Admin-Rolle kann nicht vergeben werden' });
+  if (isAdminRole(role)) return res.status(403).json({ error: 'Admin-Rolle kann nicht vergeben werden' });
+  const grund = eskalationsGrund(req.user.role, role);
+  if (grund) return res.status(403).json({ error: grund });
   try {
     const hash = bcrypt.hashSync(password, 10);
     const result = db.prepare('INSERT INTO users (username, password, role) VALUES (?, ?, ?)').run(username, hash, role);
@@ -35,6 +45,25 @@ router.put('/:id', requirePermission('users.manage'), (req, res) => {
 
   const target = db.prepare('SELECT id, role, username, email FROM users WHERE id = ?').get(userId);
   if (!target) return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+  const kontoGrund = darfKontoVerwalten(req, target);
+  if (kontoGrund) return res.status(403).json({ error: kontoGrund });
+
+  // Alle Prüfungen vor der ersten Änderung, damit eine abgelehnte Rollenänderung
+  // nicht schon Benutzername oder E-Mail umgeschrieben hat.
+  if (role && role !== target.role) {
+    if (isAdminRole(role)) return res.status(403).json({ error: 'Admin-Rolle kann nicht vergeben werden' });
+    const validRole = db.prepare('SELECT name FROM roles WHERE name = ?').get(role);
+    if (!validRole) return res.status(400).json({ error: 'Ungültige Rolle' });
+    // Eigene Admin-Rolle nicht entziehen
+    if (userId === req.user.id && isAdminRole(req.user.role)) {
+      return res.status(403).json({ error: 'Eigene Admin-Rolle kann nicht geändert werden' });
+    }
+    const grund = eskalationsGrund(req.user.role, role);
+    if (grund) return res.status(403).json({ error: grund });
+  }
+  if (password !== undefined && password !== '' && !String(password).trim()) {
+    return res.status(400).json({ error: 'Passwort darf nicht leer sein' });
+  }
 
   if (username && username !== target.username) {
     try {
@@ -52,19 +81,11 @@ router.put('/:id', requirePermission('users.manage'), (req, res) => {
   }
 
   if (role && role !== target.role) {
-    if (role === 'admin') return res.status(403).json({ error: 'Admin-Rolle kann nicht vergeben werden' });
-    const validRole = db.prepare('SELECT name FROM roles WHERE name = ?').get(role);
-    if (!validRole) return res.status(400).json({ error: 'Ungültige Rolle' });
-    // Eigene Admin-Rolle nicht entziehen
-    if (userId === req.user.id && req.user.role === 'admin') {
-      return res.status(403).json({ error: 'Eigene Admin-Rolle kann nicht geändert werden' });
-    }
     db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, userId);
     auditLog(req, 'user.role_change', 'user', target.id.toString(), { newRole: role, previousRole: target.role });
   }
   
   if (password) {
-    if (!password.trim()) return res.status(400).json({ error: 'Passwort darf nicht leer sein' });
     db.prepare('UPDATE users SET password = ? WHERE id = ?').run(bcrypt.hashSync(password, 10), userId);
     auditLog(req, 'user.password_reset', 'user', userId.toString());
   }
@@ -74,16 +95,17 @@ router.put('/:id', requirePermission('users.manage'), (req, res) => {
 router.delete('/:id', requirePermission('users.manage'), (req, res) => {
   const userId = parseInt(req.params.id);
   if (userId === req.user.id) return res.status(400).json({ error: 'Cannot delete yourself' });
-  const delUser = db.prepare('SELECT username FROM users WHERE id = ?').get(userId);
+  const delUser = db.prepare('SELECT id, username, role FROM users WHERE id = ?').get(userId);
+  if (!delUser) return res.status(404).json({ error: 'Benutzer nicht gefunden' });
+  const grund = darfKontoVerwalten(req, delUser);
+  if (grund) return res.status(403).json({ error: grund });
   db.prepare('DELETE FROM users WHERE id = ?').run(userId);
   auditLog(req, 'user.delete', 'user', delUser?.username || userId.toString());
   res.json({ success: true });
 });
 
-router.post('/:id/disable-2fa', requirePermission('users.manage'), (req, res) => {
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Nur Administratoren können 2FA für andere Benutzer deaktivieren' });
-  }
+// Prüft `is_admin` der Rolle statt des Rollen-Namens „admin".
+router.post('/:id/disable-2fa', requirePermission('users.manage'), requireAdmin, (req, res) => {
   const userId = parseInt(req.params.id);
   const target = db.prepare('SELECT username FROM users WHERE id = ?').get(userId);
   if (!target) return res.status(404).json({ error: 'Benutzer nicht gefunden' });

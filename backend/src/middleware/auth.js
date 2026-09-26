@@ -8,6 +8,9 @@ module.exports = (req, res, next) => {
   if (!token) return res.status(401).json({ error: 'No token provided' });
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+    // Das Zwischen-Token nach der Passworteingabe (is2fa) taugt nur für /api/auth/2fa/verify.
+    // Ohne diese Prüfung galt es als volles Login — der zweite Faktor ließ sich überspringen.
+    if (decoded.is2fa) return res.status(401).json({ error: 'Anmeldung noch nicht abgeschlossen (2FA-Code fehlt)' });
     const user = db.prepare('SELECT id, username, role FROM users WHERE id = ?').get(decoded.id);
     if (!user) return res.status(401).json({ error: 'Benutzer nicht gefunden' });
 
