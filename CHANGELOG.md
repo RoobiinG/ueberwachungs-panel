@@ -16,6 +16,14 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [7.8.0.1] - 2026-09-26 (Build 390) — *Control Hub*
+
+### Bugfixes
+- **Security Center — Port-Wächter ohne Whitelist:** Solange keine erlaubten Ports gespeichert waren, standen alle lauschenden Ports rot auf „Drift", obwohl der Sicherheits-Score in diesem Fall zu Recht keinen Drift abzieht. Ohne Whitelist sind die Ports jetzt neutral als „Offen" markiert, dazu ein Hinweis, dass Drift erst nach dem Speichern geprüft wird.
+
+### System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen:** Keine. **Agent:** Keine Änderung. **Sessions:** Unverändert.
+
 ## [7.8.0.0] - 2026-09-26 (Build 389) — *Control Hub*
 
 ### Neue Funktionen

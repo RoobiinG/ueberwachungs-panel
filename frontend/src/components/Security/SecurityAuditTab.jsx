@@ -255,12 +255,18 @@ export default function SecurityAuditTab({ agentId }) {
               </span>
               {audit?.unallowedPorts?.length > 0 && <Badge color="red">{audit.unallowedPorts.length} Unerlaubt (Drift)</Badge>}
             </div>
+            {/* Ohne Whitelist gibt es keinen Drift — so rechnet auch der Score. Früher standen
+                dann trotzdem alle Ports rot auf „Drift". */}
+            {whitelist.length === 0 && (
+              <p className="text-[11px] text-panel-muted mb-2">Noch keine Whitelist hinterlegt — Drift wird erst geprüft, wenn erlaubte Ports gespeichert sind.</p>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               {sshConfig.listeningPorts.map((lp, idx) => {
+                const ohneWhitelist = whitelist.length === 0;
                 const erlaubt = whitelist.includes(lp.port);
                 return (
                   <div key={idx} className={`p-2.5 rounded border text-xs flex items-center justify-between gap-2 ${
-                    erlaubt ? 'bg-panel-surface/60 border-panel-border' : 'bg-panel-red/10 border-panel-red/30'
+                    ohneWhitelist || erlaubt ? 'bg-panel-surface/60 border-panel-border' : 'bg-panel-red/10 border-panel-red/30'
                   }`}>
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
@@ -271,7 +277,9 @@ export default function SecurityAuditTab({ agentId }) {
                         {lp.process || 'Unbekannter Dienst'} <span className="text-panel-muted/60 font-mono">({lp.local || lp.bind})</span>
                       </p>
                     </div>
-                    <Badge color={erlaubt ? 'green' : 'red'}>{erlaubt ? 'Erlaubt' : 'Drift'}</Badge>
+                    {ohneWhitelist
+                      ? <Badge color="gray">Offen</Badge>
+                      : <Badge color={erlaubt ? 'green' : 'red'}>{erlaubt ? 'Erlaubt' : 'Drift'}</Badge>}
                   </div>
                 );
               })}
