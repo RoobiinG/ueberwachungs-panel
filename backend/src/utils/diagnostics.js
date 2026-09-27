@@ -201,6 +201,7 @@ function backgroundWorkers() {
     reportScheduler:       safe('../reportScheduler'),
     sslMonitor:            safe('./sslMonitor'),
     agentAutoUpdate:       safe('./agentAutoUpdate'),
+    ipIntel:               safe('./ipIntel'),
   };
 }
 

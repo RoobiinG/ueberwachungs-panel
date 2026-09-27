@@ -16,6 +16,45 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [7.9.0.0] - 2026-09-27 (Build 392) — *Iron Gate*
+
+### Neue Funktionen
+- **Fail2Ban & Sperren — Herkunft jeder gesperrten IP:** Die Sperrliste zeigt zu jeder Adresse Land und Stadt, den Provider (ISP, ASN) und eine Einstufung: *Tor*, *VPN*, *Proxy*, *Rechenzentrum*, *Mobilfunk* oder normaler *Provider*, dazu einen Hinweis bei bekannten Missbrauchsquellen.
+  - Land und Stadt kommen sofort aus der eingebauten Datenbank, ganz ohne Netzwerkzugriff.
+  - Provider und Einstufung liefert **ipapi.is**, sobald unter *Einstellungen → GeoIP & Bedrohungsdaten* ein kostenloser Key hinterlegt ist. Die Abfragen laufen gebündelt im Hintergrund (bis 100 IPs je Anfrage, höchstens 900 pro Tag) und werden 14 Tage zwischengespeichert — die Liste wartet nie darauf.
+  - Nach außen gehen nur öffentliche Adressen gesperrter IPs. Die eigenen SSH-Sitzungen werden bewusst nur lokal nachgeschlagen.
+- **IP dauerhaft sperren (Agent v2.19.0):** Neben jeder fail2ban-Sperre gibt es „Dauerhaft sperren", dazu „IP sperren" für beliebige Adressen oder Netze.
+  - Gesperrt wird über eine eigene nftables-Tabelle (`inet panel_guard`). Sie greift für eingehende **und** weitergeleitete Verbindungen — also auch für Docker-Container-Ports — und unabhängig davon, ob ufw, firewalld oder gar nichts davon läuft.
+  - Die Sperre übersteht Neustarts. Wird der Regelsatz geleert (etwa durch einen Neustart von nftables), stellt der Agent sie innerhalb einer Minute wieder her.
+  - Optional auf **allen Servern** auf einmal, mit Ergebnis je Server.
+  - Geschützt sind private, reservierte und Dokumentations-Netze, die Adressen des Servers selbst und die Adresse des Panels. Netze sind ab /16 (IPv4) bzw. /32 (IPv6) erlaubt. Sperrt man die eigene Adresse oder eine, von der gerade eine SSH-Sitzung besteht, fragt das Panel ausdrücklich nach.
+- **Neue Übersicht „Dauerhaft gesperrte IPs":** Alle dauerhaften Sperren eines Servers in einer Tabelle, gleich woher — die Sperrliste des Panels und fail2ban-Sperren mit unbegrenzter Dauer aus jedem Jail. Mit Quelle, Grund, Urheber, Zeitpunkt, Herkunft, verworfenen Paketen, Suche und „Aufheben". Sperren, die das Panel kennt, der Server aber nicht mehr (z. B. nach einer Neuinstallation des Agents), sind markiert und lassen sich erneut anwenden.
+- **Firewall — Beschriftungen:** Jede Regel und jeder Port lässt sich benennen, z. B. „Ollama API" oder „Wartungs-Port". Auch im Regel-Dialog gibt es dafür ein Feld. Ein vorhandener ufw- oder nftables-Kommentar dient als Beschriftung, solange keine eigene gesetzt ist. Die Beschriftung wandert beim Bearbeiten mit und erscheint auch im Port-Wächter.
+- **Firewall — Regeln gruppiert:** Zusammengehörige Regeln erscheinen als eine Einheit je Port, z. B. „11434/tcp — *Nur für 1 Adresse erlaubt*" statt einer Sperre und einer Freigabe weit auseinander. Die Liste wie bisher gibt es weiterhin per Umschalter.
+  - **Warnung bei falscher Reihenfolge:** ufw, iptables und nftables wenden die erste passende Regel an. Steht eine Freigabe hinter der Sperre für alle, greift sie nie — das zeigt die Gruppe jetzt an.
+  - **„Adresse freigeben"** fügt eine Freigabe direkt vor der Sperre ein (`ufw insert`, `iptables -I … N`, `nft insert … position`), statt sie wirkungslos hinten anzuhängen.
+- **Audit & Score — SSH-Sitzungen mit „seit wann" und „Auswerfen":** Die Sitzungsliste zeigt Benutzer, Gegenstelle, Herkunft, Terminal (oder SFTP/Tunnel) und wie lange die Sitzung schon besteht. Mit dem neuen Recht lässt sich eine Sitzung beenden, optional mit gleichzeitiger Dauersperre der Adresse (erst sperren, dann trennen).
+  - Beendet wird nur, was der Agent in diesem Moment als sshd-Sitzung nachweist: Prozess-ID **und** Startzeit müssen übereinstimmen. Beliebige Prozesse lassen sich darüber nicht beenden, und eine neu vergebene Prozess-ID trifft nichts Falsches. Signale gehen ohne Shell und ohne `kill`-Programm direkt an den Prozess.
+- **Neue Rechte** in der Kategorie *Sicherheit*: **IP dauerhaft sperren** (`fail2ban.ban`) und **SSH-Sitzungen beenden** (`security.ssh_kick`). Ohne sie existieren die zugehörigen Knöpfe und Dialoge nicht in der Oberfläche; das Backend prüft jede Aktion zusätzlich. *IP-Sperren aufheben* heißt jetzt **Fail2Ban-Sperren aufheben**.
+
+### Verbesserungen
+- **Logs & Diagnose:** Der Tab heißt jetzt **Audit-Log** (vorher „Audit-Trail"), ebenso die Karte darin. Firewall-, fail2ban-, Sperr-, SSH- und Schlüssel-Aktionen stehen dort mit lesbarer Bezeichnung statt als technischer Schlüssel.
+- **Firewall-Regeln anlegen:** Port, Protokoll und Quelle prüft jetzt schon das Panel, bevor die Anfrage den Agenten erreicht. An den Agenten gehen nur noch die bekannten Felder.
+- Dauerhafte Sperren und SSH-Auswürfe lösen die Aktions-Benachrichtigung aus (Browser und Webhook), wie Start/Stopp von Servern.
+
+### Bugfixes
+- **SSH-Sitzungen ohne Terminal und Login-Zeit:** Das Backend lieferte `terminal`, die Oberfläche las `tty` und `loginTime` — beides blieb deshalb immer leer.
+- **SSH-Sitzungen bei mehreren SSH-Ports:** Der Agent las nur die erste `Port`-Zeile der sshd-Konfiguration. Jetzt zählen alle, auch aus `sshd_config.d`.
+- Standort-Abfragen für SSH-Sitzungen laufen durch dieselbe Formatprüfung wie im Audit-Log.
+
+### System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen (automatisch):** Drei neue Tabellen — `permanent_bans` (Grund, Urheber und Zeitpunkt dauerhafter Sperren), `firewall_labels` (Beschriftungen) und `ip_intel` (Zwischenspeicher für Provider-Daten). Bestehende Daten bleiben unverändert. Beim Löschen eines Servers werden seine Einträge mit entfernt.
+- **Agent-Kompatibilität:** **Agent v2.19.0** ist für dauerhafte Sperren, „Auswerfen", „Adresse freigeben" und das Mitlesen von Firewall-Kommentaren nötig. Ältere Agents zeigen einen Hinweis statt eines Fehlers; Beschriftungen, Gruppierung und GeoIP funktionieren auch mit ihnen.
+- **Änderungen auf den Servern:** Erst beim ersten dauerhaften Sperren legt der Agent `/etc/panel-agent/blocklist.json` und `blocklist.nft` an (nur für root lesbar), außerdem die nftables-Tabelle `inet panel_guard` und den Dienst `panel-agent-blocklist.service`. Ohne Sperren bleibt alles unverändert. Voraussetzung ist `nft` (Debian ab 11, Ubuntu ab 20.04).
+- **Rechte:** Die beiden neuen Rechte haben zunächst nur Admin-Rollen. Andere Rollen bekommen sie ausschließlich über *Rollen & Berechtigungen* — niemand erhält durch das Update neue Eingriffsmöglichkeiten.
+- **Datenschutz:** Ohne ipapi.is-Key verlässt keine Adresse das Panel.
+- **Neustart/Session:** Kein Session-Verlust. Nach dem Update einmal neu laden.
+
 ## [7.8.0.2] - 2026-09-27 (Build 391) — *Control Hub*
 
 ### Bugfixes (Sicherheit)

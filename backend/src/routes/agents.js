@@ -4,8 +4,9 @@ const tls         = require('tls');
 const fs          = require('fs');
 const path        = require('path');
 const crypto      = require('crypto');
+const net         = require('net');
 const db          = require('../db');
-const { requirePermission } = require('../middleware/requirePermission');
+const { requirePermission, getPermissions } = require('../middleware/requirePermission');
 const { validatePublicUrl } = require('../utils/validateUrl');
 const { auditLog } = require('../utils/audit');
 const { canAccessAgent } = require('../utils/agentAccess');
@@ -13,7 +14,10 @@ const { agentClient } = require('../utils/agentTls');
 const terminalTickets = require('../utils/terminalTickets');
 const statsCache      = require('../utils/statsCache');
 const { zugangGesichert, warnung } = require('../utils/firewallSchutz');
-const geoip           = require('geoip-lite');
+const { parseCidr, geschuetztGrund, normIp } = require('../utils/ipPruefung');
+const { anreichern } = require('../utils/ipIntel');
+const { fingerprint, gruppe, FINGERPRINT_RE } = require('../utils/firewallGruppen');
+const { notifyAction } = require('../utils/actionNotify');
 
 const AGENT_RAW_URL = 'https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master/agent/panel-agent.js';
 
@@ -32,6 +36,13 @@ async function fetchLatestVersion() {
 const getOne = (id) => db.prepare('SELECT * FROM remote_agents WHERE id = ?').get(id);
 
 const getSetting = k => db.prepare('SELECT value FROM settings WHERE key = ?').get(k)?.value ?? null;
+
+// Sperr-Metadaten und Firewall-Beschriftungen gehören zu genau einem Server. Ohne
+// eingeschaltete Fremdschlüssel räumt SQLite sie nicht selbst weg.
+const securityDatenLoeschen = (agentId) => {
+  db.prepare('DELETE FROM permanent_bans  WHERE agent_id = ?').run(agentId);
+  db.prepare('DELETE FROM firewall_labels WHERE agent_id = ?').run(agentId);
+};
 
 // canAccessAgent liegt in utils/agentAccess.js — der Terminal-WebSocket-Proxy in index.js
 // braucht dieselbe Prüfung und kann keine Express-Middleware verwenden.
@@ -180,7 +191,8 @@ router.delete('/:id', requirePermission('agents.delete'), (req, res) => {
   if (!delAgent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(delAgent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   db.prepare('DELETE FROM remote_agents WHERE id = ?').run(req.params.id);
-  
+  securityDatenLoeschen(delAgent.id);
+
   // Clean up alert_rules agent_ids
   const rules = db.prepare('SELECT id, agent_ids FROM alert_rules').all();
   for (const rule of rules) {
@@ -1281,6 +1293,83 @@ const firewallAgent = (req, res) => {
 const firewallFail = (res, err) =>
   res.status(err.response?.status || 502).json({ error: err.response?.data?.error || err.message });
 
+// ── Firewall: Eingaben prüfen, bevor sie zum Agenten gehen ───────────────────
+// Der Agent prüft selbst noch einmal — aber was hier schon nicht passt, verlässt das Panel nicht.
+const portGueltig = (p) => {
+  const m = String(p ?? '').trim().match(/^(\d{1,5})(?::(\d{1,5}))?$/);
+  if (!m) return false;
+  const lo = +m[1], hi = m[2] != null ? +m[2] : lo;
+  return lo >= 1 && hi <= 65535 && lo <= hi;
+};
+const quelleGueltig = (f) => {
+  const s = String(f ?? '').trim();
+  if (!s || s === 'any') return true;
+  const [addr, pfx] = s.split('/');
+  const fam = net.isIP(addr);
+  if (!fam || !/^[0-9a-fA-F.:]+(\/\d{1,3})?$/.test(s)) return false;
+  return pfx === undefined || (/^\d{1,3}$/.test(pfx) && +pfx <= (fam === 4 ? 32 : 128));
+};
+// Nur bekannte Felder weiterreichen — früher ging req.body unverändert an den Agenten.
+function regelBody(body) {
+  const { port, proto, from, route, vorSperre } = body || {};
+  if (!portGueltig(port)) return { fehler: 'Ungültiger Port (1–65535 oder Bereich von:bis)' };
+  if (proto && !['tcp', 'udp'].includes(proto)) return { fehler: 'Ungültiges Protokoll' };
+  if (!quelleGueltig(from)) return { fehler: 'Ungültige Quell-Adresse' };
+  return { daten: {
+    port: String(port).trim(), proto: proto || undefined,
+    from: from && from !== 'any' ? String(from).trim() : undefined,
+    route: route === true, vorSperre: vorSperre === true,
+  } };
+}
+
+// Freitext für Beschriftungen: Steuerzeichen raus, Leerraum zusammenfassen, kürzen.
+const saeubern = (s, max) =>
+  (typeof s === 'string' ? s : '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+
+async function regelnLesen(agent) {
+  const { data } = await agentApi(agent).get('/firewall/rules');
+  return Array.isArray(data) ? data : (data?.rules || []);
+}
+
+function labelSetzen(agentId, scope, fp, label, notiz, von) {
+  if (!label) {
+    db.prepare('DELETE FROM firewall_labels WHERE agent_id = ? AND scope = ? AND fingerprint = ?').run(agentId, scope, fp);
+    return;
+  }
+  db.prepare(`
+    INSERT INTO firewall_labels (agent_id, scope, fingerprint, label, notiz, geaendert_von, geaendert_at)
+    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(agent_id, scope, fingerprint) DO UPDATE SET
+      label = excluded.label, notiz = excluded.notiz,
+      geaendert_von = excluded.geaendert_von, geaendert_at = CURRENT_TIMESTAMP
+  `).run(agentId, scope, fp, label, notiz || null, von || null);
+}
+
+// Nach einer Änderung: Regeln, deren Fingerabdruck vorher nicht existierte, sind die neuen.
+// Robuster als den Fingerabdruck aus dem Formular vorherzusagen — jedes Tool schreibt
+// Protokoll und Quelle etwas anders zurück, als man sie angelegt hat.
+async function neueFingerprints(agent, vorher) {
+  try {
+    const nachher = new Set((await regelnLesen(agent)).map(fingerprint));
+    return { nachher, neu: [...nachher].filter(fp => !vorher.has(fp)) };
+  } catch { return { nachher: null, neu: [] }; }
+}
+
+// Beschriftung einer Regel übernehmen bzw. aufräumen, nachdem sie bearbeitet oder gelöscht
+// wurde. Das Label bleibt, solange es noch eine Regel mit dem Fingerabdruck gibt (UFW führt
+// IPv4 und IPv6 als zwei Regeln mit gleichem Inhalt).
+// `neuesLabel`: undefined = unverändert übernehmen, '' = entfernen, Text = setzen.
+function labelNachAenderung(agentId, altFp, ergebnis, neuesLabel, von) {
+  const alt = altFp
+    ? db.prepare("SELECT label, notiz FROM firewall_labels WHERE agent_id = ? AND scope = 'rule' AND fingerprint = ?").get(agentId, altFp)
+    : null;
+  const altBleibt = !!(altFp && ergebnis.nachher?.has(altFp));
+  const ziel = ergebnis.neu[0] || (altBleibt ? altFp : null);
+  const label = neuesLabel !== undefined ? neuesLabel : alt?.label;
+  if (ziel) labelSetzen(agentId, 'rule', ziel, label || null, neuesLabel !== undefined ? null : alt?.notiz, von);
+  if (altFp && ergebnis.nachher && !altBleibt) labelSetzen(agentId, 'rule', altFp, null);
+}
+
 router.get('/:id/firewall/detect', requirePermission('firewall.view'), async (req, res) => {
   const agent = firewallAgent(req, res); if (!agent) return;
   try {
@@ -1325,27 +1414,38 @@ router.put('/:id/firewall/rules/:num', requirePermission('firewall.manage'), asy
   const id = String(req.params.num);
   if (!isValidRuleId(id)) return res.status(400).json({ error: 'Ungültige Regel-ID' });
 
-  const { port, proto, from, action } = req.body || {};
-  if (!port || !action) return res.status(400).json({ error: 'Port und Aktion erforderlich' });
+  const { action } = req.body || {};
   if (action !== 'allow' && action !== 'deny') return res.status(400).json({ error: 'Ungültige Aktion' });
+  const geprueft = regelBody(req.body);
+  if (geprueft.fehler) return res.status(400).json({ error: geprueft.fehler });
+  const { port, proto, from } = geprueft.daten;
+  const label = req.body?.label !== undefined ? saeubern(req.body.label, 60) : undefined;
+
+  // Vorher-Stand für die Beschriftung: Welche Regel war das, welche Fingerabdrücke gab es?
+  let vorherRegeln = [];
+  try { vorherRegeln = await regelnLesen(agent); } catch {}
+  const altRegel = vorherRegeln.find(r => String(r.id) === id);
+  const altFp = altRegel ? fingerprint(altRegel) : null;
+  const vorher = new Set(vorherRegeln.map(fingerprint));
 
   const api = agentApi(agent);
+  let data, fallback = false;
   try {
-    const { data } = await api.put(`/firewall/rules/${encodeURIComponent(id)}`, req.body);
-    auditLog(req, 'firewall.edit', 'rule', `Regel ${id} → ${port}/${proto || 'tcp'}`,
-      { agentId: agent.id, action, from: from || 'any' });
-    return res.json(data);
+    ({ data } = await api.put(`/firewall/rules/${encodeURIComponent(id)}`, { ...geprueft.daten, action }));
   } catch (err) {
     if (err.response?.status !== 404) return firewallFail(res, err);
+    fallback = true;
   }
-
-  try {
-    await api.delete(`/firewall/rules/${encodeURIComponent(id)}`);
-    const { data } = await api.post(`/firewall/${action}`, { port, proto, from });
-    auditLog(req, 'firewall.edit', 'rule', `Regel ${id} → ${port}/${proto || 'tcp'}`,
-      { agentId: agent.id, action, from: from || 'any', fallback: true });
-    res.json(data);
-  } catch (err) { firewallFail(res, err); }
+  if (fallback) {
+    try {
+      await api.delete(`/firewall/rules/${encodeURIComponent(id)}`);
+      ({ data } = await api.post(`/firewall/${action}`, { port, proto, from }));
+    } catch (err) { return firewallFail(res, err); }
+  }
+  labelNachAenderung(agent.id, altFp, await neueFingerprints(agent, vorher), label, req.user?.username);
+  auditLog(req, 'firewall.edit', 'rule', `Regel ${id} → ${port}/${proto || 'tcp'}`,
+    { agentId: agent.id, action, from: from || 'any', ...(fallback ? { fallback: true } : {}) });
+  res.json(data);
 });
 
 router.get('/:id/firewall/status', requirePermission('firewall.view'), async (req, res) => {
@@ -1360,39 +1460,86 @@ router.get('/:id/firewall/status', requirePermission('firewall.view'), async (re
   }
 });
 
+// Regeln mit Fingerabdruck, Gruppe und Beschriftung. Eine eigene Beschriftung im Panel hat
+// Vorrang; sonst dient ein Kommentar aus der Firewall selbst (ufw „# …", nft comment) als Label.
 router.get('/:id/firewall/rules', requirePermission('firewall.view'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   try {
     const { data } = await agentApi(agent).get('/firewall/rules');
-    res.json(data);
+    const regeln = Array.isArray(data) ? data : (data?.rules || []);
+    const labels = new Map(db.prepare('SELECT scope, fingerprint, label, notiz FROM firewall_labels WHERE agent_id = ?')
+      .all(agent.id).map(z => [`${z.scope}|${z.fingerprint}`, z]));
+    const mit = regeln.map(r => {
+      const fp = fingerprint(r), gr = gruppe(r);
+      const eigen = labels.get(`rule|${fp}`);
+      return {
+        ...r, fingerprint: fp, gruppe: gr,
+        label: eigen?.label || r.comment || null,
+        labelQuelle: eigen ? 'panel' : (r.comment ? 'firewall' : null),
+        notiz: eigen?.notiz || null,
+        portLabel: labels.get(`port|${gr}`)?.label || null,
+      };
+    });
+    res.json(Array.isArray(data) ? { rules: mit } : { ...data, rules: mit });
   } catch (err) {
     res.status(err.response?.status || 502).json({ error: err.response?.data?.error || err.message });
   }
 });
 
-// Die beiden schrieben bisher nichts ins Audit-Log — Firewall-Änderungen an
-// Remote-Servern waren damit nirgends nachvollziehbar, anders als lokale.
-router.post('/:id/firewall/allow', requirePermission('firewall.manage'), async (req, res) => {
-  const agent = firewallAgent(req, res); if (!agent) return;
-  try {
-    const { data } = await agentApi(agent).post('/firewall/allow', req.body);
-    auditLog(req, 'firewall.allow', 'rule', `${req.body?.port}${req.body?.proto ? '/' + req.body.proto : ''}`,
-      { agentId: agent.id, agentName: agent.name, from: req.body?.from || 'any' });
-    res.json(data);
-  } catch (err) { firewallFail(res, err); }
+// Nur die Port-Beschriftungen — für den Port-Wächter im Tab „Audit & Score", der die
+// Regeln selbst nicht braucht (und dafür auch kein Firewall-Recht voraussetzen soll).
+router.get('/:id/firewall/labels', requirePermission(['firewall.view', 'security.view']), (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const zeilen = db.prepare("SELECT fingerprint, label FROM firewall_labels WHERE agent_id = ? AND scope = 'port'").all(agent.id);
+  res.json(zeilen.map(z => {
+    const [richtung, proto, port] = z.fingerprint.split('|');
+    return { gruppe: z.fingerprint, richtung, proto, port, label: z.label };
+  }));
 });
 
-router.post('/:id/firewall/deny', requirePermission('firewall.manage'), async (req, res) => {
+// Beschriftung einer Regel (scope 'rule') oder einer ganzen Portgruppe (scope 'port').
+// Ein leeres Label entfernt die Beschriftung.
+router.put('/:id/firewall/labels', requirePermission('firewall.manage'), (req, res) => {
   const agent = firewallAgent(req, res); if (!agent) return;
+  const { scope, fingerprint: fp } = req.body || {};
+  if (scope !== 'rule' && scope !== 'port') return res.status(400).json({ error: 'Ungültiger Bereich' });
+  if (typeof fp !== 'string' || !FINGERPRINT_RE.test(fp) || (scope === 'port') !== (fp.split('|').length === 3)) {
+    return res.status(400).json({ error: 'Ungültiger Regel-Schlüssel' });
+  }
+  const label = saeubern(req.body?.label, 60);
+  const notiz = saeubern(req.body?.notiz, 300);
+  labelSetzen(agent.id, scope, fp, label || null, notiz, req.user?.username);
+  auditLog(req, 'firewall.label', 'rule', label || '(entfernt)', { agentId: agent.id, agentName: agent.name, scope, regel: fp });
+  res.json({ success: true, scope, fingerprint: fp, label: label || null, notiz: notiz || null });
+});
+
+// Anlegen: Eingaben prüfen, nur bekannte Felder weiterreichen, optional beschriften.
+// `vorSperre` setzt eine Freigabe vor eine bestehende Pauschalsperre desselben Ports.
+async function regelAnlegen(req, res, action) {
+  const agent = firewallAgent(req, res); if (!agent) return;
+  const geprueft = regelBody(req.body);
+  if (geprueft.fehler) return res.status(400).json({ error: geprueft.fehler });
+  const label = saeubern(req.body?.label, 60);
+  let vorher = new Set();
+  if (label) { try { vorher = new Set((await regelnLesen(agent)).map(fingerprint)); } catch {} }
   try {
-    const { data } = await agentApi(agent).post('/firewall/deny', req.body);
-    auditLog(req, 'firewall.deny', 'rule', `${req.body?.port}${req.body?.proto ? '/' + req.body.proto : ''}`,
-      { agentId: agent.id, agentName: agent.name, from: req.body?.from || 'any' });
+    const { data } = await agentApi(agent).post(`/firewall/${action}`, geprueft.daten);
+    if (label) labelNachAenderung(agent.id, null, await neueFingerprints(agent, vorher), label, req.user?.username);
+    const { port, proto, from } = geprueft.daten;
+    auditLog(req, `firewall.${action}`, 'rule', `${port}${proto ? '/' + proto : ''}`,
+      { agentId: agent.id, agentName: agent.name, from: from || 'any', ...(label ? { label } : {}), ...(geprueft.daten.vorSperre ? { vorSperre: true } : {}) });
     res.json(data);
   } catch (err) { firewallFail(res, err); }
-});
+}
+
+// Die beiden schrieben bisher nichts ins Audit-Log — Firewall-Änderungen an
+// Remote-Servern waren damit nirgends nachvollziehbar, anders als lokale.
+router.post('/:id/firewall/allow', requirePermission('firewall.manage'), (req, res) => regelAnlegen(req, res, 'allow'));
+router.post('/:id/firewall/deny',  requirePermission('firewall.manage'), (req, res) => regelAnlegen(req, res, 'deny'));
 
 // Die Prüfung ließ früher nur reine Zahlen zu — firewalld-Regeln heißen aber
 // "80/tcp" oder "svc:ssh" und waren damit remote nicht löschbar.
@@ -1400,8 +1547,15 @@ router.delete('/:id/firewall/rules/:num', requirePermission('firewall.manage'), 
   const agent = firewallAgent(req, res); if (!agent) return;
   const id = String(req.params.num);
   if (!isValidRuleId(id)) return res.status(400).json({ error: 'Ungültige Regel-ID' });
+  let altFp = null;
+  try { const r = (await regelnLesen(agent)).find(x => String(x.id) === id); altFp = r ? fingerprint(r) : null; } catch {}
   try {
     const { data } = await agentApi(agent).delete(`/firewall/rules/${encodeURIComponent(id)}`);
+    // Beschriftung nur entfernen, wenn keine Regel mit diesem Inhalt mehr übrig ist.
+    if (altFp) {
+      const { nachher } = await neueFingerprints(agent, new Set());
+      if (nachher && !nachher.has(altFp)) labelSetzen(agent.id, 'rule', altFp, null);
+    }
     auditLog(req, 'firewall.delete', 'rule', `Regel ${id}`, { agentId: agent.id, agentName: agent.name });
     res.json(data);
   } catch (err) { firewallFail(res, err); }
@@ -1507,7 +1661,10 @@ router.get('/:id/fail2ban/bans', requirePermission('security.view'), async (req,
   const leer = (state, message) => ({ available: false, state, message, checkedAt: new Date().toISOString(), jails: [], bans: [] });
   try {
     const { data } = await agentApi(agent).get('/fail2ban/bans');
-    res.json(data);
+    // Herkunft, Provider und Einstufung (VPN/Proxy/Rechenzentrum) je gesperrter IP.
+    const bans = Array.isArray(data?.bans) ? data.bans : [];
+    const intel = anreichern(bans.map(b => b.ip));
+    res.json({ ...data, bans: bans.map(b => ({ ...b, intel: intel[b.ip] || null })) });
   } catch (err) {
     if (err.response?.status === 404) return res.json(leer('agent_outdated', 'Der Agent kennt diese Abfrage noch nicht — bitte auf v2.17.0 oder neuer aktualisieren.'));
     if (err.response) return res.json(leer('error', err.response.data?.error || `Agent antwortete mit HTTP ${err.response.status}.`));
@@ -1556,20 +1713,234 @@ router.get('/:id/ssh/sessions', requirePermission('security.view'), async (req, 
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   try {
     const { data: rawSessions } = await agentApi(agent).get('/network/ssh-sessions');
-    const sessions = (rawSessions || []).map(item => {
-      const ip = typeof item === 'string' ? item : item.ip;
-      const geo = geoip.lookup(ip);
-      return {
-        ip,
-        user: typeof item === 'object' ? item.user : null,
-        terminal: typeof item === 'object' ? item.terminal : null,
-        country: geo ? geo.country : 'Unknown',
-        city: geo ? geo.city : ''
-      };
-    });
-    res.json(sessions);
+    const liste = (Array.isArray(rawSessions) ? rawSessions : []).map(item => (typeof item === 'string' ? { ip: item } : item || {}));
+    // Nur Standort, keine externe Abfrage: Das sind in aller Regel die eigenen Leute.
+    const intel = anreichern(liste.map(s => s.ip), { extern: false });
+    res.json(liste.map(s => ({
+      id:         typeof s.id === 'string' ? s.id : null,
+      pid:        Number.isInteger(s.pid) ? s.pid : null,
+      startTicks: typeof s.startTicks === 'string' ? s.startTicks : null,
+      ip:         s.ip || null,
+      port:       Number.isInteger(s.port) ? s.port : null,
+      user:       s.user || null,
+      tty:        s.tty ?? s.terminal ?? null,
+      loginAt:    s.loginAt || null,
+      angemeldet: s.angemeldet !== false,
+      kickable:   s.kickable === true,
+      intel:      intel[s.ip] || null,
+      // Alt-Felder für ältere Frontends
+      terminal:   s.tty ?? s.terminal ?? null,
+      country:    intel[s.ip]?.land || 'Unknown',
+      city:       intel[s.ip]?.stadt || '',
+    })));
   } catch (err) {
     res.status(502).json({ error: err.response?.data?.error || err.message });
+  }
+});
+
+// ── Security Center: dauerhafte Sperren und SSH-Sitzungen beenden ────────────
+// Rechte: Lesen `security.view`, Sperren/Aufheben `fail2ban.ban`, Auswerfen
+// `security.ssh_kick`. Jede Eingabe wird hier geprüft (ipPruefung) und im Agenten ein
+// zweites Mal — dort zusätzlich gegen die Adresse des Panels und die eigenen des Servers.
+
+// Adresse, von der die anfragende Person kommt (hinter dem Reverse Proxy der erste
+// X-Forwarded-For-Eintrag). Dient nur dem Schutz vor Selbst-Aussperrung — eine
+// gefälschte Angabe kann damit nichts freischalten, höchstens eine Warnung unterdrücken.
+const anfrageIp = (req) =>
+  normIp((req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || '');
+
+const QUELLE_RE = /^(manuell|ssh-kick|fail2ban:[\w.@:-]{1,64})$/;
+const agentZuAlt = (err, ab) => err.response?.status === 404
+  ? `Der Agent kennt diese Funktion noch nicht — bitte auf v${ab} oder neuer aktualisieren.` : null;
+const agentFehler = (err) => err.response?.data?.error || err.message;
+
+function banMetaSpeichern(agentId, cidr, grund, quelle, von) {
+  db.prepare(`
+    INSERT INTO permanent_bans (agent_id, cidr, grund, quelle, erstellt_von) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(agent_id, cidr) DO UPDATE SET grund = COALESCE(excluded.grund, grund)
+  `).run(agentId, cidr, grund || null, quelle, von || null);
+}
+
+// Eine Sperre auf einem Agenten setzen. Liefert { ok, bereits, status, error, bestaetigungNoetig }.
+async function sperreSetzen(agent, cidr, trotzdem) {
+  try {
+    await agentApi(agent).post('/blocklist/add', { cidr, trotzdem: trotzdem === true });
+    return { ok: true };
+  } catch (err) {
+    const d = err.response?.data || {};
+    if (d.bereits) return { ok: true, bereits: true };
+    return { ok: false, status: err.response?.status || 502, error: agentZuAlt(err, '2.19.0') || agentFehler(err), bestaetigungNoetig: !!d.bestaetigungNoetig };
+  }
+}
+
+// Alle dauerhaften Sperren eines Servers, gleich woher: die Sperrliste des Panels
+// (nftables) und fail2ban-Sperren mit unbegrenzter Dauer aus jedem Jail.
+router.get('/:id/blocklist', requirePermission('security.view'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+
+  const [liste, f2b] = await Promise.allSettled([
+    agentApi(agent).get('/blocklist'),
+    agentApi(agent).get('/fail2ban/bans'),
+  ]);
+  let state = 'ok', message = null, agentListe = null;
+  if (liste.status === 'fulfilled') agentListe = liste.value.data;
+  else if (liste.reason?.response?.status === 404) { state = 'agent_outdated'; message = agentZuAlt(liste.reason, '2.19.0'); }
+  else if (liste.reason?.response) { state = 'error'; message = agentFehler(liste.reason); }
+  else { state = 'agent_unreachable'; message = `Agent nicht erreichbar: ${liste.reason?.message}`; }
+
+  const eintraege = new Map();
+  const bekannt = !!agentListe;
+  for (const e of agentListe?.eintraege || []) {
+    eintraege.set(e.cidr, { cidr: e.cidr, quellen: ['panel'], jails: [], angewendet: true, seit: e.addedAt || null });
+  }
+  for (const m of db.prepare('SELECT cidr, grund, quelle, erstellt_von, erstellt_at FROM permanent_bans WHERE agent_id = ?').all(agent.id)) {
+    const x = eintraege.get(m.cidr) || { cidr: m.cidr, quellen: ['panel'], jails: [], angewendet: bekannt ? false : null, seit: m.erstellt_at };
+    Object.assign(x, { grund: m.grund, herkunft: m.quelle, von: m.erstellt_von, erstelltAt: m.erstellt_at });
+    eintraege.set(m.cidr, x);
+  }
+  for (const b of (f2b.status === 'fulfilled' ? f2b.value.data?.bans : null) || []) {
+    if (!b.permanent) continue;
+    const x = eintraege.get(b.ip) || { cidr: b.ip, quellen: [], jails: [], angewendet: true, seit: b.bannedAt };
+    if (!x.quellen.includes('fail2ban')) x.quellen.push('fail2ban');
+    x.jails.push(b.jail);
+    eintraege.set(b.ip, x);
+  }
+  const alle = [...eintraege.values()].sort((a, b) => String(b.seit || '').localeCompare(String(a.seit || '')));
+  const intel = anreichern(alle.map(e => e.cidr));
+  res.json({
+    available: agentListe?.available ?? false, state, message: agentListe?.message || message,
+    aktiv: agentListe?.aktiv ?? null, drops: agentListe?.drops ?? null,
+    eintraege: alle.map(e => ({ ...e, intel: intel[e.cidr] || null })),
+  });
+});
+
+// Dauerhaft sperren — auf diesem Server oder (alleServer) auf allen, die man sehen darf.
+router.post('/:id/blocklist', requirePermission('fail2ban.ban'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+
+  const { cidr, trotzdem, alleServer } = req.body || {};
+  let e;
+  try { e = parseCidr(cidr); } catch (err) { return res.status(400).json({ error: err.message }); }
+  const hart = geschuetztGrund(e);
+  if (hart) return res.status(400).json({ error: hart });
+  if (trotzdem !== true) {
+    const selbst = geschuetztGrund(e, [{ ip: anfrageIp(req), grund: 'deine aktuelle Adresse' }]);
+    if (selbst) return res.status(409).json({ error: `${selbst} — du würdest dich selbst aussperren.`, bestaetigungNoetig: true });
+  }
+  const grund = saeubern(req.body?.grund, 200) || null;
+  const quelle = QUELLE_RE.test(String(req.body?.quelle || '')) ? req.body.quelle : 'manuell';
+
+  const ziele = alleServer === true
+    ? db.prepare('SELECT * FROM remote_agents ORDER BY name').all().filter(a => canAccessAgent(a.id, req.user?.role))
+    : [agent];
+  const ergebnisse = [];
+  for (const ziel of ziele) {
+    const r = await sperreSetzen(ziel, e.cidr, trotzdem);
+    if (r.ok) banMetaSpeichern(ziel.id, e.cidr, grund, quelle, req.user?.username);
+    ergebnisse.push({ agentId: ziel.id, name: ziel.name, ...r });
+  }
+  const erfolgreich = ergebnisse.filter(r => r.ok && !r.bereits);
+  if (erfolgreich.length) {
+    auditLog(req, 'agent.blocklist.add', 'agent', erfolgreich.map(r => r.name).join(', '), { cidr: e.cidr, grund, quelle });
+    notifyAction(req, 'ip_block', `${erfolgreich.map(r => r.name).join(', ')}: ${e.cidr}`).catch(() => {});
+  }
+
+  if (alleServer !== true) {
+    const r = ergebnisse[0];
+    if (!r.ok) return res.status(r.status >= 400 && r.status < 500 ? r.status : 502).json({ error: r.error, bestaetigungNoetig: r.bestaetigungNoetig });
+    return res.json({ success: true, cidr: e.cidr, bereits: !!r.bereits });
+  }
+  res.json({ success: ergebnisse.some(r => r.ok), cidr: e.cidr, ergebnisse });
+});
+
+router.delete('/:id/blocklist', requirePermission('fail2ban.ban'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  let e;
+  try { e = parseCidr(req.body?.cidr); } catch (err) { return res.status(400).json({ error: err.message }); }
+  let hinweis = null;
+  try {
+    await agentApi(agent).post('/blocklist/remove', { cidr: e.cidr });
+  } catch (err) {
+    // „steht nicht auf der Liste" (409): Nur noch der Panel-Eintrag ist übrig — aufräumen.
+    if (err.response?.status !== 409) return res.status(err.response?.status === 404 ? 409 : 502).json({ error: agentZuAlt(err, '2.19.0') || agentFehler(err) });
+    hinweis = agentFehler(err);
+  }
+  db.prepare('DELETE FROM permanent_bans WHERE agent_id = ? AND cidr = ?').run(agent.id, e.cidr);
+  auditLog(req, 'agent.blocklist.remove', 'agent', agent.name, { cidr: e.cidr });
+  notifyAction(req, 'ip_unblock', `${agent.name}: ${e.cidr}`).catch(() => {});
+  res.json({ success: true, cidr: e.cidr, hinweis });
+});
+
+// Sperren, die das Panel kennt, der Server aber nicht (mehr) — z. B. nach einer
+// Neuinstallation des Agents — erneut setzen.
+router.post('/:id/blocklist/reapply', requirePermission('fail2ban.ban'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  let vorhanden;
+  try { vorhanden = new Set(((await agentApi(agent).get('/blocklist')).data?.eintraege || []).map(x => x.cidr)); }
+  catch (err) { return res.status(502).json({ error: agentZuAlt(err, '2.19.0') || agentFehler(err) }); }
+  const fehlend = db.prepare('SELECT cidr FROM permanent_bans WHERE agent_id = ?').all(agent.id).filter(z => !vorhanden.has(z.cidr));
+  const ergebnisse = [];
+  for (const { cidr } of fehlend) ergebnisse.push({ cidr, ...(await sperreSetzen(agent, cidr, false)) });
+  if (ergebnisse.some(r => r.ok)) auditLog(req, 'agent.blocklist.add', 'agent', agent.name, { erneutAngewendet: ergebnisse.filter(r => r.ok).map(r => r.cidr) });
+  res.json({ success: true, ergebnisse });
+});
+
+// SSH-Sitzung beenden, optional die Adresse vorher dauerhaft sperren (damit sie nicht
+// sofort wiederkommt). Die Sitzung wird frisch vom Agenten gelesen; beendet wird nur
+// eine, die dort mit genau dieser PID *und* Startzeit existiert.
+router.post('/:id/ssh/sessions/kick', requirePermission('security.ssh_kick'), async (req, res) => {
+  const agent = getOne(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
+  if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+
+  const { pid, startTicks, sperren, trotzdem } = req.body || {};
+  if (!Number.isInteger(pid) || pid <= 1 || pid > 4194304 || typeof startTicks !== 'string' || !/^\d{1,20}$/.test(startTicks)) {
+    return res.status(400).json({ error: 'Ungültige Sitzungs-Kennung' });
+  }
+  if (sperren === true && !getPermissions(req.user?.role).includes('fail2ban.ban')) {
+    return res.status(403).json({ error: 'Zum gleichzeitigen Sperren fehlt das Recht „IP dauerhaft sperren".' });
+  }
+
+  let sitzung;
+  try {
+    const { data } = await agentApi(agent).get('/network/ssh-sessions');
+    sitzung = (Array.isArray(data) ? data : []).find(s => s.pid === pid && s.startTicks === startTicks);
+  } catch (err) { return res.status(502).json({ error: agentFehler(err) }); }
+  if (!sitzung) return res.status(409).json({ error: 'Diese SSH-Sitzung besteht nicht (mehr) — bitte die Liste neu laden.' });
+  if (!sitzung.kickable) return res.status(409).json({ error: 'Der Agent kann diese Sitzung nicht zuordnen — bitte auf v2.19.0 oder neuer aktualisieren.' });
+  if (trotzdem !== true && normIp(sitzung.ip) === anfrageIp(req)) {
+    return res.status(409).json({ error: `Diese Sitzung kommt von deiner eigenen Adresse (${sitzung.ip}).`, bestaetigungNoetig: true });
+  }
+
+  // Erst sperren, dann trennen — sonst verbindet sich die Gegenstelle einfach neu.
+  let gesperrt = false;
+  if (sperren === true) {
+    let e;
+    try { e = parseCidr(sitzung.ip); } catch (err) { return res.status(400).json({ error: err.message }); }
+    const hart = geschuetztGrund(e);
+    if (hart) return res.status(400).json({ error: `${hart} — Sitzung wurde nicht beendet.` });
+    const r = await sperreSetzen(agent, e.cidr, true);
+    if (!r.ok) return res.status(r.status >= 400 && r.status < 500 ? r.status : 502).json({ error: `Sperren fehlgeschlagen, Sitzung wurde nicht beendet: ${r.error}` });
+    banMetaSpeichern(agent.id, e.cidr, saeubern(req.body?.grund, 200) || `SSH-Sitzung von ${sitzung.user} ausgeworfen`, 'ssh-kick', req.user?.username);
+    gesperrt = true;
+  }
+
+  try {
+    const { data } = await agentApi(agent).post('/ssh/sessions/kick', { pid, startTicks });
+    auditLog(req, 'agent.ssh.kick', 'agent', agent.name, { user: sitzung.user, ip: sitzung.ip, tty: sitzung.tty, pid, gesperrt, signal: data?.signal });
+    notifyAction(req, 'ssh_kick', `${agent.name}: SSH-Sitzung ${sitzung.user}@${sitzung.ip}`).catch(() => {});
+    res.json({ ...data, gesperrt });
+  } catch (err) {
+    const status = err.response?.status;
+    res.status(status === 400 || status === 409 ? status : 502).json({ error: agentZuAlt(err, '2.19.0') || agentFehler(err), gesperrt });
   }
 });
 
@@ -1586,6 +1957,7 @@ router.post('/:id/uninstall', requirePermission('agents.delete'), async (req, re
   }
   // Agent aus Panel-DB entfernen
   db.prepare('DELETE FROM remote_agents WHERE id = ?').run(agent.id);
+  securityDatenLoeschen(agent.id);
 
   // Clean up alert_rules agent_ids
   const rules = db.prepare('SELECT id, agent_ids FROM alert_rules').all();

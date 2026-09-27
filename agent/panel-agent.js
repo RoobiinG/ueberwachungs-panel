@@ -18,7 +18,7 @@ const execAsync = promisify(exec);
 // sondern ein Argument-Array. Sonderzeichen in Volume-/Netzwerk-/Image-Namen können
 // so nicht als Shell-Syntax gedeutet werden.
 const execFileAsync = promisify(execFile);
-const VERSION = '2.18.1';
+const VERSION = '2.19.0';
 
 // Ob die Container-Konsole angeboten werden kann. Steht erst nach dem Laden von
 // ws/node-pty am Ende dieser Datei fest und wird über /ping und /version gemeldet,
@@ -386,6 +386,98 @@ const _validFrom = (f) => {
 
 const _isIPv6 = (addr) => addr.includes(':');
 
+// ── Strenge CIDR-Prüfung für dauerhafte Sperren ──────────────────────────────
+// Spiegelung von backend/src/utils/ipPruefung.js — wer dort etwas ändert, ändert es hier.
+// Das Panel prüft schon vor dem Weiterleiten; der Agent verlässt sich nicht darauf.
+const _MIN_PRAEFIX = { 4: 16, 6: 32 };
+const _MAX_PRAEFIX = { 4: 32, 6: 128 };
+
+function _httpFehler(status, message, extra = {}) {
+  const e = new Error(message); e.status = status; e.extra = extra; return e;
+}
+
+const _v4ZuZahl = (s) => s.split('.').reduce((n, o) => (n << 8n) + BigInt(Number(o)), 0n);
+function _v6ZuZahl(s) {
+  let a = s.toLowerCase();
+  const m = a.match(/^(.*:)(\d+\.\d+\.\d+\.\d+)$/);
+  if (m) { const v4 = _v4ZuZahl(m[2]); a = `${m[1]}${(v4 >> 16n).toString(16)}:${(v4 & 0xffffn).toString(16)}`; }
+  const [kopf, rumpf] = a.split('::');
+  const k = kopf ? kopf.split(':') : [];
+  const r = rumpf === undefined ? null : (rumpf ? rumpf.split(':') : []);
+  const g = r === null ? k : [...k, ...Array(8 - k.length - r.length).fill('0'), ...r];
+  if (g.length !== 8) throw _httpFehler(400, 'Ungültige IPv6-Adresse');
+  return g.reduce((n, x) => (n << 16n) + BigInt(parseInt(x || '0', 16)), 0n);
+}
+const _zahlZuV4 = (n) => [24n, 16n, 8n, 0n].map(s => String((n >> s) & 0xffn)).join('.');
+function _zahlZuV6(n) {
+  const g = [];
+  for (let i = 7; i >= 0; i--) g.push(Number((n >> BigInt(i * 16)) & 0xffffn));
+  let best = -1, len = 0;
+  for (let i = 0; i < 8;) {
+    if (g[i] !== 0) { i++; continue; }
+    let j = i; while (j < 8 && g[j] === 0) j++;
+    if (j - i > len && j - i >= 2) { best = i; len = j - i; }
+    i = j;
+  }
+  const h = g.map(x => x.toString(16));
+  return best < 0 ? h.join(':') : `${h.slice(0, best).join(':')}::${h.slice(best + len).join(':')}`;
+}
+
+function _parseCidr(eingabe, minPraefix = _MIN_PRAEFIX) {
+  const s = String(eingabe ?? '').trim();
+  if (!s || s.length > 49 || !/^[0-9a-fA-F.:]+(\/\d{1,3})?$/.test(s)) throw _httpFehler(400, 'Ungültige IP-Adresse oder ungültiges Netz');
+  const [addr, pfx] = s.split('/');
+  const fam = net.isIP(addr);
+  if (!fam) throw _httpFehler(400, 'Ungültige IP-Adresse');
+  if (fam === 4 && addr.split('.').some(o => o.length > 1 && o[0] === '0')) throw _httpFehler(400, 'IPv4-Adressen bitte ohne führende Nullen angeben');
+  if (fam === 6 && /^::ffff:/i.test(addr)) throw _httpFehler(400, 'IPv4-gemappte Adresse bitte als IPv4 angeben');
+  const max = _MAX_PRAEFIX[fam], min = minPraefix[fam];
+  const praefix = pfx === undefined ? max : Number(pfx);
+  if (!Number.isInteger(praefix) || praefix < min || praefix > max) throw _httpFehler(400, `Netzgröße /${pfx} ist nicht erlaubt (IPv${fam}: /${min} bis /${max})`);
+  const wert = fam === 4 ? _v4ZuZahl(addr) : _v6ZuZahl(addr);
+  const alle = (1n << BigInt(max)) - 1n;
+  const maske = alle ^ ((1n << BigInt(max - praefix)) - 1n);
+  const netz = wert & maske;
+  const text = (n) => (fam === 4 ? _zahlZuV4(n) : _zahlZuV6(n));
+  if (netz !== wert) throw _httpFehler(400, `${s} ist keine Netzadresse — gemeint ist vermutlich ${text(netz)}/${praefix}`);
+  return { family: fam, praefix, cidr: praefix === max ? text(netz) : `${text(netz)}/${praefix}`, start: netz, ende: netz | (alle ^ maske) };
+}
+
+const _ueberlappt = (a, b) => a.family === b.family && a.start <= b.ende && b.start <= a.ende;
+
+const _GESCHUETZT = [
+  ['0.0.0.0/8', 'reservierter Bereich'], ['10.0.0.0/8', 'privates Netz (RFC 1918)'],
+  ['100.64.0.0/10', 'Carrier-NAT (RFC 6598)'], ['127.0.0.0/8', 'Loopback'],
+  ['169.254.0.0/16', 'Link-Local'], ['172.16.0.0/12', 'privates Netz (RFC 1918)'],
+  ['192.0.0.0/24', 'reservierter Bereich'], ['192.0.2.0/24', 'Dokumentations-Netz'],
+  ['192.168.0.0/16', 'privates Netz (RFC 1918)'], ['198.18.0.0/15', 'Benchmark-Netz'],
+  ['198.51.100.0/24', 'Dokumentations-Netz'], ['203.0.113.0/24', 'Dokumentations-Netz'],
+  ['224.0.0.0/4', 'Multicast'], ['240.0.0.0/4', 'reservierter Bereich'],
+  ['::/128', 'unspezifizierte Adresse'], ['::1/128', 'Loopback'], ['64:ff9b::/96', 'NAT64'],
+  ['100::/64', 'Discard-Bereich'], ['2001:db8::/32', 'Dokumentations-Netz'],
+  ['fc00::/7', 'privates Netz (ULA)'], ['fe80::/10', 'Link-Local'], ['ff00::/8', 'Multicast'],
+].map(([c, grund]) => ({ ..._parseCidr(c, { 4: 0, 6: 0 }), grund }));
+
+const _normIp = (ip) => String(ip ?? '').trim().replace(/^::ffff:(?=\d+\.\d+\.\d+\.\d+$)/i, '');
+
+// Zusätzlich geschützt: jede eigene Interface-Adresse und die Adresse, von der das Panel
+// gerade anfragt — sonst sperrte das Panel seine eigene Verbindung zu diesem Agenten.
+function _geschuetztGrund(eintrag, panelIp) {
+  const fest = _GESCHUETZT.find(g => _ueberlappt(eintrag, g));
+  if (fest) return `${eintrag.cidr} liegt in einem geschützten Bereich (${fest.grund})`;
+  const zusatz = [{ ip: panelIp, grund: 'Adresse des Panels' }];
+  for (const addrs of Object.values(os.networkInterfaces())) {
+    for (const a of addrs || []) zusatz.push({ ip: a.address, grund: 'Adresse dieses Servers' });
+  }
+  for (const z of zusatz) {
+    const ip = _normIp(z.ip);
+    if (!net.isIP(ip)) continue;
+    let p; try { p = _parseCidr(ip); } catch { continue; }
+    if (_ueberlappt(eintrag, p)) return `${eintrag.cidr} enthält ${ip} (${z.grund})`;
+  }
+  return null;
+}
+
 // Erkennt aktive Firewall-Software. Wir geben das am höchsten abstrahierte Tool
 // zurück, das installiert ist, auch wenn es gerade deaktiviert ist.
 async function detectAgentFirewall() {
@@ -484,11 +576,13 @@ function _parseUfwRuleLine(line) {
   if (!m) return null;
   const id = m[1];
   let rest = m[2];
-  // Kommentar (" # …") abtrennen, sonst landet er in der Quelle.
+  // Kommentar (" # …") abtrennen, sonst landet er in der Quelle. Er wird mitgeliefert,
+  // damit das Panel ihn als Beschreibung zeigen kann, solange dort keine eigene steht.
   const hash = rest.indexOf('#');
+  const comment = hash >= 0 ? rest.slice(hash + 1).trim().slice(0, 120) || null : null;
   if (hash >= 0) rest = rest.slice(0, hash);
   const cols = rest.trim().split(/\s{2,}/);
-  if (cols.length < 2) return { id, port: '?', proto: 'any', action: '?', from: 'any', to: null, direction: 'in', raw: line.trim() };
+  if (cols.length < 2) return { id, port: '?', proto: 'any', action: '?', from: 'any', to: null, direction: 'in', comment, raw: line.trim() };
   // "(v6)"-Zusätze entfernen; die Adressfamilie fasst das Panel ohnehin zusammen.
   const stripV6 = (s) => s.replace(/\s*\(v6\)\s*/i, ' ').trim();
   const toCol   = stripV6(cols[0]);
@@ -505,7 +599,7 @@ function _parseUfwRuleLine(line) {
   if (pm) { port = pm[1]; proto = pm[2] ? pm[2].toLowerCase() : 'any'; }
   else if (/^anywhere$/i.test(portTok)) { port = 'any'; }
   const from = (/^anywhere$/i.test(fromCol) || fromCol === '') ? 'any' : fromCol;
-  return { id, port, proto, action, from, to: dest, direction, raw: line.trim() };
+  return { id, port, proto, action, from, to: dest, direction, comment, raw: line.trim() };
 }
 
 // Eine Zeile aus `iptables -S DOCKER-USER` zerlegen. Versteht den ursprünglichen Zielport
@@ -591,7 +685,8 @@ async function getFirewallRules() {
               from = right?.prefix ? `${right.prefix.addr}/${right.prefix.len}` : String(right ?? 'any');
             }
           }
-          rules.push({ id: String(r.handle ?? ''), port, proto, action, from, raw: JSON.stringify(r) });
+          const comment = typeof r.comment === 'string' ? r.comment.slice(0, 120) : null;
+          rules.push({ id: String(r.handle ?? ''), port, proto, action, from, comment, raw: JSON.stringify(r) });
         }
 
         // Docker-veröffentlichte Ports: DOCKER-USER-Regeln (ip filter, hängen an FORWARD und
@@ -865,24 +960,55 @@ async function _ensureDockerFwPersistence() {
   } catch {}
 }
 
-async function firewallAllow(port, proto, from, action, route = false) {
+// Position der ersten Pauschalsperre (Quelle „any") für denselben Port und dieselbe
+// Richtung. ufw, iptables und nftables werten die erste passende Regel — eine Freigabe
+// hinter so einer Sperre greift nie. ufw hängt neue Regeln aber hinten an, nft ebenso.
+// Liefert die UFW-Nummer, iptables-Zeile bzw. den nft-Handle — oder null.
+async function _ersteSperreVor(tool, p, pr, fr, route) {
+  const rules = await getFirewallRules();
+  const richtung = route ? 'fwd' : 'in';
+  const passt = (r) => r.action === 'deny' && (!r.from || r.from === 'any') && String(r.port) === String(p)
+    && (!pr || r.proto === 'any' || r.proto === pr) && (r.direction || 'in') === richtung && /^\d+$/.test(String(r.id));
+  if (tool === 'ufw') {
+    // UFW nummeriert IPv4 und IPv6 gemeinsam, fügt aber nur innerhalb der eigenen Familie ein.
+    const v6 = fr ? _isIPv6(fr) : false;
+    return rules.find(r => passt(r) && /\(v6\)/i.test(r.raw || '') === v6)?.id ?? null;
+  }
+  if (tool === 'iptables') return rules.find(passt)?.id ?? null;
+  if (tool === 'nftables') {
+    // Nur Regeln der Kette, in die das Panel schreibt, taugen als Bezugspunkt.
+    return rules.find(r => {
+      if (!passt(r)) return false;
+      try { const j = JSON.parse(r.raw); return j.family === 'inet' && j.table === 'filter' && j.chain === 'input'; }
+      catch { return false; }
+    })?.id ?? null;
+  }
+  return null;
+}
+
+async function firewallAllow(port, proto, from, action, route = false, vorSperre = false) {
   const { tool } = await detectAgentFirewall();
   const p   = _validPort(port);
   const pr  = _validProto(proto);
   const fr  = _validFrom(from);
   const opt = { timeout: 10000 };
+  // Nur eine Freigabe muss vor eine Sperre; die Position kommt aus der aktuellen Regelliste
+  // und ist eine reine Zahl (UFW-Nummer, iptables-Zeile, nft-Handle).
+  const pos = vorSperre && action === 'allow' && !(route && tool === 'nftables')
+    ? await _ersteSperreVor(tool, p, pr, fr, route) : null;
 
   if (tool === 'ufw') {
+    const ins = pos ? ['insert', String(pos)] : [];
     let args;
     if (route) {
       // Weiterleitungsregel (FWD) — für veröffentlichte Docker-Container-Ports, analog zu
       // `ufw route allow`. Ohne diesen Zweig würde das Bearbeiten einer Container-Regel sie
       // in eine wirkungslose INPUT-Regel verwandeln (Docker umgeht die INPUT-Kette).
-      args = ['route', action, ...(pr ? ['proto', pr] : []), ...(fr ? ['from', fr] : []), 'to', 'any', 'port', p];
+      args = ['route', ...ins, action, ...(pr ? ['proto', pr] : []), ...(fr ? ['from', fr] : []), 'to', 'any', 'port', p];
     } else {
       args = fr
-        ? [action, 'from', fr, 'to', 'any', 'port', p, ...(pr ? ['proto', pr] : [])]
-        : [action, pr ? `${p}/${pr}` : p];
+        ? [...ins, action, 'from', fr, 'to', 'any', 'port', p, ...(pr ? ['proto', pr] : [])]
+        : [...ins, action, pr ? `${p}/${pr}` : p];
     }
     await execFileAsync('ufw', args, opt);
 
@@ -923,7 +1049,9 @@ async function firewallAllow(port, proto, from, action, route = false) {
       const saddr   = fr ? [_isIPv6(fr) ? 'ip6' : 'ip', 'saddr', fr] : [];
       const dport   = p.includes(':') ? `{ ${p.replace(':', '-')} }` : p;
       const verdict = action === 'allow' ? 'accept' : 'drop';
-      await execFileAsync('nft', ['add', 'rule', 'inet', 'filter', 'input', ...saddr, pr || 'tcp', 'dport', dport, verdict], opt);
+      // `insert … position H` setzt die Regel vor die mit Handle H.
+      const wo = pos ? ['insert', 'rule', 'inet', 'filter', 'input', 'position', String(pos)] : ['add', 'rule', 'inet', 'filter', 'input'];
+      await execFileAsync('nft', [...wo, ...saddr, pr || 'tcp', 'dport', dport, verdict], opt);
     }
 
   } else if (tool === 'iptables') {
@@ -931,7 +1059,7 @@ async function firewallAllow(port, proto, from, action, route = false) {
     // landete in einer Tabelle, die das Panel nicht anzeigt.
     if (fr && _isIPv6(fr)) throw new Error('IPv6-Quellen werden mit iptables nicht unterstützt — dafür wäre ip6tables nötig.');
     const src = fr ? ['-s', fr] : [];
-    await execFileAsync('iptables', ['-I', 'INPUT', '-p', pr || 'tcp', ...src, '--dport', p, '-j', action === 'allow' ? 'ACCEPT' : 'DROP'], opt);
+    await execFileAsync('iptables', ['-I', 'INPUT', ...(pos ? [String(pos)] : []), '-p', pr || 'tcp', ...src, '--dport', p, '-j', action === 'allow' ? 'ACCEPT' : 'DROP'], opt);
     try { await execAsync('sh -c "iptables-save > /etc/iptables/rules.v4 2>/dev/null || true"'); } catch {}
 
   } else {
@@ -1026,7 +1154,137 @@ async function getOpenPorts() {
   }
 }
 
+// ── SSH-Sitzungen: wer, von wo, seit wann — und welcher Prozess dazugehört ─────
+// Quelle ist `ss -Htnp` (Sockets mit Prozess-IDs) plus /proc, alles ohne Shell.
+// Pro Verbindung halten sshd-Prozesse denselben Socket: der privilegierte Monitor
+// („sshd: robin [priv]", ab OpenSSH 9.8 „sshd-session: …") und das Kind mit dem Terminal
+// („sshd: robin@pts/0" bzw. „…@notty" bei SFTP/Tunneln). Der Monitor ist der Sitzungsleiter;
+// seine Startzeit (Feld 22 aus /proc/<pid>/stat) macht die Sitzung eindeutig — auch dann,
+// wenn der Kernel dieselbe PID später an einen anderen Prozess vergibt.
+const SSHD_COMM_RE = /^sshd(-session|-auth)?$/;
+
+function _sshPorts() {
+  const ports = new Set();
+  const lesen = (datei) => {
+    try { for (const m of fs.readFileSync(datei, 'utf8').matchAll(/^\s*Port\s+(\d{1,5})\s*$/gmi)) ports.add(+m[1]); } catch {}
+  };
+  lesen('/etc/ssh/sshd_config');
+  try { for (const f of fs.readdirSync('/etc/ssh/sshd_config.d')) if (f.endsWith('.conf')) lesen(path.join('/etc/ssh/sshd_config.d', f)); } catch {}
+  if (!ports.size) ports.add(22);
+  return ports;
+}
+
+let _clkTck = null;
+async function _clockTicks() {
+  if (_clkTck) return _clkTck;
+  try { const { stdout } = await execFileAsync('getconf', ['CLK_TCK'], { timeout: 2000 }); _clkTck = parseInt(stdout, 10) || 100; }
+  catch { _clkTck = 100; }
+  return _clkTck;
+}
+
+function _bootZeit() {
+  try { return parseInt(fs.readFileSync('/proc/stat', 'utf8').match(/^btime\s+(\d+)/m)[1], 10); } catch { return null; }
+}
+
+// Startzeit eines Prozesses in Ticks seit dem Boot — oder null, wenn es ihn nicht (mehr) gibt.
+function _startTicks(pid) {
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+    const rest = stat.slice(stat.lastIndexOf(')') + 2).split(' ');   // ab Feld 3
+    return /^\d+$/.test(rest[19]) ? rest[19] : null;                  // Feld 22
+  } catch { return null; }
+}
+
+function _procInfo(pid) {
+  try {
+    const comm = fs.readFileSync(`/proc/${pid}/comm`, 'utf8').trim();
+    const cmd  = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').split('\0').filter(Boolean).join(' ').trim();
+    return { pid, comm, cmd, startTicks: _startTicks(pid) };
+  } catch { return null; }
+}
+
+// Adresse aus der ss-Spalte ("1.2.3.4:22", "[2a01::1]:22", "[::ffff:1.2.3.4]:22").
+function _ssAdresse(s) {
+  const m = String(s).match(/^\[?(.+?)\]?:(\d+)$/);
+  return m ? { ip: _normIp(m[1]), port: +m[2] } : null;
+}
+
 async function getSshSessions() {
+  try {
+    const ports = _sshPorts();
+    const { stdout } = await execFileAsync('ss', ['-Htnp', 'state', 'established'], { timeout: 4000, maxBuffer: 4 * 1024 * 1024 });
+    const btime = _bootZeit();
+    const tck = await _clockTicks();
+    const sessions = [];
+    let ohnePid = false;
+
+    for (const zeile of stdout.split('\n')) {
+      const t = zeile.trim().split(/\s+/);
+      if (t.length < 4) continue;
+      const lokal = _ssAdresse(t[2]), peer = _ssAdresse(t[3]);
+      if (!lokal || !peer || !ports.has(lokal.port) || !net.isIP(peer.ip)) continue;
+
+      const pids = [...new Set([...t.slice(4).join(' ').matchAll(/pid=(\d+)/g)].map(m => +m[1]))];
+      if (!pids.length) { ohnePid = true; continue; }
+      const procs = pids.map(_procInfo).filter(p => p && SSHD_COMM_RE.test(p.comm) && !/\[listener\]/.test(p.cmd));
+      if (!procs.length) continue;
+
+      const leiter = procs.find(p => /\[priv\]$/.test(p.cmd)) || procs.slice().sort((a, b) => a.pid - b.pid)[0];
+      const terminal = procs.map(p => p.cmd.match(/@(pts\/\d+|notty)\b/)?.[1]).find(Boolean) || null;
+      const user = (procs.map(p => p.cmd.match(/^sshd(?:-session|-auth)?:\s+([^\s@\[]+)/)?.[1]).find(u => u && u !== 'unknown')) || null;
+      if (!leiter.startTicks) continue;
+
+      sessions.push({
+        id: `${leiter.pid}.${leiter.startTicks}`,
+        pid: leiter.pid,
+        startTicks: leiter.startTicks,
+        pids: procs.map(p => p.pid),
+        user: user || 'unbekannt',
+        ip: peer.ip,
+        port: peer.port,
+        tty: terminal,
+        terminal,                       // Alt-Feld für Panels vor v7.9.0.0
+        loginAt: btime ? new Date((btime + Number(leiter.startTicks) / tck) * 1000).toISOString() : null,
+        angemeldet: !!user,
+        kickable: true,
+      });
+    }
+
+    // Ohne Prozess-Zuordnung (sollte als root nicht vorkommen) bleibt die alte Sicht.
+    if (!sessions.length && ohnePid) return await _sshSessionsAlt();
+    return sessions.sort((a, b) => String(a.loginAt).localeCompare(String(b.loginAt)));
+  } catch {
+    return _sshSessionsAlt();
+  }
+}
+
+// Beendet eine SSH-Sitzung. Beendet wird nur, was in diesem Moment nachweislich eine
+// sshd-Sitzung ist: PID *und* Startzeit müssen zu einem frisch ermittelten Sitzungsleiter
+// passen. Damit lässt sich über diesen Weg kein beliebiger Prozess beenden, und eine
+// inzwischen neu vergebene PID trifft nichts Falsches. Signale gehen per process.kill —
+// kein kill-Programm, keine Shell.
+async function sshSessionKick(pid, startTicks) {
+  if (!/^\d{1,7}$/.test(String(pid)) || !/^\d{1,20}$/.test(String(startTicks))) {
+    return { status: 400, body: { error: 'Ungültige Sitzungs-Kennung' } };
+  }
+  const p = Number(pid);
+  if (p <= 1 || p === process.pid || p === process.ppid) return { status: 400, body: { error: 'Dieser Prozess darf nicht beendet werden' } };
+
+  const s = (await getSshSessions()).find(x => x.kickable && x.pid === p && x.startTicks === String(startTicks));
+  if (!s) return { status: 409, body: { error: 'Diese SSH-Sitzung besteht nicht (mehr) — bitte die Liste neu laden.' } };
+
+  // Alle sshd-Prozesse genau dieser Verbindung, jeweils mit ihrer Startzeit festgehalten.
+  const ziele = s.pids.map(x => ({ pid: x, ticks: _startTicks(x) })).filter(z => z.ticks);
+  const lebt  = (z) => _startTicks(z.pid) === z.ticks;
+  for (const z of ziele) { try { process.kill(z.pid, 'SIGTERM'); } catch {} }
+  for (let i = 0; i < 15 && ziele.some(lebt); i++) await sleep(200);
+  let signal = 'SIGTERM';
+  for (const z of ziele.filter(lebt)) { try { process.kill(z.pid, 'SIGKILL'); signal = 'SIGKILL'; } catch {} }
+  return { status: 200, body: { success: true, user: s.user, ip: s.ip, tty: s.tty, signal } };
+}
+
+// Bisherige Ermittlung über ss + w/who — nur noch Rückfall, ohne Prozess-Zuordnung.
+async function _sshSessionsAlt() {
   const sessions = [];
   try {
     let sshPort = 22;
@@ -1555,6 +1813,143 @@ async function fail2banUnban(jail, ip) {
   return { status: 200, body: { success: true, jail, ip } };
 }
 
+// ── Dauerhafte Sperrliste (nftables-Tabelle inet panel_guard) ─────────────────
+// Eigene Tabelle mit zwei Intervall-Sets. Ihre Ketten hängen an INPUT *und* FORWARD
+// (Priorität −5, also vor filter), damit auch von Docker veröffentlichte Ports erfasst
+// sind — unabhängig davon, ob ufw, firewalld oder nichts davon läuft. Ein Drop in
+// irgendeiner Basiskette ist in nftables endgültig.
+// Zustand: blocklist.json (Liste geprüfter CIDRs). Daraus wird blocklist.nft erzeugt und
+// atomar geladen (add/delete/table in einer Transaktion). Nach dem Boot lädt der Dienst
+// panel-agent-blocklist.service die Datei; leert jemand den Regelsatz (z. B. ein Neustart
+// von nftables.service mit `flush ruleset`), stellt der Agent sie binnen 60 s wieder her.
+const BLOCK_DIR  = '/etc/panel-agent';
+const BLOCK_JSON = `${BLOCK_DIR}/blocklist.json`;
+const BLOCK_NFT  = `${BLOCK_DIR}/blocklist.nft`;
+const BLOCK_UNIT = '/etc/systemd/system/panel-agent-blocklist.service';
+const BLOCK_MAX  = 10000;
+const NFT_KANDIDATEN = ['/usr/sbin/nft', '/sbin/nft', '/usr/bin/nft'];
+const _nftBin = () => NFT_KANDIDATEN.find(p => fs.existsSync(p)) || null;
+
+// Nur Einträge, die die Prüfung (erneut) bestehen, gelangen je in eine nft-Datei.
+function _blockLesen() {
+  try {
+    const d = JSON.parse(fs.readFileSync(BLOCK_JSON, 'utf8'));
+    if (!Array.isArray(d)) return [];
+    return d.filter(e => { try { return _parseCidr(e?.cidr).cidr === e.cidr; } catch { return false; } })
+            .map(e => ({ cidr: e.cidr, addedAt: typeof e.addedAt === 'string' ? e.addedAt.slice(0, 30) : null }));
+  } catch { return []; }
+}
+
+function _blockNftText(eintraege) {
+  const v4 = [], v6 = [];
+  for (const e of eintraege) { const p = _parseCidr(e.cidr); (p.family === 4 ? v4 : v6).push(p.cidr); }
+  const set = (name, typ, el) =>
+    `  set ${name} {\n    type ${typ}\n    flags interval\n${el.length ? `    elements = { ${el.join(', ')} }\n` : ''}  }\n`;
+  const kette = (name, hook) =>
+    `  chain ${name} {\n    type filter hook ${hook} priority -5; policy accept;\n` +
+    '    ip saddr @block4 counter drop\n    ip6 saddr @block6 counter drop\n  }\n';
+  return '# Vom panel-agent verwaltet — wird bei jeder Änderung neu geschrieben.\n' +
+    'add table inet panel_guard\ndelete table inet panel_guard\n' +
+    'table inet panel_guard {\n' + set('block4', 'ipv4_addr', v4) + set('block6', 'ipv6_addr', v6) +
+    kette('input', 'input') + kette('forward', 'forward') + '}\n';
+}
+
+async function _blockPersistenz(nft) {
+  const unit =
+    '[Unit]\nDescription=panel-agent: dauerhafte IP-Sperren (nftables-Tabelle inet panel_guard)\n' +
+    'After=nftables.service\nConditionPathExists=' + BLOCK_NFT + '\n\n' +
+    `[Service]\nType=oneshot\nExecStart=${nft} -f ${BLOCK_NFT}\nRemainAfterExit=yes\n\n` +
+    '[Install]\nWantedBy=multi-user.target\n';
+  let alt = null;
+  try { alt = fs.readFileSync(BLOCK_UNIT, 'utf8'); } catch {}
+  if (alt === unit) return;
+  fs.writeFileSync(BLOCK_UNIT, unit, { mode: 0o644 });
+  await execFileAsync('systemctl', ['daemon-reload'], { timeout: 10000 }).catch(() => {});
+  await execFileAsync('systemctl', ['enable', 'panel-agent-blocklist.service'], { timeout: 10000 }).catch(() => {});
+}
+
+async function _blockAnwenden(eintraege) {
+  const nft = _nftBin();
+  if (!nft) throw _httpFehler(409, 'nftables (nft) ist auf diesem Server nicht installiert — dauerhafte Sperren sind hier nicht möglich.');
+  fs.mkdirSync(BLOCK_DIR, { recursive: true, mode: 0o700 });
+  const neu = `${BLOCK_NFT}.neu`;
+  fs.writeFileSync(neu, _blockNftText(eintraege), { mode: 0o600 });
+  try {
+    await execFileAsync(nft, ['-c', '-f', neu], { timeout: 10000 });   // erst nur prüfen
+    await execFileAsync(nft, ['-f', neu], { timeout: 10000 });
+  } catch (e) {
+    fs.rmSync(neu, { force: true });
+    throw _httpFehler(500, `nftables hat die Sperrliste abgelehnt: ${String(e.stderr || e.message).trim().slice(0, 200)}`);
+  }
+  fs.renameSync(neu, BLOCK_NFT);
+  fs.writeFileSync(BLOCK_JSON, JSON.stringify(eintraege, null, 2), { mode: 0o600 });
+  await _blockPersistenz(nft);
+}
+
+async function _blockTabelleAktiv(nft) {
+  try { await execFileAsync(nft, ['list', 'table', 'inet', 'panel_guard'], { timeout: 5000 }); return true; }
+  catch { return false; }
+}
+
+async function getBlocklist() {
+  const nft = _nftBin();
+  const eintraege = _blockLesen();
+  if (!nft) return { available: false, message: 'nftables (nft) ist nicht installiert.', aktiv: false, eintraege, drops: null };
+  let aktiv = false, drops = null;
+  try {
+    const { stdout } = await execFileAsync(nft, ['-j', 'list', 'table', 'inet', 'panel_guard'], { timeout: 5000 });
+    aktiv = true;
+    drops = { pakete: 0, bytes: 0 };
+    for (const item of JSON.parse(stdout).nftables || []) {
+      for (const e of item.rule?.expr || []) {
+        if (e.counter) { drops.pakete += Number(e.counter.packets) || 0; drops.bytes += Number(e.counter.bytes) || 0; }
+      }
+    }
+  } catch {}
+  return { available: true, message: null, aktiv, eintraege, drops };
+}
+
+async function blocklistAdd(cidr, trotzdem, panelIp) {
+  const e = _parseCidr(cidr);
+  const grund = _geschuetztGrund(e, panelIp);
+  if (grund) throw _httpFehler(400, grund);
+  const liste = _blockLesen();
+  if (liste.some(x => x.cidr === e.cidr)) throw _httpFehler(409, `${e.cidr} ist bereits dauerhaft gesperrt`, { bereits: true });
+  const ueber = liste.find(x => _ueberlappt(e, _parseCidr(x.cidr)));
+  if (ueber) throw _httpFehler(409, `${e.cidr} überschneidet sich mit der bestehenden Sperre ${ueber.cidr}`);
+  if (liste.length >= BLOCK_MAX) throw _httpFehler(409, `Die Sperrliste ist voll (${BLOCK_MAX} Einträge)`);
+
+  // Wer gerade per SSH von dort angemeldet ist, würde sofort getrennt — nachfragen.
+  if (!trotzdem) {
+    const betroffen = (await getSshSessions()).filter(s => { try { return _ueberlappt(e, _parseCidr(s.ip)); } catch { return false; } });
+    if (betroffen.length) {
+      const wer = betroffen.map(s => `${s.user}@${s.ip}`).join(', ');
+      throw _httpFehler(409, `Von ${e.cidr} besteht gerade eine SSH-Sitzung (${wer}). Die Sperre trennt sie sofort.`, { bestaetigungNoetig: true });
+    }
+  }
+  await _blockAnwenden([...liste, { cidr: e.cidr, addedAt: new Date().toISOString() }]);
+  return { success: true, cidr: e.cidr };
+}
+
+async function blocklistRemove(cidr) {
+  const e = _parseCidr(cidr);
+  const liste = _blockLesen();
+  if (!liste.some(x => x.cidr === e.cidr)) throw _httpFehler(409, `${e.cidr} steht nicht auf der Sperrliste`);
+  await _blockAnwenden(liste.filter(x => x.cidr !== e.cidr));
+  return { success: true, cidr: e.cidr };
+}
+
+// Selbstheilung: Gibt es Sperren, aber keine Tabelle mehr, die Datei neu laden.
+setInterval(async () => {
+  try {
+    const nft = _nftBin();
+    if (!nft || !_blockLesen().length || !fs.existsSync(BLOCK_NFT)) return;
+    if (await _blockTabelleAktiv(nft)) return;
+    await execFileAsync(nft, ['-f', BLOCK_NFT], { timeout: 10000 });
+    console.log('[Sperrliste] Tabelle inet panel_guard fehlte — neu geladen.');
+  } catch (e) { console.error('[Sperrliste] Wiederherstellen fehlgeschlagen:', e.message); }
+}, 60_000);
+
 // ─── HTTP Handler ─────────────────────────────────────────────────────────────
 // ── Modul 7: Festplatten-Gesundheit & System-Aufräumen ───────────────────────
 
@@ -1980,21 +2375,21 @@ async function handler(req, res) {
 
     } else if ((url === '/firewall/allow' || url === '/firewall/deny') && req.method === 'POST') {
       const raw = await new Promise((resolve) => { const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8'))); });
-      const { port, proto, from, route } = JSON.parse(raw || '{}');
+      const { port, proto, from, route, vorSperre } = JSON.parse(raw || '{}');
       const action = url.endsWith('/allow') ? 'allow' : 'deny';
-      await firewallAllow(port, proto, from, action, !!route);
+      await firewallAllow(port, proto, from, action, !!route, vorSperre === true);
       respond(res, 200, { success: true });
 
     // Bearbeiten = löschen + neu anlegen, wie es die lokale Panel-Route vormacht.
     // Fehlte hier bislang ganz, weshalb „Bearbeiten" bei Remote-Servern ins Leere lief.
     } else if (url.startsWith('/firewall/rules/') && req.method === 'PUT') {
       const raw = await new Promise((resolve) => { const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8'))); });
-      const { port, proto, from, action, route } = JSON.parse(raw || '{}');
+      const { port, proto, from, action, route, vorSperre } = JSON.parse(raw || '{}');
       if (!port || !action) return respond(res, 400, { error: 'Port und Aktion erforderlich' });
       if (action !== 'allow' && action !== 'deny') return respond(res, 400, { error: 'Ungültige Aktion' });
       const id = decodeURIComponent(url.split('/').slice(3).join('/'));
       await firewallDeleteRule(id);
-      await firewallAllow(port, proto, from, action, !!route);
+      await firewallAllow(port, proto, from, action, !!route, vorSperre === true);
       respond(res, 200, { success: true });
 
     } else if (url.startsWith('/firewall/rules/') && req.method === 'DELETE') {
@@ -2047,6 +2442,30 @@ async function handler(req, res) {
       const raw = await new Promise((resolve) => { const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8'))); });
       const { jail, ip } = JSON.parse(raw || '{}');
       const r = await fail2banUnban(jail, ip);
+      respond(res, r.status, r.body);
+
+    // Dauerhafte Sperrliste (nftables). Das Panel prüft vorab; hier wird alles erneut
+    // geprüft — inklusive der Adresse, von der das Panel gerade anfragt.
+    } else if (url === '/blocklist' && req.method === 'GET') {
+      respond(res, 200, await getBlocklist());
+
+    } else if ((url === '/blocklist/add' || url === '/blocklist/remove') && req.method === 'POST') {
+      const raw = await new Promise((resolve) => { const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8'))); });
+      const { cidr, trotzdem } = JSON.parse(raw || '{}');
+      try {
+        const r = url.endsWith('/add')
+          ? await blocklistAdd(cidr, trotzdem === true, req.socket.remoteAddress)
+          : await blocklistRemove(cidr);
+        respond(res, 200, r);
+      } catch (e) {
+        respond(res, e.status || 500, { error: e.message, ...(e.extra || {}) });
+      }
+
+    // SSH-Sitzung beenden — nur ein aktueller sshd-Sitzungsleiter mit passender Startzeit.
+    } else if (url === '/ssh/sessions/kick' && req.method === 'POST') {
+      const raw = await new Promise((resolve) => { const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8'))); });
+      const { pid, startTicks } = JSON.parse(raw || '{}');
+      const r = await sshSessionKick(pid, startTicks);
       respond(res, r.status, r.body);
 
     // ── Docker ────────────────────────────────────────────────────────────────

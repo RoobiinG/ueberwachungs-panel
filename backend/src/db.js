@@ -409,6 +409,50 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_audit_user    ON audit_log(username);
 `);
 
+// ─── Security Center (v7.9.0.0) ──────────────────────────────────────────────
+// Dauerhafte Sperren: Angewendet werden sie vom Agenten (nftables-Tabelle inet panel_guard),
+// hier stehen Grund, Urheber und Zeitpunkt — und was nach einer Neuinstallation des Agents
+// erneut angewendet werden muss.
+// Firewall-Beschriftungen: Regel-IDs (UFW-Nummer, iptables-Zeile) verschieben sich beim
+// Löschen, deshalb hängt ein Label am Fingerabdruck der Regel (Richtung|Proto|Port|Quelle|
+// Ziel|Aktion) bzw. einer Portgruppe (Richtung|Proto|Port).
+// ip_intel: Zwischenspeicher für Provider-/VPN-Daten externer Abfragen.
+// Keine REFERENCES auf remote_agents: foreign_keys ist in dieser DB nicht eingeschaltet,
+// die Aufräumarbeit beim Löschen eines Servers übernimmt routes/agents.js ausdrücklich.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS permanent_bans (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id     INTEGER NOT NULL,
+    cidr         TEXT    NOT NULL,
+    grund        TEXT,
+    quelle       TEXT    NOT NULL DEFAULT 'manuell',
+    erstellt_von TEXT,
+    erstellt_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(agent_id, cidr)
+  );
+  CREATE INDEX IF NOT EXISTS idx_permanent_bans_agent ON permanent_bans(agent_id);
+
+  CREATE TABLE IF NOT EXISTS firewall_labels (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_id      INTEGER NOT NULL,
+    scope         TEXT    NOT NULL CHECK(scope IN ('rule', 'port')),
+    fingerprint   TEXT    NOT NULL,
+    label         TEXT    NOT NULL,
+    notiz         TEXT,
+    geaendert_von TEXT,
+    geaendert_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(agent_id, scope, fingerprint)
+  );
+  CREATE INDEX IF NOT EXISTS idx_firewall_labels_agent ON firewall_labels(agent_id);
+
+  CREATE TABLE IF NOT EXISTS ip_intel (
+    ip           TEXT PRIMARY KEY,
+    daten        TEXT    NOT NULL,
+    quelle       TEXT    NOT NULL,
+    abgerufen_at INTEGER NOT NULL
+  );
+`);
+
 // Tabelle für Server-Zuweisungen pro Rolle
 db.exec(`
   CREATE TABLE IF NOT EXISTS agent_grants (

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import {
-  RefreshCw, ShieldCheck, ShieldAlert, Shield, Key, Lock, Unlock, Radio, Globe, Clock,
-  Terminal, Plus, Trash2, CheckCircle2, AlertTriangle,
+  RefreshCw, ShieldCheck, ShieldAlert, Shield, Key, Lock, Unlock, Radio,
+  Plus, Trash2, CheckCircle2, AlertTriangle,
 } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
@@ -10,12 +10,15 @@ import { Badge } from '../ui/Badge';
 import { Modal } from '../ui/Modal';
 import { useAuth } from '../../context/AuthContext';
 import { berechneSicherheitsScore, parseAllowedPorts } from '../../utils/securityScore';
+import SshSitzungenCard from './SshSitzungenCard';
 
 /**
  * Tab „Audit & Score" im Security Center (früher Tab „Sicherheit" der Server-Detailseite).
  *
  * Rechte, wie im Backend durchgesetzt:
  *   security.view      → Score, Checkliste, lauschende Ports, SSH-Sitzungen (Tab-Voraussetzung)
+ *   security.ssh_kick  → SSH-Sitzung auswerfen (siehe SshSitzungenCard)
+ *   fail2ban.ban       → beim Auswerfen zusätzlich dauerhaft sperren
  *   agents.edit        → Port-Whitelist speichern
  *   agents.manage_ssh  → SSH-Schlüssel sehen, hinterlegen, entfernen (= Root-Zugang)
  */
@@ -25,7 +28,7 @@ export default function SecurityAuditTab({ agentId }) {
   const darfSshKeys      = hasPermission('agents.manage_ssh');
 
   const [sshConfig, setSshConfig]     = useState(null);
-  const [sshSessions, setSshSessions] = useState([]);
+  const [portLabels, setPortLabels]   = useState([]);
   const [sshKeys, setSshKeys]         = useState([]);
   const [loading, setLoading]         = useState(false);
   const [allowedPorts, setAllowedPorts] = useState('');
@@ -41,15 +44,16 @@ export default function SecurityAuditTab({ agentId }) {
     if (!agentId) return;
     const nr = ++anfrage.current;
     setLoading(true);
-    const [confRes, sessRes, keysRes, agentsRes] = await Promise.all([
+    // SSH-Sitzungen lädt SshSitzungenCard selbst (eigener, kürzerer Takt).
+    const [confRes, labelRes, keysRes, agentsRes] = await Promise.all([
       axios.get(`/api/agents/${agentId}/ssh/audit`).catch(() => ({ data: null })),
-      axios.get(`/api/agents/${agentId}/ssh/sessions`).catch(() => ({ data: [] })),
+      axios.get(`/api/agents/${agentId}/firewall/labels`).catch(() => ({ data: [] })),
       darfSshKeys ? axios.get(`/api/agents/${agentId}/ssh/keys`).catch(() => ({ data: [] })) : Promise.resolve({ data: [] }),
       axios.get('/api/agents').catch(() => ({ data: [] })),
     ]);
     if (nr !== anfrage.current) return;
     setSshConfig(confRes.data || null);
-    setSshSessions(sessRes.data || []);
+    setPortLabels(Array.isArray(labelRes.data) ? labelRes.data : []);
     setSshKeys(keysRes.data || []);
     const agent = (agentsRes.data || []).find(a => String(a.id) === String(agentId));
     try { setAllowedPorts(JSON.parse(agent?.allowed_ports || '[]').join(', ')); } catch { setAllowedPorts(''); }
@@ -57,12 +61,20 @@ export default function SecurityAuditTab({ agentId }) {
   }, [agentId, darfSshKeys]);
 
   useEffect(() => {
-    setSshConfig(null); setSshSessions([]); setSshKeys([]);
+    setSshConfig(null); setPortLabels([]); setSshKeys([]);
     load();
   }, [load]);
 
   const audit = useMemo(() => berechneSicherheitsScore(sshConfig, allowedPorts), [sshConfig, allowedPorts]);
   const whitelist = useMemo(() => parseAllowedPorts(allowedPorts), [allowedPorts]);
+
+  // Beschriftung eines lauschenden Ports aus der Firewall (Portgruppe eingehend, passendes
+  // Protokoll bevorzugt, sonst „any").
+  const portLabel = (lp) => {
+    const proto = String(lp.proto || '').toLowerCase().replace(/6$/, '');
+    const passend = portLabels.filter(l => l.richtung === 'in' && l.port === String(lp.port));
+    return (passend.find(l => l.proto === proto) || passend.find(l => l.proto === 'any'))?.label || null;
+  };
 
   const saveAllowedPorts = async () => {
     setSavingPorts(true);
@@ -269,9 +281,10 @@ export default function SecurityAuditTab({ agentId }) {
                     ohneWhitelist || erlaubt ? 'bg-panel-surface/60 border-panel-border' : 'bg-panel-red/10 border-panel-red/30'
                   }`}>
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 min-w-0">
                         <span className="font-mono font-bold text-panel-text">Port {lp.port}</span>
                         <span className="text-[10px] text-panel-muted uppercase font-mono">{lp.proto}</span>
+                        {portLabel(lp) && <span className="text-[11px] text-panel-accent truncate" title="Beschriftung aus der Firewall">· {portLabel(lp)}</span>}
                       </div>
                       <p className="text-[11px] text-panel-muted truncate">
                         {lp.process || 'Unbekannter Dienst'} <span className="text-panel-muted/60 font-mono">({lp.local || lp.bind})</span>
@@ -288,39 +301,7 @@ export default function SecurityAuditTab({ agentId }) {
         )}
       </Card>
 
-      <Card title="Aktive SSH-Sitzungen">
-        {loading && sshSessions.length === 0 ? (
-          <p className="text-xs text-panel-muted">Lade aktive Sitzungen …</p>
-        ) : sshSessions.length === 0 ? (
-          <p className="text-xs text-panel-muted">Keine aktiven SSH-Verbindungen gefunden.</p>
-        ) : (
-          <div className="space-y-2">
-            {sshSessions.map((s, i) => (
-              <div key={i} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 border border-panel-border rounded-lg bg-panel-surface/50">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded bg-panel-bg border border-panel-border">
-                    <Terminal size={16} className="text-panel-accent" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-panel-text">{s.ip}</span>
-                      {s.user && <Badge color="blue">{s.user}</Badge>}
-                      {s.tty && <span className="text-xs font-mono text-panel-muted">{s.tty}</span>}
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-panel-muted mt-0.5">
-                      {s.country && s.country !== 'Unknown' && (
-                        <span className="flex items-center gap-1"><Globe size={12} /> {(s.country || '').toUpperCase()} {s.city ? `— ${s.city}` : ''}</span>
-                      )}
-                      {s.loginTime && <span className="flex items-center gap-1"><Clock size={12} /> Login: {s.loginTime}</span>}
-                    </div>
-                  </div>
-                </div>
-                <Badge color="green">Aktiv</Badge>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
+      <SshSitzungenCard agentId={agentId} />
 
       {/* SSH-Schlüssel nur mit agents.manage_ssh — wer Schlüssel hinterlegen darf, hat Root-Zugang. */}
       {darfSshKeys && (

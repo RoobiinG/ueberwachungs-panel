@@ -4,12 +4,23 @@ import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { useAuth } from '../context/AuthContext';
+import FirewallGruppe from '../components/Security/FirewallGruppe';
+import { gruppiereRegeln } from '../utils/firewallGruppen';
 import {
   Plus, Trash2, RefreshCw, Shield, Power, ScanSearch,
   Pencil, ChevronLeft, ChevronRight, Search, X, Filter, AlertTriangle,
+  Layers, List, Tag,
 } from 'lucide-react';
 
 const inputCls = 'w-full bg-panel-surface border border-panel-border rounded-md px-3 py-2 text-sm text-panel-text focus:outline-none focus:border-panel-accent';
+
+// Gewählte Ansicht (gruppiert/Liste) pro Browser merken. localStorage kann fehlen oder
+// werfen (privates Fenster, blockierte Website-Daten) — dann gilt „gruppiert".
+const ANSICHT_KEY = 'firewall.ansicht';
+const ansichtLesen = () => { try { return localStorage.getItem(ANSICHT_KEY) === 'liste' ? 'liste' : 'gruppen'; } catch { return 'gruppen'; } };
+const ansichtMerken = (v) => { try { localStorage.setItem(ANSICHT_KEY, v); } catch { /* egal */ } };
+
+const LEERES_FORMULAR = { port: '', proto: 'tcp', from: '', action: 'allow', route: false, label: '', vorSperre: false };
 
 const TOOL_LABELS = {
   ufw:       { label: 'UFW',       color: 'text-blue-400',   bg: 'bg-blue-400/10 border-blue-400/30' },
@@ -119,7 +130,13 @@ export default function Firewall({ serverId }) {
   // Regel-Modal
   const [showRuleModal, setShowRuleModal] = useState(false);
   const [editingRule,   setEditingRule]   = useState(null);
-  const [form, setForm] = useState({ port: '', proto: 'tcp', from: '', action: 'allow', route: false });
+  const [form, setForm] = useState(LEERES_FORMULAR);
+
+  // Ansicht und Beschriftungs-Dialog ({ scope, fingerprint, label, notiz })
+  const [ansicht, setAnsicht]         = useState(ansichtLesen);
+  const [labelDialog, setLabelDialog] = useState(null);
+  const [labelSpeichert, setLabelSpeichert] = useState(false);
+  const wechsleAnsicht = (v) => { setAnsicht(v); ansichtMerken(v); };
 
   const apiBase = `/api/agents/${selectedServer}`;
 
@@ -218,7 +235,7 @@ export default function Firewall({ serverId }) {
   // ── Modal öffnen ───────────────────────────────────────────────────────────
   const openNew = () => {
     setEditingRule(null);
-    setForm({ port: '', proto: 'tcp', from: '', action: 'allow', route: false });
+    setForm(LEERES_FORMULAR);
     setShowRuleModal(true);
   };
 
@@ -232,8 +249,39 @@ export default function Firewall({ serverId }) {
       // Weiterleitungsregeln (Docker-Container-Ports) müssen beim Bearbeiten FWD bleiben,
       // sonst werden sie zu wirkungslosen INPUT-Regeln.
       route:  r.direction === 'fwd',
+      label:  r.label || '',
+      vorSperre: false,
     });
     setShowRuleModal(true);
+  };
+
+  // Aus einer Gruppe heraus eine weitere Adresse freigeben: Port/Proto/Richtung stehen
+  // fest, die Regel wird vor die Pauschalsperre gesetzt (sonst griffe sie nie).
+  const openFreigabe = (g) => {
+    setEditingRule(null);
+    setForm({
+      ...LEERES_FORMULAR,
+      port: g.port === 'any' ? '' : g.port,
+      proto: g.proto === 'udp' ? 'udp' : 'tcp',
+      route: g.richtung === 'fwd',
+      vorSperre: true,
+    });
+    setShowRuleModal(true);
+  };
+
+  const openLabel = (scope, fingerprint, label, notiz) =>
+    setLabelDialog({ scope, fingerprint, label: label || '', notiz: notiz || '' });
+
+  const saveLabel = async () => {
+    setLabelSpeichert(true);
+    try {
+      await axios.put(`${apiBase}/firewall/labels`, labelDialog);
+      setLabelDialog(null);
+      await load();
+    } catch (err) {
+      setError(humanError(err.response?.data?.error || 'Beschriftung konnte nicht gespeichert werden', !selectedServer));
+    }
+    setLabelSpeichert(false);
   };
 
   // Regel-Nummern absteigend abarbeiten: UFW & iptables nummerieren fortlaufend, beim
@@ -247,7 +295,10 @@ export default function Firewall({ serverId }) {
   // ── Regel speichern ────────────────────────────────────────────────────────
   const saveRule = async () => {
     if (form.action === 'deny' && !confirmLockout(form.port, 'Diese Regel würde ihn sperren.')) return;
-    const body = { port: form.port, proto: form.proto, from: form.from || undefined, action: form.action, route: form.route || undefined };
+    const body = {
+      port: form.port, proto: form.proto, from: form.from || undefined, action: form.action, route: form.route || undefined,
+      label: form.label.trim(), vorSperre: form.vorSperre || undefined,
+    };
     try {
       if (editingRule) {
         const ids = [...editingRule.ids].sort(byNumberDesc);
@@ -339,14 +390,20 @@ export default function Firewall({ serverId }) {
   // Zuerst IPv4/IPv6-Doppel zusammenfassen, damit die Liste nicht alles doppelt zeigt.
   const merged = mergeFamilies(rules);
 
-  const filtered = merged.filter(r => {
+  const passt = (r) => {
     const q = search.toLowerCase();
-    const matchSearch = !q || [r.port, r.proto, r.from, String(r.id)].some(v => String(v ?? '').toLowerCase().includes(q));
+    const matchSearch = !q || [r.port, r.proto, r.from, String(r.id), r.label, r.portLabel].some(v => String(v ?? '').toLowerCase().includes(q));
     const matchAction = filterAct === 'all' || r.action === filterAct
       || (filterAct === 'allow' && r.action?.toUpperCase?.().includes('ALLOW'))
       || (filterAct === 'deny'  && !r.action?.toUpperCase?.().includes('ALLOW'));
     return matchSearch && matchAction;
-  });
+  };
+  const filtered = merged.filter(passt);
+
+  // Gruppen-Ansicht: Eine Gruppe erscheint, sobald eine ihrer Regeln passt — und zeigt dann
+  // alle, denn die Zusammenfassung ergibt sich erst aus dem Zusammenspiel.
+  const gruppen = gruppiereRegeln(merged, detectedTool?.tool, policyWord(policy?.incoming) === 'abgelehnt')
+    .filter(g => g.regeln.some(passt));
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -504,6 +561,18 @@ export default function Firewall({ serverId }) {
                   </button>
                 ))}
               </div>
+
+              {/* Ansicht: logische Gruppen je Port oder flache Liste wie bisher */}
+              <div className="flex items-center rounded-md overflow-hidden border border-panel-border text-xs">
+                {[['gruppen', 'Gruppiert', Layers], ['liste', 'Liste', List]].map(([val, label, Icon]) => (
+                  <button key={val} onClick={() => wechsleAnsicht(val)} title={`Ansicht: ${label}`}
+                    className={`px-2 py-1.5 flex items-center gap-1 transition-colors border-r border-panel-border last:border-0 ${
+                      ansicht === val ? 'bg-panel-accent text-white' : 'text-panel-muted hover:text-panel-text hover:bg-panel-surface'
+                    }`}>
+                    <Icon size={12} /> <span className="hidden md:inline">{label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -512,6 +581,13 @@ export default function Firewall({ serverId }) {
         {loading ? (
           <div className="flex items-center justify-center py-12 text-panel-muted text-sm">
             <RefreshCw size={14} className="animate-spin mr-2" />Lade…
+          </div>
+        ) : ansicht === 'gruppen' && gruppen.length > 0 ? (
+          <div className="p-3 space-y-2.5">
+            {gruppen.map(g => (
+              <FirewallGruppe key={g.key} gruppe={g} darfSchreiben={darfSchreiben}
+                onBearbeiten={openEdit} onLoeschen={deleteRule} onBeschriften={openLabel} onFreigeben={openFreigabe} />
+            ))}
           </div>
         ) : paginated.length === 0 ? (
           <div className="text-panel-muted text-sm py-10 text-center px-6">
@@ -578,10 +654,15 @@ export default function Firewall({ serverId }) {
                       Adressfamilien sie gilt (UFW führt beide getrennt). */}
                   <span className="text-xs font-mono truncate flex items-center justify-between sm:contents">
                     <span className="sm:hidden text-[10px] text-panel-muted uppercase font-sans">Port:</span>
-                    <span className="flex items-center gap-1.5 min-w-0">
+                    <span className="flex items-center gap-1.5 min-w-0 flex-wrap">
                       {displayPort
                         ? <span className="text-panel-text truncate">{displayPort}</span>
                         : <span className="text-panel-muted italic text-[11px]">alle Ports</span>}
+                      {(r.label || r.portLabel) && (
+                        <span className="font-sans text-[11px] text-panel-accent truncate max-w-[12rem]" title={[r.portLabel, r.label].filter(Boolean).join(' · ')}>
+                          <Tag size={9} className="inline mr-0.5" />{r.label || r.portLabel}
+                        </span>
+                      )}
                       {r.families?.size > 1 && (
                         <span className="text-[9px] px-1 py-0.5 rounded bg-panel-surface border border-panel-border text-panel-muted font-sans flex-shrink-0"
                           title={`Gilt für IPv4 und IPv6 (Regeln ${r.ids.join(' und ')})`}>
@@ -673,20 +754,65 @@ export default function Firewall({ serverId }) {
         )}
       </div>
 
+      {/* Beschriftung einer Regel oder einer ganzen Portgruppe — nur mit firewall.manage */}
+      {darfSchreiben && (
+        <Modal
+          open={!!labelDialog}
+          onClose={() => setLabelDialog(null)}
+          title={labelDialog?.scope === 'port' ? 'Portgruppe beschriften' : 'Regel beschriften'}
+          footer={<>
+            <Button variant="ghost" size="sm" onClick={() => setLabelDialog(null)}>Abbrechen</Button>
+            <Button size="sm" onClick={saveLabel} disabled={labelSpeichert}>Speichern</Button>
+          </>}
+        >
+          {labelDialog && (
+            <div className="space-y-3">
+              <p className="text-[11px] text-panel-muted">
+                {labelDialog.scope === 'port'
+                  ? 'Gilt für alle Regeln dieses Ports — z. B. „Ollama API" oder „Wartungs-Port".'
+                  : 'Wofür gibt es diese Regel? Z. B. „Büro-Anschluss" oder „Monitoring von Hetzner".'}
+                {' '}Leer lassen, um die Beschriftung zu entfernen.
+              </p>
+              <div>
+                <label className="block text-xs text-panel-muted mb-1">Beschriftung</label>
+                <input value={labelDialog.label} maxLength={60} autoFocus className={inputCls}
+                  onChange={e => setLabelDialog(d => ({ ...d, label: e.target.value }))} />
+              </div>
+              <div>
+                <label className="block text-xs text-panel-muted mb-1">Notiz (optional)</label>
+                <textarea value={labelDialog.notiz} maxLength={300} rows={2} className={`${inputCls} resize-none`}
+                  onChange={e => setLabelDialog(d => ({ ...d, notiz: e.target.value }))} />
+              </div>
+            </div>
+          )}
+        </Modal>
+      )}
+
       {/* Regel-Modal */}
       <Modal
         open={showRuleModal}
         onClose={() => setShowRuleModal(false)}
-        title={editingRule ? `Regel ${editingRule.id} bearbeiten` : 'Neue Firewall-Regel'}
+        title={editingRule ? `Regel ${editingRule.id} bearbeiten` : form.vorSperre ? `Adresse für Port ${form.port} freigeben` : 'Neue Firewall-Regel'}
         footer={<>
           <Button variant="ghost" size="sm" onClick={() => setShowRuleModal(false)}>Abbrechen</Button>
-          <Button size="sm" onClick={saveRule} disabled={!form.port || dockerAllowNeedsSource}>{editingRule ? 'Speichern' : 'Hinzufügen'}</Button>
+          <Button size="sm" onClick={saveRule} disabled={!form.port || dockerAllowNeedsSource || (form.vorSperre && !form.from.trim())}>{editingRule ? 'Speichern' : 'Hinzufügen'}</Button>
         </>}
       >
         <div className="space-y-3">
+          {form.vorSperre && (
+            <p className="text-[11px] text-panel-accent bg-panel-accent/10 border border-panel-accent/20 rounded px-3 py-2">
+              Die Freigabe wird <strong>vor</strong> die bestehende Sperre für alle gesetzt — sonst griffe sie nie,
+              weil die Firewall die erste passende Regel anwendet.
+            </p>
+          )}
+          <div>
+            <label className="block text-xs text-panel-muted mb-1">Beschreibung (optional)</label>
+            <input value={form.label} maxLength={60} onChange={e => setF('label', e.target.value)}
+              placeholder="z. B. Ollama API, Wartungs-Port, Büro-Anschluss" className={inputCls} />
+          </div>
           <div>
             <label className="block text-xs text-panel-muted mb-1">Aktion</label>
-            <select value={form.action} onChange={e => setF('action', e.target.value)} className={inputCls}>
+            <select value={form.action} onChange={e => setF('action', e.target.value)} className={inputCls} disabled={form.vorSperre}>
               <option value="allow">✓ Erlauben</option>
               <option value="deny">✗ Sperren</option>
             </select>
@@ -728,7 +854,7 @@ export default function Firewall({ serverId }) {
             </select>
           </div>
           <div>
-            <label className="block text-xs text-panel-muted mb-1">Nur von dieser IP (optional)</label>
+            <label className="block text-xs text-panel-muted mb-1">{form.vorSperre ? 'Freizugebende IP / Netz' : 'Nur von dieser IP (optional)'}</label>
             <input value={form.from} onChange={e => setF('from', e.target.value)}
               placeholder="leer = alle · z.B. 192.168.1.0/24" className={inputCls} />
           </div>

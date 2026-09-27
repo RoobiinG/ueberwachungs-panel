@@ -283,6 +283,7 @@ try { require('./utils/updateCheck').startPeriodicCheck(); } catch (e) { console
 // Nach jedem Start prüfen, ob die Agenten älter sind als das Script in diesem Image.
 try { require('./utils/agentAutoUpdate').start(); } catch (e) { console.warn('Automatisches Agent-Update deaktiviert:', e.message); }
 try { require('./utils/sslMonitor').startMonitor(); } catch (e) { console.warn('SSL-Monitor deaktiviert:', e.message); }
+try { require('./utils/ipIntel').start(); } catch (e) { console.warn('GeoIP-/Bedrohungsdaten deaktiviert:', e.message); }
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => console.log(`Überwachungs-Panel running on port ${PORT}`));

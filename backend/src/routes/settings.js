@@ -7,7 +7,7 @@ const { checkAllMonitors } = require('../utils/sslMonitor');
 const { sendTestMail } = require('../utils/smtpTest');
 const { validatePublicUrl } = require('../utils/validateUrl');
 
-const SENSITIVE = ['hetzner_api_token', 'mchost_password', 'mchost_api_token', 'dsh_api_token', 'smtp_pass', 'github_token', 'npm_password', 'npm_token'];
+const SENSITIVE = ['hetzner_api_token', 'mchost_password', 'mchost_api_token', 'dsh_api_token', 'ipapi_is_key', 'smtp_pass', 'github_token', 'npm_password', 'npm_token'];
 
 const get = (key) => db.prepare('SELECT value FROM settings WHERE key = ?').get(key)?.value || '';
 const set = (key, value) => db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)').run(key, value);
@@ -22,6 +22,7 @@ router.get('/', requirePermission('settings.view'), (req, res) => {
     mchost_token_set:  !!get('mchost_api_token'),
     dsh_api_token:     get('dsh_api_token') ? '***gesetzt***' : '',
     dsh_token_set:     !!get('dsh_api_token'),
+    ipapi_key_set:     !!get('ipapi_is_key'),
     smtp_host:         get('smtp_host'),
     smtp_port:         get('smtp_port') || '587',
     smtp_user:         get('smtp_user'),
@@ -70,6 +71,38 @@ router.delete('/dsh', requirePermission('settings.manage'), (req, res) => {
   del('dsh_api_token');
   auditLog(req, 'settings.dsh_token_delete', 'settings', 'dsh_api_token');
   res.json({ success: true, message: 'DSH API-Token gelöscht' });
+});
+
+// ── GeoIP & Bedrohungsdaten (ipapi.is) ───────────────────────────────────────
+// Der Key wird nie zurückgegeben (nur „gesetzt"). Test ohne Speichern verbraucht eine
+// Abfrage des Tageskontingents.
+const IPAPI_KEY_RE = /^[A-Za-z0-9_-]{8,128}$/;
+
+router.put('/ipapi', requirePermission('settings.manage'), (req, res) => {
+  const key = typeof req.body?.key === 'string' ? req.body.key.trim() : '';
+  if (!IPAPI_KEY_RE.test(key)) return res.status(400).json({ error: 'Ungültiger API-Key' });
+  set('ipapi_is_key', key);
+  auditLog(req, 'settings.ipapi_key_save', 'settings', 'ipapi_is_key');
+  res.json({ success: true, message: 'ipapi.is-Key gespeichert' });
+});
+
+router.delete('/ipapi', requirePermission('settings.manage'), (req, res) => {
+  del('ipapi_is_key');
+  auditLog(req, 'settings.ipapi_key_delete', 'settings', 'ipapi_is_key');
+  res.json({ success: true, message: 'ipapi.is-Key gelöscht' });
+});
+
+router.post('/ipapi/test', requirePermission('settings.manage'), async (req, res) => {
+  const key = typeof req.body?.key === 'string' && req.body.key.trim() ? req.body.key.trim() : get('ipapi_is_key');
+  if (!key) return res.status(400).json({ error: 'Kein Key angegeben oder gespeichert' });
+  if (!IPAPI_KEY_RE.test(key)) return res.status(400).json({ error: 'Ungültiger API-Key' });
+  try {
+    const beispiel = await require('../utils/ipIntel').testen(key);
+    res.json({ success: true, message: `Verbindung erfolgreich — 1.1.1.1 gehört zu ${beispiel.isp || 'unbekannt'} (${beispiel.typ}).` });
+  } catch (err) {
+    const status = err.response?.status;
+    res.status(502).json({ error: `ipapi.is: ${status ? `HTTP ${status}` : err.message}` });
+  }
 });
 
 // DeinServerHost (DSH) Verbindung testen

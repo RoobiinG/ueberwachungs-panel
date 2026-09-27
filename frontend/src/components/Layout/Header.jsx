@@ -70,6 +70,7 @@ const resolveAlert = (n) => {
 const ACTION_LABELS  = {
   start: 'gestartet', stop: 'gestoppt', restart: 'neugestartet',
   shutdown: 'heruntergefahren', kill: 'beendet', pause: 'pausiert', unpause: 'fortgesetzt',
+  ip_block: 'dauerhaft gesperrt', ip_unblock: 'entsperrt', ssh_kick: 'ausgeworfen',
 };
 
 // ── Alert-Toast ────────────────────────────────────────────────────────────────

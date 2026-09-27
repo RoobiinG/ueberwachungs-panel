@@ -42,8 +42,11 @@ const PERMISSIONS = [
   // ─── Sicherheit (Security Center) ─────────────────────────────────────────
   // Lesen und Schreiben getrennt: Den Sicherheits-Score ansehen darf nicht dasselbe Recht
   // verlangen wie SSH-Schlüssel hinterlegen (das ist Root-Zugang).
-  { key: 'security.view',       category: 'Sicherheit',         label: 'Sicherheitslage anzeigen',        description: 'Sicherheits-Score, Audit-Checkliste, Port-Wächter, SSH-Sitzungen und gesperrte IPs einsehen' },
-  { key: 'fail2ban.manage',     category: 'Sicherheit',         label: 'IP-Sperren aufheben',             description: 'Von fail2ban gesperrte IP-Adressen entsperren' },
+  { key: 'security.view',       category: 'Sicherheit',         label: 'Sicherheitslage anzeigen',        description: 'Sicherheits-Score, Audit-Checkliste, Port-Wächter, SSH-Sitzungen, gesperrte IPs samt Herkunft und dauerhafte Sperren einsehen' },
+  { key: 'fail2ban.manage',     category: 'Sicherheit',         label: 'Fail2Ban-Sperren aufheben',       description: 'Zeitlich begrenzte Sperren von fail2ban aufheben' },
+  // Beide greifen tief ins System ein — deshalb eigene Rechte, die zunächst nur Admins haben.
+  { key: 'fail2ban.ban',        category: 'Sicherheit',         label: 'IP dauerhaft sperren',            description: 'IP-Adressen und Netze dauerhaft per nftables sperren und solche Sperren wieder aufheben' },
+  { key: 'security.ssh_kick',   category: 'Sicherheit',         label: 'SSH-Sitzungen beenden',           description: 'Aktive SSH-Sitzungen auf den Servern trennen (Benutzer auswerfen)' },
 
   // ─── Webhooks ────────────────────────────────────────────────────────────
   { key: 'webhooks.view',       category: 'Webhooks',           label: 'Webhooks anzeigen',               description: 'Webhook-Liste einsehen' },

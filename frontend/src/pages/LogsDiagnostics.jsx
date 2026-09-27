@@ -10,7 +10,7 @@ import Diagnose from './Diagnose';
 // freigeben. Löschen/Freigeben innerhalb der Tabs prüft panel_logs.manage bzw. audit.clear.
 const TABS = [
   { key: 'system',   label: 'System-Logs',    icon: ScrollText,    permission: 'panel_logs.view' },
-  { key: 'audit',    label: 'Audit-Trail',    icon: ClipboardList, permission: 'audit.view' },
+  { key: 'audit',    label: 'Audit-Log',      icon: ClipboardList, permission: 'audit.view' },
   { key: 'diagnose', label: 'Diagnose-Tools', icon: Stethoscope,   permission: 'diagnose.run' },
 ];
 

@@ -832,6 +832,8 @@ export default function Settings() {
   // DeinServerHost (DSH)
   const [dshToken, setDshToken] = useState('');
   const [showDsh,  setShowDsh]  = useState(false);
+  const [ipapiKey, setIpapiKey] = useState('');
+  const [showIpapi, setShowIpapi] = useState(false);
 
   // SMTP
   const [smtp, setSmtp] = useState({ host: '', port: 587, user: '', pass: '', from: '', secure: false });
@@ -1230,6 +1232,45 @@ export default function Settings() {
       feedback('dsh', 'err', 'Fehler beim Löschen');
     }
     busy('dsh_del', false);
+  };
+
+  // GeoIP & Bedrohungsdaten (ipapi.is) — Provider und VPN-/Proxy-Erkennung für gesperrte IPs.
+  const saveIpapi = async () => {
+    if (!ipapiKey.trim()) return;
+    busy('ipapi', true);
+    try {
+      await axios.put('/api/settings/ipapi', { key: ipapiKey.trim() });
+      setIpapiKey('');
+      await loadAdmin();
+      feedback('ipapi', 'ok', 'ipapi.is-Key gespeichert');
+    } catch (err) {
+      feedback('ipapi', 'err', err.response?.data?.error || 'Fehler beim Speichern');
+    }
+    busy('ipapi', false);
+  };
+
+  const testIpapi = async () => {
+    busy('ipapi_test', true);
+    try {
+      const { data } = await axios.post('/api/settings/ipapi/test', { key: ipapiKey.trim() || undefined });
+      feedback('ipapi', 'ok', data.message || 'Verbindung erfolgreich!');
+    } catch (err) {
+      feedback('ipapi', 'err', err.response?.data?.error || 'Verbindung fehlgeschlagen');
+    }
+    busy('ipapi_test', false);
+  };
+
+  const deleteIpapi = async () => {
+    busy('ipapi_del', true);
+    try {
+      await axios.delete('/api/settings/ipapi');
+      setIpapiKey('');
+      await loadAdmin();
+      feedback('ipapi', 'ok', 'ipapi.is-Key gelöscht');
+    } catch {
+      feedback('ipapi', 'err', 'Fehler beim Löschen');
+    }
+    busy('ipapi_del', false);
   };
 
   const loginNpm = async () => {
@@ -2076,6 +2117,52 @@ export default function Settings() {
                 </div>
                 <Msg msg={msgs.dsh} />
               </div>
+            </div>
+          </Card>
+
+          {/* ── GeoIP & Bedrohungsdaten ── */}
+          <Card title={<span className="flex items-center gap-2"><Globe size={14} />GeoIP & Bedrohungsdaten (ipapi.is)</span>}>
+            <div className="space-y-3">
+              <p className="text-xs text-panel-muted">
+                Land und Stadt gesperrter IPs kommen immer lokal aus der eingebauten Datenbank. Mit einem
+                kostenlosen Key von <span className="text-panel-text font-medium">ipapi.is</span> zeigt das Security Center
+                zusätzlich Provider, ASN und ob eine Adresse zu einem VPN, Proxy, Tor oder Rechenzentrum gehört.
+                Abgefragt werden nur öffentliche Adressen gesperrter IPs (nicht die eigenen SSH-Sitzungen),
+                gebündelt und 14 Tage zwischengespeichert — höchstens 900 Abfragen pro Tag.
+              </p>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-panel-text">API-Key</span>
+                <div className="flex items-center gap-2">
+                  <StatusBadge set={status.ipapi_key_set} />
+                  {status.ipapi_key_set && (
+                    <Button size="sm" variant="danger" onClick={deleteIpapi} disabled={loading.ipapi_del}>
+                      <Trash2 size={12} className="mr-1" />Entfernen
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <div className="relative">
+                <input
+                  type={showIpapi ? 'text' : 'password'}
+                  value={ipapiKey}
+                  onChange={e => setIpapiKey(e.target.value)}
+                  placeholder={status.ipapi_key_set ? '(Gesetzt — leer lassen zum Behalten)' : 'Key aus dem ipapi.is-Konto'}
+                  className={inputCls + ' pr-9'}
+                  onKeyDown={e => e.key === 'Enter' && saveIpapi()}
+                />
+                <button type="button" onClick={() => setShowIpapi(v => !v)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-panel-muted hover:text-panel-text">
+                  {showIpapi ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+              <div className="flex gap-2">
+                <Button onClick={saveIpapi} disabled={!ipapiKey.trim() || loading.ipapi} size="sm">Speichern</Button>
+                <Button onClick={testIpapi} disabled={(!ipapiKey.trim() && !status.ipapi_key_set) || loading.ipapi_test} size="sm" variant="ghost">
+                  <RefreshCw size={12} className={`mr-1 ${loading.ipapi_test ? 'animate-spin' : ''}`} />
+                  {loading.ipapi_test ? 'Prüfe…' : 'Verbindung testen'}
+                </Button>
+              </div>
+              <Msg msg={msgs.ipapi} />
             </div>
           </Card>
 

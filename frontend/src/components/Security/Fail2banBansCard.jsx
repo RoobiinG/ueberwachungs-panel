@@ -1,10 +1,12 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import axios from 'axios';
-import { RefreshCw, AlertTriangle, Ban, Unlock } from 'lucide-react';
+import { RefreshCw, AlertTriangle, Ban, Unlock, ShieldBan } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { useAuth } from '../../context/AuthContext';
+import { IpHerkunft, IpProvider, IpTyp } from './IpIntel';
+import SperrenDialog from './SperrenDialog';
 
 const POLL_MS = 30_000;
 
@@ -29,10 +31,13 @@ function formatRemaining(sec) {
   return h > 0 ? `${h}:${mmss}` : mmss;
 }
 
-export default function Fail2banBansCard({ agentId }) {
+export default function Fail2banBansCard({ agentId, aktualisieren = 0, onGeaendert }) {
   const { hasPermission } = useAuth();
-  // Entsperren ist eine Schreibaktion mit eigenem Recht; ohne es gibt es den Knopf gar nicht.
+  // Entsperren und dauerhaftes Sperren sind Schreibaktionen mit eigenen Rechten; ohne sie
+  // gibt es die Knöpfe (und den Sperr-Dialog) gar nicht erst im DOM.
   const darfEntsperren = hasPermission('fail2ban.manage');
+  const darfSperren    = hasPermission('fail2ban.ban');
+  const [sperrVorschlag, setSperrVorschlag] = useState(null);
   const [data, setData]         = useState(null);
   const [fetchedAt, setFetched] = useState(0);
   const [loading, setLoading]   = useState(false);
@@ -64,12 +69,16 @@ export default function Fail2banBansCard({ agentId }) {
     return () => clearInterval(t);
   }, [load]);
 
+  // Änderungen aus der Karte der Dauersperren übernehmen (z. B. unbegrenzte Jail-Sperre aufgehoben).
+  useEffect(() => { if (aktualisieren) load(); }, [aktualisieren, load]);
+
   const unban = async (b) => {
     if (!confirm(`${b.ip} im Jail „${b.jail}" entsperren?`)) return;
     setEntsperrt(`${b.jail}|${b.ip}`);
     try {
       await axios.post(`/api/agents/${agentId}/fail2ban/unban`, { jail: b.jail, ip: b.ip });
       await load();
+      onGeaendert?.();
     } catch (e) {
       alert(e.response?.data?.error || e.message);
     }
@@ -137,10 +146,13 @@ export default function Fail2banBansCard({ agentId }) {
                 <thead>
                   <tr className="text-left text-panel-muted border-b border-panel-border">
                     <th className="py-1.5 pr-3 font-medium">IP-Adresse</th>
+                    <th className="py-1.5 pr-3 font-medium">Herkunft</th>
+                    <th className="py-1.5 pr-3 font-medium">Provider</th>
+                    <th className="py-1.5 pr-3 font-medium">Typ</th>
                     <th className="py-1.5 pr-3 font-medium">Jail</th>
                     <th className="py-1.5 pr-3 font-medium">Gesperrt seit</th>
                     <th className="py-1.5 font-medium text-right">Restzeit</th>
-                    {darfEntsperren && <th className="py-1.5 pl-3 font-medium text-right sr-only sm:not-sr-only">Aktion</th>}
+                    {(darfEntsperren || darfSperren) && <th className="py-1.5 pl-3 font-medium text-right sr-only sm:not-sr-only">Aktion</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -149,6 +161,9 @@ export default function Fail2banBansCard({ agentId }) {
                       <td className="py-1.5 pr-3 font-mono text-panel-text">
                         <span className="inline-flex items-center gap-1.5"><Ban size={11} className="text-panel-red" />{b.ip}</span>
                       </td>
+                      <td className="py-1.5 pr-3"><IpHerkunft intel={b.intel} /></td>
+                      <td className="py-1.5 pr-3"><IpProvider intel={b.intel} /></td>
+                      <td className="py-1.5 pr-3"><IpTyp intel={b.intel} /></td>
                       <td className="py-1.5 pr-3 text-panel-muted">{b.jail}</td>
                       <td className="py-1.5 pr-3 text-panel-muted whitespace-nowrap">
                         {new Date(b.bannedAt).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}
@@ -158,11 +173,21 @@ export default function Fail2banBansCard({ agentId }) {
                           ? <span className="text-panel-red">dauerhaft</span>
                           : <span className="text-panel-text">{formatRemaining(b.remainingSeconds - elapsed)}</span>}
                       </td>
-                      {darfEntsperren && (
-                        <td className="py-1.5 pl-3 text-right">
-                          <Button size="sm" variant="ghost" onClick={() => unban(b)} disabled={entsperrt === `${b.jail}|${b.ip}`}>
-                            <Unlock size={12} className="mr-1" /> Entsperren
-                          </Button>
+                      {(darfEntsperren || darfSperren) && (
+                        <td className="py-1.5 pl-3 text-right whitespace-nowrap">
+                          <span className="inline-flex gap-1">
+                            {darfSperren && !b.permanent && (
+                              <Button size="sm" variant="danger" title="Diese Adresse dauerhaft per nftables sperren"
+                                      onClick={() => setSperrVorschlag({ cidr: b.ip, grund: `fail2ban-Jail ${b.jail}`, quelle: `fail2ban:${b.jail}` })}>
+                                <ShieldBan size={12} className="mr-1" /> Dauerhaft sperren
+                              </Button>
+                            )}
+                            {darfEntsperren && (
+                              <Button size="sm" variant="ghost" onClick={() => unban(b)} disabled={entsperrt === `${b.jail}|${b.ip}`}>
+                                <Unlock size={12} className="mr-1" /> Entsperren
+                              </Button>
+                            )}
+                          </span>
                         </td>
                       )}
                     </tr>
@@ -172,6 +197,11 @@ export default function Fail2banBansCard({ agentId }) {
             </div>
           )}
         </div>
+      )}
+
+      {darfSperren && (
+        <SperrenDialog open={!!sperrVorschlag} onClose={() => setSperrVorschlag(null)} agentId={agentId}
+                       vorschlag={sperrVorschlag} onErfolg={() => onGeaendert?.()} />
       )}
     </Card>
   );

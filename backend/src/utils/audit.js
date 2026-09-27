@@ -43,6 +43,19 @@ function resolveLocation(ip) {
     clean === 'localhost'
   ) return 'Lokal';
 
+  const geo = geoLookup(clean);
+  if (!geo) return null;
+  // Stadt + Land (ISO-Code), z.B. "Berlin, DE"
+  const parts = [geo.city, geo.country].filter(Boolean);
+  return parts.length ? parts.join(', ') : null;
+}
+
+/**
+ * Land (ISO-Code) und Stadt aus der lokalen Datenbank — ohne Netzwerkzugriff.
+ * Liefert null für unbekannte oder nicht wohlgeformte Adressen.
+ */
+function geoLookup(ip) {
+  const clean = String(ip ?? '').replace(/^::ffff:/, '');
   const geoip = getGeoip();
   if (!geoip) return null;
 
@@ -66,9 +79,7 @@ function resolveLocation(ip) {
   try {
     const geo = geoip.lookup(clean);
     if (!geo) return null;
-    // Stadt + Land (ISO-Code), z.B. "Berlin, DE"
-    const parts = [geo.city, geo.country].filter(Boolean);
-    return parts.length ? parts.join(', ') : null;
+    return { country: geo.country || null, city: geo.city || null };
   } catch {
     return null;
   }
@@ -109,4 +120,4 @@ function auditLog(req, action, targetType = null, targetName = null, details = n
   }
 }
 
-module.exports = { auditLog, resolveLocation };
+module.exports = { auditLog, resolveLocation, geoLookup };

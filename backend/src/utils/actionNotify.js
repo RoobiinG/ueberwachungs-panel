@@ -11,6 +11,10 @@ const ACTION_LABELS = {
   kill:     'beendet',
   pause:    'pausiert',
   unpause:  'fortgesetzt',
+  // Security Center: serverName enthält hier „Server: Ziel" (z. B. „Web01: 1.2.3.4").
+  ip_block:   'dauerhaft gesperrt',
+  ip_unblock: 'entsperrt',
+  ssh_kick:   'ausgeworfen',
 };
 
 /**

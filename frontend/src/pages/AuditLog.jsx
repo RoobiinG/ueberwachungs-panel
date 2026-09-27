@@ -33,6 +33,18 @@ const ACTION_META = {
   'firewall.allow':       { label: 'Firewall: Port erlaubt', color: 'text-panel-green', icon: Flame },
   'firewall.deny':        { label: 'Firewall: Port gesperrt', color: 'text-panel-red', icon: Flame },
   'firewall.delete':      { label: 'Firewall: Regel gelöscht', color: 'text-panel-orange', icon: Flame },
+  'firewall.edit':        { label: 'Firewall: Regel bearbeitet', color: 'text-panel-orange', icon: Flame },
+  'firewall.label':       { label: 'Firewall: Beschriftung', color: 'text-panel-muted', icon: Flame },
+  'firewall.enable':      { label: 'Firewall eingeschaltet', color: 'text-panel-green', icon: Flame },
+  'firewall.disable':     { label: 'Firewall ausgeschaltet', color: 'text-panel-red', icon: Flame },
+  'agent.fail2ban.unban': { label: 'Fail2Ban: IP entsperrt', color: 'text-panel-orange', icon: Shield },
+  'agent.blocklist.add':  { label: 'IP dauerhaft gesperrt', color: 'text-panel-red', icon: Shield },
+  'agent.blocklist.remove': { label: 'Dauersperre aufgehoben', color: 'text-panel-orange', icon: Shield },
+  'agent.ssh.kick':       { label: 'SSH-Sitzung beendet', color: 'text-panel-red', icon: Lock },
+  'agent.ssh.add_key':    { label: 'SSH-Schlüssel hinterlegt', color: 'text-panel-orange', icon: Lock },
+  'agent.ssh.remove_key': { label: 'SSH-Schlüssel entfernt', color: 'text-panel-orange', icon: Lock },
+  'settings.ipapi_key_save':   { label: 'GeoIP-Key gespeichert', color: 'text-panel-muted', icon: Settings },
+  'settings.ipapi_key_delete': { label: 'GeoIP-Key gelöscht', color: 'text-panel-muted', icon: Settings },
   'webhook.create':       { label: 'Webhook erstellt',  color: 'text-panel-accent', icon: Webhook },
   'webhook.edit':         { label: 'Webhook bearbeitet', color: 'text-panel-muted', icon: Webhook },
   'webhook.delete':       { label: 'Webhook gelöscht',  color: 'text-panel-red',   icon: Webhook },
@@ -196,7 +208,7 @@ export default function AuditLog() {
         <div className="flex items-center justify-between w-full">
           <div className="flex items-center gap-2">
             <Shield size={14} className="text-panel-accent" />
-            <span>Audit-Protokoll</span>
+            <span>Audit-Log</span>
             <span className="text-xs text-panel-muted">({total} Einträge)</span>
           </div>
           {/* Pagination */}
