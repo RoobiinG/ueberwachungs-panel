@@ -30,7 +30,7 @@ export default function FirewallGruppe({ gruppe, darfSchreiben, onBearbeiten, on
           ? <span className="text-sm text-panel-accent font-medium truncate max-w-[18rem]" title={gruppe.portLabel}>{gruppe.portLabel}</span>
           : <span className="text-xs text-panel-muted italic">ohne Beschriftung</span>}
         {darfSchreiben && (
-          <button onClick={() => onBeschriften('port', gruppe.key, gruppe.portLabel)} title="Gruppe beschriften (z. B. „Ollama API")"
+          <button onClick={() => onBeschriften('port', gruppe.key, gruppe.portLabel)} title="Gruppe beschriften (z. B. „Ollama API“)"
                   className="text-panel-muted hover:text-panel-accent transition-colors">
             <Pencil size={12} />
           </button>
