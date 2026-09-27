@@ -1769,7 +1769,7 @@ async function sperreSetzen(agent, cidr, trotzdem) {
   } catch (err) {
     const d = err.response?.data || {};
     if (d.bereits) return { ok: true, bereits: true };
-    return { ok: false, status: err.response?.status || 502, error: agentZuAlt(err, '2.19.0') || agentFehler(err), bestaetigungNoetig: !!d.bestaetigungNoetig };
+    return { ok: false, status: err.response?.status || 502, error: agentZuAlt(err, '2.19.1') || agentFehler(err), bestaetigungNoetig: !!d.bestaetigungNoetig };
   }
 }
 
@@ -1786,7 +1786,7 @@ router.get('/:id/blocklist', requirePermission('security.view'), async (req, res
   ]);
   let state = 'ok', message = null, agentListe = null;
   if (liste.status === 'fulfilled') agentListe = liste.value.data;
-  else if (liste.reason?.response?.status === 404) { state = 'agent_outdated'; message = agentZuAlt(liste.reason, '2.19.0'); }
+  else if (liste.reason?.response?.status === 404) { state = 'agent_outdated'; message = agentZuAlt(liste.reason, '2.19.1'); }
   else if (liste.reason?.response) { state = 'error'; message = agentFehler(liste.reason); }
   else { state = 'agent_unreachable'; message = `Agent nicht erreichbar: ${liste.reason?.message}`; }
 
@@ -1868,7 +1868,7 @@ router.delete('/:id/blocklist', requirePermission('fail2ban.ban'), async (req, r
     await agentApi(agent).post('/blocklist/remove', { cidr: e.cidr });
   } catch (err) {
     // „steht nicht auf der Liste" (409): Nur noch der Panel-Eintrag ist übrig — aufräumen.
-    if (err.response?.status !== 409) return res.status(err.response?.status === 404 ? 409 : 502).json({ error: agentZuAlt(err, '2.19.0') || agentFehler(err) });
+    if (err.response?.status !== 409) return res.status(err.response?.status === 404 ? 409 : 502).json({ error: agentZuAlt(err, '2.19.1') || agentFehler(err) });
     hinweis = agentFehler(err);
   }
   db.prepare('DELETE FROM permanent_bans WHERE agent_id = ? AND cidr = ?').run(agent.id, e.cidr);
@@ -1885,7 +1885,7 @@ router.post('/:id/blocklist/reapply', requirePermission('fail2ban.ban'), async (
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   let vorhanden;
   try { vorhanden = new Set(((await agentApi(agent).get('/blocklist')).data?.eintraege || []).map(x => x.cidr)); }
-  catch (err) { return res.status(502).json({ error: agentZuAlt(err, '2.19.0') || agentFehler(err) }); }
+  catch (err) { return res.status(502).json({ error: agentZuAlt(err, '2.19.1') || agentFehler(err) }); }
   const fehlend = db.prepare('SELECT cidr FROM permanent_bans WHERE agent_id = ?').all(agent.id).filter(z => !vorhanden.has(z.cidr));
   const ergebnisse = [];
   for (const { cidr } of fehlend) ergebnisse.push({ cidr, ...(await sperreSetzen(agent, cidr, false)) });
@@ -1915,7 +1915,7 @@ router.post('/:id/ssh/sessions/kick', requirePermission('security.ssh_kick'), as
     sitzung = (Array.isArray(data) ? data : []).find(s => s.pid === pid && s.startTicks === startTicks);
   } catch (err) { return res.status(502).json({ error: agentFehler(err) }); }
   if (!sitzung) return res.status(409).json({ error: 'Diese SSH-Sitzung besteht nicht (mehr) — bitte die Liste neu laden.' });
-  if (!sitzung.kickable) return res.status(409).json({ error: 'Der Agent kann diese Sitzung nicht zuordnen — bitte auf v2.19.0 oder neuer aktualisieren.' });
+  if (!sitzung.kickable) return res.status(409).json({ error: 'Der Agent kann diese Sitzung nicht zuordnen — bitte auf v2.19.1 oder neuer aktualisieren.' });
   if (trotzdem !== true && normIp(sitzung.ip) === anfrageIp(req)) {
     return res.status(409).json({ error: `Diese Sitzung kommt von deiner eigenen Adresse (${sitzung.ip}).`, bestaetigungNoetig: true });
   }
@@ -1940,7 +1940,7 @@ router.post('/:id/ssh/sessions/kick', requirePermission('security.ssh_kick'), as
     res.json({ ...data, gesperrt });
   } catch (err) {
     const status = err.response?.status;
-    res.status(status === 400 || status === 409 ? status : 502).json({ error: agentZuAlt(err, '2.19.0') || agentFehler(err), gesperrt });
+    res.status(status === 400 || status === 409 ? status : 502).json({ error: agentZuAlt(err, '2.19.1') || agentFehler(err), gesperrt });
   }
 });
 

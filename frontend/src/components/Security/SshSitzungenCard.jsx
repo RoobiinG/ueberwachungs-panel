@@ -147,7 +147,7 @@ export default function SshSitzungenCard({ agentId }) {
             </tbody>
           </table>
           {liste.some(s => !s.kickable) && darfAuswerfen && (
-            <p className="text-[11px] text-panel-muted mt-2">Ohne „Auswerfen"-Knopf: Der Agent kann diese Sitzung keinem Prozess zuordnen (Agent ab v2.19.0 nötig).</p>
+            <p className="text-[11px] text-panel-muted mt-2">Ohne „Auswerfen"-Knopf: Der Agent kann diese Sitzung keinem Prozess zuordnen (Agent ab v2.19.1 nötig).</p>
           )}
         </div>
       )}

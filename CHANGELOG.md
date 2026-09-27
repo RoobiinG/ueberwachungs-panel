@@ -23,7 +23,7 @@ Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweis
   - Land und Stadt kommen sofort aus der eingebauten Datenbank, ganz ohne Netzwerkzugriff.
   - Provider und Einstufung liefert **ipapi.is**, sobald unter *Einstellungen → GeoIP & Bedrohungsdaten* ein kostenloser Key hinterlegt ist. Die Abfragen laufen gebündelt im Hintergrund (bis 100 IPs je Anfrage, höchstens 900 pro Tag) und werden 14 Tage zwischengespeichert — die Liste wartet nie darauf.
   - Nach außen gehen nur öffentliche Adressen gesperrter IPs. Die eigenen SSH-Sitzungen werden bewusst nur lokal nachgeschlagen.
-- **IP dauerhaft sperren (Agent v2.19.0):** Neben jeder fail2ban-Sperre gibt es „Dauerhaft sperren", dazu „IP sperren" für beliebige Adressen oder Netze.
+- **IP dauerhaft sperren (Agent v2.19.1):** Neben jeder fail2ban-Sperre gibt es „Dauerhaft sperren", dazu „IP sperren" für beliebige Adressen oder Netze.
   - Gesperrt wird über eine eigene nftables-Tabelle (`inet panel_guard`). Sie greift für eingehende **und** weitergeleitete Verbindungen — also auch für Docker-Container-Ports — und unabhängig davon, ob ufw, firewalld oder gar nichts davon läuft.
   - Die Sperre übersteht Neustarts. Wird der Regelsatz geleert (etwa durch einen Neustart von nftables), stellt der Agent sie innerhalb einer Minute wieder her.
   - Optional auf **allen Servern** auf einmal, mit Ergebnis je Server.
@@ -35,6 +35,7 @@ Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweis
   - **„Adresse freigeben"** fügt eine Freigabe direkt vor der Sperre ein (`ufw insert`, `iptables -I … N`, `nft insert … position`), statt sie wirkungslos hinten anzuhängen.
 - **Audit & Score — SSH-Sitzungen mit „seit wann" und „Auswerfen":** Die Sitzungsliste zeigt Benutzer, Gegenstelle, Herkunft, Terminal (oder SFTP/Tunnel) und wie lange die Sitzung schon besteht. Mit dem neuen Recht lässt sich eine Sitzung beenden, optional mit gleichzeitiger Dauersperre der Adresse (erst sperren, dann trennen).
   - Beendet wird nur, was der Agent in diesem Moment als sshd-Sitzung nachweist: Prozess-ID **und** Startzeit müssen übereinstimmen. Beliebige Prozesse lassen sich darüber nicht beenden, und eine neu vergebene Prozess-ID trifft nichts Falsches. Signale gehen ohne Shell und ohne `kill`-Programm direkt an den Prozess.
+  - Mit der Verbindung enden alle Prozesse der Sitzung (systemd-Sitzung `session-N.scope`, sonst der Prozessbaum) — auch Befehle einer Sitzung ohne Terminal, die sonst als Waisen weiterliefen.
 - **Neue Rechte** in der Kategorie *Sicherheit*: **IP dauerhaft sperren** (`fail2ban.ban`) und **SSH-Sitzungen beenden** (`security.ssh_kick`). Ohne sie existieren die zugehörigen Knöpfe und Dialoge nicht in der Oberfläche; das Backend prüft jede Aktion zusätzlich. *IP-Sperren aufheben* heißt jetzt **Fail2Ban-Sperren aufheben**.
 
 ### Verbesserungen
@@ -49,7 +50,7 @@ Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweis
 
 ### System-Auswirkungen & Nachwirken (Impact Analysis)
 - **DB-Migrationen (automatisch):** Drei neue Tabellen — `permanent_bans` (Grund, Urheber und Zeitpunkt dauerhafter Sperren), `firewall_labels` (Beschriftungen) und `ip_intel` (Zwischenspeicher für Provider-Daten). Bestehende Daten bleiben unverändert. Beim Löschen eines Servers werden seine Einträge mit entfernt.
-- **Agent-Kompatibilität:** **Agent v2.19.0** ist für dauerhafte Sperren, „Auswerfen", „Adresse freigeben" und das Mitlesen von Firewall-Kommentaren nötig. Ältere Agents zeigen einen Hinweis statt eines Fehlers; Beschriftungen, Gruppierung und GeoIP funktionieren auch mit ihnen.
+- **Agent-Kompatibilität:** **Agent v2.19.1** ist für dauerhafte Sperren, „Auswerfen", „Adresse freigeben" und das Mitlesen von Firewall-Kommentaren nötig. Ältere Agents zeigen einen Hinweis statt eines Fehlers; Beschriftungen, Gruppierung und GeoIP funktionieren auch mit ihnen.
 - **Änderungen auf den Servern:** Erst beim ersten dauerhaften Sperren legt der Agent `/etc/panel-agent/blocklist.json` und `blocklist.nft` an (nur für root lesbar), außerdem die nftables-Tabelle `inet panel_guard` und den Dienst `panel-agent-blocklist.service`. Ohne Sperren bleibt alles unverändert. Voraussetzung ist `nft` (Debian ab 11, Ubuntu ab 20.04).
 - **Rechte:** Die beiden neuen Rechte haben zunächst nur Admin-Rollen. Andere Rollen bekommen sie ausschließlich über *Rollen & Berechtigungen* — niemand erhält durch das Update neue Eingriffsmöglichkeiten.
 - **Datenschutz:** Ohne ipapi.is-Key verlässt keine Adresse das Panel.

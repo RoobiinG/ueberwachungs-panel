@@ -18,7 +18,7 @@ const execAsync = promisify(exec);
 // sondern ein Argument-Array. Sonderzeichen in Volume-/Netzwerk-/Image-Namen können
 // so nicht als Shell-Syntax gedeutet werden.
 const execFileAsync = promisify(execFile);
-const VERSION = '2.19.0';
+const VERSION = '2.19.1';
 
 // Ob die Container-Konsole angeboten werden kann. Steht erst nach dem Laden von
 // ws/node-pty am Ende dieser Datei fest und wird über /ping und /version gemeldet,
@@ -1258,6 +1258,47 @@ async function getSshSessions() {
   }
 }
 
+// Alle Prozesse einer SSH-Sitzung. Die sshd-Prozesse zu beenden trennt zwar die
+// Verbindung — Befehle einer Sitzung ohne Terminal (notty, z. B. `ssh host 'lange-job'`)
+// bekommen dabei aber kein SIGHUP und liefen als Waisen weiter (im Test nachgewiesen).
+// Deshalb: bevorzugt alle Prozesse der systemd-Sitzung (cgroup …/session-N.scope — erfasst
+// auch vom Terminal gelöste Hintergrundprozesse), zusätzlich der Prozessbaum unterhalb der
+// sshd-Prozesse für Systeme ohne pam_systemd. Nur Pfade der Form user.slice/…/session-*.scope
+// werden gelesen — nie die cgroup eines Dienstes wie sshd.service.
+function _sitzungsProzesse(sshdPids) {
+  const ergebnis = new Set(sshdPids);
+  for (const pid of sshdPids) {
+    let zeilen = '';
+    try { zeilen = fs.readFileSync(`/proc/${pid}/cgroup`, 'utf8'); } catch { continue; }
+    for (const z of zeilen.split('\n')) {
+      const m = z.match(/^\d+:([^:]*):(\/user\.slice\/user-\d+\.slice\/session-[\w.-]+\.scope)$/);
+      if (!m) continue;
+      const basis = m[1] === '' ? '/sys/fs/cgroup' : `/sys/fs/cgroup/${m[1].replace(/^name=/, '')}`;
+      try {
+        for (const p of fs.readFileSync(path.join(basis, m[2], 'cgroup.procs'), 'utf8').split('\n')) {
+          if (/^\d+$/.test(p)) ergebnis.add(Number(p));
+        }
+      } catch {}
+    }
+  }
+  const kinder = new Map();
+  for (const e of fs.readdirSync('/proc')) {
+    if (!/^\d+$/.test(e)) continue;
+    try {
+      const st = fs.readFileSync(`/proc/${e}/stat`, 'utf8');
+      const ppid = Number(st.slice(st.lastIndexOf(')') + 2).split(' ')[1]);
+      if (!kinder.has(ppid)) kinder.set(ppid, []);
+      kinder.get(ppid).push(Number(e));
+    } catch {}
+  }
+  const stapel = [...ergebnis];
+  while (stapel.length) {
+    for (const k of kinder.get(stapel.pop()) || []) if (!ergebnis.has(k)) { ergebnis.add(k); stapel.push(k); }
+  }
+  for (const p of [1, process.pid, process.ppid]) ergebnis.delete(p);
+  return [...ergebnis];
+}
+
 // Beendet eine SSH-Sitzung. Beendet wird nur, was in diesem Moment nachweislich eine
 // sshd-Sitzung ist: PID *und* Startzeit müssen zu einem frisch ermittelten Sitzungsleiter
 // passen. Damit lässt sich über diesen Weg kein beliebiger Prozess beenden, und eine
@@ -1273,14 +1314,15 @@ async function sshSessionKick(pid, startTicks) {
   const s = (await getSshSessions()).find(x => x.kickable && x.pid === p && x.startTicks === String(startTicks));
   if (!s) return { status: 409, body: { error: 'Diese SSH-Sitzung besteht nicht (mehr) — bitte die Liste neu laden.' } };
 
-  // Alle sshd-Prozesse genau dieser Verbindung, jeweils mit ihrer Startzeit festgehalten.
-  const ziele = s.pids.map(x => ({ pid: x, ticks: _startTicks(x) })).filter(z => z.ticks);
+  // Die sshd-Prozesse dieser Verbindung und alles, was zur Sitzung gehört — jeweils mit
+  // Startzeit festgehalten, damit ein Nachfass-SIGKILL nie einen neuen Prozess trifft.
+  const ziele = _sitzungsProzesse(s.pids).map(x => ({ pid: x, ticks: _startTicks(x) })).filter(z => z.ticks);
   const lebt  = (z) => _startTicks(z.pid) === z.ticks;
   for (const z of ziele) { try { process.kill(z.pid, 'SIGTERM'); } catch {} }
   for (let i = 0; i < 15 && ziele.some(lebt); i++) await sleep(200);
   let signal = 'SIGTERM';
   for (const z of ziele.filter(lebt)) { try { process.kill(z.pid, 'SIGKILL'); signal = 'SIGKILL'; } catch {} }
-  return { status: 200, body: { success: true, user: s.user, ip: s.ip, tty: s.tty, signal } };
+  return { status: 200, body: { success: true, user: s.user, ip: s.ip, tty: s.tty, signal, prozesse: ziele.length } };
 }
 
 // Bisherige Ermittlung über ss + w/who — nur noch Rückfall, ohne Prozess-Zuordnung.
