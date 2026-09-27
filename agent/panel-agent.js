@@ -18,7 +18,7 @@ const execAsync = promisify(exec);
 // sondern ein Argument-Array. Sonderzeichen in Volume-/Netzwerk-/Image-Namen können
 // so nicht als Shell-Syntax gedeutet werden.
 const execFileAsync = promisify(execFile);
-const VERSION = '2.18.0';
+const VERSION = '2.18.1';
 
 // Ob die Container-Konsole angeboten werden kann. Steht erst nach dem Laden von
 // ws/node-pty am Ende dieser Datei fest und wird über /ping und /version gemeldet,
@@ -1558,19 +1558,25 @@ async function fail2banUnban(jail, ip) {
 // ─── HTTP Handler ─────────────────────────────────────────────────────────────
 // ── Modul 7: Festplatten-Gesundheit & System-Aufräumen ───────────────────────
 
+// Gerätenamen, die an smartctl gehen dürfen. Der Name kam früher ungeprüft aus dem
+// Request-Body und lief per Shell (`smartctl -t short ${disk}`) — mit `/dev/sda;…` ließ
+// sich so jeder Befehl als root ausführen. Jetzt: feste Form, execFile ohne Shell und
+// zusätzlich nur Geräte, die smartctl selbst beim Scan meldet.
+const SMART_DISK_RE = /^\/dev\/(sd[a-z]{1,2}|vd[a-z]{1,2}|xvd[a-z]{1,2}|hd[a-z]|nvme\d{1,2}n\d{1,2})$/;
+
+async function _smartScan() {
+  const { stdout } = await execFileAsync('smartctl', ['--scan'], { timeout: 8000 }).catch(() => ({ stdout: '' }));
+  return String(stdout).split('\n')
+    .map(l => (l.match(/^(\/dev\/\S+)/) || [])[1])
+    .filter(dev => dev && SMART_DISK_RE.test(dev));
+}
+
 async function getSmartData() {
   const disks = [];
   try {
-    const { stdout: scanOut } = await execAsync('smartctl --scan', { timeout: 8000 }).catch(() => ({ stdout: '' }));
-    const lines = scanOut.trim().split('\n');
-    for (const line of lines) {
-      if (!line) continue;
-      const match = line.match(/^(\/dev\/\S+)/);
-      if (!match) continue;
-      const dev = match[1];
-      
+    for (const dev of await _smartScan()) {
       try {
-        const { stdout: smartOut } = await execAsync(`smartctl -j -a ${dev}`, { timeout: 8000 });
+        const { stdout: smartOut } = await execFileAsync('smartctl', ['-j', '-a', dev], { timeout: 8000 });
         const data = JSON.parse(smartOut);
         
         let passed = data.smart_status?.passed;
@@ -1706,11 +1712,17 @@ async function getSmartData() {
 }
 
 async function runSmartTest(disk) {
+  if (typeof disk !== 'string' || !SMART_DISK_RE.test(disk)) {
+    return { status: 400, body: { error: 'Ungültiger Gerätename' } };
+  }
+  if (!(await _smartScan()).includes(disk)) {
+    return { status: 400, body: { error: `${disk} ist kein von smartctl erkanntes Gerät` } };
+  }
   try {
-    await execAsync(`smartctl -t short ${disk}`);
-    return { success: true };
+    await execFileAsync('smartctl', ['-t', 'short', disk], { timeout: 15000 });
+    return { status: 200, body: { success: true } };
   } catch (e) {
-    throw new Error(`Konnte Test auf ${disk} nicht starten: ${e.message}`);
+    return { status: 500, body: { error: `Konnte Test auf ${disk} nicht starten: ${String(e.stderr || e.message).trim().slice(0, 200)}` } };
   }
 }
 
@@ -1997,7 +2009,8 @@ async function handler(req, res) {
       const raw = await new Promise((resolve) => { const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8'))); });
       const { disk } = JSON.parse(raw || '{}');
       if (!disk) return respond(res, 400, { error: 'Keine Festplatte angegeben' });
-      respond(res, 200, await runSmartTest(disk));
+      const r = await runSmartTest(disk);
+      respond(res, r.status, r.body);
     } else if (url === '/system/cleanup' && req.method === 'POST') {
       const raw = await new Promise((resolve) => { const chunks = []; req.on('data', c => chunks.push(c)); req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8'))); });
       const tasks = JSON.parse(raw || '{}');

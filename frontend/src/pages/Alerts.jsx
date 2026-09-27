@@ -141,6 +141,10 @@ function ConditionRow({ cond, onChange, onRemove, canRemove, activeType }) {
 
 // ─── Regel-Modal ───────────────────────────────────────────────────────────────
 function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
+  const { hasPermission } = useAuth();
+  // Ein Remediation-Befehl läuft als root auf den Servern der Regel — eigenes Recht.
+  // Ohne es gibt es das Feld nicht, und das Formular schickt den Befehl gar nicht erst mit.
+  const darfRemediation = hasPermission('alerts.remediation');
   const [form,   setForm]   = useState(defaultForm);
   const [saving, setSaving] = useState(false);
   const [error,  setError]  = useState('');
@@ -230,8 +234,10 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
     setSaving(true);
     setError('');
     try {
+      const { remediation_cmd, ...rest } = form;
       await onSave({
-        ...form,
+        ...rest,
+        ...(darfRemediation ? { remediation_cmd: remediation_cmd || null } : {}),
         metric:           isAction ? 'action' : (form.conditions?.[0]?.metric || 'cpu'),
         conditions:       isAction ? [] : (form.conditions || []),
         logic:            form.logic || 'and',
@@ -240,7 +246,6 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
         webhook_id:       parseInt(form.webhook_id),
         agent_ids:        form.agent_ids || [],
         target_ref:       (isStorage || isMCHost) ? JSON.stringify(form.target_ref || []) : null,
-        remediation_cmd:  form.remediation_cmd || null,
       });
       onClose();
     } catch (e) {
@@ -474,7 +479,7 @@ function RuleModal({ open, onClose, onSave, webhooks, agents, initial }) {
         </div>
 
         {/* Modul 12: Auto-Remediation */}
-        {!isAction && (
+        {!isAction && darfRemediation && (
           <div>
             <label className="text-xs text-panel-muted block mb-1">Auto-Behebung (Bash-Kommando)</label>
             <input type="text" className={inputCls} placeholder="z. B. systemctl restart nginx (optional)" 

@@ -16,6 +16,20 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [7.8.0.2] - 2026-09-27 (Build 391) — *Control Hub*
+
+### Bugfixes (Sicherheit)
+- **Kritisch — Befehlsinjektion beim S.M.A.R.T.-Selbsttest (Agent v2.18.1):** Der Agent setzte den Gerätenamen aus der Anfrage ungeprüft in eine Shell-Zeile (`smartctl -t short …`). Wer *Festplatten & System* verwalten durfte, konnte damit beliebige Befehle als root auf dem Server ausführen. Jetzt gelten nur Gerätenamen in fester Form (`/dev/sda`, `/dev/nvme0n1` …), die `smartctl` beim Scan selbst meldet. Der Aufruf läuft ohne Shell, das Panel prüft den Namen zusätzlich vor dem Weiterleiten. Auch das Auslesen der S.M.A.R.T.-Werte läuft nicht mehr über die Shell.
+- **Auto-Remediation war Root-Zugang für jeden mit „Alerts verwalten“:** Remediation-Befehle laufen beim Auslösen als root auf allen Servern der Regel. Festlegen, Ändern und Entfernen verlangt jetzt das neue Recht **Auto-Remediation festlegen** (`alerts.remediation`), das zunächst nur Admins haben. Ohne das Recht erscheint das Feld nicht, und eine Regel mit vorhandenem Befehl lässt sich trotzdem bearbeiten, ohne ihn zu verändern. Jede Änderung steht im Audit-Log.
+- **Remediation-Befehl ließ sich nicht entfernen:** Ein geleertes Feld behielt den alten Befehl bei. Jetzt wird er gelöscht.
+- **S.M.A.R.T.-Anfragen hingen:** Bei einem Fehler des Agents blieb die Anfrage ohne Antwort, wenn Docker im Mischbetrieb mit Dockhand lief. Jetzt kommt eine Fehlermeldung.
+
+### System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen:** Keine. Beim Start nennt das Panel im Log alle Alert-Regeln, die schon einen Remediation-Befehl haben, damit ein Admin sie prüfen kann. Diese Befehle laufen unverändert weiter.
+- **Rechte:** Neues Recht *Auto-Remediation festlegen*. Admin-Rollen haben es automatisch, alle anderen Rollen bekommen es nur ausdrücklich.
+- **Agent-Kompatibilität:** **Agent auf v2.18.1 aktualisieren** (Sammel-Update), sonst bleibt die Lücke auf dem Server offen. Das Panel weist ungültige Gerätenamen schon vorher ab, ein direkter Zugriff auf den Agent mit gültigem Token bliebe aber möglich.
+- **Neustart/Session:** Kein Session-Verlust.
+
 ## [7.8.0.1] - 2026-09-26 (Build 390) — *Control Hub*
 
 ### Bugfixes

@@ -39,6 +39,8 @@ const ACTION_META = {
   'webhook.test':         { label: 'Webhook getestet',  color: 'text-panel-muted', icon: Webhook },
   'alert.create':         { label: 'Alert-Regel erstellt', color: 'text-panel-accent', icon: Bell },
   'alert.delete':         { label: 'Alert-Regel gelöscht', color: 'text-panel-red', icon: Bell },
+  'alert.remediation_set': { label: 'Auto-Remediation geändert', color: 'text-panel-red', icon: Bell },
+  'disks.smart.test':     { label: 'S.M.A.R.T.-Test gestartet', color: 'text-panel-muted', icon: Server },
   'settings.smtp_save':   { label: 'SMTP gespeichert',  color: 'text-panel-muted', icon: Settings },
 };
 

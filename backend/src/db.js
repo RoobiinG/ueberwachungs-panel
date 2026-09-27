@@ -532,6 +532,16 @@ try {
   }
 } catch (e) { console.warn('[DB] Rechte-Migration (rbac_hubs_v1) fehlgeschlagen:', e.message); }
 
+// Seit v7.8.0.2 braucht das Festlegen von Remediation-Befehlen das Recht `alerts.remediation`.
+// Befehle, die vorher mit `alerts.manage` hinterlegt wurden, laufen weiter — einmal beim Start
+// benennen, damit ein Admin sie prüfen kann.
+try {
+  const mitBefehl = db.prepare("SELECT name FROM alert_rules WHERE remediation_cmd IS NOT NULL AND TRIM(remediation_cmd) <> ''").all();
+  if (mitBefehl.length) {
+    console.log(`[DB] ${mitBefehl.length} Alert-Regel(n) mit Auto-Remediation (läuft als root): ${mitBefehl.map(r => r.name).join(', ')}`);
+  }
+} catch {}
+
 // Frisch-Installation: Admin-Benutzer anlegen (Suche case-insensitiv)
 const adminExists = db.prepare("SELECT id FROM users WHERE LOWER(username) = 'admin'").get();
 if (!adminExists) {

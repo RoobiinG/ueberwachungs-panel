@@ -1,8 +1,17 @@
 const router      = require('express').Router();
 const db          = require('../db');
-const { requirePermission } = require('../middleware/requirePermission');
+const { requirePermission, getPermissions } = require('../middleware/requirePermission');
 const { sendWebhook } = require('../utils/sendWebhook');
 const { auditLog } = require('../utils/audit');
+
+// ─── Auto-Remediation ─────────────────────────────────────────────────────────
+// Ein Remediation-Befehl läuft beim Auslösen per /run-command als root auf jedem Server
+// der Regel. Bisher reichte dafür `alerts.manage` — wer Alarme pflegen durfte, war damit
+// root auf allen Agents. Festlegen und Ändern verlangt jetzt das eigene Recht
+// `alerts.remediation`; ohne es bleibt ein vorhandener Befehl unangetastet.
+const REMEDIATION_MAX = 1000;
+const normRemediation = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+const darfRemediation = (req) => getPermissions(req.user?.role).includes('alerts.remediation');
 
 // ─── Regel-CRUD ───────────────────────────────────────────────────────────────
 
@@ -79,6 +88,12 @@ router.post('/rules', requirePermission('alerts.manage'), (req, res) => {
     if (!VALID_CONDITIONS.includes(c.condition)) return res.status(400).json({ error: `Ungültige Bedingung: ${c.condition}` });
   }
 
+  const remediation = normRemediation(req.body.remediation_cmd);
+  if (remediation && !darfRemediation(req))
+    return res.status(403).json({ error: 'Auto-Remediation festlegen erfordert das Recht „Auto-Remediation festlegen“ (entspricht Root-Zugang).' });
+  if (remediation && remediation.length > REMEDIATION_MAX)
+    return res.status(400).json({ error: `Remediation-Befehl ist zu lang (max. ${REMEDIATION_MAX} Zeichen)` });
+
   const webhook = db.prepare('SELECT id FROM webhooks WHERE id = ?').get(webhook_id);
   if (!webhook) return res.status(400).json({ error: 'Webhook nicht gefunden' });
 
@@ -95,10 +110,11 @@ router.post('/rules', requirePermission('alerts.manage'), (req, res) => {
     webhook_id, null,
     JSON.stringify(agent_ids), JSON.stringify(condArr), logic, notify_resolved ? 1 : 0,
     target_ref ? String(target_ref) : null,
-    req.body.remediation_cmd || null
+    remediation
   );
 
   auditLog(req, 'alert.create', 'alert_rule', name, { conditions: condArr.length, servers: agent_ids.length, logic });
+  if (remediation) auditLog(req, 'alert.remediation_set', 'alert_rule', name, { befehl: remediation });
   res.status(201).json({ id: result.lastInsertRowid, name, metric: mainMetric, conditions: condArr, logic, agent_ids, enabled: 1 });
 });
 
@@ -108,8 +124,18 @@ router.put('/rules/:id', requirePermission('alerts.manage'), (req, res) => {
     duration_seconds, cooldown_minutes, webhook_id,
     agent_ids, enabled, conditions, logic, notify_resolved, target_ref, remediation_cmd
   } = req.body;
-  const rule = db.prepare('SELECT id FROM alert_rules WHERE id = ?').get(req.params.id);
+  const rule = db.prepare('SELECT id, name, remediation_cmd FROM alert_rules WHERE id = ?').get(req.params.id);
   if (!rule) return res.status(404).json({ error: 'Regel nicht gefunden' });
+
+  // Nur eine tatsächliche Änderung braucht das Recht — wer eine Regel mit vorhandenem
+  // Befehl bearbeitet und ihn unverändert mitschickt, darf das auch ohne.
+  // Ein leerer Wert entfernt den Befehl; bisher behielt COALESCE(NULL, …) den alten.
+  const neueRemediation = remediation_cmd !== undefined ? normRemediation(remediation_cmd) : undefined;
+  const remediationGeaendert = neueRemediation !== undefined && neueRemediation !== (rule.remediation_cmd || null);
+  if (remediationGeaendert && !darfRemediation(req))
+    return res.status(403).json({ error: 'Auto-Remediation ändern erfordert das Recht „Auto-Remediation festlegen“ (entspricht Root-Zugang).' });
+  if (remediationGeaendert && neueRemediation && neueRemediation.length > REMEDIATION_MAX)
+    return res.status(400).json({ error: `Remediation-Befehl ist zu lang (max. ${REMEDIATION_MAX} Zeichen)` });
 
   const condArr       = Array.isArray(conditions) ? conditions : undefined;
   const mainMetric    = condArr?.[0]?.metric    ?? metric    ?? null;
@@ -131,8 +157,7 @@ router.put('/rules/:id', requirePermission('alerts.manage'), (req, res) => {
       logic            = COALESCE(?, logic),
       notify_resolved  = COALESCE(?, notify_resolved),
       enabled          = COALESCE(?, enabled),
-      target_ref       = COALESCE(?, target_ref),
-      remediation_cmd  = COALESCE(?, remediation_cmd)
+      target_ref       = COALESCE(?, target_ref)
     WHERE id = ?
   `).run(
     name ?? null, mainMetric, mainCondition, mainThreshold,
@@ -145,9 +170,13 @@ router.put('/rules/:id', requirePermission('alerts.manage'), (req, res) => {
     notify_resolved != null ? (notify_resolved ? 1 : 0) : null,
     enabled ?? null,
     target_ref != null ? String(target_ref) : null,
-    remediation_cmd !== undefined ? (remediation_cmd || null) : null,
     req.params.id
   );
+  if (remediationGeaendert) {
+    db.prepare('UPDATE alert_rules SET remediation_cmd = ? WHERE id = ?').run(neueRemediation, req.params.id);
+    auditLog(req, 'alert.remediation_set', 'alert_rule', name || rule.name,
+      neueRemediation ? { befehl: neueRemediation } : { entfernt: true });
+  }
   res.json({ success: true });
 });
 

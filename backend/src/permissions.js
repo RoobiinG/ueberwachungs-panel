@@ -53,6 +53,7 @@ const PERMISSIONS = [
   // ─── Alerts ───────────────────────────────────────────────────────────────
   { key: 'alerts.view',         category: 'Alerts',             label: 'Alerts anzeigen',                 description: 'Alert-Regeln und History einsehen' },
   { key: 'alerts.manage',       category: 'Alerts',             label: 'Alerts verwalten',                description: 'Alert-Regeln anlegen, bearbeiten, löschen' },
+  { key: 'alerts.remediation',  category: 'Alerts',             label: 'Auto-Remediation festlegen',      description: 'Befehle hinterlegen, die beim Auslösen eines Alarms als root auf den Servern laufen — entspricht Root-Zugang auf allen Servern der Regel' },
 
   // ─── Monitoring ───────────────────────────────────────────────────────────
   { key: 'metrics.view',        category: 'Monitoring',         label: 'Metriken anzeigen',               description: 'System-Metriken, Charts und Zeitreihen abrufen' },

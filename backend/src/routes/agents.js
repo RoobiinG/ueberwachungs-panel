@@ -1626,29 +1626,34 @@ router.get('/:id/disks/smart', requirePermission('disks.manage'), async (req, re
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
 
+  // Kein Docker-Rückfall hier: allowFallback() gilt nur für Docker-Aufrufe. Lieferte es
+  // true, blieb die Anfrage bisher ohne Antwort hängen.
   try {
     const { data } = await agentApi(agent).get('/disks/smart');
     return res.json(data);
   } catch (err) {
-    if (!allowFallback(req, agent, req.originalUrl, err)) {
-      return res.status(502).json({ error: err.response?.data?.error || err.message });
-    }
+    return res.status(502).json({ error: err.response?.data?.error || err.message });
   }
 });
+
+// Nur Gerätenamen in fester Form; der Agent prüft zusätzlich gegen `smartctl --scan`.
+// Spiegelung von SMART_DISK_RE in agent/panel-agent.js.
+const SMART_DISK_RE = /^\/dev\/(sd[a-z]{1,2}|vd[a-z]{1,2}|xvd[a-z]{1,2}|hd[a-z]|nvme\d{1,2}n\d{1,2})$/;
 
 router.post('/:id/disks/smart/test', requirePermission('disks.manage'), async (req, res) => {
   const agent = getOne(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent nicht gefunden' });
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const disk = req.body?.disk;
+  if (typeof disk !== 'string' || !SMART_DISK_RE.test(disk)) return res.status(400).json({ error: 'Ungültiger Gerätename' });
 
   try {
-    const { data } = await agentApi(agent).post('/disks/smart/test', { disk: req.body.disk });
-    auditLog(req, 'disks.smart.test', 'disk', req.body.disk, { agentId: agent.id });
+    const { data } = await agentApi(agent).post('/disks/smart/test', { disk });
+    auditLog(req, 'disks.smart.test', 'disk', disk, { agentId: agent.id });
     return res.json(data);
   } catch (err) {
-    if (!allowFallback(req, agent, req.originalUrl, err)) {
-      return res.status(502).json({ error: err.response?.data?.error || err.message });
-    }
+    if (err.response?.status === 400) return res.status(400).json({ error: err.response.data?.error });
+    return res.status(502).json({ error: err.response?.data?.error || err.message });
   }
 });
 
