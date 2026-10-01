@@ -50,14 +50,24 @@ export function IpProvider({ intel }) {
   return <span className="text-panel-muted italic">{STATUS_TEXT[intel?.status] || '—'}</span>;
 }
 
-/** Einstufung als Badge (VPN/Proxy/Tor rot, Rechenzentrum orange, sonst grau). */
+/**
+ * Einstufung als Badge (VPN/Proxy/Tor rot, Rechenzentrum orange, sonst grau) und Missbrauch:
+ * rot ab 3 Blocklisten (IPsum, lokal) oder laut ipapi.is, orange bei 1–2 Listen.
+ * Die Blocklisten-Treffer kommen ohne ipapi-Key — deshalb auch ohne Einstufung sichtbar.
+ */
 export function IpTyp({ intel }) {
   const t = TYP[intel?.typ];
-  if (!t) return <span className="text-panel-muted">—</span>;
+  const listen = intel?.blocklisten || 0;
+  if (!t && !intel?.missbrauch && !listen) return <span className="text-panel-muted">—</span>;
+  const hinweis = listen
+    ? `Steht auf ${listen} ${listen === 1 ? 'Blockliste' : 'Blocklisten'} (IPsum)`
+    : 'Laut ipapi.is eine bekannte Missbrauchsquelle';
   return (
-    <span className="inline-flex items-center gap-1">
-      <Badge color={t.color}>{t.label}</Badge>
-      {intel.missbrauch && <Badge color="red">bekannt für Missbrauch</Badge>}
+    <span className="inline-flex flex-wrap items-center gap-1">
+      {t && <Badge color={t.color}>{t.label}</Badge>}
+      {intel.missbrauch
+        ? <span title={hinweis}><Badge color="red">bekannt für Missbrauch</Badge></span>
+        : listen > 0 && <span title={hinweis}><Badge color="orange">{listen === 1 ? '1 Blockliste' : `${listen} Blocklisten`}</Badge></span>}
     </span>
   );
 }

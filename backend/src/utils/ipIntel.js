@@ -1,11 +1,14 @@
 // ─── GeoIP & Bedrohungsdaten zu fremden IP-Adressen ───────────────────────────
 //
-// Zwei Stufen, damit die Sperrlisten nie auf ein Drittsystem warten:
-//   1. Land und Stadt kommen sofort aus der lokalen Datenbank (geoip-lite).
-//   2. Provider, ASN und die Einstufung VPN/Proxy/Tor/Rechenzentrum holt ein Hintergrund-
-//      Worker gebündelt bei ipapi.is (bis 100 IPs je Anfrage, HTTPS) und legt sie 14 Tage
-//      in `ip_intel` ab. Bis dahin steht in der Antwort `status: 'ausstehend'`; die nächste
-//      Abfrage der Liste (30-s-Takt im Frontend) bringt die Daten mit.
+// Drei Stufen (Wasserfall), damit die Sperrlisten nie auf ein Drittsystem warten:
+//   1. Cache: Was ipapi.is schon geliefert hat, liegt 14 Tage in `ip_intel`.
+//   2. Lokale Datenbanken (utils/threatIntel.js, lädt das Panel selbst herunter):
+//      Land und Stadt (DB-IP City), Provider und ASN (DB-IP ASN), Blocklisten-Treffer (IPsum).
+//      Land/Stadt kommen immer von hier, Provider nur, solange Stufe 1 nichts hat.
+//   3. Extern: Die Einstufung VPN/Proxy/Tor/Rechenzentrum holt ein Hintergrund-Worker
+//      gebündelt bei ipapi.is (bis 100 IPs je Anfrage, HTTPS) und legt sie in Stufe 1 ab.
+//      Bis dahin steht in der Antwort `status: 'ausstehend'`; die nächste Abfrage der Liste
+//      (30-s-Takt im Frontend) bringt die Daten mit.
 //
 // Nach außen gehen nur öffentliche Adressen, und nur wenn ein API-Key hinterlegt ist.
 // SSH-Sitzungen fragen bewusst nicht extern nach (`extern: false`) — das sind in aller
@@ -18,6 +21,7 @@ const db = require('../db');
 const { geoLookup } = require('./audit');
 const { parseCidr, geschuetztGrund } = require('./ipPruefung');
 const { makeStatusTracker } = require('./workerStatus');
+const lokal = require('./threatIntel');
 
 const ENDPUNKT        = 'https://api.ipapi.is';
 const GUELTIG_MS      = 14 * 24 * 3600 * 1000;
@@ -92,7 +96,7 @@ function speichern(ip, quelle, daten) {
 /**
  * Standort und — soweit vorhanden — Provider-Daten zu mehreren IPs, ohne zu warten.
  * Fehlende oder veraltete Einträge werden (bei `extern`) für den Worker vorgemerkt.
- * @returns {Object<string, object>}  IP → { land, stadt, isp, asn, asnOrg, typ, missbrauch, status }
+ * @returns {Object<string, object>}  IP → { land, stadt, isp, asn, asnOrg, typ, missbrauch, blocklisten, status }
  */
 function anreichern(ips, { extern = true } = {}) {
   const ergebnis = {};
@@ -121,14 +125,19 @@ function anreichern(ips, { extern = true } = {}) {
       }
     }
 
+    // Stufe 2: Provider aus der lokalen ASN-Datenbank, solange der Cache nichts Besseres hat.
+    const asnLokal = status === 'intern' || daten?.isp ? null : lokal.asn(ip);
+    const blocklisten = lokal.blocklisten(ip);
+
     ergebnis[roh] = {
       land:       daten?.land  || geo.country || null,
       stadt:      daten?.stadt || geo.city    || null,
-      isp:        daten?.isp    ?? null,
-      asn:        daten?.asn    ?? null,
-      asnOrg:     daten?.asnOrg ?? null,
+      isp:        daten?.isp    ?? asnLokal?.org ?? null,
+      asn:        daten?.asn    ?? asnLokal?.asn ?? null,
+      asnOrg:     daten?.asnOrg ?? asnLokal?.org ?? null,
       typ:        daten?.typ    ?? null,
-      missbrauch: !!daten?.missbrauch,
+      missbrauch: !!daten?.missbrauch || blocklisten >= lokal.IPSUM_MISSBRAUCH,
+      blocklisten,
       status,
     };
   }

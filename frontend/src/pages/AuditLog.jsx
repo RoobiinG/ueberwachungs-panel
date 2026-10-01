@@ -45,6 +45,7 @@ const ACTION_META = {
   'agent.ssh.remove_key': { label: 'SSH-Schlüssel entfernt', color: 'text-panel-orange', icon: Lock },
   'settings.ipapi_key_save':   { label: 'GeoIP-Key gespeichert', color: 'text-panel-muted', icon: Settings },
   'settings.ipapi_key_delete': { label: 'GeoIP-Key gelöscht', color: 'text-panel-muted', icon: Settings },
+  'security.intel_update':     { label: 'Bedrohungsdaten aktualisiert', color: 'text-panel-muted', icon: Shield },
   'webhook.create':       { label: 'Webhook erstellt',  color: 'text-panel-accent', icon: Webhook },
   'webhook.edit':         { label: 'Webhook bearbeitet', color: 'text-panel-muted', icon: Webhook },
   'webhook.delete':       { label: 'Webhook gelöscht',  color: 'text-panel-red',   icon: Webhook },

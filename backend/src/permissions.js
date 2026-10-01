@@ -47,6 +47,8 @@ const PERMISSIONS = [
   // Beide greifen tief ins System ein — deshalb eigene Rechte, die zunächst nur Admins haben.
   { key: 'fail2ban.ban',        category: 'Sicherheit',         label: 'IP dauerhaft sperren',            description: 'IP-Adressen und Netze dauerhaft per nftables sperren und solche Sperren wieder aufheben' },
   { key: 'security.ssh_kick',   category: 'Sicherheit',         label: 'SSH-Sitzungen beenden',           description: 'Aktive SSH-Sitzungen auf den Servern trennen (Benutzer auswerfen)' },
+  // Löst Downloads von bis zu ~60 MB aus — deshalb nicht an security.view gekoppelt.
+  { key: 'security.intel_update', category: 'Sicherheit',       label: 'Bedrohungsdaten aktualisieren',   description: 'Geo-, ASN- und Blocklisten-Datenbanken (DB-IP, IPsum) manuell neu herunterladen lassen' },
 
   // ─── Webhooks ────────────────────────────────────────────────────────────
   { key: 'webhooks.view',       category: 'Webhooks',           label: 'Webhooks anzeigen',               description: 'Webhook-Liste einsehen' },

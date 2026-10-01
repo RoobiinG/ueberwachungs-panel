@@ -16,6 +16,35 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [8.0.0.0] - 2026-10-01 (Build 393) — *Watchtower*
+
+### Neue Funktionen
+- **Bedrohungsdaten ohne Handarbeit:** Das Panel lädt seine Geo-, Provider- und Blocklisten-Datenbanken jetzt selbst herunter und hält sie aktuell. Auf dem Server muss dafür nichts abgelegt werden.
+  - **DB-IP City Lite** (Land und Stadt) und **DB-IP ASN Lite** (Provider und AS-Nummer): monatlich neu, sobald DB-IP den neuen Stand veröffentlicht. Ist der neue Monat noch nicht erschienen, bleibt der Vormonat.
+  - **IPsum** (auf wie vielen öffentlichen Blocklisten eine Adresse steht): täglich. Die Prüfung läuft als bedingte Anfrage, ohne Änderung wird nichts heruntergeladen.
+  - Das Panel startet sofort und ist bedienbar, während der erste Download noch im Hintergrund läuft. Bis dahin gilt die eingebaute, ältere Standort-Datenbank.
+  - Jede neue Datei wird vor dem Austausch geprüft (Typ, Probe-Abfrage, Mindestumfang, Größenobergrenze). Scheitert etwas, bleibt der bisherige Stand aktiv und das Panel versucht es nach 30 Minuten erneut.
+- **Security Center — neuer Tab „Bedrohungsdaten":** Gesundheit jeder Datenbank auf einen Blick: Aktiv, Wird geladen (mit Fortschritt), Veraltet, Fehlt oder Fehler, dazu Stand, letztes Update, nächste Prüfung und Größe. Außerdem eine Übersicht der drei Stufen der IP-Prüfung: **Cache → lokale Datenbanken → ipapi.is**.
+  - **„Datenbanken jetzt aktualisieren"** prüft alle Quellen sofort und lädt neue Stände. Der Lauf geht im Hintergrund weiter, die Seite zeigt den Fortschritt.
+- **Sperrlisten und SSH-Sitzungen:** Provider und AS-Nummer erscheinen jetzt auch **ohne ipapi.is-Key** (aus der lokalen ASN-Datenbank). Neu ist ein Hinweis, wenn eine Adresse auf öffentlichen Blocklisten steht: ab 3 Listen rot „bekannt für Missbrauch", bei 1–2 Listen orange mit Anzahl.
+- **Neues Recht** in der Kategorie *Sicherheit*: **Bedrohungsdaten aktualisieren** (`security.intel_update`). Ohne das Recht existiert der Knopf nicht in der Oberfläche, und das Backend lehnt die Anfrage ab. Den Status sieht jeder mit *Sicherheitslage anzeigen*.
+
+### Verbesserungen
+- Land und Stadt im Audit-Log, bei SSH-Sitzungen und in den Sperrlisten kommen aus der monatlich aktualisierten DB-IP-Datenbank statt aus dem Stand, der mit dem Image ausgeliefert wurde.
+- Diagnose-Bericht: Der neue Hintergrund-Job erscheint bei den Workern.
+- Neue Umgebungsvariablen `THREAT_INTEL_DOWNLOADS=off` (Offline-Betrieb) und `THREAT_INTEL_DIR` (Ablageort), siehe `SETUP.md`.
+
+### System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen:** Keine. Stand und Prüfzeitpunkte stehen in einem neuen Eintrag der `settings`-Tabelle (`threat_intel_meta`).
+- **Speicherplatz:** Rund 140 MB im Daten-Volume unter `/app/data/bedrohungsdaten`. Während eines Downloads kurzzeitig bis zum Doppelten. Die Dateien überleben Neustarts und Updates des Containers und werden nicht erneut geladen.
+- **Arbeitsspeicher:** Etwa unverändert. Die DB-IP-Daten (~140 MB) ersetzen die eingebaute Standort-Datenbank (~150 MB), deren Speicher freigegeben wird, sobald DB-IP geladen ist. Beim Monatswechsel liegen kurz beide Stände im Speicher.
+- **Netzwerk:** Ausgehende HTTPS-Downloads zu `download.db-ip.com` (rund 65 MB pro Monat) und `raw.githubusercontent.com` (rund 2 MB pro Tag). Dabei verlässt **keine IP-Adresse** das Panel, es werden nur die Listen abgerufen. Ohne Internetzugang bleibt alles wie bisher, der Tab zeigt dann „Fehler".
+- **Lizenz:** DB-IP Lite steht unter CC BY 4.0. Die Namensnennung steht im Tab „Bedrohungsdaten".
+- **Rechte:** Das neue Recht haben zunächst nur Admin-Rollen. Andere Rollen bekommen es ausschließlich über *Rollen & Berechtigungen*.
+- **Agent-Kompatibilität:** Keine Änderung, kein Agent-Update nötig.
+- **Neue Abhängigkeit:** `mmdb-lib` (MIT, ohne weitere Abhängigkeiten) zum Lesen der DB-IP-Dateien.
+- **Neustart/Session:** Kein Session-Verlust. Nach dem Update einmal neu laden. Der erste Download beginnt rund 5 Sekunden nach dem Start.
+
 ## [7.9.0.0] - 2026-09-27 (Build 392) — *Iron Gate*
 
 ### Neue Funktionen

@@ -139,6 +139,7 @@ app.use('/api/panel-logs',  auth, require('./routes/panelLogs'));
 app.use('/api/version',          require('./routes/version'));
 app.use('/api/update',      auth, require('./routes/update'));
 app.use('/api/reports',     auth, require('./routes/reports'));
+app.use('/api/threat-intel', auth, require('./routes/threatIntel'));
 
 // Serve React frontend in production
 const frontendDist = path.join(__dirname, '../../frontend/dist');
@@ -284,6 +285,8 @@ try { require('./utils/updateCheck').startPeriodicCheck(); } catch (e) { console
 try { require('./utils/agentAutoUpdate').start(); } catch (e) { console.warn('Automatisches Agent-Update deaktiviert:', e.message); }
 try { require('./utils/sslMonitor').startMonitor(); } catch (e) { console.warn('SSL-Monitor deaktiviert:', e.message); }
 try { require('./utils/ipIntel').start(); } catch (e) { console.warn('GeoIP-/Bedrohungsdaten deaktiviert:', e.message); }
+// Lokale Geo-/ASN-/Blocklisten-Datenbanken: lädt vorhandene Dateien, fehlende im Hintergrund.
+try { require('./utils/threatIntel').start(); } catch (e) { console.warn('Lokale Bedrohungsdaten deaktiviert:', e.message); }
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => console.log(`Überwachungs-Panel running on port ${PORT}`));

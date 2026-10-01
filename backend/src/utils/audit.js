@@ -11,13 +11,21 @@
  */
 const db = require('../db');
 
-// GeoIP lazy-loaded — wirft keinen Fehler wenn Paket noch nicht installiert
+// GeoIP lazy-loaded — wirft keinen Fehler wenn Paket noch nicht installiert.
+// Die eingebaute geoip-lite-Datenbank ist nur noch der Rückfall, bis die heruntergeladene
+// DB-IP-Datenbank bereit ist (utils/threatIntel.js). Danach gibt geoipFreigeben() ihren
+// Speicher (~150 MB) frei, und sie wird nicht erneut geladen.
 let _geoip = null;
 function getGeoip() {
   if (_geoip !== null) return _geoip;
   try { _geoip = require('geoip-lite'); }
   catch { _geoip = false; } // Paket nicht verfügbar → false als Sentinel
   return _geoip;
+}
+
+function geoipFreigeben() {
+  if (_geoip) { try { _geoip.clear(); } catch { /* Fassung ohne clear() */ } }
+  _geoip = false;
 }
 
 /**
@@ -56,8 +64,6 @@ function resolveLocation(ip) {
  */
 function geoLookup(ip) {
   const clean = String(ip ?? '').replace(/^::ffff:/, '');
-  const geoip = getGeoip();
-  if (!geoip) return null;
 
   // Nur wohlgeformte Adressen weiterreichen.
   //
@@ -76,6 +82,13 @@ function geoLookup(ip) {
   const istIPv6 = /^[0-9a-fA-F:]{2,45}$/.test(clean) && clean.includes(':');
   if (!istIPv4 && !istIPv6) return null;
 
+  // Zuerst die heruntergeladene, monatlich aktualisierte DB-IP-Datenbank. `undefined` heißt:
+  // noch nicht geladen (erster Start, Download läuft) → eingebaute Datenbank.
+  const aktuell = require('./threatIntel').geo(clean);
+  if (aktuell !== undefined) return aktuell;
+
+  const geoip = getGeoip();
+  if (!geoip) return null;
   try {
     const geo = geoip.lookup(clean);
     if (!geo) return null;
@@ -120,4 +133,4 @@ function auditLog(req, action, targetType = null, targetName = null, details = n
   }
 }
 
-module.exports = { auditLog, resolveLocation, geoLookup };
+module.exports = { auditLog, resolveLocation, geoLookup, geoipFreigeben };

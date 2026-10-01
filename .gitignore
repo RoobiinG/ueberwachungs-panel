@@ -6,6 +6,9 @@ dist/
 *.db-wal
 npm-debug.log*
 
+# Vom Panel selbst heruntergeladene Geo-/Blocklisten-Datenbanken (liegen neben data.db)
+bedrohungsdaten/
+
 # Produktions-Config mit echten Secrets/Domains — nie auf GitHub!
 docker-compose.prod.yml
 

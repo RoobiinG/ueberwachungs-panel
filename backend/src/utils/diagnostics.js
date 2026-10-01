@@ -202,6 +202,7 @@ function backgroundWorkers() {
     sslMonitor:            safe('./sslMonitor'),
     agentAutoUpdate:       safe('./agentAutoUpdate'),
     ipIntel:               safe('./ipIntel'),
+    threatIntel:           safe('./threatIntel'),
   };
 }
 

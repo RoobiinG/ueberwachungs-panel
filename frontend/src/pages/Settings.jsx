@@ -2124,9 +2124,10 @@ export default function Settings() {
           <Card title={<span className="flex items-center gap-2"><Globe size={14} />GeoIP & Bedrohungsdaten (ipapi.is)</span>}>
             <div className="space-y-3">
               <p className="text-xs text-panel-muted">
-                Land und Stadt gesperrter IPs kommen immer lokal aus der eingebauten Datenbank. Mit einem
+                Land, Stadt, Provider und Blocklisten-Treffer kommen immer lokal aus den Datenbanken, die das Panel
+                selbst herunterlädt und aktuell hält (Status unter Security Center → Bedrohungsdaten). Mit einem
                 kostenlosen Key von <span className="text-panel-text font-medium">ipapi.is</span> zeigt das Security Center
-                zusätzlich Provider, ASN und ob eine Adresse zu einem VPN, Proxy, Tor oder Rechenzentrum gehört.
+                zusätzlich, ob eine Adresse zu einem VPN, Proxy, Tor oder Rechenzentrum gehört.
                 Abgefragt werden nur öffentliche Adressen gesperrter IPs (nicht die eigenen SSH-Sitzungen),
                 gebündelt und 14 Tage zwischengespeichert — höchstens 900 Abfragen pro Tag.
               </p>

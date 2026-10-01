@@ -1,22 +1,26 @@
 import { useCallback, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ShieldCheck, ShieldHalf, Flame, Ban } from 'lucide-react';
+import { ShieldCheck, ShieldHalf, Flame, Ban, Database } from 'lucide-react';
 import { HubLayout } from '../components/ui/HubLayout';
 import { ServerSelector } from '../components/ui/ServerSelector';
 import { useTabParam } from '../hooks/useTabParam';
 import SecurityAuditTab from '../components/Security/SecurityAuditTab';
 import Fail2banBansCard from '../components/Security/Fail2banBansCard';
 import DauersperrenCard from '../components/Security/DauersperrenCard';
+import BedrohungsdatenTab from '../components/Security/BedrohungsdatenTab';
 import Firewall from './Firewall';
 
 // Jeder Tab hängt am Lese-Recht seines Bereichs; Schreib-Knöpfe prüfen innerhalb der Tabs
 // die Schreib-Rechte (firewall.manage, fail2ban.manage, fail2ban.ban, security.ssh_kick,
-// agents.edit, agents.manage_ssh) und werden ohne sie gar nicht erst gerendert.
+// security.intel_update, agents.edit, agents.manage_ssh) und werden ohne sie gar nicht erst gerendert.
 const TABS = [
   { key: 'audit',    label: 'Audit & Score',      icon: ShieldHalf, permission: 'security.view' },
   { key: 'firewall', label: 'Firewall',           icon: Flame,      permission: 'firewall.view' },
   { key: 'fail2ban', label: 'Fail2Ban & Sperren', icon: Ban,        permission: 'security.view' },
+  { key: 'intel',    label: 'Bedrohungsdaten',    icon: Database,   permission: 'security.view' },
 ];
+// Diese Tabs betreffen das Panel selbst, nicht einen Server — dort gibt es keine Serverauswahl.
+const OHNE_SERVER = ['intel'];
 // Beim Tab-Wechsel bleibt der gewählte Server erhalten.
 const PERSIST = ['server'];
 
@@ -47,13 +51,15 @@ export default function SecurityCenter() {
     <HubLayout
       icon={ShieldCheck}
       title="Security Center"
-      subtitle="Sicherheits-Score, Firewall und Fail2Ban-Sperren deiner Server an einem Ort"
+      subtitle="Sicherheits-Score, Firewall, Fail2Ban-Sperren und Bedrohungsdaten deiner Server an einem Ort"
       tabs={tabs}
       active={active}
       onTabChange={setTab}
-      extra={tabs.length > 0 && <ServerSelector selected={serverId} onChange={setServer} />}
+      extra={tabs.length > 0 && !OHNE_SERVER.includes(active) && <ServerSelector selected={serverId} onChange={setServer} />}
     >
-      {!serverId ? (
+      {active === 'intel' ? (
+        <BedrohungsdatenTab />
+      ) : !serverId ? (
         <p className="text-xs text-panel-muted">Kein Server ausgewählt — lege unter „Server" einen Agenten an, um ihn hier zu prüfen.</p>
       ) : active === 'audit' ? (
         <SecurityAuditTab agentId={serverId} />

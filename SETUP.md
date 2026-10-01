@@ -85,3 +85,5 @@ Frontend läuft dann auf http://localhost:5173, proxied API-Calls an http://loca
 | `JWT_EXPIRES_IN` | Token-Gültigkeit (Standard: 24h) |
 | `HETZNER_API_TOKEN` | Hetzner Cloud API Token |
 | `MCHOST_API_TOKEN` | MC-Host24 API Token |
+| `THREAT_INTEL_DOWNLOADS` | `off` schaltet die automatischen Downloads der Geo-, ASN- und Blocklisten-Datenbanken ab (Offline-Betrieb; Standard: an) |
+| `THREAT_INTEL_DIR` | Ablageort dieser Datenbanken (Standard: Ordner `bedrohungsdaten` neben der SQLite-Datei, im Docker-Betrieb also im Daten-Volume) |
