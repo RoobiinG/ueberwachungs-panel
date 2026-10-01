@@ -203,6 +203,7 @@ function backgroundWorkers() {
     agentAutoUpdate:       safe('./agentAutoUpdate'),
     ipIntel:               safe('./ipIntel'),
     threatIntel:           safe('./threatIntel'),
+    autoSperre:            safe('./autoSperre'),
   };
 }
 

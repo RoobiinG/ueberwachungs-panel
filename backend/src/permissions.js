@@ -45,8 +45,10 @@ const PERMISSIONS = [
   { key: 'security.view',       category: 'Sicherheit',         label: 'Sicherheitslage anzeigen',        description: 'Sicherheits-Score, Audit-Checkliste, Port-Wächter, SSH-Sitzungen, gesperrte IPs samt Herkunft und dauerhafte Sperren einsehen' },
   { key: 'fail2ban.manage',     category: 'Sicherheit',         label: 'Fail2Ban-Sperren aufheben',       description: 'Zeitlich begrenzte Sperren von fail2ban aufheben' },
   // Beide greifen tief ins System ein — deshalb eigene Rechte, die zunächst nur Admins haben.
-  { key: 'fail2ban.ban',        category: 'Sicherheit',         label: 'IP dauerhaft sperren',            description: 'IP-Adressen und Netze dauerhaft per nftables sperren und solche Sperren wieder aufheben' },
+  { key: 'fail2ban.ban',        category: 'Sicherheit',         label: 'IP dauerhaft sperren',            description: 'IP-Adressen und Netze dauerhaft per nftables sperren und solche Sperren wieder aufheben, automatische Sperre (Threat-Feed, fail2ban-Eskalation) ein- und ausschalten' },
   { key: 'security.ssh_kick',   category: 'Sicherheit',         label: 'SSH-Sitzungen beenden',           description: 'Aktive SSH-Sitzungen auf den Servern trennen (Benutzer auswerfen)' },
+  // Ein Whitelist-Eintrag schaltet fail2ban für diese Adresse auf allen Servern ab.
+  { key: 'fail2ban.whitelist',  category: 'Sicherheit',         label: 'Whitelist verwalten',             description: 'Adressen und Netze in die Whitelist aufnehmen oder entfernen — sie werden auf keinem Server mehr gesperrt, weder von fail2ban noch vom Panel' },
   // Löst Downloads von bis zu ~60 MB aus — deshalb nicht an security.view gekoppelt.
   { key: 'security.intel_update', category: 'Sicherheit',       label: 'Bedrohungsdaten aktualisieren',   description: 'Geo-, ASN- und Blocklisten-Datenbanken (DB-IP, IPsum) manuell neu herunterladen lassen' },
 

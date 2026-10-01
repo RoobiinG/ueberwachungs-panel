@@ -18,7 +18,7 @@ const execAsync = promisify(exec);
 // sondern ein Argument-Array. Sonderzeichen in Volume-/Netzwerk-/Image-Namen können
 // so nicht als Shell-Syntax gedeutet werden.
 const execFileAsync = promisify(execFile);
-const VERSION = '2.19.1';
+const VERSION = '2.20.0';
 
 // Ob die Container-Konsole angeboten werden kann. Steht erst nach dem Laden von
 // ws/node-pty am Ende dieser Datei fest und wird über /ping und /version gemeldet,
@@ -462,9 +462,9 @@ const _normIp = (ip) => String(ip ?? '').trim().replace(/^::ffff:(?=\d+\.\d+\.\d
 
 // Zusätzlich geschützt: jede eigene Interface-Adresse und die Adresse, von der das Panel
 // gerade anfragt — sonst sperrte das Panel seine eigene Verbindung zu diesem Agenten.
-function _geschuetztGrund(eintrag, panelIp) {
-  const fest = _GESCHUETZT.find(g => _ueberlappt(eintrag, g));
-  if (fest) return `${eintrag.cidr} liegt in einem geschützten Bereich (${fest.grund})`;
+// Als Liste vorberechnet, damit der Threat-Feed (zehntausende Adressen) sie nur einmal baut.
+function _schutzListe(panelIp) {
+  const liste = [..._GESCHUETZT];
   const zusatz = [{ ip: panelIp, grund: 'Adresse des Panels' }];
   for (const addrs of Object.values(os.networkInterfaces())) {
     for (const a of addrs || []) zusatz.push({ ip: a.address, grund: 'Adresse dieses Servers' });
@@ -472,10 +472,15 @@ function _geschuetztGrund(eintrag, panelIp) {
   for (const z of zusatz) {
     const ip = _normIp(z.ip);
     if (!net.isIP(ip)) continue;
-    let p; try { p = _parseCidr(ip); } catch { continue; }
-    if (_ueberlappt(eintrag, p)) return `${eintrag.cidr} enthält ${ip} (${z.grund})`;
+    try { liste.push({ ..._parseCidr(ip), grund: z.grund, ip }); } catch {}
   }
-  return null;
+  return liste;
+}
+
+function _geschuetztGrund(eintrag, panelIp) {
+  const g = _schutzListe(panelIp).find(x => _ueberlappt(eintrag, x));
+  if (!g) return null;
+  return g.ip ? `${eintrag.cidr} enthält ${g.ip} (${g.grund})` : `${eintrag.cidr} liegt in einem geschützten Bereich (${g.grund})`;
 }
 
 // Erkennt aktive Firewall-Software. Wir geben das am höchsten abstrahierte Tool
@@ -1864,13 +1869,32 @@ async function fail2banUnban(jail, ip) {
 // atomar geladen (add/delete/table in einer Transaktion). Nach dem Boot lädt der Dienst
 // panel-agent-blocklist.service die Datei; leert jemand den Regelsatz (z. B. ein Neustart
 // von nftables.service mit `flush ruleset`), stellt der Agent sie binnen 60 s wieder her.
-const BLOCK_DIR  = '/etc/panel-agent';
-const BLOCK_JSON = `${BLOCK_DIR}/blocklist.json`;
-const BLOCK_NFT  = `${BLOCK_DIR}/blocklist.nft`;
-const BLOCK_UNIT = '/etc/systemd/system/panel-agent-blocklist.service';
-const BLOCK_MAX  = 10000;
+//
+// Seit v2.20.0 hält dieselbe Tabelle zwei weitere Listen, die das Panel vollständig vorgibt:
+//   threat4       Threat-Feed — Adressen, die auf vielen öffentlichen Blocklisten stehen (IPsum)
+//   allow4/allow6 Whitelist — sie greift vor jeder Sperre dieser Tabelle (accept zuerst) und
+//                 wird zusätzlich in fail2ban als ignoreip eingetragen (siehe _f2bWhitelist…).
+const BLOCK_DIR   = '/etc/panel-agent';
+const BLOCK_JSON  = `${BLOCK_DIR}/blocklist.json`;
+const THREAT_JSON = `${BLOCK_DIR}/threatfeed.json`;
+const ALLOW_JSON  = `${BLOCK_DIR}/whitelist.json`;
+const BLOCK_NFT   = `${BLOCK_DIR}/blocklist.nft`;
+const BLOCK_UNIT  = '/etc/systemd/system/panel-agent-blocklist.service';
+const BLOCK_MAX   = 10000;
+const THREAT_MAX  = 100000;
+const ALLOW_MAX   = 500;
 const NFT_KANDIDATEN = ['/usr/sbin/nft', '/sbin/nft', '/usr/bin/nft'];
 const _nftBin = () => NFT_KANDIDATEN.find(p => fs.existsSync(p)) || null;
+
+// Liest einen Request-Body bis zu `max` Bytes. Was darüber hinausgeht, wird nicht gesammelt.
+function _bodyLesen(req, max) {
+  return new Promise((resolve, reject) => {
+    const chunks = []; let n = 0;
+    req.on('data', c => { n += c.length; if (n <= max) chunks.push(c); });
+    req.on('end', () => (n > max ? reject(_httpFehler(413, 'Anfrage zu groß')) : resolve(Buffer.concat(chunks).toString('utf8'))));
+    req.on('error', reject);
+  });
+}
 
 // Nur Einträge, die die Prüfung (erneut) bestehen, gelangen je in eine nft-Datei.
 function _blockLesen() {
@@ -1882,17 +1906,52 @@ function _blockLesen() {
   } catch { return []; }
 }
 
-function _blockNftText(eintraege) {
-  const v4 = [], v6 = [];
-  for (const e of eintraege) { const p = _parseCidr(e.cidr); (p.family === 4 ? v4 : v6).push(p.cidr); }
-  const set = (name, typ, el) =>
-    `  set ${name} {\n    type ${typ}\n    flags interval\n${el.length ? `    elements = { ${el.join(', ')} }\n` : ''}  }\n`;
+function _threatLesen() {
+  try {
+    const d = JSON.parse(fs.readFileSync(THREAT_JSON, 'utf8'));
+    const ips = Array.isArray(d?.ips) ? d.ips.filter(ip => typeof ip === 'string' && net.isIPv4(ip)).slice(0, THREAT_MAX) : [];
+    return {
+      version: typeof d?.version === 'string' ? d.version.slice(0, 64) : null,
+      ips,
+      uebersprungen: Number.isInteger(d?.uebersprungen) ? d.uebersprungen : 0,
+      at: typeof d?.at === 'string' ? d.at.slice(0, 30) : null,
+    };
+  } catch { return { version: null, ips: [], uebersprungen: 0, at: null }; }
+}
+
+function _allowLesen() {
+  try {
+    const d = JSON.parse(fs.readFileSync(ALLOW_JSON, 'utf8'));
+    const l = Array.isArray(d?.eintraege) ? d.eintraege : [];
+    return l.filter(c => { try { return _parseCidr(c).cidr === c; } catch { return false; } }).slice(0, ALLOW_MAX);
+  } catch { return []; }
+}
+const _allowMeta = () => { try { return JSON.parse(fs.readFileSync(ALLOW_JSON, 'utf8')) || {}; } catch { return {}; } };
+
+function _guardNftText(block, threat, allow) {
+  const b4 = [], b6 = [], a4 = [], a6 = [];
+  for (const e of block) { const p = _parseCidr(e.cidr); (p.family === 4 ? b4 : b6).push(p.cidr); }
+  for (const c of allow) { const p = _parseCidr(c); (p.family === 4 ? a4 : a6).push(p.cidr); }
+  // Lange Listen (Threat-Feed) auf mehrere Zeilen verteilen.
+  const elemente = (el) => {
+    const zeilen = [];
+    for (let i = 0; i < el.length; i += 16) zeilen.push(el.slice(i, i + 16).join(', '));
+    return zeilen.join(',\n      ');
+  };
+  const set = (name, typ, el, intervall = true) =>
+    `  set ${name} {\n    type ${typ}\n${intervall ? '    flags interval\n' : ''}` +
+    `${el.length ? `    elements = { ${elemente(el)} }\n` : ''}  }\n`;
   const kette = (name, hook) =>
     `  chain ${name} {\n    type filter hook ${hook} priority -5; policy accept;\n` +
-    '    ip saddr @block4 counter drop\n    ip6 saddr @block6 counter drop\n  }\n';
+    '    ip saddr @allow4 accept\n    ip6 saddr @allow6 accept\n' +
+    '    ip saddr @block4 counter drop comment "panel"\n    ip6 saddr @block6 counter drop comment "panel"\n' +
+    '    ip saddr @threat4 counter drop comment "threat"\n  }\n';
   return '# Vom panel-agent verwaltet — wird bei jeder Änderung neu geschrieben.\n' +
     'add table inet panel_guard\ndelete table inet panel_guard\n' +
-    'table inet panel_guard {\n' + set('block4', 'ipv4_addr', v4) + set('block6', 'ipv6_addr', v6) +
+    'table inet panel_guard {\n' +
+    set('block4', 'ipv4_addr', b4) + set('block6', 'ipv6_addr', b6) +
+    set('threat4', 'ipv4_addr', threat, false) +
+    set('allow4', 'ipv4_addr', a4) + set('allow6', 'ipv6_addr', a6) +
     kette('input', 'input') + kette('forward', 'forward') + '}\n';
 }
 
@@ -1910,51 +1969,82 @@ async function _blockPersistenz(nft) {
   await execFileAsync('systemctl', ['enable', 'panel-agent-blocklist.service'], { timeout: 10000 }).catch(() => {});
 }
 
-async function _blockAnwenden(eintraege) {
+// Schreibt die Tabelle neu. Nicht übergebene Listen bleiben, wie sie sind. Die JSON-Dateien
+// werden erst geschrieben, wenn nftables den neuen Stand angenommen hat.
+// Ist alles leer und gab es die Tabelle nie, wird nichts am System angelegt.
+async function _guardAnwenden({ block = null, threat = null, allow = null } = {}) {
+  const b = block ?? _blockLesen();
+  const t = threat ?? _threatLesen();
+  const a = allow ?? _allowLesen();
+  const schreiben = () => {
+    fs.mkdirSync(BLOCK_DIR, { recursive: true, mode: 0o700 });
+    if (block)  fs.writeFileSync(BLOCK_JSON, JSON.stringify(block, null, 2), { mode: 0o600 });
+    if (threat) fs.writeFileSync(THREAT_JSON, JSON.stringify(threat), { mode: 0o600 });
+    if (allow)  fs.writeFileSync(ALLOW_JSON, JSON.stringify({ ..._allowMeta(), eintraege: allow }, null, 2), { mode: 0o600 });
+  };
+  if (!b.length && !t.ips.length && !a.length && !fs.existsSync(BLOCK_NFT)) { schreiben(); return; }
+
   const nft = _nftBin();
-  if (!nft) throw _httpFehler(409, 'nftables (nft) ist auf diesem Server nicht installiert — dauerhafte Sperren sind hier nicht möglich.');
+  if (!nft) throw _httpFehler(409, 'nftables (nft) ist auf diesem Server nicht installiert — Sperren über die Firewall sind hier nicht möglich.');
   fs.mkdirSync(BLOCK_DIR, { recursive: true, mode: 0o700 });
   const neu = `${BLOCK_NFT}.neu`;
-  fs.writeFileSync(neu, _blockNftText(eintraege), { mode: 0o600 });
+  fs.writeFileSync(neu, _guardNftText(b, t.ips, a), { mode: 0o600 });
   try {
-    await execFileAsync(nft, ['-c', '-f', neu], { timeout: 10000 });   // erst nur prüfen
-    await execFileAsync(nft, ['-f', neu], { timeout: 10000 });
+    await execFileAsync(nft, ['-c', '-f', neu], { timeout: 30000 });   // erst nur prüfen
+    await execFileAsync(nft, ['-f', neu], { timeout: 30000 });
   } catch (e) {
     fs.rmSync(neu, { force: true });
     throw _httpFehler(500, `nftables hat die Sperrliste abgelehnt: ${String(e.stderr || e.message).trim().slice(0, 200)}`);
   }
   fs.renameSync(neu, BLOCK_NFT);
-  fs.writeFileSync(BLOCK_JSON, JSON.stringify(eintraege, null, 2), { mode: 0o600 });
+  schreiben();
   await _blockPersistenz(nft);
 }
+const _blockAnwenden = (eintraege) => _guardAnwenden({ block: eintraege });
 
 async function _blockTabelleAktiv(nft) {
   try { await execFileAsync(nft, ['list', 'table', 'inet', 'panel_guard'], { timeout: 5000 }); return true; }
   catch { return false; }
 }
 
+// Verworfene Pakete je Zweck: Die Regeln tragen den Kommentar "panel" bzw. "threat".
+// (Regeln von Agents vor v2.20.0 haben keinen Kommentar — sie zählen als "panel".)
+async function _guardZaehler(nft) {
+  const { stdout } = await execFileAsync(nft, ['-j', 'list', 'table', 'inet', 'panel_guard'], { timeout: 10000, maxBuffer: 16 * 1024 * 1024 });
+  const drops = { panel: { pakete: 0, bytes: 0 }, threat: { pakete: 0, bytes: 0 } };
+  for (const item of JSON.parse(stdout).nftables || []) {
+    if (!item.rule) continue;
+    const z = drops[item.rule.comment === 'threat' ? 'threat' : 'panel'];
+    for (const e of item.rule.expr || []) {
+      if (e.counter) { z.pakete += Number(e.counter.packets) || 0; z.bytes += Number(e.counter.bytes) || 0; }
+    }
+  }
+  return drops;
+}
+
 async function getBlocklist() {
   const nft = _nftBin();
   const eintraege = _blockLesen();
-  if (!nft) return { available: false, message: 'nftables (nft) ist nicht installiert.', aktiv: false, eintraege, drops: null };
+  const t = _threatLesen();
+  const threat = { version: t.version, anzahl: t.ips.length, uebersprungen: t.uebersprungen, at: t.at, drops: null };
+  const whitelist = _allowLesen().length;
+  if (!nft) return { available: false, message: 'nftables (nft) ist nicht installiert.', aktiv: false, eintraege, drops: null, threat, whitelist };
   let aktiv = false, drops = null;
   try {
-    const { stdout } = await execFileAsync(nft, ['-j', 'list', 'table', 'inet', 'panel_guard'], { timeout: 5000 });
+    const z = await _guardZaehler(nft);
     aktiv = true;
-    drops = { pakete: 0, bytes: 0 };
-    for (const item of JSON.parse(stdout).nftables || []) {
-      for (const e of item.rule?.expr || []) {
-        if (e.counter) { drops.pakete += Number(e.counter.packets) || 0; drops.bytes += Number(e.counter.bytes) || 0; }
-      }
-    }
+    drops = z.panel;
+    threat.drops = z.threat;
   } catch {}
-  return { available: true, message: null, aktiv, eintraege, drops };
+  return { available: true, message: null, aktiv, eintraege, drops, threat, whitelist };
 }
 
 async function blocklistAdd(cidr, trotzdem, panelIp) {
   const e = _parseCidr(cidr);
   const grund = _geschuetztGrund(e, panelIp);
   if (grund) throw _httpFehler(400, grund);
+  const frei = _allowLesen().find(c => _ueberlappt(e, _parseCidr(c)));
+  if (frei) throw _httpFehler(409, `${e.cidr} steht auf der Whitelist (${frei}) und wird deshalb nicht gesperrt`, { whitelist: true });
   const liste = _blockLesen();
   if (liste.some(x => x.cidr === e.cidr)) throw _httpFehler(409, `${e.cidr} ist bereits dauerhaft gesperrt`, { bereits: true });
   const ueber = liste.find(x => _ueberlappt(e, _parseCidr(x.cidr)));
@@ -1981,15 +2071,271 @@ async function blocklistRemove(cidr) {
   return { success: true, cidr: e.cidr };
 }
 
-// Selbstheilung: Gibt es Sperren, aber keine Tabelle mehr, die Datei neu laden.
+// ── Threat-Feed: Adressen von öffentlichen Blocklisten ───────────────────────
+// Das Panel schickt die vollständige Liste (leer = Feed aus). Aufgenommen wird nur, was eine
+// einzelne öffentliche IPv4-Adresse ist und weder geschützt (eigene Adressen, Panel, private
+// Netze) noch auf der Whitelist steht noch gerade per SSH angemeldet ist — alles andere wird
+// gezählt und übersprungen.
+async function getThreatfeed() {
+  const t = _threatLesen();
+  const nft = _nftBin();
+  let aktiv = false, drops = null;
+  if (nft && t.ips.length) {
+    try { drops = (await _guardZaehler(nft)).threat; aktiv = true; } catch {}
+  }
+  return { available: !!nft, version: t.version, anzahl: t.ips.length, uebersprungen: t.uebersprungen, at: t.at, aktiv, drops };
+}
+
+async function threatfeedSetzen(daten, panelIp) {
+  const roh = daten?.ips;
+  if (!Array.isArray(roh)) throw _httpFehler(400, 'Liste der Adressen fehlt');
+  if (roh.length > THREAT_MAX) throw _httpFehler(400, `Höchstens ${THREAT_MAX} Adressen`);
+  const version = typeof daten.version === 'string' ? daten.version.slice(0, 64) : null;
+
+  const vorbei = [..._schutzListe(panelIp), ..._allowLesen().map(c => _parseCidr(c))];
+  if (roh.length) {
+    for (const s of await getSshSessions().catch(() => [])) { try { vorbei.push(_parseCidr(_normIp(s.ip))); } catch {} }
+  }
+  const ips = new Set();
+  let uebersprungen = 0;
+  for (const x of roh) {
+    let p;
+    try { p = _parseCidr(x); } catch { uebersprungen++; continue; }
+    if (p.family !== 4 || p.praefix !== 32 || vorbei.some(g => _ueberlappt(p, g))) { uebersprungen++; continue; }
+    ips.add(p.cidr);
+  }
+  const threat = { version, ips: [...ips], uebersprungen, at: new Date().toISOString() };
+  await _guardAnwenden({ threat });
+  return { success: true, version, anzahl: threat.ips.length, uebersprungen };
+}
+
+// ── Whitelist: nie sperren — weder per fail2ban noch über panel_guard ─────────
+// fail2ban bekommt die Einträge auf drei Wegen, damit eine gelistete Adresse nie gesperrt wird:
+//   1. Laufzeit: `set <jail> addignoreip` je laufendem Jail — wirkt sofort.
+//   2. Über Neustarts: jail.d/zz-panel-agent-whitelist.local, ein Abschnitt je Jail.
+//      `%(known/ignoreip)s` übernimmt die bisherigen Ausnahmen des Admins — aber nur, wenn es
+//      schon einen Wert gibt; ohne bricht fail2ban die Konfiguration ab. Welche Jails einen
+//      haben, zeigt ein Konfigurations-Dump einer Kopie von /etc/fail2ban ohne diese Datei.
+//      Danach muss `fail2ban-client -t` bestehen, sonst wird die Datei zurückgenommen.
+//   3. Selbstheilung im 60-s-Takt: fehlende Einträge nachtragen (etwa nach einem Neustart von
+//      fail2ban) und gesperrte gelistete Adressen sofort entsperren.
+// Per delignoreip entfernt der Agent nur, was er selbst eingetragen hat.
+const F2B_WL_DATEI = '/etc/fail2ban/jail.d/zz-panel-agent-whitelist.local';
+const _f2bEnv = () => ({ ...process.env, LANG: 'C', LC_ALL: 'C' });
+const _f2bBinFinden = () => F2B_KANDIDATEN.find(p => fs.existsSync(p)) || null;
+const _kurzFehler = (e) => String(e?.stderr || e?.message || e).trim().split('\n').filter(Boolean).pop()?.slice(0, 200) || 'Fehler';
+
+async function _f2bJailsLaufend(bin) {
+  try {
+    await _f2b(bin, ['ping']);
+    const { stdout } = await _f2b(bin, ['status']);
+    return ((stdout.match(/Jail list:\s*(.*)/) || [])[1] || '').split(',').map(s => s.trim()).filter(n => F2B_JAIL_RE.test(n));
+  } catch { return null; }   // fail2ban läuft nicht
+}
+
+async function _f2bIgnoreLesen(bin, jail) {
+  const { stdout } = await _f2b(bin, ['get', jail, 'ignoreip']);
+  return String(stdout).split('\n').map(z => (z.match(/^\s*[|`]-\s*(\S+)/) || [])[1]).filter(Boolean);
+}
+
+// fail2ban schreibt Netze ggf. anders als eingegeben — verglichen wird die Normalform.
+const _cidrNorm = (s) => { try { return _parseCidr(s, { 4: 0, 6: 0 }).cidr; } catch { return String(s); } };
+
+// Bisherige ignoreip je aktiviertem Jail, ermittelt an einer Kopie ohne die eigene Datei.
+async function _f2bBasis(bin) {
+  const tmp = fs.mkdtempSync('/tmp/panel-agent-f2b-');
+  try {
+    await execFileAsync('cp', ['-a', '/etc/fail2ban/.', tmp], { timeout: 15000 });
+    fs.rmSync(path.join(tmp, 'jail.d', path.basename(F2B_WL_DATEI)), { force: true });
+    const { stdout } = await execFileAsync(bin, ['-c', tmp, '-d'], { timeout: 30000, maxBuffer: 8 * 1024 * 1024, env: _f2bEnv() });
+    const zeilen = String(stdout).split('\n').map(z => [...z.matchAll(/'([^']*)'/g)].map(m => m[1]));
+    const basis = new Map();
+    for (const t of zeilen) if (t[0] === 'add' && F2B_JAIL_RE.test(t[1] || '')) basis.set(t[1], []);
+    for (const t of zeilen) if (t[0] === 'set' && t[2] === 'addignoreip' && basis.has(t[1])) basis.get(t[1]).push(...t.slice(3));
+    return basis;
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
+const _f2bTest = (bin) => execFileAsync(bin, ['-t'], { timeout: 30000, maxBuffer: 4 * 1024 * 1024, env: _f2bEnv() });
+
+function _f2bWlText(basis, liste) {
+  let t = '# Vom panel-agent verwaltet (Whitelist des Überwachungs-Panels) — wird bei jeder Änderung\n' +
+          '# neu geschrieben. Eigene Ausnahmen bitte in jail.local eintragen, nicht hier.\n';
+  for (const [jail, vorher] of basis) {
+    t += `\n[${jail}]\nignoreip = ${vorher.length ? '%(known/ignoreip)s ' : ''}${liste.join(' ')}\n`;
+  }
+  return t;
+}
+
+// Datei für Neustarts schreiben oder (leere Liste) entfernen. Liefert { ok, datei, fehler }.
+async function _f2bWlDatei(bin, liste, basis) {
+  let alt = null;
+  try { alt = fs.readFileSync(F2B_WL_DATEI, 'utf8'); } catch {}
+  if (!liste.length) {
+    if (alt !== null) fs.rmSync(F2B_WL_DATEI, { force: true });
+    return { ok: true, datei: false, fehler: null };
+  }
+  if (!fs.existsSync(path.dirname(F2B_WL_DATEI))) return { ok: false, datei: false, fehler: 'Verzeichnis /etc/fail2ban/jail.d fehlt' };
+  if (!basis?.size) return { ok: true, datei: false, fehler: null };   // keine aktivierten Jails
+  const text = _f2bWlText(basis, liste);
+  if (text === alt) return { ok: true, datei: true, fehler: null };
+  // Eine schon vorher fehlerhafte Konfiguration nicht anfassen — sonst wäre unklar, wer sie bricht.
+  if (alt === null) {
+    try { await _f2bTest(bin); }
+    catch (e) { return { ok: false, datei: false, fehler: `fail2ban-Konfiguration ist bereits fehlerhaft: ${_kurzFehler(e)}` }; }
+  }
+  fs.writeFileSync(F2B_WL_DATEI, text, { mode: 0o644 });
+  try {
+    await _f2bTest(bin);
+  } catch (e) {
+    if (alt === null) fs.rmSync(F2B_WL_DATEI, { force: true }); else fs.writeFileSync(F2B_WL_DATEI, alt, { mode: 0o644 });
+    return { ok: false, datei: alt !== null, fehler: `fail2ban hat die Datei abgelehnt, sie wurde zurückgenommen: ${_kurzFehler(e)}` };
+  }
+  return { ok: true, datei: true, fehler: null };
+}
+
+// Laufzeit: fehlende Einträge je Jail ergänzen, nicht mehr gelistete (eigene) entfernen.
+async function _f2bWlLaufzeit(bin, liste, alt, basis) {
+  const jails = await _f2bJailsLaufend(bin);
+  if (!jails) return { laeuft: false, jails: [] };
+  const soll = liste.map(_cidrNorm);
+  const weg = alt.map(_cidrNorm).filter(c => !soll.includes(c));
+  const ergebnis = [];
+  for (const j of jails) {
+    try {
+      const ist = new Set((await _f2bIgnoreLesen(bin, j)).map(_cidrNorm));
+      for (const c of soll) if (!ist.has(c)) await _f2b(bin, ['set', j, 'addignoreip', c]);
+      const eigen = new Set((basis?.get(j) || []).map(_cidrNorm));
+      for (const c of weg) if (ist.has(c) && !eigen.has(c)) await _f2b(bin, ['set', j, 'delignoreip', c]);
+      ergebnis.push({ name: j, ok: true, fehler: null });
+    } catch (e) {
+      ergebnis.push({ name: j, ok: false, fehler: _kurzFehler(e) });
+    }
+  }
+  return { laeuft: true, jails: ergebnis };
+}
+
+// Gesperrte Adressen, die (jetzt) auf der Whitelist stehen, sofort entsperren.
+async function _f2bWlEntsperren(bin, liste, frisch = true) {
+  if (!liste.length) return 0;
+  const netze = liste.map(c => _parseCidr(c));
+  if (frisch) _f2bCache = null;
+  const { available, bans } = await getFail2banBans();
+  if (!available) return 0;
+  let n = 0;
+  for (const b of bans) {
+    let p;
+    try { p = _parseCidr(_normIp(b.ip)); } catch { continue; }
+    if (!netze.some(x => _ueberlappt(p, x))) continue;
+    try { await _f2b(bin, ['set', b.jail, 'unbanip', b.ip]); n++; } catch {}
+  }
+  if (n) _f2bCache = null;
+  return n;
+}
+
+async function _f2bWhitelistAnwenden(liste, alt) {
+  const bin = _f2bBinFinden();
+  if (!bin) return { available: false, state: 'not_installed', datei: false, dateiFehler: null, jails: [], entsperrt: 0 };
+  let basis = null, datei;
+  try {
+    if (liste.length || alt.length) basis = await _f2bBasis(bin);
+    datei = await _f2bWlDatei(bin, liste, basis);
+  } catch (e) {
+    datei = { ok: false, datei: fs.existsSync(F2B_WL_DATEI), fehler: `fail2ban-Konfiguration nicht lesbar: ${_kurzFehler(e)}` };
+  }
+  const lz = await _f2bWlLaufzeit(bin, liste, alt, basis);
+  const entsperrt = lz.laeuft ? await _f2bWlEntsperren(bin, liste) : 0;
+  return { available: true, state: lz.laeuft ? 'running' : 'offline', datei: datei.datei, dateiFehler: datei.fehler, jails: lz.jails, entsperrt };
+}
+
+async function getWhitelist() {
+  const liste = _allowLesen();
+  const meta = _allowMeta();
+  const bin = _f2bBinFinden();
+  const fail2ban = {
+    available: !!bin, state: bin ? 'offline' : 'not_installed', jails: [],
+    datei: fs.existsSync(F2B_WL_DATEI), dateiFehler: meta.fail2ban?.fehler || null,
+  };
+  if (bin) {
+    const jails = await _f2bJailsLaufend(bin);
+    if (jails) {
+      fail2ban.state = 'running';
+      const soll = liste.map(_cidrNorm);
+      for (const j of jails) {
+        try {
+          const ist = new Set((await _f2bIgnoreLesen(bin, j)).map(_cidrNorm));
+          fail2ban.jails.push({ name: j, fehlend: soll.filter(c => !ist.has(c)) });
+        } catch { fail2ban.jails.push({ name: j, fehlend: null }); }
+      }
+    }
+  }
+  const nft = _nftBin();
+  const aktiv = nft && liste.length && fs.existsSync(BLOCK_NFT) ? await _blockTabelleAktiv(nft) : null;
+  return { eintraege: liste, fail2ban, nft: { available: !!nft, aktiv } };
+}
+
+async function whitelistSetzen(roh) {
+  if (!Array.isArray(roh)) throw _httpFehler(400, 'Liste der Einträge fehlt');
+  if (roh.length > ALLOW_MAX) throw _httpFehler(400, `Höchstens ${ALLOW_MAX} Einträge`);
+  const neu = [];
+  for (const c of roh) {
+    const p = _parseCidr(c);
+    const ueber = neu.find(x => _ueberlappt(x, p));
+    if (ueber) throw _httpFehler(400, `${p.cidr} überschneidet sich mit ${ueber.cidr}`);
+    neu.push(p);
+  }
+  const liste = neu.map(p => p.cidr);
+  const alt = _allowLesen();
+
+  // Firewall: nur nötig, wenn panel_guard etwas sperrt — sonst nichts am System anlegen.
+  let nft = { ok: true, fehler: null };
+  const tabelleNoetig = _blockLesen().length || _threatLesen().ips.length || fs.existsSync(BLOCK_NFT);
+  try {
+    if (tabelleNoetig) await _guardAnwenden({ allow: liste });
+  } catch (e) {
+    nft = { ok: false, fehler: e.message };
+  }
+  const f2b = await _f2bWhitelistAnwenden(liste, alt);
+  fs.mkdirSync(BLOCK_DIR, { recursive: true, mode: 0o700 });
+  fs.writeFileSync(ALLOW_JSON, JSON.stringify({
+    ..._allowMeta(), eintraege: liste,
+    fail2ban: { datei: f2b.datei, fehler: f2b.dateiFehler, at: new Date().toISOString() },
+  }, null, 2), { mode: 0o600 });
+  return { success: true, eintraege: liste, nft, fail2ban: f2b };
+}
+
+// Selbstheilung der Whitelist in fail2ban (aus dem 60-s-Takt).
+let _wlTakt = 0;
+async function _f2bWhitelistPflegen() {
+  const liste = _allowLesen();
+  if (!liste.length) return;
+  const bin = _f2bBinFinden();
+  if (!bin) return;
+  const lz = await _f2bWlLaufzeit(bin, liste, [], null);
+  if (!lz.laeuft) return;
+  const n = await _f2bWlEntsperren(bin, liste, false);
+  if (n) console.log(`[Whitelist] ${n} Sperre(n) gelisteter Adressen aufgehoben.`);
+  // Alle 10 min die Datei an neu aktivierte Jails anpassen.
+  if (++_wlTakt % 10 === 0) {
+    const r = await _f2bWlDatei(bin, liste, await _f2bBasis(bin));
+    if (!r.ok) console.error('[Whitelist]', r.fehler);
+  }
+}
+
+// Selbstheilung: Gibt es Einträge, aber keine Tabelle mehr, die Datei neu laden.
 setInterval(async () => {
   try {
     const nft = _nftBin();
-    if (!nft || !_blockLesen().length || !fs.existsSync(BLOCK_NFT)) return;
-    if (await _blockTabelleAktiv(nft)) return;
-    await execFileAsync(nft, ['-f', BLOCK_NFT], { timeout: 10000 });
-    console.log('[Sperrliste] Tabelle inet panel_guard fehlte — neu geladen.');
+    const belegt = _blockLesen().length || _threatLesen().ips.length || _allowLesen().length;
+    if (nft && belegt && fs.existsSync(BLOCK_NFT) && !(await _blockTabelleAktiv(nft))) {
+      await execFileAsync(nft, ['-f', BLOCK_NFT], { timeout: 30000 });
+      console.log('[Sperrliste] Tabelle inet panel_guard fehlte — neu geladen.');
+    }
   } catch (e) { console.error('[Sperrliste] Wiederherstellen fehlgeschlagen:', e.message); }
+  try { await _f2bWhitelistPflegen(); }
+  catch (e) { console.error('[Whitelist] Abgleich mit fail2ban fehlgeschlagen:', e.message); }
 }, 60_000);
 
 // ─── HTTP Handler ─────────────────────────────────────────────────────────────
@@ -2501,6 +2847,30 @@ async function handler(req, res) {
         respond(res, 200, r);
       } catch (e) {
         respond(res, e.status || 500, { error: e.message, ...(e.extra || {}) });
+      }
+
+    // Threat-Feed (v2.20.0): das Panel schickt die vollständige Liste, leer = aus.
+    } else if (url === '/threatfeed' && req.method === 'GET') {
+      respond(res, 200, await getThreatfeed());
+
+    } else if (url === '/threatfeed' && req.method === 'POST') {
+      try {
+        const d = JSON.parse((await _bodyLesen(req, 4 * 1024 * 1024)) || '{}');
+        respond(res, 200, await threatfeedSetzen(d, req.socket.remoteAddress));
+      } catch (e) {
+        respond(res, e.status || (e instanceof SyntaxError ? 400 : 500), { error: e.message, ...(e.extra || {}) });
+      }
+
+    // Whitelist (v2.20.0): vollständige Liste vom Panel, gilt für fail2ban und panel_guard.
+    } else if (url === '/whitelist' && req.method === 'GET') {
+      respond(res, 200, await getWhitelist());
+
+    } else if (url === '/whitelist' && req.method === 'PUT') {
+      try {
+        const d = JSON.parse((await _bodyLesen(req, 256 * 1024)) || '{}');
+        respond(res, 200, await whitelistSetzen(d.eintraege));
+      } catch (e) {
+        respond(res, e.status || (e instanceof SyntaxError ? 400 : 500), { error: e.message, ...(e.extra || {}) });
       }
 
     // SSH-Sitzung beenden — nur ein aktueller sshd-Sitzungsleiter mit passender Startzeit.

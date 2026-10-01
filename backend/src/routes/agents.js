@@ -18,6 +18,7 @@ const { parseCidr, geschuetztGrund, normIp } = require('../utils/ipPruefung');
 const { anreichern } = require('../utils/ipIntel');
 const { fingerprint, gruppe, FINGERPRINT_RE } = require('../utils/firewallGruppen');
 const { notifyAction } = require('../utils/actionNotify');
+const { agentZuAlt, agentFehler, banMetaSpeichern, sperreSetzen, whitelistTreffer } = require('../utils/sperren');
 
 const AGENT_RAW_URL = 'https://raw.githubusercontent.com/RoobiinG/ueberwachungs-panel/master/agent/panel-agent.js';
 
@@ -1749,29 +1750,8 @@ router.get('/:id/ssh/sessions', requirePermission('security.view'), async (req, 
 const anfrageIp = (req) =>
   normIp((req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || '');
 
+// `auto:<jail>` setzt nur die fail2ban-Eskalation (utils/autoSperre.js), nie eine Anfrage.
 const QUELLE_RE = /^(manuell|ssh-kick|fail2ban:[\w.@:-]{1,64})$/;
-const agentZuAlt = (err, ab) => err.response?.status === 404
-  ? `Der Agent kennt diese Funktion noch nicht — bitte auf v${ab} oder neuer aktualisieren.` : null;
-const agentFehler = (err) => err.response?.data?.error || err.message;
-
-function banMetaSpeichern(agentId, cidr, grund, quelle, von) {
-  db.prepare(`
-    INSERT INTO permanent_bans (agent_id, cidr, grund, quelle, erstellt_von) VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(agent_id, cidr) DO UPDATE SET grund = COALESCE(excluded.grund, grund)
-  `).run(agentId, cidr, grund || null, quelle, von || null);
-}
-
-// Eine Sperre auf einem Agenten setzen. Liefert { ok, bereits, status, error, bestaetigungNoetig }.
-async function sperreSetzen(agent, cidr, trotzdem) {
-  try {
-    await agentApi(agent).post('/blocklist/add', { cidr, trotzdem: trotzdem === true });
-    return { ok: true };
-  } catch (err) {
-    const d = err.response?.data || {};
-    if (d.bereits) return { ok: true, bereits: true };
-    return { ok: false, status: err.response?.status || 502, error: agentZuAlt(err, '2.19.1') || agentFehler(err), bestaetigungNoetig: !!d.bestaetigungNoetig };
-  }
-}
 
 // Alle dauerhaften Sperren eines Servers, gleich woher: die Sperrliste des Panels
 // (nftables) und fail2ban-Sperren mit unbegrenzter Dauer aus jedem Jail.
@@ -1812,6 +1792,8 @@ router.get('/:id/blocklist', requirePermission('security.view'), async (req, res
   res.json({
     available: agentListe?.available ?? false, state, message: agentListe?.message || message,
     aktiv: agentListe?.aktiv ?? null, drops: agentListe?.drops ?? null,
+    // Ab Agent v2.20.0: Threat-Feed (Anzahl, verworfene Pakete) und Größe der Whitelist.
+    threat: agentListe?.threat ?? null, whitelist: agentListe?.whitelist ?? null,
     eintraege: alle.map(e => ({ ...e, intel: intel[e.cidr] || null })),
   });
 });
@@ -1827,6 +1809,8 @@ router.post('/:id/blocklist', requirePermission('fail2ban.ban'), async (req, res
   try { e = parseCidr(cidr); } catch (err) { return res.status(400).json({ error: err.message }); }
   const hart = geschuetztGrund(e);
   if (hart) return res.status(400).json({ error: hart });
+  const frei = whitelistTreffer(e);
+  if (frei) return res.status(409).json({ error: `${e.cidr} steht auf der Whitelist (${frei.cidr}) und wird deshalb nicht gesperrt.` });
   if (trotzdem !== true) {
     const selbst = geschuetztGrund(e, [{ ip: anfrageIp(req), grund: 'deine aktuelle Adresse' }]);
     if (selbst) return res.status(409).json({ error: `${selbst} — du würdest dich selbst aussperren.`, bestaetigungNoetig: true });
@@ -1927,6 +1911,8 @@ router.post('/:id/ssh/sessions/kick', requirePermission('security.ssh_kick'), as
     try { e = parseCidr(sitzung.ip); } catch (err) { return res.status(400).json({ error: err.message }); }
     const hart = geschuetztGrund(e);
     if (hart) return res.status(400).json({ error: `${hart} — Sitzung wurde nicht beendet.` });
+    const frei = whitelistTreffer(e);
+    if (frei) return res.status(409).json({ error: `${e.cidr} steht auf der Whitelist (${frei.cidr}) — Sitzung wurde nicht beendet. Ohne „Sperren" lässt sie sich trennen.` });
     const r = await sperreSetzen(agent, e.cidr, true);
     if (!r.ok) return res.status(r.status >= 400 && r.status < 500 ? r.status : 502).json({ error: `Sperren fehlgeschlagen, Sitzung wurde nicht beendet: ${r.error}` });
     banMetaSpeichern(agent.id, e.cidr, saeubern(req.body?.grund, 200) || `SSH-Sitzung von ${sitzung.user} ausgeworfen`, 'ssh-kick', req.user?.username);

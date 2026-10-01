@@ -280,6 +280,7 @@ async function aktualisiereIpsum(meta) {
     const neu = await ladeIpsum(tmp);
     await ersetzen(tmp, 'ipsum');
     daten.ipsum = neu;
+    ipsumGeaendert();
     Object.assign(meta, {
       version: neu.stand ? neu.stand.slice(0, 10) : null, etag: r.etag,
       aktualisiertAt: Date.now(), groesse: neu.groesse,
@@ -332,6 +333,7 @@ async function vorhandeneLaden() {
     try {
       daten[id] = QUELLEN[id].art === 'mmdb' ? await ladeMmdb(id, datei(id)) : await ladeIpsum(datei(id));
       if (id === 'geo') require('./audit').geoipFreigeben();
+      if (id === 'ipsum') ipsumGeaendert();
     } catch (err) {
       daten[id] = null;
       if (err.code !== 'ENOENT') console.warn(`[Bedrohungsdaten] ${QUELLEN[id].name} nicht lesbar, wird neu geladen: ${fehlerText(err)}`);
@@ -380,6 +382,39 @@ function blocklisten(ip) {
     if (v < zahl) lo = mitte + 1; else hi = mitte - 1;
   }
   return 0;
+}
+
+// ── IPsum für die automatische Sperre (utils/autoSperre.js) ───────────────────
+const zahlZuIp = (n) => `${n >>> 24}.${(n >>> 16) & 255}.${(n >>> 8) & 255}.${n & 255}`;
+
+/** Alle IPv4-Adressen, die auf mindestens `schwelle` Listen stehen. */
+function ipsumListe(schwelle) {
+  const l = daten.ipsum;
+  if (!l) return [];
+  const aus = [];
+  for (let i = 0; i < l.ips.length; i++) if (l.treffer[i] >= schwelle) aus.push(zahlZuIp(l.ips[i]));
+  return aus;
+}
+
+/** Anzahl Adressen ab 1, 2, … 10 Listen — für die Auswahl der Schwelle in der Oberfläche. */
+function ipsumVerteilung() {
+  const l = daten.ipsum;
+  const n = Array(11).fill(0);
+  if (!l) return null;
+  for (let i = 0; i < l.treffer.length; i++) n[Math.min(l.treffer[i], 10)]++;
+  const ab = {};
+  let summe = 0;
+  for (let s = 10; s >= 1; s--) { summe += n[s]; ab[s] = summe; }
+  return ab;
+}
+
+const ipsumStand = () => daten.ipsum?.stand || null;
+
+// Wer wissen will, wann eine neue IPsum-Liste geladen ist (Threat-Feed neu verteilen).
+const ipsumBeobachter = [];
+function beiIpsum(fn) { ipsumBeobachter.push(fn); }
+function ipsumGeaendert() {
+  for (const fn of ipsumBeobachter) { try { fn(); } catch (e) { console.warn('[Bedrohungsdaten]', e.message); } }
 }
 
 // ── Steuerung ─────────────────────────────────────────────────────────────────
@@ -445,4 +480,7 @@ function getStatus() {
   };
 }
 
-module.exports = { start, manuellStarten, getStatus, geo, asn, blocklisten, IPSUM_MISSBRAUCH };
+module.exports = {
+  start, manuellStarten, getStatus, geo, asn, blocklisten, IPSUM_MISSBRAUCH,
+  ipsumListe, ipsumVerteilung, ipsumStand, beiIpsum,
+};

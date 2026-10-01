@@ -8,6 +8,7 @@ import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { useAuth } from '../../context/AuthContext';
+import AutoSperreCard from './AutoSperreCard';
 
 // Takt: schnell, solange ein Download läuft (Fortschritt), sonst gemächlich.
 const POLL_LAEUFT_MS = 3_000;
@@ -340,6 +341,8 @@ export default function BedrohungsdatenTab() {
           </div>
         </Card>
       )}
+
+      <AutoSperreCard />
 
       <p className="text-[11px] text-panel-muted">
         <a href="https://db-ip.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-panel-text">IP Geolocation by DB-IP</a>

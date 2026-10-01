@@ -453,6 +453,18 @@ db.exec(`
   );
 `);
 
+// Whitelist (v8.1.0.0): gilt für alle Server. Der Agent trägt die Einträge in fail2ban
+// (ignoreip) und vor die Sperren seiner nftables-Tabelle ein — utils/autoSperre.js verteilt sie.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS fail2ban_whitelist (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    cidr         TEXT    NOT NULL UNIQUE,
+    notiz        TEXT,
+    erstellt_von TEXT,
+    erstellt_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+`);
+
 // Tabelle für Server-Zuweisungen pro Rolle
 db.exec(`
   CREATE TABLE IF NOT EXISTS agent_grants (

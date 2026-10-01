@@ -140,6 +140,7 @@ app.use('/api/version',          require('./routes/version'));
 app.use('/api/update',      auth, require('./routes/update'));
 app.use('/api/reports',     auth, require('./routes/reports'));
 app.use('/api/threat-intel', auth, require('./routes/threatIntel'));
+app.use('/api/whitelist',    auth, require('./routes/whitelist'));
 
 // Serve React frontend in production
 const frontendDist = path.join(__dirname, '../../frontend/dist');
@@ -287,6 +288,8 @@ try { require('./utils/sslMonitor').startMonitor(); } catch (e) { console.warn('
 try { require('./utils/ipIntel').start(); } catch (e) { console.warn('GeoIP-/Bedrohungsdaten deaktiviert:', e.message); }
 // Lokale Geo-/ASN-/Blocklisten-Datenbanken: lädt vorhandene Dateien, fehlende im Hintergrund.
 try { require('./utils/threatIntel').start(); } catch (e) { console.warn('Lokale Bedrohungsdaten deaktiviert:', e.message); }
+// Threat-Feed, fail2ban-Eskalation und Whitelist auf die Server verteilen (nach dem Update aus).
+try { require('./utils/autoSperre').start(); } catch (e) { console.warn('Automatische Sperre deaktiviert:', e.message); }
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => console.log(`Überwachungs-Panel running on port ${PORT}`));

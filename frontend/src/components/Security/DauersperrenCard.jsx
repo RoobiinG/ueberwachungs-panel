@@ -23,6 +23,7 @@ const MANUELL = { quelle: 'manuell' };
 const HERKUNFT = (e) => {
   if (e.herkunft === 'ssh-kick') return 'nach SSH-Auswurf';
   if (e.herkunft?.startsWith('fail2ban:')) return `aus Jail ${e.herkunft.slice(9)}`;
+  if (e.herkunft?.startsWith('auto:')) return `automatisch · Jail ${e.herkunft.slice(5)} + Blocklisten`;
   return null;
 };
 
@@ -143,6 +144,15 @@ export default function DauersperrenCard({ agentId, aktualisieren = 0, onGeaende
             {data.aktiv === true && data.drops && (
               <Badge color="gray">{data.drops.pakete.toLocaleString('de-DE')} Pakete verworfen</Badge>
             )}
+            {data.threat?.anzahl > 0 && (
+              <span title="Automatische Sperre: Adressen von öffentlichen Blocklisten (IPsum), Einstellungen unter Bedrohungsdaten">
+                <Badge color="purple">
+                  Threat-Feed: {data.threat.anzahl.toLocaleString('de-DE')} IPs
+                  {data.threat.drops ? ` · ${data.threat.drops.pakete.toLocaleString('de-DE')} Pakete verworfen` : ''}
+                </Badge>
+              </span>
+            )}
+            {data.whitelist > 0 && <Badge color="green">{data.whitelist} auf der Whitelist</Badge>}
             {data.available && data.aktiv === false && data.eintraege.some(e => e.quellen.includes('panel')) && (
               <Badge color="red">nftables-Tabelle fehlt</Badge>
             )}
@@ -189,7 +199,9 @@ export default function DauersperrenCard({ agentId, aktualisieren = 0, onGeaende
                       </td>
                       <td className="py-1.5 pr-3">
                         <span className="inline-flex flex-wrap gap-1">
-                          {e.quellen.includes('panel') && <Badge color="purple">Panel</Badge>}
+                          {e.quellen.includes('panel') && (e.herkunft?.startsWith('auto:')
+                            ? <Badge color="blue">Automatisch</Badge>
+                            : <Badge color="purple">Panel</Badge>)}
                           {e.jails.map(j => <Badge key={j} color="orange">fail2ban · {j}</Badge>)}
                         </span>
                       </td>

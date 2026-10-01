@@ -8,11 +8,13 @@ import SecurityAuditTab from '../components/Security/SecurityAuditTab';
 import Fail2banBansCard from '../components/Security/Fail2banBansCard';
 import DauersperrenCard from '../components/Security/DauersperrenCard';
 import BedrohungsdatenTab from '../components/Security/BedrohungsdatenTab';
+import WhitelistCard from '../components/Security/WhitelistCard';
 import Firewall from './Firewall';
 
 // Jeder Tab hängt am Lese-Recht seines Bereichs; Schreib-Knöpfe prüfen innerhalb der Tabs
 // die Schreib-Rechte (firewall.manage, fail2ban.manage, fail2ban.ban, security.ssh_kick,
-// security.intel_update, agents.edit, agents.manage_ssh) und werden ohne sie gar nicht erst gerendert.
+// security.intel_update, fail2ban.whitelist, agents.edit, agents.manage_ssh) und werden ohne sie
+// gar nicht erst gerendert.
 const TABS = [
   { key: 'audit',    label: 'Audit & Score',      icon: ShieldHalf, permission: 'security.view' },
   { key: 'firewall', label: 'Firewall',           icon: Flame,      permission: 'firewall.view' },
@@ -24,8 +26,9 @@ const OHNE_SERVER = ['intel'];
 // Beim Tab-Wechsel bleibt der gewählte Server erhalten.
 const PERSIST = ['server'];
 
-// Tab „Fail2Ban & Sperren": zeitliche Jail-Sperren und alle dauerhaften Sperren.
-// Ändert eine Karte etwas, lädt die andere neu (z. B. „Dauerhaft sperren" aus der Jail-Liste).
+// Tab „Fail2Ban & Sperren": zeitliche Jail-Sperren, alle dauerhaften Sperren und die
+// Whitelist (gilt für alle Server). Ändert eine Karte etwas, laden die anderen neu
+// (z. B. „Dauerhaft sperren" aus der Jail-Liste, oder ein Whitelist-Eintrag hebt Sperren auf).
 function SperrenTab({ agentId }) {
   const [f2bStand, setF2bStand]     = useState(0);
   const [dauerStand, setDauerStand] = useState(0);
@@ -33,6 +36,7 @@ function SperrenTab({ agentId }) {
     <div className="space-y-4">
       <Fail2banBansCard agentId={agentId} aktualisieren={f2bStand} onGeaendert={() => setDauerStand(n => n + 1)} />
       <DauersperrenCard agentId={agentId} aktualisieren={dauerStand} onGeaendert={() => setF2bStand(n => n + 1)} />
+      <WhitelistCard agentId={agentId} onGeaendert={() => { setDauerStand(n => n + 1); setF2bStand(n => n + 1); }} />
     </div>
   );
 }

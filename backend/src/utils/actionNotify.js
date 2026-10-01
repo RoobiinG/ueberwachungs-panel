@@ -15,6 +15,8 @@ const ACTION_LABELS = {
   ip_block:   'dauerhaft gesperrt',
   ip_unblock: 'entsperrt',
   ssh_kick:   'ausgeworfen',
+  ip_whitelist:   'in die Whitelist aufgenommen',
+  ip_unwhitelist: 'aus der Whitelist entfernt',
 };
 
 /**

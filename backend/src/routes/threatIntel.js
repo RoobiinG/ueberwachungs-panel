@@ -10,6 +10,9 @@ const { requirePermission } = require('../middleware/requirePermission');
 const { auditLog } = require('../utils/audit');
 const threatIntel = require('../utils/threatIntel');
 const ipIntel = require('../utils/ipIntel');
+const autoSperre = require('../utils/autoSperre');
+const { canAccessAgent } = require('../utils/agentAccess');
+const { anfrageIp, whitelistTreffer } = require('../utils/sperren');
 
 const router = express.Router();
 
@@ -39,6 +42,54 @@ router.post('/update', requirePermission('security.intel_update'), (req, res) =>
   if (r.wartenSek)   return res.status(429).json({ error: `Gerade erst aktualisiert — bitte noch ${r.wartenSek} s warten` });
   auditLog(req, 'security.intel_update', 'threat_intel', 'Bedrohungsdaten');
   res.status(202).json({ success: true, message: 'Aktualisierung gestartet' });
+});
+
+// ── Automatische Sperre (Threat-Feed + fail2ban-Eskalation) ──────────────────
+// Lesen: security.view. Ändern: fail2ban.ban — die Auto-Sperre setzt Dauersperren
+// in deinem Namen, also dasselbe Recht wie das Sperren von Hand.
+router.get('/auto-sperre', requirePermission('security.view'), (req, res) => {
+  const s = autoSperre.getStatus();
+  const ip = anfrageIp(req);
+  const sichtbar = (x) => canAccessAgent(x.agentId, req.user?.role);
+  res.json({
+    einstellungen: s.einstellungen,
+    verteilung: threatIntel.ipsumVerteilung(),
+    ipsumStand: threatIntel.ipsumStand(),
+    server: s.server.filter(sichtbar).map(x => ({ agentId: x.agentId, name: x.name, feed: x.feed, eskalation: x.eskalation })),
+    letzteEskalationen: s.letzteEskalationen.filter(sichtbar),
+    abgleich: { laeuft: s.running, lastRunAt: s.lastRunAt, lastError: s.lastError },
+    deineIp: ip ? { ip, blocklisten: threatIntel.blocklisten(ip), aufWhitelist: !!whitelistTreffer(ip) } : null,
+    agentAb: autoSperre.AGENT_AB,
+  });
+});
+
+router.put('/auto-sperre', requirePermission('fail2ban.ban'), (req, res) => {
+  const b = req.body || {};
+  const schwelle = (v) => (Number.isInteger(v) && v >= 1 && v <= 10 ? v : null);
+  if (typeof b.feed !== 'boolean' || typeof b.eskalation !== 'boolean') {
+    return res.status(400).json({ error: 'feed und eskalation müssen true oder false sein' });
+  }
+  const neu = {
+    feed: b.feed, feedSchwelle: schwelle(b.feedSchwelle),
+    eskalation: b.eskalation, eskalationSchwelle: schwelle(b.eskalationSchwelle),
+  };
+  if (!neu.feedSchwelle || !neu.eskalationSchwelle) return res.status(400).json({ error: 'Schwellen müssen zwischen 1 und 10 liegen' });
+
+  // Wer den Feed einschaltet, soll sich nicht selbst aussperren.
+  const ip = anfrageIp(req);
+  const listen = ip ? threatIntel.blocklisten(ip) : 0;
+  if (neu.feed && b.trotzdem !== true && listen >= neu.feedSchwelle && !whitelistTreffer(ip)) {
+    return res.status(409).json({
+      error: `Deine aktuelle Adresse ${ip} steht auf ${listen} Blocklisten und würde gesperrt. Trage sie vorher in die Whitelist ein.`,
+      bestaetigungNoetig: true,
+    });
+  }
+  const vorher = autoSperre.einstellungen();
+  autoSperre.einstellungenSpeichern(neu);
+  auditLog(req, 'security.auto_sperre', 'auto_sperre', null, { vorher, nachher: neu });
+  autoSperre.anstossen();
+  if (neu.eskalation && !vorher.eskalation) autoSperre.eskalierenJetzt();
+  res.json({ success: true, einstellungen: neu });
 });
 
 module.exports = router;

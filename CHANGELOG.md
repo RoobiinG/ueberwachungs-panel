@@ -16,6 +16,39 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [8.1.0.0] - 2026-10-01 (Build 394) — *Tripwire*
+
+### Neue Funktionen
+- **Automatische Sperre**, im Security Center unter *Bedrohungsdaten*. Nach dem Update ist sie **aus** und wird dort eingeschaltet.
+  - **Threat-Feed:** Adressen, die auf mehreren öffentlichen Blocklisten stehen (IPsum, Standard: ab 3 Listen, rund 17 000 Adressen), sperrt jeder Server vorab per nftables. Sie erreichen fail2ban gar nicht erst. Die Liste aktualisiert sich mit jedem neuen IPsum-Stand (täglich). Die Schwelle ist von 1 bis 10 einstellbar, die Anzahl der betroffenen Adressen steht direkt dabei.
+  - **fail2ban-Eskalation:** Sperrt fail2ban eine Adresse, die auch auf Blocklisten steht (Standard: ab 1 Liste), wird daraus eine Dauersperre. Sie erscheint unter *Dauerhaft gesperrte IPs* mit der Quelle „Automatisch" und dem auslösenden Jail. Geprüft wird alle 2 Minuten, höchstens 50 neue Sperren je Server und Durchlauf.
+  - Übersicht je Server: Anzahl gesperrter Feed-Adressen, verworfene Pakete, Stand der Eskalation und die zuletzt automatisch gesperrten Adressen.
+  - Nie gesperrt werden die Adressen der Server selbst, die des Panels, private und reservierte Netze, Einträge der Whitelist und Adressen mit einer gerade aktiven SSH-Sitzung.
+  - Steht die eigene Adresse auf so vielen Listen, dass der Feed sie sperren würde, fragt das Panel vor dem Einschalten nach.
+- **Whitelist für alle Server**, im Security Center unter *Fail2Ban & Sperren*. Eingetragene Adressen und Netze sperrt fail2ban auf keinem Server, und keine Sperre des Panels greift für sie (von Hand, Eskalation oder Threat-Feed).
+  - fail2ban übernimmt die Einträge sofort (`ignoreip` je Jail). Laufende Sperren gelisteter Adressen werden aufgehoben.
+  - Damit sie auch einen Neustart von fail2ban überstehen, legt der Agent `/etc/fail2ban/jail.d/zz-panel-agent-whitelist.local` an. Eigene `ignoreip`-Einträge in `jail.local` bleiben erhalten. Die Datei wird nur übernommen, wenn `fail2ban-client -t` die Konfiguration danach als gültig meldet, sonst nimmt der Agent sie sofort zurück. Zusätzlich trägt er fehlende Einträge jede Minute nach.
+  - „Meine aktuelle Adresse eintragen" mit einem Klick, Notiz je Eintrag, Herkunft und Provider. Je Server ist zu sehen, ob die Whitelist in welchen Jails angekommen ist.
+  - Ist eine Adresse schon dauerhaft gesperrt, fragt das Panel nach und hebt die Sperre beim Aufnehmen auf.
+  - Eine Dauersperre für eine Adresse auf der Whitelist lehnt das Panel ab, ebenso „Auswerfen und sperren".
+- **Neues Recht** *Whitelist verwalten* (`fail2ban.whitelist`) in der Kategorie *Sicherheit*. Die automatische Sperre schaltet, wer *IP dauerhaft sperren* hat. Ohne das jeweilige Recht gibt es weder Schalter noch Formular in der Oberfläche, und das Backend lehnt jede Änderung ab.
+
+### Verbesserungen
+- **Dauerhaft gesperrte IPs:** Die Kopfzeile zeigt den Threat-Feed (Adressen und verworfene Pakete) und die Größe der Whitelist. Die verworfenen Pakete werden jetzt getrennt nach eigenen Sperren und Threat-Feed gezählt.
+- Audit-Log, Aktions-Benachrichtigungen und Diagnose-Bericht kennen die neuen Aktionen bzw. den neuen Hintergrund-Job.
+
+### System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen (automatisch):** neue Tabelle `fail2ban_whitelist` und ein Einstellungs-Eintrag `auto_sperre`. Bestehende Daten bleiben unverändert.
+- **Agent-Kompatibilität:** Threat-Feed und Whitelist brauchen **Agent v2.20.0**. Das Panel rollt ihn nach dem Start automatisch aus. Ältere Agents zeigen „Agent ab v2.20.0 nötig" statt eines Fehlers. Die Eskalation funktioniert ab Agent v2.19.1.
+- **Änderungen auf den Servern:** Erst, wenn die jeweilige Funktion genutzt wird.
+  - Die nftables-Tabelle `inet panel_guard` bekommt die Sets `threat4`, `allow4` und `allow6`. Bei eingeschaltetem Feed mit Schwelle 3 enthält sie rund 17 000 Elemente, das Laden dauert unter einer Sekunde.
+  - Neue Dateien `/etc/panel-agent/threatfeed.json` und `whitelist.json` (nur für root lesbar).
+  - Bei Whitelist-Einträgen zusätzlich `/etc/fail2ban/jail.d/zz-panel-agent-whitelist.local`. Leert man die Whitelist, entfernt der Agent die Datei wieder.
+  - Bestehende Dauersperren bleiben unverändert.
+- **Netzwerk:** Das Panel schickt die Feed-Liste (rund 270 KB) nur, wenn sich Stand oder Schwelle geändert haben. Nach außen gehen keine zusätzlichen Daten.
+- **Rechte:** Das neue Recht haben zunächst nur Admin-Rollen. Andere Rollen bekommen es ausschließlich über *Rollen & Berechtigungen*.
+- **Neustart/Session:** Kein Session-Verlust. Nach dem Update einmal neu laden.
+
 ## [8.0.0.0] - 2026-10-01 (Build 393) — *Watchtower*
 
 ### Neue Funktionen

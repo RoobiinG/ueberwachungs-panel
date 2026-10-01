@@ -71,6 +71,7 @@ const ACTION_LABELS  = {
   start: 'gestartet', stop: 'gestoppt', restart: 'neugestartet',
   shutdown: 'heruntergefahren', kill: 'beendet', pause: 'pausiert', unpause: 'fortgesetzt',
   ip_block: 'dauerhaft gesperrt', ip_unblock: 'entsperrt', ssh_kick: 'ausgeworfen',
+  ip_whitelist: 'in die Whitelist aufgenommen', ip_unwhitelist: 'aus der Whitelist entfernt',
 };
 
 // ── Alert-Toast ────────────────────────────────────────────────────────────────
