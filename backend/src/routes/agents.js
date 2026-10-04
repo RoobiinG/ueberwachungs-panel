@@ -1332,10 +1332,20 @@ async function regelnLesen(agent) {
   return Array.isArray(data) ? data : (data?.rules || []);
 }
 
+// Die Regelliste des Agenten enthält bei nftables die Eingangsketten *aller* Tabellen, und
+// ein nft-Handle gilt nur innerhalb seiner Tabelle: „9" kann in inet/filter fehlen und in
+// inet/panel_guard stehen. Gelöscht wird numerisch aber nur in inet/filter/input — also zählt
+// für „ist die Regel noch da?" nur diese Kette. Bei allen anderen Werkzeugen (ufw, iptables,
+// firewalld, Docker-Regeln) ist `raw` kein JSON, dort entscheidet die ID allein.
+const imLoeschziel = (r) => {
+  try { const j = JSON.parse(r.raw); return j.family === 'inet' && j.table === 'filter' && j.chain === 'input'; }
+  catch { return true; }
+};
+
 // Fehlt die Regel in der aktuellen Liste des Agenten? Bei nicht lesbarer Liste false — dann
 // lässt sich nichts belegen, und ein Fehler bleibt ein Fehler.
 async function regelFehlt(agent, id) {
-  try { return !(await regelnLesen(agent)).some(x => String(x.id) === id); }
+  try { return !(await regelnLesen(agent)).some(x => String(x.id) === id && imLoeschziel(x)); }
   catch { return false; }
 }
 

@@ -16,6 +16,14 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [8.1.0.2] - 2026-10-04 (Build 396) — *Sicherungsnetz*
+
+### Bugfixes
+- **Firewall — Regel löschen bei älteren Agents (vor v2.20.1):** Die Nachbesserung aus 8.1.0.1 griff nicht, wenn der Handle der fehlenden Regel zufällig auch in einer anderen nftables-Tabelle vorkommt (z. B. `inet panel_guard`, deren Regeln ebenfalls in der Liste stehen). Handles gelten nur je Tabelle; das Panel prüft jetzt genau die Kette, in der gelöscht wird (`inet filter input`). Ab Agent v2.20.1 war das ohnehin richtig.
+
+### System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen:** keine. **Agent-Kompatibilität:** unverändert, keine Agent-Änderung. **Rechte:** unverändert. **Neustart/Session:** kein Session-Verlust.
+
 ## [8.1.0.1] - 2026-10-04 (Build 395) — *Sicherungsnetz*
 
 ### Bugfixes
