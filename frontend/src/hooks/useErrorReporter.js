@@ -80,7 +80,10 @@ export function useErrorReporter() {
 
         // Upstream-Agent-Verbindungsfehler (502/504) sind normale Monitoring-Zustände (z. B. Server offline/Neustart),
         // keine Software-Fehler des Panels.
-        const isUpstreamAgentError = (status === 502 || status === 504) && url.includes('/api/agents/');
+        // Dasselbe gilt für Antworten, die das Panel selbst als Zustand einer Gegenstelle kennzeichnet
+        // (`upstream: true`, z. B. NPM nicht erreichbar) — das Panel hat sie sauber abgefangen.
+        const isUpstreamAgentError = ((status === 502 || status === 504) && url.includes('/api/agents/'))
+                                  || error.response?.data?.upstream === true;
         const isCanceled = error.code === 'ERR_CANCELED';
 
         // Auth-Flows (401/403) und fehlende Ressourcen (404) sind erwartet → ignorieren

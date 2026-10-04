@@ -18,7 +18,7 @@ const execAsync = promisify(exec);
 // sondern ein Argument-Array. Sonderzeichen in Volume-/Netzwerk-/Image-Namen können
 // so nicht als Shell-Syntax gedeutet werden.
 const execFileAsync = promisify(execFile);
-const VERSION = '2.20.0';
+const VERSION = '2.20.1';
 
 // Ob die Container-Konsole angeboten werden kann. Steht erst nach dem Laden von
 // ws/node-pty am Ende dieser Datei fest und wird über /ping und /version gemeldet,
@@ -75,6 +75,37 @@ async function getSyslogs(since) {
 
 const TOKEN = process.env.PANEL_AGENT_TOKEN || '';
 const DIR   = __dirname;
+
+// ─── Selbst-Rollback nach einem Update ────────────────────────────────────────
+// Das Update legt vor dem Austausch eine Kopie des alten Scripts (`panel-agent.js.prev`) und
+// einen Marker (`update-pending.json`) ab. Jeder Start zählt im Marker mit; ein Agent, der
+// 60 s nach dem Start noch lebt, löscht ihn (siehe server.listen). Findet ein Start den
+// Marker bereits bei 3 Starts vor, läuft das neue Script nicht stabil — dann wird die alte
+// Fassung zurückgespielt und beendet; systemd (Restart=always) startet sie neu.
+//
+// Das steht bewusst direkt hier, vor aller weiteren Initialisierung: Ein Absturz später im
+// Script wird so noch erfasst. Ein Syntaxfehler dagegen kann hier nichts mehr ausrichten —
+// den fängt der `node --check` im /update-Handler ab, bevor das Script ausgetauscht wird.
+const UPDATE_MARKER = path.join(DIR, 'update-pending.json');
+const SCRIPT_PREV   = path.join(DIR, 'panel-agent.js.prev');
+const SCRIPT_SELF   = path.join(DIR, 'panel-agent.js');
+(function rollbackPruefen() {
+  try {
+    if (!fs.existsSync(UPDATE_MARKER)) return;
+    const m = JSON.parse(fs.readFileSync(UPDATE_MARKER, 'utf8'));
+    m.starts = (Number(m.starts) || 0) + 1;
+    if (m.starts >= 3 && fs.existsSync(SCRIPT_PREV)) {
+      console.error(`ROLLBACK: v${m.nach || '?'} startet nicht stabil (${m.starts} Starts) — stelle v${m.von || '?'} wieder her.`);
+      fs.copyFileSync(SCRIPT_PREV, SCRIPT_SELF);
+      fs.unlinkSync(UPDATE_MARKER);
+      process.exit(1);
+    }
+    fs.writeFileSync(UPDATE_MARKER, JSON.stringify(m));
+  } catch (err) {
+    // Die Prüfung darf den Start nie verhindern.
+    console.error('Rollback-Prüfung übersprungen:', err.message);
+  }
+})();
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -1072,13 +1103,48 @@ async function firewallAllow(port, proto, from, action, route = false, vorSperre
   }
 }
 
+// Gibt es in dieser nft-Kette noch eine Regel mit diesem Handle? Schlägt `nft list chain`
+// mit einem Exit-Code fehl, existiert die Kette (oder Tabelle) nicht — dann gibt es auch die
+// Regel nicht. Ein Fehler ohne Exit-Code (nft fehlt, Zeitüberschreitung) beweist nichts und
+// wird weitergereicht, damit ein kaputtes nft nicht als „Regel ist weg" durchgeht.
+async function _nftHandleVorhanden(familie, tabelle, kette, handle) {
+  let stdout;
+  try {
+    ({ stdout } = await execFileAsync('nft', ['-j', 'list', 'chain', familie, tabelle, kette],
+      { timeout: 10000, maxBuffer: 16 * 1024 * 1024 }));
+  } catch (err) {
+    if (typeof err.code === 'number') return false;
+    throw err;
+  }
+  const eintraege = JSON.parse(stdout || '{}').nftables || [];
+  return eintraege.some(e => e.rule && String(e.rule.handle) === String(handle));
+}
+
+// Löscht eine nft-Regel per Handle — idempotent. `true` = gelöscht, `false` = war schon weg.
+// Ob sie weg ist, wird nachgesehen statt die Fehlermeldung von nft zu parsen (die ist
+// sprachabhängig); jeder andere Fehler wird unverändert geworfen.
+async function _nftRegelLoeschen(familie, tabelle, kette, handle, opt) {
+  try {
+    await execFileAsync('nft', ['delete', 'rule', familie, tabelle, kette, 'handle', handle], opt);
+    return true;
+  } catch (err) {
+    let noch;
+    try { noch = await _nftHandleVorhanden(familie, tabelle, kette, handle); }
+    catch { throw err; }   // Gegenprobe selbst fehlgeschlagen → der ursprüngliche Fehler zählt
+    if (noch) throw err;
+    return false;
+  }
+}
+
 // ID ist je nach Tool eine Nummer, ein nft-Handle, "PORT/PROTO", "svc:NAME" oder
 // "rich:INDEX". Die firewalld-Varianten wanderten früher ungeprüft in einen
 // Shell-Befehl.
+// Rückgabe `{ entfernt }`: false, wenn die nft-Regel schon fehlte (siehe _nftRegelLoeschen).
 async function firewallDeleteRule(id) {
   const { tool } = await detectAgentFirewall();
   const s   = String(id);
   const opt = { timeout: 10000 };
+  let entfernt = true;
 
   if (tool === 'ufw') {
     if (!/^\d+$/.test(s)) throw new Error('Ungültige Regel-Nummer');
@@ -1087,7 +1153,7 @@ async function firewallDeleteRule(id) {
   } else if (tool === 'firewalld') {
     if (/^rich:\d{1,4}$/.test(s)) {
       const target = (await _richRules())[+s.slice(5)];
-      if (!target) throw new Error('Regel nicht gefunden — die Liste hat sich zwischenzeitlich geändert. Bitte neu laden.');
+      if (!target) throw _httpFehler(404, 'Regel nicht gefunden — die Liste hat sich zwischenzeitlich geändert. Bitte neu laden.');
       await execFileAsync('firewall-cmd', ['--permanent', `--remove-rich-rule=${target}`], opt);
     } else if (s.startsWith('svc:')) {
       const svc = s.slice(4);
@@ -1103,12 +1169,13 @@ async function firewallDeleteRule(id) {
 
   } else if (tool === 'nftables') {
     if (/^d\d+$/.test(s)) {
-      // Docker-Regel (DOCKER-USER, ip-Tabelle) per Handle löschen; danach Persistenz-Datei aktualisieren.
-      await execFileAsync('nft', ['delete', 'rule', 'ip', 'filter', 'DOCKER-USER', 'handle', s.slice(1)], opt);
+      // Docker-Regel (DOCKER-USER, ip-Tabelle) per Handle löschen; danach Persistenz-Datei aktualisieren
+      // — auch wenn die Regel schon fehlte, damit die Datei zum tatsächlichen Stand passt.
+      entfernt = await _nftRegelLoeschen('ip', 'filter', 'DOCKER-USER', s.slice(1), opt);
       await _persistDockerFw();
     } else {
-      if (!/^\d+$/.test(s)) throw new Error('Ungültiger Handle');
-      await execFileAsync('nft', ['delete', 'rule', 'inet', 'filter', 'input', 'handle', s], opt);
+      if (!/^\d+$/.test(s)) throw _httpFehler(400, 'Ungültiger Handle');
+      entfernt = await _nftRegelLoeschen('inet', 'filter', 'input', s, opt);
     }
 
   } else if (tool === 'iptables') {
@@ -1119,6 +1186,7 @@ async function firewallDeleteRule(id) {
   } else {
     throw new Error('Kein unterstütztes Firewall-Tool gefunden');
   }
+  return { entfernt };
 }
 
 // ─── Netzwerk ─────────────────────────────────────────────────────────────────
@@ -2647,6 +2715,29 @@ async function handler(req, res) {
         }
         const newVersion = (content.match(/^const VERSION\s*=\s*['"]([^'"]+)['"]/m) || [])[1] || 'unbekannt';
         fs.writeFileSync(tmpPath, content, 'utf8');
+
+        // Erst prüfen, dann tauschen: Ein Script mit Syntaxfehler würde den Agenten beim Neustart
+        // lahmlegen, und danach wäre er vom Panel aus nicht mehr zu erreichen. Das Argument-Array
+        // und der feste Pfad schließen jede Shell-Auswertung aus.
+        try {
+          await execFileAsync(process.execPath, ['--check', tmpPath], { timeout: 15000 });
+        } catch (checkErr) {
+          try { fs.unlinkSync(tmpPath); } catch {}
+          const grund = String(checkErr.stderr || checkErr.message).trim().split('\n').slice(0, 3).join(' | ').slice(0, 300);
+          return respond(res, 400, { error: `Neues Script ist ungültig — Update abgelehnt, die alte Version läuft weiter (${grund})` });
+        }
+
+        // Rückweg vorbereiten: Kopie des laufenden Scripts und ein Marker, an dem der Start
+        // (rollbackPruefen) erkennt, dass ein Update noch nicht als gesund bestätigt ist.
+        try {
+          fs.copyFileSync(selfPath, SCRIPT_PREV);
+          fs.writeFileSync(UPDATE_MARKER, JSON.stringify({ von: VERSION, nach: newVersion, at: Date.now(), starts: 0 }));
+        } catch (backupErr) {
+          // Ohne Backup kein Update — sonst gäbe es im Fehlerfall keinen Weg zurück.
+          try { fs.unlinkSync(tmpPath); } catch {}
+          return respond(res, 500, { error: `Sicherung der alten Version fehlgeschlagen — Update abgelehnt (${backupErr.message})` });
+        }
+
         fs.renameSync(tmpPath, selfPath);
         respond(res, 200, { success: true, oldVersion: VERSION, newVersion, message: 'Agent wird neu gestartet…' });
         setTimeout(() => exec('systemctl restart panel-agent', () => {}), 1500);
@@ -2782,8 +2873,11 @@ async function handler(req, res) {
 
     } else if (url.startsWith('/firewall/rules/') && req.method === 'DELETE') {
       const id = decodeURIComponent(url.split('/').slice(3).join('/'));
-      await firewallDeleteRule(id);
-      respond(res, 200, { success: true });
+      // Idempotent: Eine Regel, die schon fehlt, ist das gewünschte Ergebnis (200, kein 500).
+      const { entfernt } = await firewallDeleteRule(id);
+      respond(res, 200, entfernt
+        ? { success: true, bereitsEntfernt: false }
+        : { success: true, bereitsEntfernt: true, message: 'Regel war bereits entfernt' });
 
     // ── Festplatten & System (Modul 7) ─────────────────────────────────────────
     } else if (url === '/disks/smart' && req.method === 'GET') {
@@ -3037,7 +3131,9 @@ async function handler(req, res) {
       respond(res, 404, { error: 'Not found' });
     }
   } catch (err) {
-    respond(res, 500, { error: err.message });
+    // Fehler mit eigenem HTTP-Status (_httpFehler) behalten ihn — „Regel nicht gefunden" ist ein 404 und kein 500.
+    const status = Number.isInteger(err.status) && err.status >= 400 && err.status < 600 ? err.status : 500;
+    respond(res, status, { error: err.message, ...(status !== 500 ? (err.extra || {}) : {}) });
   }
 }
 
@@ -3065,6 +3161,9 @@ server.on('error', (err) => {
 server.listen(PORT, '0.0.0.0', () => {
   const proto = useTLS ? 'HTTPS' : 'HTTP (kein Zertifikat gefunden — unsicher!)';
   console.log(`Panel Agent v${VERSION} [${proto}] läuft auf Port ${PORT}`);
+  // Hat der Agent 60 s nach dem Start noch gelebt, gilt ein vorangegangenes Update als gesund
+  // — der Marker für den Selbst-Rollback entfällt. `unref`, damit der Timer den Prozess nicht hält.
+  setTimeout(() => { try { fs.unlinkSync(UPDATE_MARKER); } catch {} }, 60_000).unref();
   if (!TOKEN) {
     console.error('SICHERHEIT: Kein PANEL_AGENT_TOKEN gesetzt — alle Anfragen werden abgewiesen!');
     console.error('           Bitte /etc/panel-agent/env konfigurieren und den Service neu starten.');

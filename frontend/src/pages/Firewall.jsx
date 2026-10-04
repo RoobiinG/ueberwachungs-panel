@@ -326,10 +326,15 @@ export default function Firewall({ serverId }) {
     if (isAllow && !confirmLockout(rule.port, 'Diese Regel erlaubt ihn gerade — beim Löschen fällt die Erlaubnis weg.')) return;
     if (!confirm(`Regel ${ids.join(' + ')} wirklich löschen?`)) return;
     try {
+      // Löschen ist idempotent: War die Regel auf dem Server schon weg (z. B. direkt dort
+      // entfernt), antwortet das Panel mit Erfolg und `bereitsEntfernt` statt mit einem Fehler.
+      let bereitsWeg = false;
       for (const id of [...ids].sort(byNumberDesc)) {
-        await axios.delete(`${apiBase}/firewall/rules/${encodeURIComponent(id)}`);
+        const { data } = await axios.delete(`${apiBase}/firewall/rules/${encodeURIComponent(id)}`);
+        if (data?.bereitsEntfernt) bereitsWeg = true;
       }
-      await load();
+      await load();   // setzt die Meldung zurück — deshalb der Hinweis erst danach
+      if (bereitsWeg) setError('Die Regel war auf dem Server bereits entfernt — die Liste wurde aktualisiert.');
     } catch (err) {
       setError(humanError(err.response?.data?.error || 'Fehler beim Löschen', !selectedServer));
     }

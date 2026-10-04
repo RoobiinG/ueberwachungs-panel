@@ -6,6 +6,7 @@ const { auditLog } = require('../utils/audit');
 const { checkAllMonitors } = require('../utils/sslMonitor');
 const { sendTestMail } = require('../utils/smtpTest');
 const { validatePublicUrl } = require('../utils/validateUrl');
+const { mitRetry, istVorVerbindung, upstreamFehler } = require('../utils/httpRetry');
 
 const SENSITIVE = ['hetzner_api_token', 'mchost_password', 'mchost_api_token', 'dsh_api_token', 'ipapi_is_key', 'smtp_pass', 'github_token', 'npm_password', 'npm_token'];
 
@@ -145,10 +146,14 @@ router.post('/npm/login', requirePermission('settings.manage'), async (req, res)
       ? { challenge_token, code: totp_code } 
       : { identity: email, secret: password };
 
-    const { data } = await axios.post(url, payload, {
+    // Ein einzelner Timeout bei NPM ist meist ein Aussetzer: bis zu 3 Versuche mit Backoff,
+    // je Versuch höchstens 8 s und zusammen höchstens 25 s (bleibt unter dem Proxy-Timeout).
+    // Der 2FA-Schritt ist einmalig — nach einem Timeout weiß man nicht, ob NPM den Code schon
+    // verbraucht hat. Dort werden nur Fehler wiederholt, bei denen die Anfrage NPM nicht erreicht hat.
+    const { data } = await mitRetry(({ verbleibendMs }) => axios.post(url, payload, {
       headers: { 'Content-Type': 'application/json' },
-      timeout: 5000
-    });
+      timeout: Math.min(8000, Math.max(1000, verbleibendMs)),
+    }), totp_code ? { soll: istVorVerbindung } : {});
 
     if (data && data.requires_2fa) {
       return res.json({ requires_2fa: true, challenge_token: data.challenge_token });
@@ -169,8 +174,16 @@ router.post('/npm/login', requirePermission('settings.manage'), async (req, res)
       res.status(401).json({ error: 'NPM Login fehlgeschlagen: Kein Token erhalten' });
     }
   } catch (err) {
-    const msg = err.response?.data?.error?.message || err.message;
-    res.status(err.response?.status || 500).json({ error: `NPM API Fehler: ${msg}` });
+    // Timeout → 504, nicht erreichbar / NPM-Fehler → 502, abgelehnte Anmeldung → Status von NPM —
+    // jeweils mit `code`, damit die Oberfläche unterscheiden kann.
+    // Fehler, die nicht von der Anfrage an NPM stammen (z. B. beim Speichern), bleiben ein 500.
+    if (!err.isAxiosError) {
+      console.error('[NPM] Login-Route:', err);
+      return res.status(500).json({ error: `NPM Login: Interner Fehler (${err.message})` });
+    }
+    console.warn('[NPM] Login fehlgeschlagen:', err.code || err.response?.status || err.message);
+    const f = upstreamFehler(err, 'NPM');
+    res.status(f.status).json(f.body);
   }
 });
 

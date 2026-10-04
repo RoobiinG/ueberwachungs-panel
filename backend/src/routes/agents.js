@@ -1332,6 +1332,13 @@ async function regelnLesen(agent) {
   return Array.isArray(data) ? data : (data?.rules || []);
 }
 
+// Fehlt die Regel in der aktuellen Liste des Agenten? Bei nicht lesbarer Liste false — dann
+// lässt sich nichts belegen, und ein Fehler bleibt ein Fehler.
+async function regelFehlt(agent, id) {
+  try { return !(await regelnLesen(agent)).some(x => String(x.id) === id); }
+  catch { return false; }
+}
+
 function labelSetzen(agentId, scope, fp, label, notiz, von) {
   if (!label) {
     db.prepare('DELETE FROM firewall_labels WHERE agent_id = ? AND scope = ? AND fingerprint = ?').run(agentId, scope, fp);
@@ -1439,7 +1446,10 @@ router.put('/:id/firewall/rules/:num', requirePermission('firewall.manage'), asy
   }
   if (fallback) {
     try {
-      await api.delete(`/firewall/rules/${encodeURIComponent(id)}`);
+      // War die alte Regel schon weg (ältere Agents antworten dann mit 500), wird die neue
+      // trotzdem angelegt — das gewünschte Ergebnis ist „Regel existiert so".
+      try { await api.delete(`/firewall/rules/${encodeURIComponent(id)}`); }
+      catch (err) { if (!(err.response?.status === 500 && await regelFehlt(agent, id))) throw err; }
       ({ data } = await api.post(`/firewall/${action}`, { port, proto, from }));
     } catch (err) { return firewallFail(res, err); }
   }
@@ -1550,16 +1560,33 @@ router.delete('/:id/firewall/rules/:num', requirePermission('firewall.manage'), 
   if (!isValidRuleId(id)) return res.status(400).json({ error: 'Ungültige Regel-ID' });
   let altFp = null;
   try { const r = (await regelnLesen(agent)).find(x => String(x.id) === id); altFp = r ? fingerprint(r) : null; } catch {}
-  try {
-    const { data } = await agentApi(agent).delete(`/firewall/rules/${encodeURIComponent(id)}`);
+
+  // Gemeinsamer Abschluss für beide Wege: Beschriftung aufräumen, protokollieren, antworten.
+  const abschliessen = async (data, bereitsEntfernt) => {
     // Beschriftung nur entfernen, wenn keine Regel mit diesem Inhalt mehr übrig ist.
     if (altFp) {
       const { nachher } = await neueFingerprints(agent, new Set());
       if (nachher && !nachher.has(altFp)) labelSetzen(agent.id, 'rule', altFp, null);
     }
-    auditLog(req, 'firewall.delete', 'rule', `Regel ${id}`, { agentId: agent.id, agentName: agent.name });
-    res.json(data);
-  } catch (err) { firewallFail(res, err); }
+    auditLog(req, 'firewall.delete', 'rule', `Regel ${id}`,
+      { agentId: agent.id, agentName: agent.name, ...(bereitsEntfernt ? { bereitsEntfernt: true } : {}) });
+    res.json({ ...data, bereitsEntfernt });
+  };
+
+  try {
+    const { data } = await agentApi(agent).delete(`/firewall/rules/${encodeURIComponent(id)}`);
+    await abschliessen(data, data?.bereitsEntfernt === true);
+  } catch (err) {
+    // Löschen ist idempotent: Eine Regel, die auf dem Server schon fehlt (direkt dort entfernt,
+    // Handle veraltet), ist das gewünschte Ergebnis und kein Fehler. Agents ab 2.20.1 melden das
+    // selbst als Erfolg; ältere antworten mit 500 und der Roh-Meldung von nft. Deshalb hier gegen
+    // die aktuelle Regelliste prüfen (sprachunabhängig, kein Text-Parsen) — nur wenn die ID dort
+    // wirklich fehlt, gilt es als erledigt, jeder andere 500 bleibt ein Fehler.
+    if (err.response?.status === 500 && await regelFehlt(agent, id)) {
+      try { return await abschliessen({ success: true, message: 'Regel war bereits entfernt' }, true); } catch {}
+    }
+    firewallFail(res, err);
+  }
 });
 
 // ── System-Stats Proxy (CPU, RAM, Disk, Kerne) ──────────────────────────────

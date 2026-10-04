@@ -1,5 +1,11 @@
 const axios = require('axios');
 const db = require('../db');
+const { mitRetry } = require('./httpRetry');
+
+// Je Versuch höchstens 10 s, höchstens 2 Wiederholungen mit Backoff. Das läuft im
+// Hintergrund (SSL-Monitor), hier steht keine Browser-Anfrage dahinter.
+const NPM_RETRY = { versuche: 3, gesamtMs: 40_000 };
+const npmTimeout = ({ verbleibendMs }) => Math.min(10_000, Math.max(1000, verbleibendMs));
 
 /**
  * Holt eine Einstellung aus der DB
@@ -33,10 +39,10 @@ async function refreshTokenIfNeeded() {
 
   try {
     const url = `${baseUrl}/api/tokens`;
-    const { data } = await axios.post(url, {
-      identity: email,
-      secret: password
-    }, { timeout: 10000 });
+    const { data } = await mitRetry(
+      (ctx) => axios.post(url, { identity: email, secret: password }, { timeout: npmTimeout(ctx) }),
+      NPM_RETRY,
+    );
 
     if (data && data.token) {
       db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)')
@@ -65,10 +71,10 @@ async function fetchCertificates(isRetry = false) {
 
   try {
     const url = `${baseUrl}/api/nginx/certificates`;
-    const { data } = await axios.get(url, {
-      headers: { 'Authorization': `Bearer ${token}` },
-      timeout: 10000
-    });
+    const { data } = await mitRetry(
+      (ctx) => axios.get(url, { headers: { 'Authorization': `Bearer ${token}` }, timeout: npmTimeout(ctx) }),
+      NPM_RETRY,
+    );
     return data;
   } catch (err) {
     const errMsg = err.response?.data?.error?.message || err.response?.data?.message || err.message || '';

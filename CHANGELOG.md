@@ -16,6 +16,31 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [8.1.0.1] - 2026-10-04 (Build 395) — *Sicherungsnetz*
+
+### Bugfixes
+- **Firewall — Regel löschen:** Eine nftables-Regel, die auf dem Server schon fehlte (direkt dort entfernt, veralteter Handle), ergab beim Löschen einen HTTP 500. Löschen ist jetzt idempotent: Das Panel meldet Erfolg, zeigt „Die Regel war auf dem Server bereits entfernt" und aktualisiert die Liste. Das gilt auch beim Bearbeiten (die neue Regel wird dann trotzdem angelegt). Echte Fehler, etwa ein nicht ausführbares `nft`, bleiben Fehler. Eine nicht mehr vorhandene firewalld-Regel meldet 404 statt 500.
+- **Automatisches Agent-Update:**
+  - Bleibt ein Agent nach dem Update stumm, hält das den Rollout nicht mehr an: Der Server wird isoliert und im Panel-Log vermerkt, die übrigen werden weiter aktualisiert. Erst wenn **zwei Agents hintereinander** nach dem Update ausfallen (dann liegt es vermutlich am Script), stoppt der Rollout.
+  - Statt einer einzigen Prüfung nach 6 Sekunden wartet das Panel bis zu 90 Sekunden und prüft alle 3 Sekunden, ob der Agent **mit der neuen Version** antwortet. Antwortet noch die alte, gilt das Update als zurückgenommen.
+  - Die angezeigte Agent-Version wird nur noch übernommen, wenn sie stimmt (bisher stand sie auch bei einem Agent, der nie zurückkam, auf der Zielversion).
+  - Die Nachrüstung der Container-Konsole (bis zu 8 Minuten je Server) hielt den Rollout seriell auf. Sie läuft jetzt danach parallel.
+  - Vor dem Ausrollen prüft das Panel das mitgelieferte Agent-Script auf Syntaxfehler und rollt bei einem Fehler nichts aus.
+- **NGINX Proxy Manager:** Login und Zertifikatsabruf liefen bei einem einzelnen Aussetzer in einen Timeout nach 5 Sekunden und ergaben einen HTTP 500. Beide wiederholen jetzt bei vorübergehenden Fehlern (Timeout, Verbindungsabbruch, 502/503/504, 429) bis zu dreimal mit wachsender Wartezeit, höchstens 25 Sekunden insgesamt. Falsche Zugangsdaten werden nicht wiederholt, ebenso nicht der einmalige 2FA-Schritt nach einem Timeout.
+  - Die Oberfläche bekommt jetzt eine eindeutige Meldung: **504** bei Zeitüberschreitung, **502** wenn NPM nicht erreichbar ist oder selbst einen Fehler meldet, der Status von NPM bei abgelehnter Anmeldung — jeweils mit `code`, `retryable` und Anzahl der Versuche.
+  - Solche Zustände der Gegenstelle landen nicht mehr als „Panel-Fehler" in den Diagnose-Logs.
+
+### Verbesserungen
+- **Agent v2.20.1 — Rollback beim Update:** Der Agent prüft ein neues Script vor dem Austausch (`node --check`) und lehnt ein fehlerhaftes mit 400 ab, die alte Version läuft weiter. Außerdem sichert er die alte Fassung als `panel-agent.js.prev` und stellt sie selbst wieder her, wenn die neue nicht stabil startet (drei Starts, ohne dass sie 60 Sekunden durchgehalten hat).
+
+### System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen:** keine.
+- **Agent-Kompatibilität:** Das Löschen bereits fehlender Regeln funktioniert sofort auch mit Agent v2.20.0 — das Panel prüft dann gegen die aktuelle Regelliste. Syntaxprüfung, Sicherung und Selbst-Rollback brauchen **Agent v2.20.1**, den das Panel nach dem Start automatisch ausrollt. Der Schritt von 2.20.0 auf 2.20.1 läuft noch über den alten Update-Weg (dort schützt die neue Syntaxprüfung im Panel); ab dem Update danach greift der Rollback.
+- **Änderungen auf den Servern:** Im Agent-Ordner entsteht bei jedem Update `panel-agent.js.prev`; `update-pending.json` liegt dort nur bis 60 Sekunden nach einem gesunden Start. Sonst keine Änderungen.
+- **Rechte:** unverändert. Firewall-Änderungen verlangen weiterhin das Recht *Regeln verwalten* (`firewall.manage`) und Zugriff auf den jeweiligen Server.
+- **Netzwerk:** Beim Ausrollen wartet das Panel bis zu 90 Sekunden je Server auf den Agenten, bei Fehlern entsprechend mehr Anfragen (alle 3 Sekunden). Bei NPM können Anfragen bis zu dreimal gesendet werden.
+- **Neustart/Session:** Kein Session-Verlust. Das manuelle „Alle Agenten aktualisieren" wartet weiterhin nicht auf den Neustart.
+
 ## [8.1.0.0] - 2026-10-01 (Build 394) — *Tripwire*
 
 ### Neue Funktionen
