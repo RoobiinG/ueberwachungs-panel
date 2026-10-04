@@ -2,6 +2,7 @@ import { Pencil, Trash2, Tag, AlertTriangle, UserPlus } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Badge } from '../ui/Badge';
 import { istErlaubt } from '../../utils/firewallGruppen';
+import SystemRegelBadge from './SystemRegelBadge';
 
 const RICHTUNG = { in: 'eingehend', out: 'ausgehend', fwd: 'Weiterleitung' };
 
@@ -54,19 +55,20 @@ export default function FirewallGruppe({ gruppe, darfSchreiben, onBearbeiten, on
           return (
             <li key={r.ids?.join('+') ?? r.id} className="px-3 py-2 border-b border-panel-border/30 last:border-0 text-xs">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <span className="text-[11px] text-panel-muted font-mono tabular-nums w-10">#{r.ids?.join('+') ?? r.id}</span>
+                <span className="text-[11px] text-panel-muted font-mono tabular-nums w-10">#{r.readonly ? '—' : (r.ids?.join('+') ?? r.id)}</span>
                 <span className={`font-semibold w-20 ${erlaubt ? 'text-panel-green' : 'text-panel-red'}`}>{erlaubt ? '✓ Erlaubt' : '✗ Gesperrt'}</span>
                 <span className="font-mono">
                   {quelle ? <><span className="text-panel-muted">von </span><span className="text-panel-text">{quelle}</span></> : <span className="text-panel-muted">für alle</span>}
                 </span>
                 {r.families?.size > 1 && <span className="text-[9px] px-1 py-0.5 rounded bg-panel-surface border border-panel-border text-panel-muted">IPv4+IPv6</span>}
+                {r.readonly && <SystemRegelBadge grund={r.readonlyGrund} />}
                 {r.label ? (
                   <span className="inline-flex items-center gap-1 text-panel-text" title={r.notiz || (r.labelQuelle === 'firewall' ? 'Kommentar aus der Firewall' : '')}>
                     <Tag size={10} className="text-panel-muted" />{r.label}
                     {r.labelQuelle === 'firewall' && <span className="text-[9px] text-panel-muted">(Kommentar)</span>}
                   </span>
                 ) : null}
-                {darfSchreiben && (
+                {darfSchreiben && !r.readonly && (
                   <span className="ml-auto flex items-center gap-1">
                     <Button size="sm" variant="ghost" onClick={() => onBeschriften('rule', r.fingerprint, r.labelQuelle === 'panel' ? r.label : '', r.notiz)} title="Regel beschriften">
                       <Tag size={11} />

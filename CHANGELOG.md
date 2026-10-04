@@ -16,6 +16,20 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [8.1.0.3] - 2026-10-04 (Build 397) — *Sicherungsnetz*
+
+### Bugfixes
+- **Firewall — Regeln aus fremden nftables-Tabellen:** Die Regelliste zeigte bei nftables neben `inet filter input` auch die Eingangsketten anderer Tabellen (vor allem die Dauersperren, Whitelist und den Threat-Feed des Panels in `inet panel_guard`), jeweils nur mit der nackten Handle-Nummer. Ein Handle gilt aber nur innerhalb seiner Tabelle, gelöscht wurde immer in `inet filter input`. Wer in der Oberfläche eine solche Regel löschte, traf dadurch eine **andere Regel mit gleicher Nummer** in `inet filter input`, oder das Panel meldete „bereits entfernt", während die eigentliche Regel blieb.
+  - Regeln außerhalb von `inet filter input` haben jetzt eine eindeutige ID (`nft:<Familie>:<Tabelle>:<Kette>:<Handle>`) und sind schreibgeschützt: In der Liste und in der Port-Ansicht tragen sie das Kennzeichen *System* mit Erklärung, die Knöpfe *Bearbeiten*, *Löschen* und *Beschriften* fehlen. Die Dauersperren bleiben wie bisher unter *Security Center → Dauerhaft gesperrte IPs* verwaltbar.
+  - Agent und Panel lehnen das Ändern oder Löschen solcher Regeln ab (400 mit Erklärung). Das Panel kennzeichnet sie auch bei Agents vor v2.20.2.
+  - Gleiches gilt für selbst angelegte nftables-Tabellen auf den Servern: sichtbar, aber nicht änderbar.
+
+### System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen:** keine. Beschriftungen hängen am Regelinhalt und nicht an der ID, bleiben also erhalten.
+- **Agent-Kompatibilität:** Das Panel kennzeichnet die Regeln sofort auch bei Agent v2.20.0/v2.20.1. Die Ablehnung im Agent selbst und die eindeutigen IDs brauchen **Agent v2.20.2**, den das Panel nach dem Start automatisch ausrollt (mit Sicherung und Selbst-Rollback aus v2.20.1).
+- **Rechte:** unverändert.
+- **Nach dem Update:** Seite einmal neu laden. IDs von `inet panel_guard`-Regeln erscheinen in der Liste nicht mehr als Nummer (Anzeige „—").
+
 ## [8.1.0.2] - 2026-10-04 (Build 396) — *Sicherungsnetz*
 
 ### Bugfixes

@@ -5,6 +5,7 @@ import { Button } from '../components/ui/Button';
 import { Modal } from '../components/ui/Modal';
 import { useAuth } from '../context/AuthContext';
 import FirewallGruppe from '../components/Security/FirewallGruppe';
+import SystemRegelBadge from '../components/Security/SystemRegelBadge';
 import { gruppiereRegeln } from '../utils/firewallGruppen';
 import {
   Plus, Trash2, RefreshCw, Shield, Power, ScanSearch,
@@ -240,6 +241,7 @@ export default function Firewall({ serverId }) {
   };
 
   const openEdit = (r) => {
+    if (r.readonly) return;   // z. B. Dauersperren aus panel_guard — die Knöpfe fehlen dort ohnehin
     setEditingRule({ id: r.ids?.[0] ?? r.id, ids: r.ids ?? [r.id] });
     setForm({
       port:   r.port !== 'any' ? (r.port ?? r.to ?? '') : '',
@@ -319,6 +321,7 @@ export default function Firewall({ serverId }) {
   };
 
   const deleteRule = async (rule) => {
+    if (rule.readonly) return;
     const ids = (rule.ids ?? [rule.id]).filter(v => v != null);
     const isAllow = rule.action === 'allow' || rule.action?.toUpperCase?.().includes('ALLOW');
     // Eine Erlaubnis auf einem Zugangs-Port zu löschen sperrt genauso aus wie eine
@@ -624,7 +627,8 @@ export default function Firewall({ serverId }) {
 
             {paginated.map((r, i) => {
               const isAllow     = r.action === 'allow' || r.action?.toUpperCase?.().includes('ALLOW');
-              const displayId   = r.id   ?? r.num ?? ((page - 1) * PAGE_SIZE + i + 1);
+              // Regeln aus fremden nft-Tabellen haben eine lange technische ID — die gehört nicht in die schmale Spalte.
+              const displayId   = r.readonly ? '—' : (r.id ?? r.num ?? ((page - 1) * PAGE_SIZE + i + 1));
               const displayPort = (r.port && r.port !== 'any') ? r.port : (r.to || null);
               const displayFrom = (r.from && r.from !== 'any') ? r.from : null;
               const displayProto = (r.proto && r.proto !== 'any') ? r.proto.toUpperCase() : null;
@@ -642,7 +646,7 @@ export default function Firewall({ serverId }) {
                       <span className="sm:hidden mr-1 font-sans text-[10px] uppercase">ID:</span>{displayId}
                     </span>
                     {/* Aktionen auf Mobil oben rechts, auf Desktop am Ende */}
-                    {darfSchreiben && (
+                    {darfSchreiben && !r.readonly && (
                       <div className="flex sm:hidden items-center gap-1">
                         <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>
                           <Pencil size={11} />Bearbeiten
@@ -682,6 +686,7 @@ export default function Firewall({ serverId }) {
                           FWD
                         </span>
                       )}
+                      {r.readonly && <SystemRegelBadge grund={r.readonlyGrund} />}
                     </span>
                   </span>
 
@@ -710,7 +715,7 @@ export default function Firewall({ serverId }) {
                   </span>
 
                   {/* Aktionen Desktop */}
-                  {darfSchreiben && (
+                  {darfSchreiben && !r.readonly && (
                     <div className="hidden sm:flex items-center gap-1 justify-end">
                       <Button size="sm" variant="ghost" onClick={() => openEdit(r)}>
                         <Pencil size={11} />Bearbeiten

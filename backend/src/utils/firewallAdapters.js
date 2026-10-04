@@ -433,7 +433,15 @@ class NftablesAdapter {
           }
         }
 
-        rules.push({ id: handle, port: port || 'any', proto, action, from, raw: JSON.stringify(rule) });
+        // Handles gelten nur je Tabelle — gelöscht wird nur in inet/filter/input. Alle anderen
+        // Ketten bekommen eine eindeutige ID und sind schreibgeschützt (Spiegelung der
+        // Regelliste in agent/panel-agent.js).
+        const eigene = rule.family === 'inet' && rule.table === 'filter' && rule.chain === 'input';
+        rules.push({
+          id: eigene ? handle : `nft:${rule.family}:${rule.table}:${rule.chain}:${handle}`,
+          port: port || 'any', proto, action, from, raw: JSON.stringify(rule),
+          ...(eigene ? {} : { readonly: true }),
+        });
       }
     } catch {
       // Fallback: Text-Output parsen
@@ -473,6 +481,7 @@ class NftablesAdapter {
   }
 
   async deleteRule(id) {
+    if (String(id).startsWith('nft:')) throw new Error('Diese Regel liegt nicht in „inet filter input" und wird nicht verwaltet');
     if (!/^\d+$/.test(String(id))) throw new Error('Ungültiger Handle');
     const { stdout } = await this.exec(`nft delete rule inet filter input handle ${id}`);
     return stdout;

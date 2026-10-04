@@ -18,7 +18,7 @@ const execAsync = promisify(exec);
 // sondern ein Argument-Array. Sonderzeichen in Volume-/Netzwerk-/Image-Namen können
 // so nicht als Shell-Syntax gedeutet werden.
 const execFileAsync = promisify(execFile);
-const VERSION = '2.20.1';
+const VERSION = '2.20.2';
 
 // Ob die Container-Konsole angeboten werden kann. Steht erst nach dem Laden von
 // ws/node-pty am Ende dieser Datei fest und wird über /ping und /version gemeldet,
@@ -657,6 +657,14 @@ function _parseDockerUserLine(line) {
 }
 
 // Regeln abrufen (einheitliches Format)
+// ID einer nft-Regel außerhalb von inet/filter/input: `nft:<Familie>:<Tabelle>:<Kette>:<Handle>`.
+// nft-Namen enthalten kein „:" — die Zerlegung ist eindeutig, und die ID bleibt URL-tauglich.
+// Spiegelung in backend/src/routes/agents.js (nftRegelSchuetzen) für ältere Agents.
+const _fremdeRegelId = (r) => `nft:${r.family}:${r.table}:${r.chain}:${r.handle ?? ''}`;
+const _fremdeRegelGrund = (tabelle) => tabelle === 'panel_guard'
+  ? 'Vom Panel verwaltet (Security Center: Dauerhaft gesperrte IPs, Whitelist, Threat-Feed) — hier nicht änderbar.'
+  : `Liegt in der nftables-Tabelle „${tabelle}" — das Panel verwaltet hier nur „inet filter input".`;
+
 async function getFirewallRules() {
   const { tool } = await detectAgentFirewall();
   const rules = [];
@@ -722,7 +730,16 @@ async function getFirewallRules() {
             }
           }
           const comment = typeof r.comment === 'string' ? r.comment.slice(0, 120) : null;
-          rules.push({ id: String(r.handle ?? ''), port, proto, action, from, comment, raw: JSON.stringify(r) });
+          // Ein Handle gilt nur innerhalb seiner Tabelle. Gelöscht und bearbeitet wird aber nur in
+          // inet/filter/input — dort bleibt die ID die nackte Nummer. Regeln aus jeder anderen
+          // Eingangskette (z. B. die eigene Tabelle panel_guard) bekommen eine eindeutige ID und
+          // sind schreibgeschützt; mit der bloßen Nummer hätte „Löschen" sonst eine fremde Regel
+          // mit gleichem Handle in inet/filter/input getroffen.
+          const eigene = r.family === 'inet' && r.table === 'filter' && r.chain === 'input';
+          rules.push({
+            id: eigene ? String(r.handle ?? '') : _fremdeRegelId(r), port, proto, action, from, comment, raw: JSON.stringify(r),
+            ...(eigene ? {} : { readonly: true, readonlyGrund: _fremdeRegelGrund(r.table) }),
+          });
         }
 
         // Docker-veröffentlichte Ports: DOCKER-USER-Regeln (ip filter, hängen an FORWARD und
@@ -1174,6 +1191,8 @@ async function firewallDeleteRule(id) {
       entfernt = await _nftRegelLoeschen('ip', 'filter', 'DOCKER-USER', s.slice(1), opt);
       await _persistDockerFw();
     } else {
+      // Regeln aus anderen Tabellen (siehe _fremdeRegelId) werden nie angefasst.
+      if (s.startsWith('nft:')) throw _httpFehler(400, 'Diese Regel liegt nicht in „inet filter input" und wird vom Panel nicht verwaltet — sie lässt sich hier nicht löschen.');
       if (!/^\d+$/.test(s)) throw _httpFehler(400, 'Ungültiger Handle');
       entfernt = await _nftRegelLoeschen('inet', 'filter', 'input', s, opt);
     }

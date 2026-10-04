@@ -1327,25 +1327,42 @@ function regelBody(body) {
 const saeubern = (s, max) =>
   (typeof s === 'string' ? s : '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 
-async function regelnLesen(agent) {
-  const { data } = await agentApi(agent).get('/firewall/rules');
-  return Array.isArray(data) ? data : (data?.rules || []);
-}
-
 // Die Regelliste des Agenten enthält bei nftables die Eingangsketten *aller* Tabellen, und
 // ein nft-Handle gilt nur innerhalb seiner Tabelle: „9" kann in inet/filter fehlen und in
-// inet/panel_guard stehen. Gelöscht wird numerisch aber nur in inet/filter/input — also zählt
-// für „ist die Regel noch da?" nur diese Kette. Bei allen anderen Werkzeugen (ufw, iptables,
-// firewalld, Docker-Regeln) ist `raw` kein JSON, dort entscheidet die ID allein.
-const imLoeschziel = (r) => {
-  try { const j = JSON.parse(r.raw); return j.family === 'inet' && j.table === 'filter' && j.chain === 'input'; }
-  catch { return true; }
-};
+// inet/panel_guard stehen. Gelöscht und bearbeitet wird numerisch aber nur in
+// inet/filter/input. Agents ab 2.20.2 liefern deshalb für alle übrigen Tabellen eine eindeutige
+// ID (`nft:<Familie>:<Tabelle>:<Kette>:<Handle>`) und `readonly: true`. Ältere Agents liefern
+// noch die nackte Nummer — das holt diese Funktion nach, damit das Panel für alle Agents
+// dasselbe sieht. Spiegelung von _fremdeRegelId/_fremdeRegelGrund in agent/panel-agent.js.
+// Bei allen anderen Werkzeugen (ufw, iptables, firewalld, Docker-Regeln) ist `raw` kein JSON
+// bzw. kein nft-Objekt, dort bleibt alles wie es ist.
+function nftRegelSchuetzen(r) {
+  if (r.readonly) return r;
+  let k;
+  try { k = JSON.parse(r.raw); } catch { return r; }
+  if (!k?.family || !k?.table || !k?.chain) return r;
+  if (k.family === 'inet' && k.table === 'filter' && k.chain === 'input') return r;
+  return {
+    ...r,
+    id: /^\d+$/.test(String(r.id)) ? `nft:${k.family}:${k.table}:${k.chain}:${r.id}` : r.id,
+    readonly: true,
+    readonlyGrund: k.table === 'panel_guard'
+      ? 'Vom Panel verwaltet (Security Center: Dauerhaft gesperrte IPs, Whitelist, Threat-Feed) — hier nicht änderbar.'
+      : `Liegt in der nftables-Tabelle „${k.table}" — das Panel verwaltet hier nur „inet filter input".`,
+  };
+}
+
+const FREMDE_REGEL_FEHLER = 'Diese Regel liegt nicht in „inet filter input" (z. B. Dauersperren des Panels) und wird hier nicht verwaltet — sie lässt sich nicht ändern oder löschen.';
+
+async function regelnLesen(agent) {
+  const { data } = await agentApi(agent).get('/firewall/rules');
+  return (Array.isArray(data) ? data : (data?.rules || [])).map(nftRegelSchuetzen);
+}
 
 // Fehlt die Regel in der aktuellen Liste des Agenten? Bei nicht lesbarer Liste false — dann
 // lässt sich nichts belegen, und ein Fehler bleibt ein Fehler.
 async function regelFehlt(agent, id) {
-  try { return !(await regelnLesen(agent)).some(x => String(x.id) === id && imLoeschziel(x)); }
+  try { return !(await regelnLesen(agent)).some(x => String(x.id) === id); }
   catch { return false; }
 }
 
@@ -1430,6 +1447,7 @@ router.post('/:id/firewall/toggle', requirePermission('firewall.manage'), async 
 router.put('/:id/firewall/rules/:num', requirePermission('firewall.manage'), async (req, res) => {
   const agent = firewallAgent(req, res); if (!agent) return;
   const id = String(req.params.num);
+  if (id.startsWith('nft:')) return res.status(400).json({ error: FREMDE_REGEL_FEHLER });
   if (!isValidRuleId(id)) return res.status(400).json({ error: 'Ungültige Regel-ID' });
 
   const { action } = req.body || {};
@@ -1489,7 +1507,7 @@ router.get('/:id/firewall/rules', requirePermission('firewall.view'), async (req
   if (!canAccessAgent(agent.id, req.user?.role)) return res.status(403).json({ error: 'Kein Zugriff' });
   try {
     const { data } = await agentApi(agent).get('/firewall/rules');
-    const regeln = Array.isArray(data) ? data : (data?.rules || []);
+    const regeln = (Array.isArray(data) ? data : (data?.rules || [])).map(nftRegelSchuetzen);
     const labels = new Map(db.prepare('SELECT scope, fingerprint, label, notiz FROM firewall_labels WHERE agent_id = ?')
       .all(agent.id).map(z => [`${z.scope}|${z.fingerprint}`, z]));
     const mit = regeln.map(r => {
@@ -1567,6 +1585,7 @@ router.post('/:id/firewall/deny',  requirePermission('firewall.manage'), (req, r
 router.delete('/:id/firewall/rules/:num', requirePermission('firewall.manage'), async (req, res) => {
   const agent = firewallAgent(req, res); if (!agent) return;
   const id = String(req.params.num);
+  if (id.startsWith('nft:')) return res.status(400).json({ error: FREMDE_REGEL_FEHLER });
   if (!isValidRuleId(id)) return res.status(400).json({ error: 'Ungültige Regel-ID' });
   let altFp = null;
   try { const r = (await regelnLesen(agent)).find(x => String(x.id) === id); altFp = r ? fingerprint(r) : null; } catch {}
