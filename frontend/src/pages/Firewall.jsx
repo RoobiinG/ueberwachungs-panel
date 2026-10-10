@@ -6,6 +6,7 @@ import { Modal } from '../components/ui/Modal';
 import { useAuth } from '../context/AuthContext';
 import FirewallGruppe from '../components/Security/FirewallGruppe';
 import SystemRegelBadge from '../components/Security/SystemRegelBadge';
+import SystemRegelnBereich from '../components/Security/SystemRegelnBereich';
 import { gruppiereRegeln } from '../utils/firewallGruppen';
 import {
   Plus, Trash2, RefreshCw, Shield, Power, ScanSearch,
@@ -20,6 +21,11 @@ const inputCls = 'w-full bg-panel-surface border border-panel-border rounded-md 
 const ANSICHT_KEY = 'firewall.ansicht';
 const ansichtLesen = () => { try { return localStorage.getItem(ANSICHT_KEY) === 'liste' ? 'liste' : 'gruppen'; } catch { return 'gruppen'; } };
 const ansichtMerken = (v) => { try { localStorage.setItem(ANSICHT_KEY, v); } catch { /* egal */ } };
+
+// Der Bereich „Systemregeln“ (schreibgeschützt) ist standardmäßig zu.
+const SYSTEM_KEY = 'firewall.systemregeln';
+const systemLesen = () => { try { return localStorage.getItem(SYSTEM_KEY) === 'offen'; } catch { return false; } };
+const systemMerken = (offen) => { try { localStorage.setItem(SYSTEM_KEY, offen ? 'offen' : 'zu'); } catch { /* egal */ } };
 
 const LEERES_FORMULAR = { port: '', proto: 'tcp', from: '', action: 'allow', route: false, label: '', vorSperre: false };
 
@@ -47,7 +53,10 @@ const mergeFamilies = (rules) => {
   const byKey = new Map();
   for (const r of rules) {
     const isV6 = /\(v6\)/i.test(r.raw || '') || /\(v6\)/i.test(String(r.from || ''));
-    const key  = `${r.port}|${r.proto}|${r.action}|${normFrom(r.from)}|${r.direction || 'in'}|${r.to || ''}`;
+    // Schreibgeschützte Regeln (Plesk, panel_guard …) nie zusammenfassen: jede hat ihre eigene
+    // ID und wird einzeln angezeigt bzw. gelöscht.
+    if (r.readonly) { out.push({ ...r, from: normFrom(r.from), ids: [r.id], families: new Set(['IPv4']) }); continue; }
+    const key  =`${r.port}|${r.proto}|${r.action}|${normFrom(r.from)}|${r.direction || 'in'}|${r.to || ''}`;
     const seen = byKey.get(key);
     if (seen) {
       seen.ids.push(r.id);
@@ -138,6 +147,8 @@ export default function Firewall({ serverId }) {
   const [labelDialog, setLabelDialog] = useState(null);
   const [labelSpeichert, setLabelSpeichert] = useState(false);
   const wechsleAnsicht = (v) => { setAnsicht(v); ansichtMerken(v); };
+  const [systemOffen, setSystemOffen] = useState(systemLesen);
+  const wechsleSystem = () => setSystemOffen(o => { systemMerken(!o); return !o; });
 
   const apiBase = `/api/agents/${selectedServer}`;
 
@@ -321,13 +332,18 @@ export default function Firewall({ serverId }) {
   };
 
   const deleteRule = async (rule) => {
-    if (rule.readonly) return;
+    // Schreibgeschützt bleibt alles außer den Plesk-/iptables-Regeln (`loeschbar`).
+    if (rule.readonly && !rule.loeschbar) return;
     const ids = (rule.ids ?? [rule.id]).filter(v => v != null);
     const isAllow = rule.action === 'allow' || rule.action?.toUpperCase?.().includes('ALLOW');
     // Eine Erlaubnis auf einem Zugangs-Port zu löschen sperrt genauso aus wie eine
     // Sperr-Regel anzulegen.
     if (isAllow && !confirmLockout(rule.port, 'Diese Regel erlaubt ihn gerade — beim Löschen fällt die Erlaubnis weg.')) return;
-    if (!confirm(`Regel ${ids.join(' + ')} wirklich löschen?`)) return;
+    const text = rule.readonly
+      ? `Systemregel (Plesk/iptables) „${rule.action === 'allow' ? 'erlaubt' : 'gesperrt'} ${rule.port && rule.port !== 'any' ? 'Port ' + rule.port : 'alle Ports'}${rule.from && rule.from !== 'any' ? ' von ' + rule.from : ''}“ wirklich löschen?\n\n` +
+        'Plesk legt die Regel beim nächsten Neuladen der Firewall (Änderungen übernehmen, Neustart) wieder an. Dauerhaft entfernen lässt sie sich nur in Plesk selbst.'
+      : `Regel ${ids.join(' + ')} wirklich löschen?`;
+    if (!confirm(text)) return;
     try {
       // Löschen ist idempotent: War die Regel auf dem Server schon weg (z. B. direkt dort
       // entfernt), antwortet das Panel mit Erfolg und `bereitsEntfernt` statt mit einem Fehler.
@@ -406,18 +422,22 @@ export default function Firewall({ serverId }) {
       || (filterAct === 'deny'  && !r.action?.toUpperCase?.().includes('ALLOW'));
     return matchSearch && matchAction;
   };
-  const filtered = merged.filter(passt);
+  // Schreibgeschützte Regeln (Plesk-Firewall, Panel-Schutz, fremde nft-Tabellen) kommen in einen
+  // eigenen, einklappbaren Bereich — die Hauptliste zeigt nur, was sich hier bearbeiten lässt.
+  const eigene       = merged.filter(r => !r.readonly);
+  const systemRegeln = merged.filter(r => r.readonly);
+  const filtered = eigene.filter(passt);
 
   // Gruppen-Ansicht: Eine Gruppe erscheint, sobald eine ihrer Regeln passt — und zeigt dann
   // alle, denn die Zusammenfassung ergibt sich erst aus dem Zusammenspiel.
-  const gruppen = gruppiereRegeln(merged, detectedTool?.tool, policyWord(policy?.incoming) === 'abgelehnt')
+  const gruppen = gruppiereRegeln(eigene, detectedTool?.tool, policyWord(policy?.incoming) === 'abgelehnt')
     .filter(g => g.regeln.some(passt));
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  const allowCount = merged.filter(r => r.action === 'allow' || r.action?.toUpperCase?.().includes('ALLOW')).length;
-  const denyCount  = merged.length - allowCount;
+  const allowCount = eigene.filter(r => r.action === 'allow' || r.action?.toUpperCase?.().includes('ALLOW')).length;
+  const denyCount  = eigene.length - allowCount;
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
@@ -599,8 +619,10 @@ export default function Firewall({ serverId }) {
           </div>
         ) : paginated.length === 0 ? (
           <div className="text-panel-muted text-sm py-10 text-center px-6">
-            {rules.length > 0
+            {eigene.length > 0
               ? 'Keine Treffer für die aktuelle Suche'
+              : rules.length > 0
+              ? 'Keine Regeln, die sich hier bearbeiten lassen — die vorhandenen Systemregeln stehen unten im Bereich „Systemregeln“.'
               : detectedTool?.tool === 'nftables'
                 // Auf einem Docker-Host ist das der Normalfall: Docker bringt eigene Ketten
                 // für Weiterleitung mit, filtert eingehenden Verkehr aber nicht.
@@ -763,6 +785,14 @@ export default function Firewall({ serverId }) {
           </>
         )}
       </div>
+
+      {/* Schreibgeschützte Regeln (Plesk, Panel-Schutz, fremde Tabellen) — standardmäßig zugeklappt */}
+      {!loading && (
+        <SystemRegelnBereich
+          regeln={systemRegeln.filter(passt)} gesamt={systemRegeln.length}
+          offen={systemOffen} onToggle={wechsleSystem}
+          darfSchreiben={darfSchreiben} onLoeschen={deleteRule} />
+      )}
 
       {/* Beschriftung einer Regel oder einer ganzen Portgruppe — nur mit firewall.manage */}
       {darfSchreiben && (

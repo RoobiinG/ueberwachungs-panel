@@ -18,7 +18,7 @@ const execAsync = promisify(exec);
 // sondern ein Argument-Array. Sonderzeichen in Volume-/Netzwerk-/Image-Namen können
 // so nicht als Shell-Syntax gedeutet werden.
 const execFileAsync = promisify(execFile);
-const VERSION = '2.20.2';
+const VERSION = '2.20.3';
 
 // Ob die Container-Konsole angeboten werden kann. Steht erst nach dem Laden von
 // ws/node-pty am Ende dieser Datei fest und wird über /ping und /version gemeldet,
@@ -663,7 +663,13 @@ function _parseDockerUserLine(line) {
 const _fremdeRegelId = (r) => `nft:${r.family}:${r.table}:${r.chain}:${r.handle ?? ''}`;
 const _fremdeRegelGrund = (tabelle) => tabelle === 'panel_guard'
   ? 'Vom Panel verwaltet (Security Center: Dauerhaft gesperrte IPs, Whitelist, Threat-Feed) — hier nicht änderbar.'
-  : `Liegt in der nftables-Tabelle „${tabelle}" — das Panel verwaltet hier nur „inet filter input".`;
+  : tabelle === 'filter'
+    ? 'Regel der iptables-Tabelle „ip filter" (z. B. von der Plesk-Firewall). Bearbeiten geht hier nicht; Löschen ist möglich, Plesk legt die Regel beim nächsten Neuladen der Firewall aber wieder an.'
+    : `Liegt in der nftables-Tabelle „${tabelle}" — das Panel verwaltet hier nur „inet filter input".`;
+// Herkunft einer fremden Regel — das Panel gruppiert danach. Nur die Eingangskette der
+// iptables-Tabelle (Plesk, fail2ban-nahe Regeln) lässt sich löschen, alles andere bleibt tabu.
+const _fremdeRegelQuelle = (r) => r.table === 'panel_guard' ? 'panel'
+  : (r.family === 'ip' && r.table === 'filter' && r.chain === 'INPUT') ? 'iptables' : 'sonstige';
 
 async function getFirewallRules() {
   const { tool } = await detectAgentFirewall();
@@ -738,7 +744,10 @@ async function getFirewallRules() {
           const eigene = r.family === 'inet' && r.table === 'filter' && r.chain === 'input';
           rules.push({
             id: eigene ? String(r.handle ?? '') : _fremdeRegelId(r), port, proto, action, from, comment, raw: JSON.stringify(r),
-            ...(eigene ? {} : { readonly: true, readonlyGrund: _fremdeRegelGrund(r.table) }),
+            ...(eigene ? {} : {
+              readonly: true, readonlyGrund: _fremdeRegelGrund(r.table),
+              quelle: _fremdeRegelQuelle(r), loeschbar: _fremdeRegelQuelle(r) === 'iptables',
+            }),
           });
         }
 
@@ -1039,6 +1048,29 @@ async function _ersteSperreVor(tool, p, pr, fr, route) {
   return null;
 }
 
+// Die RELATED,ESTABLISHED-Regel muss in DOCKER-USER ganz oben stehen: Steht sie hinter einer
+// Port-Sperre, trifft die Sperre auch die Antwortpakete des Containers (Ziel-Port ist der
+// ursprüngliche Host-Port) — SYN kommt an, nie SYN-ACK zurück. `-C` allein prüft nur, dass
+// die Regel irgendwo existiert (so passiert auf Web01 nach einem Plesk-Firewall-Reload).
+// Deshalb: oben einfügen, danach alle weiter unten stehenden Duplikate entfernen — die
+// Regel fehlt dabei nie.
+const _ESTABLISHED_ZEILE = '-A DOCKER-USER -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN';
+async function _establishedAnsAnfang(opt) {
+  const lesen = async () => (await execFileAsync('iptables', ['-S', 'DOCKER-USER'], opt)).stdout
+    .split('\n').filter(l => l.startsWith('-A DOCKER-USER '));
+  let zeilen = await lesen();
+  if (zeilen[0]?.trim() === _ESTABLISHED_ZEILE) {
+    if (!zeilen.slice(1).some(l => l.trim() === _ESTABLISHED_ZEILE)) return;
+  } else {
+    await execFileAsync('iptables', ['-I', 'DOCKER-USER', '1', '-m', 'conntrack', '--ctstate', 'RELATED,ESTABLISHED', '-j', 'RETURN'], opt);
+    zeilen = await lesen();
+  }
+  // Duplikate von hinten nach vorn löschen, damit die Nummern der übrigen gültig bleiben.
+  for (let i = zeilen.length - 1; i >= 1; i--) {
+    if (zeilen[i].trim() === _ESTABLISHED_ZEILE) await execFileAsync('iptables', ['-D', 'DOCKER-USER', String(i + 1)], opt);
+  }
+}
+
 async function firewallAllow(port, proto, from, action, route = false, vorSperre = false) {
   const { tool } = await detectAgentFirewall();
   const p   = _validPort(port);
@@ -1086,8 +1118,7 @@ async function firewallAllow(port, proto, from, action, route = false, vorSperre
       // nur, wenn beide zufällig gleich sind. Deshalb den ursprünglichen Zielport prüfen.
       const dp = ['-p', prr, '-m', 'conntrack', '--ctorigdstport', p, '--ctdir', 'ORIGINAL'];
       const ensure = async (probe, add) => { try { await execFileAsync('iptables', ['-C', 'DOCKER-USER', ...probe], opt); } catch { await execFileAsync('iptables', add, opt); } };
-      await ensure(['-m','conntrack','--ctstate','RELATED,ESTABLISHED','-j','RETURN'],
-                   ['-I','DOCKER-USER','1','-m','conntrack','--ctstate','RELATED,ESTABLISHED','-j','RETURN']);
+      await _establishedAnsAnfang(opt);
       if (action === 'allow') {
         if (!fr) throw new Error('Docker-Freigabe braucht eine Quell-IP (from).');
         await ensure(['-s',fr,...dp,'-j','RETURN'], ['-I','DOCKER-USER','-s',fr,...dp,'-j','RETURN']);
@@ -1191,10 +1222,16 @@ async function firewallDeleteRule(id) {
       entfernt = await _nftRegelLoeschen('ip', 'filter', 'DOCKER-USER', s.slice(1), opt);
       await _persistDockerFw();
     } else {
-      // Regeln aus anderen Tabellen (siehe _fremdeRegelId) werden nie angefasst.
-      if (s.startsWith('nft:')) throw _httpFehler(400, 'Diese Regel liegt nicht in „inet filter input" und wird vom Panel nicht verwaltet — sie lässt sich hier nicht löschen.');
-      if (!/^\d+$/.test(s)) throw _httpFehler(400, 'Ungültiger Handle');
-      entfernt = await _nftRegelLoeschen('inet', 'filter', 'input', s, opt);
+      // Regeln aus anderen Tabellen (siehe _fremdeRegelId) werden nie angefasst — mit einer
+      // Ausnahme: die Eingangskette der iptables-Tabelle (Plesk-Firewall) darf gelöscht werden.
+      const plesk = s.match(/^nft:ip:filter:INPUT:(\d+)$/);
+      if (plesk) {
+        entfernt = await _nftRegelLoeschen('ip', 'filter', 'INPUT', plesk[1], opt);
+      } else {
+        if (s.startsWith('nft:')) throw _httpFehler(400, 'Diese Regel liegt nicht in „inet filter input" und wird vom Panel nicht verwaltet — sie lässt sich hier nicht löschen.');
+        if (!/^\d+$/.test(s)) throw _httpFehler(400, 'Ungültiger Handle');
+        entfernt = await _nftRegelLoeschen('inet', 'filter', 'input', s, opt);
+      }
     }
 
   } else if (tool === 'iptables') {

@@ -1342,13 +1342,18 @@ function nftRegelSchuetzen(r) {
   try { k = JSON.parse(r.raw); } catch { return r; }
   if (!k?.family || !k?.table || !k?.chain) return r;
   if (k.family === 'inet' && k.table === 'filter' && k.chain === 'input') return r;
+  const plesk = k.family === 'ip' && k.table === 'filter' && k.chain === 'INPUT';
   return {
     ...r,
     id: /^\d+$/.test(String(r.id)) ? `nft:${k.family}:${k.table}:${k.chain}:${r.id}` : r.id,
     readonly: true,
+    quelle: k.table === 'panel_guard' ? 'panel' : plesk ? 'iptables' : 'sonstige',
+    loeschbar: plesk,
     readonlyGrund: k.table === 'panel_guard'
       ? 'Vom Panel verwaltet (Security Center: Dauerhaft gesperrte IPs, Whitelist, Threat-Feed) — hier nicht änderbar.'
-      : `Liegt in der nftables-Tabelle „${k.table}" — das Panel verwaltet hier nur „inet filter input".`,
+      : plesk
+        ? 'Regel der iptables-Tabelle „ip filter" (z. B. von der Plesk-Firewall). Bearbeiten geht hier nicht; Löschen ist möglich, Plesk legt die Regel beim nächsten Neuladen der Firewall aber wieder an.'
+        : `Liegt in der nftables-Tabelle „${k.table}" — das Panel verwaltet hier nur „inet filter input".`,
   };
 }
 
@@ -1585,8 +1590,10 @@ router.post('/:id/firewall/deny',  requirePermission('firewall.manage'), (req, r
 router.delete('/:id/firewall/rules/:num', requirePermission('firewall.manage'), async (req, res) => {
   const agent = firewallAgent(req, res); if (!agent) return;
   const id = String(req.params.num);
-  if (id.startsWith('nft:')) return res.status(400).json({ error: FREMDE_REGEL_FEHLER });
-  if (!isValidRuleId(id)) return res.status(400).json({ error: 'Ungültige Regel-ID' });
+  // Einzige Ausnahme von „fremde Regeln sind tabu“: die Eingangskette der iptables-Tabelle (Plesk-Firewall).
+  const pleskRegel = /^nft:ip:filter:INPUT:\d{1,9}$/.test(id);
+  if (id.startsWith('nft:') && !pleskRegel) return res.status(400).json({ error: FREMDE_REGEL_FEHLER });
+  if (!pleskRegel && !isValidRuleId(id)) return res.status(400).json({ error: 'Ungültige Regel-ID' });
   let altFp = null;
   try { const r = (await regelnLesen(agent)).find(x => String(x.id) === id); altFp = r ? fingerprint(r) : null; } catch {}
 

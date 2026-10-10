@@ -16,6 +16,20 @@ Auf `5.9.x.x` folgt also `6.0.0.0`. Beim Erhöhen einer Stelle werden alle dahin
 Einstellig ist **nur** die zweite Stelle — die dritte und vierte dürfen zweistellig werden
 (nach `5.1.1.9` folgt `5.1.1.10`), damit eine längere Bugfix-Reihe am selben Thema zusammenbleibt.
 
+## [8.1.1.0] - 2026-10-10 (Build 398) — *Klarsicht*
+
+### Änderungen
+- **Firewall — Systemregeln eingeklappt und nach Herkunft gruppiert:** Auf Servern mit Plesk zeigte die Regelliste dutzende schreibgeschützte Zeilen aus der iptables-Tabelle `ip filter` (Plesk-Firewall), die sich nicht bearbeiten ließen und die eigenen Regeln überdeckten. Die Hauptliste (gruppiert und flach) zeigt jetzt nur noch Regeln, die sich im Panel verwalten lassen; Zähler *erlaubt/gesperrt* zählen nur diese. Alle schreibgeschützten Regeln stehen darunter im neuen, standardmäßig zugeklappten Bereich **Systemregeln**, gruppiert nach *Plesk / iptables*, *Panel-Schutz* und *Weitere nftables-Tabellen*. Der Zustand (auf/zu) wird pro Browser gemerkt, die Suche gilt auch dort.
+- **Firewall — Plesk-/iptables-Regeln löschbar:** Regeln der Eingangskette `ip filter INPUT` lassen sich im Bereich *Systemregeln* löschen (Berechtigung `firewall.manage`, mit Rückfrage und Lockout-Warnung für Zugangs-Ports). Der Hinweis in der Rückfrage ist wichtig: Plesk schreibt diese Kette beim nächsten Neuladen der Firewall neu — dauerhaft entfernt wird eine Regel nur in Plesk selbst. Bearbeiten bleibt bewusst gesperrt. Regeln aus `panel_guard` und fremden Tabellen bleiben unveränderlich.
+
+### Bugfixes
+- **Docker-Port-Firewall — Antwortpakete blockiert (Agent v2.20.3):** Die Regel `RELATED,ESTABLISHED → RETURN` in `DOCKER-USER` wurde nur mit `iptables -C` auf Existenz geprüft, aber nie an die erste Stelle gezwungen. Stand sie nach einem Neuladen der Plesk-Firewall hinter einer Port-Sperre, traf die Sperre auch die Antworten des Containers: SYN kam an, es ging nie ein SYN-ACK zurück — der Reverse-Proxy meldete 504/502, obwohl der Container selbst gesund war (aufgetreten bei Nextcloud auf Port 8080). Der Agent setzt die Regel jetzt bei jeder Docker-Regel an Position 1 und entfernt Duplikate weiter unten; die Regel fehlt dabei zu keinem Zeitpunkt.
+
+### System-Auswirkungen & Nachwirken (Impact Analysis)
+- **DB-Migrationen:** keine.
+- **Agent-Kompatibilität:** Das Löschen von Plesk-Regeln und der `DOCKER-USER`-Fix brauchen **Agent v2.20.3**, den das Panel nach dem Start automatisch ausrollt. Ältere Agents zeigen die Regeln weiterhin schreibgeschützt (Backend kennzeichnet sie), Löschen schlägt dort mit einer Fehlermeldung fehl.
+- **Rechte:** unverändert (`firewall.view` / `firewall.manage`).
+
 ## [8.1.0.3] - 2026-10-04 (Build 397) — *Sicherungsnetz*
 
 ### Bugfixes
